@@ -14,4 +14,4 @@
 
 """Version information for fireflyframework-genai."""
 
-__version__ = "26.01.01"
+__version__ = "26.02.01"
