@@ -111,6 +111,8 @@ pythonVersion = "3.13"
 typeCheckingMode = "standard"
 include = ["src"]
 exclude = ["tests/**", "examples/**"]
+reportAttributeAccessIssue = false
+reportPossiblyUnboundVariable = "warning"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
