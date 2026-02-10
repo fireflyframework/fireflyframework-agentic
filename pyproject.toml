@@ -109,8 +109,7 @@ known-first-party = ["fireflyframework_genai"]
 [tool.pyright]
 pythonVersion = "3.13"
 typeCheckingMode = "standard"
-venvPath = "."
-venv = ".venv"
+include = ["src"]
 exclude = ["tests/**", "examples/**"]
 
 [tool.pytest.ini_options]
