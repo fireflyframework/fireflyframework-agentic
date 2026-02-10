@@ -63,7 +63,7 @@ def add_cors_middleware(
         allow_origins: List of allowed origin URLs. Defaults to [] (no origins allowed).
         allow_methods: List of allowed HTTP methods. Defaults to standard methods.
     """
-    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.middleware.cors import CORSMiddleware  # type: ignore[import-not-found]
 
     # Secure default: no origins allowed
     if allow_origins is None:

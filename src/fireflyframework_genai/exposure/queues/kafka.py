@@ -55,7 +55,7 @@ class KafkaAgentConsumer(BaseQueueConsumer):
     async def start(self) -> None:
         """Connect to Kafka and begin consuming."""
         try:
-            from aiokafka import AIOKafkaConsumer
+            from aiokafka import AIOKafkaConsumer  # type: ignore[import-not-found]
         except ImportError as _err:
             raise ImportError(
                 "aiokafka is required for Kafka support. Install it with: pip install fireflyframework-genai[kafka]"
@@ -118,7 +118,7 @@ class KafkaAgentProducer:
     async def start(self) -> None:
         """Connect the underlying Kafka producer."""
         try:
-            from aiokafka import AIOKafkaProducer
+            from aiokafka import AIOKafkaProducer  # type: ignore[import-not-found]
         except ImportError as _err:
             raise ImportError(
                 "aiokafka is required for Kafka support. Install it with: pip install fireflyframework-genai[kafka]"

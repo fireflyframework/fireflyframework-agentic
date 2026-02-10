@@ -39,6 +39,7 @@ import json
 import logging
 import sys
 from datetime import UTC, datetime
+from typing import Any
 
 _LOGGER_NAME = "fireflyframework_genai"
 
@@ -180,7 +181,7 @@ def configure_logging(
     *,
     fmt: str = _DEFAULT_FORMAT,
     datefmt: str = _DEFAULT_DATEFMT,
-    stream: object | None = None,
+    stream: Any | None = None,
     format_style: str = "text",
 ) -> None:
     """Configure logging for all ``fireflyframework_genai`` modules.

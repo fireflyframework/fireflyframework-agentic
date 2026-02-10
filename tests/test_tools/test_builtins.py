@@ -275,19 +275,19 @@ class TestCalculatorTool:
 
 class TestHttpToolAsync:
     def test_has_do_request_method(self) -> None:
-        """HttpTool should have a _do_request method for threaded execution."""
-        tool = HttpTool()
-        assert hasattr(tool, "_do_request")
-        assert callable(tool._do_request)
+        """HttpTool should have a _do_request_urllib method for threaded execution."""
+        tool = HttpTool(use_pool=False)
+        assert hasattr(tool, "_do_request_urllib")
+        assert callable(tool._do_request_urllib)
 
     def test_metadata(self) -> None:
-        tool = HttpTool()
+        tool = HttpTool(use_pool=False)
         assert tool.name == "http"
         assert "http" in tool.tags
 
     async def test_get_request_via_mock(self) -> None:
         """Test that HttpTool makes a real GET via urllib and returns structured data."""
-        tool = HttpTool()
+        tool = HttpTool(use_pool=False)
         mock_resp = MagicMock()
         mock_resp.status = 200
         mock_resp.headers = {"Content-Type": "application/json"}
@@ -300,7 +300,7 @@ class TestHttpToolAsync:
         assert result["body"] == '{"ok": true}'
 
     async def test_post_request_via_mock(self) -> None:
-        tool = HttpTool()
+        tool = HttpTool(use_pool=False)
         mock_resp = MagicMock()
         mock_resp.status = 201
         mock_resp.headers = {}
@@ -313,7 +313,7 @@ class TestHttpToolAsync:
         assert result["body"] == "created"
 
     async def test_default_headers_forwarded(self) -> None:
-        tool = HttpTool(default_headers={"Authorization": "Bearer test"})
+        tool = HttpTool(use_pool=False, default_headers={"Authorization": "Bearer test"})
         mock_resp = MagicMock()
         mock_resp.status = 200
         mock_resp.headers = {}

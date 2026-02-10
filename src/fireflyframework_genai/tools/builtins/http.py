@@ -22,6 +22,7 @@ Connection pooling significantly improves performance by reusing TCP connections
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import logging
 import urllib.request
 from collections.abc import Sequence
@@ -31,13 +32,9 @@ from fireflyframework_genai.tools.base import BaseTool, GuardProtocol, Parameter
 
 logger = logging.getLogger(__name__)
 
-# Try to import httpx for connection pooling
-try:
-    import httpx
+# Check if httpx is available for connection pooling
 
-    HTTPX_AVAILABLE = True
-except ImportError:
-    HTTPX_AVAILABLE = False
+HTTPX_AVAILABLE = importlib.util.find_spec("httpx") is not None
 
 
 class HttpTool(BaseTool):
@@ -94,11 +91,13 @@ class HttpTool(BaseTool):
 
         # Create httpx client with connection pooling
         if self._use_pool:
-            limits = httpx.Limits(
+            import httpx as _httpx  # already verified available via HTTPX_AVAILABLE
+
+            limits = _httpx.Limits(
                 max_connections=pool_size,
                 max_keepalive_connections=pool_max_keepalive,
             )
-            self._client: httpx.AsyncClient | None = httpx.AsyncClient(
+            self._client: Any = _httpx.AsyncClient(
                 timeout=timeout,
                 limits=limits,
                 follow_redirects=True,
