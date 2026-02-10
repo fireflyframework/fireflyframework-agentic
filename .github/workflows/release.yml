@@ -3,8 +3,14 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      triggered-by:
+        description: 'Orchestrator run ID'
+        required: false
+        type: string
 jobs:
   release:
     uses: fireflyframework/.github/.github/workflows/python-release.yml@main
     permissions:
       contents: write
+    secrets: inherit
