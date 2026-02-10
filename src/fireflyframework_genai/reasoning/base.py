@@ -452,6 +452,8 @@ class AbstractReasoningPattern(ABC):
         from fireflyframework_genai.exceptions import OutputReviewError
 
         reviewer = self._reviewer
+        if reviewer is None:
+            return output
         try:
             result = await reviewer.review(state["agent"], str(output))
             return result.output

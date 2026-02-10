@@ -108,7 +108,7 @@ class PostgreSQLStore:
             return
 
         try:
-            import asyncpg
+            import asyncpg  # type: ignore[import-not-found]
         except ImportError as exc:
             raise DatabaseStoreError(
                 "PostgreSQL support requires 'asyncpg' and 'sqlalchemy'. "
@@ -401,7 +401,7 @@ class MongoDBStore:
             return
 
         try:
-            from motor.motor_asyncio import AsyncIOMotorClient
+            from motor.motor_asyncio import AsyncIOMotorClient  # type: ignore[import-not-found]
         except ImportError as exc:
             raise DatabaseStoreError(
                 "MongoDB support requires 'motor' and 'pymongo'. "

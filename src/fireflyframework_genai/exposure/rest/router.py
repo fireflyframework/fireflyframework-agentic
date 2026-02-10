@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from fastapi import APIRouter
+    from fastapi import APIRouter  # type: ignore[import-not-found]
 
 from fireflyframework_genai.agents.registry import agent_registry
 from fireflyframework_genai.exposure.rest.schemas import AgentRequest, AgentResponse
@@ -61,7 +61,7 @@ def _resolve_prompt(request: AgentRequest) -> Any:
 
 def create_agent_router() -> APIRouter:
     """Create a FastAPI router with agent invocation endpoints."""
-    from fastapi import APIRouter, HTTPException
+    from fastapi import APIRouter, HTTPException  # type: ignore[import-not-found]
 
     router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -158,8 +158,9 @@ def create_agent_router() -> APIRouter:
         messages = _rest_memory.get_message_history(conversation_id)
         serialized = []
         for msg in messages:
-            if hasattr(msg, "model_dump"):
-                serialized.append(msg.model_dump(mode="json"))
+            dumper = getattr(msg, "model_dump", None)
+            if dumper is not None:
+                serialized.append(dumper(mode="json"))
             else:
                 serialized.append({"content": str(msg)})
         return {

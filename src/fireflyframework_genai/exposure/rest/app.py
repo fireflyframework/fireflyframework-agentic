@@ -91,7 +91,7 @@ def create_genai_app(
     # Lazy imports — FastAPI and its dependencies are optional extras.
     # Importing inside the factory ensures the core framework can be used
     # without installing the [rest] extra.
-    from fastapi import FastAPI
+    from fastapi import FastAPI  # type: ignore[import-not-found]
 
     from fireflyframework_genai.exposure.rest.health import create_health_router
     from fireflyframework_genai.exposure.rest.middleware import (

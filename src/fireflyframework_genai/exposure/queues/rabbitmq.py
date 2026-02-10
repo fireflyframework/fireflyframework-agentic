@@ -52,7 +52,7 @@ class RabbitMQAgentConsumer(BaseQueueConsumer):
     async def start(self) -> None:
         """Connect to RabbitMQ and begin consuming."""
         try:
-            import aio_pika
+            import aio_pika  # type: ignore[import-not-found]
         except ImportError as _err:
             raise ImportError(
                 "aio-pika is required for RabbitMQ support. "
@@ -117,7 +117,7 @@ class RabbitMQAgentProducer:
     async def start(self) -> None:
         """Open a connection and channel."""
         try:
-            import aio_pika
+            import aio_pika  # type: ignore[import-not-found]
         except ImportError as _err:
             raise ImportError(
                 "aio-pika is required for RabbitMQ support. "
@@ -130,7 +130,7 @@ class RabbitMQAgentProducer:
 
     async def publish(self, message: QueueMessage) -> None:
         """Publish *message* to the configured exchange."""
-        import aio_pika
+        import aio_pika  # type: ignore[import-not-found]
 
         if self._channel is None:
             await self.start()

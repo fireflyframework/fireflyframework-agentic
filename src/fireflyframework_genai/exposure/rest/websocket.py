@@ -44,14 +44,14 @@ import uuid
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from fastapi import APIRouter
+    from fastapi import APIRouter  # type: ignore[import-not-found]
 
 logger = logging.getLogger(__name__)
 
 
 def create_websocket_router() -> APIRouter:
     """Create a FastAPI router with the agent WebSocket endpoint."""
-    from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+    from fastapi import APIRouter, WebSocket, WebSocketDisconnect  # type: ignore[import-not-found]
 
     from fireflyframework_genai.agents.registry import agent_registry
     from fireflyframework_genai.memory.manager import MemoryManager
@@ -111,7 +111,7 @@ def create_websocket_router() -> APIRouter:
 
                     if hasattr(agent, "run_stream"):
                         try:
-                            async with agent.run_stream(
+                            async with await agent.run_stream(  # type: ignore[attr-defined]
                                 prompt,
                                 deps=deps,
                                 conversation_id=conversation_id,

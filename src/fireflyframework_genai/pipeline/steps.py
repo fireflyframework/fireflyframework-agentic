@@ -69,7 +69,7 @@ class AgentStep:
         prompt = inputs.get(self._prompt_key, context.inputs)
         # Propagate pipeline memory to the agent if available
         if context.memory is not None and hasattr(self._agent, "memory"):
-            self._agent.memory = context.memory
+            self._agent.memory = context.memory  # type: ignore[attr-defined]
         result = await self._agent.run(prompt, **self._kwargs)
         return result.output if hasattr(result, "output") else str(result)
 

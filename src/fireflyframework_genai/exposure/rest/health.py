@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from fastapi import APIRouter
+    from fastapi import APIRouter  # type: ignore[import-not-found]
 
 from fireflyframework_genai.agents.registry import agent_registry
 from fireflyframework_genai.exposure.rest.schemas import HealthResponse
@@ -27,7 +27,7 @@ from fireflyframework_genai.exposure.rest.schemas import HealthResponse
 
 def create_health_router() -> APIRouter:
     """Create a FastAPI router with health check endpoints."""
-    from fastapi import APIRouter
+    from fastapi import APIRouter  # type: ignore[import-not-found]
 
     router = APIRouter(tags=["health"])
 

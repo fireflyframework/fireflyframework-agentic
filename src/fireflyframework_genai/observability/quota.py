@@ -52,7 +52,7 @@ import random
 import threading
 import time
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from fireflyframework_genai.exceptions import BudgetExceededError, RateLimitError
 
@@ -301,7 +301,7 @@ class QuotaManager:
 
         # Daily spend tracking
         self._daily_spend: float = 0.0
-        self._spend_reset_date: datetime = datetime.now(UTC).date()
+        self._spend_reset_date: date = datetime.now(UTC).date()
         self._spend_lock = threading.Lock()
 
         # Rate limiters per model

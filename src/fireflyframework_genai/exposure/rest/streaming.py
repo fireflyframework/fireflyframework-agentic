@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, cast
 
 from fireflyframework_genai.types import AgentLike
 
@@ -30,7 +30,7 @@ async def sse_stream(agent: AgentLike, prompt: Any, **kwargs: Any) -> AsyncItera
 
     This uses buffered streaming mode (chunks/messages).
     """
-    async with await agent.run_stream(prompt, **kwargs) as stream:
+    async with await cast("Any", agent).run_stream(prompt, **kwargs) as stream:
         async for chunk in stream.stream_text():
             yield f"data: {json.dumps({'text': chunk})}\n\n"
     yield "data: [DONE]\n\n"
@@ -60,7 +60,7 @@ async def sse_stream_incremental(
     Example SSE event:
         data: {"token": "Hello"}\\n\\n
     """
-    async with await agent.run_stream(prompt, streaming_mode="incremental", **kwargs) as stream:
+    async with await cast("Any", agent).run_stream(prompt, streaming_mode="incremental", **kwargs) as stream:
         async for token in stream.stream_tokens(debounce_ms=debounce_ms):
             yield f"data: {json.dumps({'token': token})}\n\n"
     yield "data: [DONE]\n\n"

@@ -507,9 +507,9 @@ class OutputGuardMiddleware:
                 len(scan_result.matched_patterns),
                 scan_result.matched_categories,
             )
-            # Replace the output in the result if possible
+            # Replace the output in the result if possible (e.g. NamedTuple results)
             if hasattr(result, "output") and hasattr(result, "_replace"):
-                return result._replace(output=scan_result.sanitised_output)
+                return result._replace(output=scan_result.sanitised_output)  # type: ignore[union-attr]
             return scan_result.sanitised_output
 
         raise OutputGuardError(f"Output blocked for agent '{context.agent_name}': {scan_result.reason}")

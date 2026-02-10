@@ -27,11 +27,12 @@ import asyncio
 import logging
 import time
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Generic
+from typing import TYPE_CHECKING, Any, Generic, cast
 
 from pydantic_ai import Agent
 from pydantic_ai import Tool as PydanticTool
 from pydantic_ai.models import Model
+from pydantic_ai.settings import ModelSettings
 
 from fireflyframework_genai.config import get_config
 from fireflyframework_genai.types import AgentDepsT, Metadata, OutputT, UserContent
@@ -116,7 +117,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         tags: Sequence[str] = (),
         metadata: Metadata | None = None,
         retries: int | None = None,
-        model_settings: dict[str, Any] | None = None,
+        model_settings: ModelSettings | dict[str, Any] | None = None,
         memory: MemoryManager | None = None,
         middleware: list[AgentMiddleware] | None = None,
         default_middleware: bool = True,
@@ -148,6 +149,10 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
 
         self._middleware = MiddlewareChain(self._build_middleware(middleware, default_middleware=default_middleware))
 
+        resolved_settings: ModelSettings | None = (
+            cast("ModelSettings", model_settings) if isinstance(model_settings, dict) else model_settings
+        )
+
         self._agent: Agent[AgentDepsT, OutputT] = Agent(
             resolved_model,
             instructions=instructions,
@@ -155,7 +160,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             deps_type=deps_type,
             tools=self._resolve_tools(tools),
             retries=resolved_retries,
-            model_settings=model_settings,
+            model_settings=resolved_settings,
             name=name,
         )
 

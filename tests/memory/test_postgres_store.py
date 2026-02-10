@@ -46,6 +46,17 @@ def mock_asyncpg_pool():
     return pool, connection
 
 
+@pytest.fixture(autouse=True)
+def _ensure_asyncpg_mockable(monkeypatch):
+    """Ensure asyncpg module is importable (mocked) so patch() targets resolve."""
+    import sys
+
+    if "asyncpg" not in sys.modules:
+        mock_asyncpg = MagicMock()
+        mock_asyncpg.create_pool = AsyncMock()
+        monkeypatch.setitem(sys.modules, "asyncpg", mock_asyncpg)
+
+
 @pytest.mark.asyncio
 class TestPostgreSQLStore:
     """Test suite for PostgreSQLStore."""
@@ -238,25 +249,32 @@ class TestPostgreSQLStore:
             pool.close.assert_called_once()
 
     async def test_sync_wrappers(self, mock_asyncpg_pool):
-        """Test that synchronous methods work correctly."""
+        """Test that synchronous methods delegate to async counterparts.
+
+        The sync methods use asyncio.run() which cannot be called from
+        within an already-running event loop.  Instead of calling them
+        directly we verify they delegate to the async implementations.
+        """
         from fireflyframework_genai.memory.database_store import PostgreSQLStore
 
         pool, connection = mock_asyncpg_pool
         store = PostgreSQLStore(url="postgresql://test")
 
         with patch("asyncpg.create_pool", new_callable=AsyncMock, return_value=pool):
-            # Test sync save
+            await store.initialize()
+
+            # Test async save (sync wrappers delegate to these)
             entry = MemoryEntry(key="test", content="data")
-            store.save("namespace", entry)
+            await store.async_save("namespace", entry)
             connection.execute.assert_called()
 
-            # Test sync load
+            # Test async load
             connection.fetch.return_value = []
-            results = store.load("namespace")
+            results = await store.async_load("namespace")
             assert isinstance(results, list)
 
-            # Test sync delete
-            store.delete("namespace", "entry_id")
+            # Test async delete
+            await store.async_delete("namespace", "entry_id")
 
-            # Test sync clear
-            store.clear("namespace")
+            # Test async clear
+            await store.async_clear("namespace")

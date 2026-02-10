@@ -54,7 +54,7 @@ from __future__ import annotations
 
 import base64
 import logging
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from fireflyframework_genai.memory.types import MemoryEntry
 
@@ -238,7 +238,7 @@ class EncryptedMemoryStore:
 
     def __init__(
         self,
-        store: object,  # MemoryStore protocol
+        store: Any,
         encryption_key: str | bytes,
         provider: EncryptionProvider | None = None,
     ) -> None:
