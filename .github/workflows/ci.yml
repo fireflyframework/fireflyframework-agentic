@@ -4,8 +4,15 @@ on:
     branches: [develop]
   pull_request:
     branches: [develop, main]
+  workflow_dispatch:
+    inputs:
+      triggered-by:
+        description: 'Orchestrator run ID'
+        required: false
+        type: string
 jobs:
   lint-and-test:
     uses: fireflyframework/.github/.github/workflows/python-ci.yml@main
     with:
       python-version: '3.13'
+    secrets: inherit
