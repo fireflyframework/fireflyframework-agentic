@@ -1,3 +1,5 @@
+[![CI](https://github.com/fireflyframework/fireflyframework-genai/actions/workflows/ci.yml/badge.svg)](https://github.com/fireflyframework/fireflyframework-genai/actions/workflows/ci.yml)
+
 ```
   _____.__                _____.__                                   
 _/ ____\__|______   _____/ ____\  | ___.__.                          
