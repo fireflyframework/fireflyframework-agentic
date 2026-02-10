@@ -1,4 +1,4 @@
-[![CI](https://github.com/fireflyframework/fireflyframework-genai/actions/workflows/ci.yml/badge.svg)](https://github.com/fireflyframework/fireflyframework-genai/actions/workflows/ci.yml)
+[![CI](https://github.com/fireflyframework/fireflyframework-genai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fireflyframework/fireflyframework-genai/actions/workflows/ci.yml)
 
 ```
   _____.__                _____.__                                   
@@ -26,7 +26,7 @@ _/ ____\___________    _____   ______  _  _____________|  | __ \ \
 
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-406%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-819%20passing-brightgreen.svg)]()
 [![Ruff](https://img.shields.io/badge/linting-ruff-orange.svg)](https://docs.astral.sh/ruff/)
 
 Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
