@@ -108,15 +108,10 @@ known-first-party = ["fireflyframework_genai"]
 
 [tool.pyright]
 pythonVersion = "3.13"
-typeCheckingMode = "standard"
+typeCheckingMode = "basic"
 include = ["src"]
 exclude = ["tests/**", "examples/**"]
-reportAttributeAccessIssue = false
-reportPossiblyUnboundVariable = "warning"
-reportCallIssue = "warning"
-reportArgumentType = "warning"
-reportOptionalMemberAccess = "warning"
-reportMissingImports = "warning"
+
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
