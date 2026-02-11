@@ -192,8 +192,8 @@ from fireflyframework_genai.observability import default_usage_tracker
 # After running agents, inspect accumulated usage
 summary = default_usage_tracker.get_summary()
 print(f"Total tokens: {summary.total_tokens}")
-print(f"Total cost:   ${summary.total_cost_usd:.4f}")
-print(f"Requests:     {summary.total_requests}")
+print(f"Total cost: ${summary.total_cost_usd:.4f}")
+print(f"Requests: {summary.total_requests}")
 
 # Filter by agent or pipeline correlation ID
 agent_summary = default_usage_tracker.get_summary_for_agent("my-agent")
@@ -241,7 +241,7 @@ Two cost calculator implementations are provided:
   OpenAI, Anthropic, Google, DeepSeek, and Groq models. Supports exact and prefix
   matching (e.g. `openai:gpt-4o-2024-08-06` matches `openai:gpt-4o`).
 - **`GenAIPricesCostCalculator`** — delegates to the optional `genai-prices` package
-  for up-to-date pricing data.  Install with `pip install fireflyframework-genai[costs]`.
+  for up-to-date pricing data. Install with `pip install fireflyframework-genai[costs]`.
 
 The `get_cost_calculator()` factory selects the best available calculator based on
 the `FIREFLY_GENAI_COST_CALCULATOR` setting (`"auto"`, `"static"`, or `"genai_prices"`).
@@ -288,7 +288,7 @@ from fireflyframework_genai.observability.quota import QuotaManager
 quota = QuotaManager(
     daily_budget_usd=100.0,
     rate_limits={
-        "openai:gpt-4o": 60,        # 60 requests/minute
+        "openai:gpt-4o": 60, # 60 requests/minute
         "anthropic:claude-opus-4": 50,
     },
     adaptive_backoff=True,
@@ -333,10 +333,10 @@ The sliding window ensures accurate rate limiting without bursts at window bound
 from fireflyframework_genai.observability.quota import AdaptiveBackoff
 
 backoff = AdaptiveBackoff(
-    base_delay=1.0,        # Start at 1 second
-    max_delay=60.0,        # Cap at 60 seconds
-    multiplier=2.0,        # Double each time
-    jitter_factor=0.1,     # Add 10% jitter
+    base_delay=1.0, # Start at 1 second
+    max_delay=60.0, # Cap at 60 seconds
+    multiplier=2.0, # Double each time
+    jitter_factor=0.1, # Add 10% jitter
 )
 
 # After receiving 429 response

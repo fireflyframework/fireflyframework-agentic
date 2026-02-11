@@ -304,8 +304,8 @@ enabling the framework logger.
 ```python
 from fireflyframework_genai import configure_logging
 
-configure_logging("INFO")   # agent calls, reasoning progress, timing
-configure_logging("DEBUG")  # + memory injection, turn persistence, LLM timing
+configure_logging("INFO") # agent calls, reasoning progress, timing
+configure_logging("DEBUG") # + memory injection, turn persistence, LLM timing
 ```
 
 Or use the shortcut:
@@ -381,10 +381,10 @@ agent_summary = default_usage_tracker.get_summary_for_agent("my-agent")
 Configure via environment variables:
 
 ```bash
-FIREFLY_GENAI_COST_TRACKING_ENABLED=true    # default
+FIREFLY_GENAI_COST_TRACKING_ENABLED=true # default
 FIREFLY_GENAI_BUDGET_ALERT_THRESHOLD_USD=5.00
 FIREFLY_GENAI_BUDGET_LIMIT_USD=10.00
-FIREFLY_GENAI_COST_CALCULATOR=auto           # auto | static | genai_prices
+FIREFLY_GENAI_COST_CALCULATOR=auto # auto | static | genai_prices
 ```
 
 See the [Observability Guide](observability.md#usage-tracking) for full details.
@@ -522,7 +522,7 @@ from fireflyframework_genai.agents import FireflyAgent, PromptGuardMiddleware
 agent = FireflyAgent(
     name="safe-agent",
     model="openai:gpt-4o",
-    middleware=[PromptGuardMiddleware()],            # reject mode
+    middleware=[PromptGuardMiddleware()], # reject mode
 )
 
 # Or sanitise mode — replaces matched patterns with [REDACTED]
@@ -558,7 +558,7 @@ from fireflyframework_genai.agents.builtin_middleware import OutputGuardMiddlewa
 agent = FireflyAgent(
     name="safe-output",
     model="openai:gpt-4o",
-    middleware=[OutputGuardMiddleware()],            # reject mode
+    middleware=[OutputGuardMiddleware()], # reject mode
 )
 
 # Or sanitise mode — replaces matched content with [REDACTED]
@@ -572,7 +572,7 @@ agent = FireflyAgent(
 Optionally restrict blocking to specific categories:
 
 ```python
-OutputGuardMiddleware(block_categories=["secrets", "pii"])  # ignore "harmful"
+OutputGuardMiddleware(block_categories=["secrets", "pii"]) # ignore "harmful"
 ```
 
 See the [Security Guide](security.md#outputguard) for full pattern details.
@@ -687,7 +687,7 @@ from fireflyframework_genai.agents.prompt_cache import PromptCacheMiddleware
 agent = FireflyAgent(
     name="cached-agent",
     model="anthropic:claude-opus-4",
-    instructions="Long system prompt here..." * 10,  # Long prompt benefits from caching
+    instructions="Long system prompt here..." * 10, # Long prompt benefits from caching
     middleware=[PromptCacheMiddleware(cache_system_prompt=True)],
 )
 ```
@@ -768,13 +768,13 @@ agent = FireflyAgent(
     model="anthropic:claude-opus-4",
     instructions="Long system prompt for production agent..." * 5,
     middleware=[
-        LoggingMiddleware(),                               # Structured logging
-        ObservabilityMiddleware(),                         # Distributed tracing
-        PromptGuardMiddleware(sanitise=True),             # Input validation
-        OutputGuardMiddleware(sanitise=True),             # Output sanitization
-        CostGuardMiddleware(budget_usd=100.0),            # Budget enforcement
-        PromptCacheMiddleware(cache_system_prompt=True),  # 90%+ cost savings
-        CircuitBreakerMiddleware(failure_threshold=5),    # Resilience
+        LoggingMiddleware(), # Structured logging
+        ObservabilityMiddleware(), # Distributed tracing
+        PromptGuardMiddleware(sanitise=True), # Input validation
+        OutputGuardMiddleware(sanitise=True), # Output sanitization
+        CostGuardMiddleware(budget_usd=100.0), # Budget enforcement
+        PromptCacheMiddleware(cache_system_prompt=True), # 90%+ cost savings
+        CircuitBreakerMiddleware(failure_threshold=5), # Resilience
     ],
 )
 ```
@@ -918,7 +918,7 @@ else:
     result = cached
 
 # Inspect hit/miss stats
-print(cache.stats)  # {"hits": 5, "misses": 2, "size": 2}
+print(cache.stats) # {"hits": 5, "misses": 2, "size": 2}
 ```
 
 Parameters:

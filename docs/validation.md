@@ -83,7 +83,7 @@ from fireflyframework_genai.validation.qos import ConsistencyChecker
 
 checker = ConsistencyChecker(my_agent, num_runs=3)
 score, outputs = await checker.check("What is the capital of France?")
-print(score)  # 1.0 if all answers agree
+print(score) # 1.0 if all answers agree
 ```
 
 ### GroundingChecker
@@ -99,7 +99,7 @@ score, field_map = checker.check(
     source_text="France's capital is Paris.",
     extracted_fields={"capital": "Paris"},
 )
-print(score)  # 1.0 if all fields are grounded in the source
+print(score) # 1.0 if all fields are grounded in the source
 ```
 
 ### QoSGuard
@@ -146,8 +146,8 @@ class InvoiceData(BaseModel):
 
 reviewer = OutputReviewer(output_type=InvoiceData, max_retries=3)
 result = await reviewer.review(agent, "Extract invoice data from: Acme Corp, $1,234, 2026-01-15")
-print(result.output)       # InvoiceData(vendor="Acme Corp", amount=1234.0, date="2026-01-15")
-print(result.attempts)     # 1 if first try succeeded, 2+ if retries were needed
+print(result.output) # InvoiceData(vendor="Acme Corp", amount=1234.0, date="2026-01-15")
+print(result.attempts) # 1 if first try succeeded, 2+ if retries were needed
 ```
 
 ### With Validation Rules

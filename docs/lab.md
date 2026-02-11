@@ -104,7 +104,7 @@ entries = await comparison.compare({"writer_v1": agent_v1, "writer_v2": agent_v2
 for entry in entries:
     print(f"Input: {entry.prompt}")
     for agent_name, response in entry.responses.items():
-        print(f"  {agent_name}: {response}")
+        print(f" {agent_name}: {response}")
 ```
 
 ---

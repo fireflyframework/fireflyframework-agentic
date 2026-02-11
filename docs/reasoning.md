@@ -235,8 +235,8 @@ to turn on framework-level logging without affecting other libraries:
 ```python
 from fireflyframework_genai import configure_logging
 
-configure_logging("INFO")    # pattern lifecycle, step progress, timing
-configure_logging("DEBUG")   # + LLM call durations, prompt enrichment, memory ops
+configure_logging("INFO") # pattern lifecycle, step progress, timing
+configure_logging("DEBUG") # + LLM call durations, prompt enrichment, memory ops
 ```
 
 Or use the one-liner shortcut:
@@ -244,7 +244,7 @@ Or use the one-liner shortcut:
 ```python
 from fireflyframework_genai import enable_debug
 
-enable_debug()  # equivalent to configure_logging("DEBUG")
+enable_debug() # equivalent to configure_logging("DEBUG")
 ```
 
 Key events logged at **INFO** level:
@@ -268,7 +268,7 @@ from fireflyframework_genai.reasoning import PlanAndExecutePattern
 
 pattern = PlanAndExecutePattern(
     max_steps=10,
-    step_timeout=120.0,  # 120 s per LLM call
+    step_timeout=120.0, # 120 s per LLM call
 )
 ```
 
@@ -309,8 +309,8 @@ from fireflyframework_genai.reasoning import ReActPattern
 
 pattern = ReActPattern(max_steps=5)
 result = await pattern.execute(my_agent, "What is the population of Tokyo?")
-print(result.output)         # The final answer
-print(result.steps_taken)    # Number of iterations
+print(result.output) # The final answer
+print(result.steps_taken) # Number of iterations
 ```
 
 **Prompt slots:** `"thought"`, `"action"`
@@ -716,7 +716,7 @@ class MyCustomPattern(AbstractReasoningPattern):
         agent = state["agent"]
         memory = state.get("memory")
         prompt = f"Reason about: {state['input']}"
-        prompt = self._enrich_prompt(prompt, memory)  # inject working memory
+        prompt = self._enrich_prompt(prompt, memory) # inject working memory
         thought = await self._structured_run(agent, prompt, ReasoningThought)
         state["last_thought"] = thought
         if thought.is_final:

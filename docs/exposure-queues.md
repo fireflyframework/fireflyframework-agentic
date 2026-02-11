@@ -42,10 +42,10 @@ flowchart TD
 Install the queue extra for your broker:
 
 ```bash
-uv add "fireflyframework-genai[kafka]"    # Kafka
+uv add "fireflyframework-genai[kafka]" # Kafka
 uv add "fireflyframework-genai[rabbitmq]" # RabbitMQ
-uv add "fireflyframework-genai[redis]"    # Redis
-uv add "fireflyframework-genai[queues]"   # All brokers
+uv add "fireflyframework-genai[redis]" # Redis
+uv add "fireflyframework-genai[queues]" # All brokers
 ```
 
 ### Kafka

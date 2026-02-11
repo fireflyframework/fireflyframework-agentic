@@ -8,7 +8,7 @@ Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License
 > and assembles data from invoices.
 >
 > Each chapter introduces a concept, explains *why* it exists, shows *how* it works
-> with architecture diagrams, and immediately applies it to the IDP pipeline.  By
+> with architecture diagrams, and immediately applies it to the IDP pipeline. By
 > Chapter 20 you will have a production-grade GenAI application that uses agents,
 > tools, prompts, reasoning patterns, content processing, memory, validation, pipelines,
 > observability, explainability, experiments, a REST API, message-queue consumers **and
@@ -161,9 +161,9 @@ from fireflyframework_genai import FireflyGenAIConfig, get_config
 
 # get_config() returns a thread-safe singleton
 config = get_config()
-print(config.default_model)       # "openai:gpt-4o"
+print(config.default_model) # "openai:gpt-4o"
 print(config.default_temperature) # 0.7
-print(config.max_retries)         # 3
+print(config.max_retries) # 3
 ```
 
 Override any setting via environment variables or a `.env` file:
@@ -279,7 +279,7 @@ model = OpenAIChatModel(
     provider=AzureProvider(
         azure_endpoint="https://my-resource.openai.azure.com",
         api_version="2025-03-01-preview",
-        api_key="...",  # or use DefaultAzureCredential
+        api_key="...", # or use DefaultAzureCredential
     ),
 )
 agent = FireflyAgent(name="azure-agent", model=model)
@@ -308,7 +308,7 @@ model = OpenAIChatModel(
     "llama3.2",
     provider=OpenAIProvider(
         base_url="http://localhost:11434/v1",
-        api_key="ollama",  # Ollama doesn't require a real key
+        api_key="ollama", # Ollama doesn't require a real key
     ),
 )
 agent = FireflyAgent(name="local-agent", model=model)
@@ -348,10 +348,10 @@ That works great for scripts — but the moment you need to register agents by n
 share them across REST endpoints and queue consumers, attach lifecycle hooks, or plug
 them into reasoning patterns and pipelines, you need a thin coordination layer on top.
 
-That is exactly what `FireflyAgent` is.  It wraps a Pydantic AI `Agent` and adds three
+That is exactly what `FireflyAgent` is. It wraps a Pydantic AI `Agent` and adds three
 things the framework relies on: a **global registry** (so any module can look up an
 agent by name), **lifecycle management** (init → warmup → shutdown), and **metadata**
-(tags, descriptions, correlation IDs).  The underlying Pydantic AI agent does all the
+(tags, descriptions, correlation IDs). The underlying Pydantic AI agent does all the
 heavy lifting — model calls, tool dispatch, streaming — while `FireflyAgent` provides
 the scaffolding that makes it a team player in a larger system.
 
@@ -455,7 +455,7 @@ Every agent supports three execution modes — pick the one that fits your conte
 ```python
 # Async — the standard choice for production services.
 result = await classifier.run("Classify this document: Invoice from Acme Corp...")
-print(result.output)  # {"doc_type": "invoice", "language": "en", "page_count": 1}
+print(result.output) # {"doc_type": "invoice", "language": "en", "page_count": 1}
 
 # Synchronous — handy for scripts, notebooks, and quick experiments.
 result = classifier.run_sync("Classify this document: ...")
@@ -470,7 +470,7 @@ async with classifier.run_stream("Classify this document: ...") as stream:
 ### The Agent Registry
 
 The `AgentRegistry` is a process-wide singleton that maps agent names to `FireflyAgent`
-instances.  This is the glue that lets any module — REST endpoints, queue consumers,
+instances. This is the glue that lets any module — REST endpoints, queue consumers,
 delegation routers, pipelines, reasoning patterns — discover and invoke agents without
 importing them directly:
 
@@ -512,7 +512,7 @@ allowing you to tailor behaviour per-request without global state.
 ### Lifecycle Management
 
 Real-world agents often depend on external resources — database connections, model
-caches, file handles.  `AgentLifecycle` gives you three hooks to manage them cleanly:
+caches, file handles. `AgentLifecycle` gives you three hooks to manage them cleanly:
 **init** (one-time setup), **warmup** (pre-heat caches), and **shutdown** (release
 resources):
 
@@ -535,9 +535,9 @@ await lifecycle.run_shutdown()
 
 ### IDP Tie-In: The Document Classifier Agent
 
-Time to build the first piece of our IDP pipeline.  The document classifier receives
+Time to build the first piece of our IDP pipeline. The document classifier receives
 a raw document (text or scanned image) and outputs structured metadata — document type,
-language, page count, and orientation.  Every subsequent stage depends on this output.
+language, page count, and orientation. Every subsequent stage depends on this output.
 
 ```python
 from fireflyframework_genai.agents import FireflyAgent
@@ -552,7 +552,7 @@ classifier_agent = FireflyAgent(
         "determine its type, language, and page count. "
         "Return JSON: {doc_type, language, page_count, orientation}."
     ),
-    output_type=dict,  # Pydantic AI will validate the LLM output as a dict
+    output_type=dict, # Pydantic AI will validate the LLM output as a dict
 )
 ```
 
@@ -577,7 +577,7 @@ Other supported types include `AudioUrl`, `DocumentUrl`, and `VideoUrl`.
 ## Chapter 4: Tools
 
 LLMs are powerful reasoners, but they cannot check a database, call an API, or read a
-file on their own.  **Tools** bridge that gap: they are functions the model can call
+file on their own. **Tools** bridge that gap: they are functions the model can call
 during a conversation to fetch data, trigger side-effects, or run computations.
 
 Pydantic AI already supports tool functions, but fireflyframework-genai wraps them with
@@ -688,9 +688,9 @@ exchange_tool = (
 
 ### Tool Guards
 
-In production, you rarely want a tool to run unconditionally.  Guards are decorators
+In production, you rarely want a tool to run unconditionally. Guards are decorators
 that wrap a tool's execution with policy checks — input validation, rate-limiting,
-filesystem sandboxing, or human-in-the-loop approval.  They run **before** the handler
+filesystem sandboxing, or human-in-the-loop approval. They run **before** the handler
 (and optionally after), and they stack via `CompositeGuard`.
 
 #### Validation Guard
@@ -838,10 +838,10 @@ The framework ships with nine ready-to-use tools in `tools/builtins/`:
 
 ```python
 from fireflyframework_genai.tools.builtins import (
-    DateTimeTool,      # Current date/time, timezone conversion
-    JsonTool,          # Parse, validate, extract, format JSON
-    TextTool,          # Word count, regex extract, truncate, replace
-    CalculatorTool,    # Safe math via AST parsing (no eval)
+    DateTimeTool, # Current date/time, timezone conversion
+    JsonTool, # Parse, validate, extract, format JSON
+    TextTool, # Word count, regex extract, truncate, replace
+    CalculatorTool, # Safe math via AST parsing (no eval)
 )
 
 # Each tool follows ToolProtocol and can be registered and guarded
@@ -887,7 +887,7 @@ kit.register_all(tool_registry)
 ### Attaching Tools to Agents
 
 The Firefly tool system (ToolRegistry, `@firefly_tool`, ToolKit) is a separate layer
-from the Pydantic AI tool system baked into each agent.  Here is how they connect:
+from the Pydantic AI tool system baked into each agent. Here is how they connect:
 
 **Approach 1: Pass Pydantic AI tool functions directly to `FireflyAgent`**
 
@@ -903,7 +903,7 @@ async def lookup_vendor(ctx, vendor_name: str) -> str:
 agent = FireflyAgent(
     name="extractor",
     model="openai:gpt-4o",
-    tools=[lookup_vendor],  # Pydantic AI tool functions
+    tools=[lookup_vendor], # Pydantic AI tool functions
 )
 ```
 
@@ -918,7 +918,7 @@ agent = FireflyAgent(name="assistant", model="openai:gpt-4o")
 @agent.tool_plain
 async def calculate(expression: str) -> str:
     """Evaluate a math expression."""
-    return str(eval(expression))  # simplified example
+    return str(eval(expression)) # simplified example
 
 @agent.tool
 async def get_user(ctx, user_id: str) -> str:
@@ -929,7 +929,7 @@ async def get_user(ctx, user_id: str) -> str:
 **Approach 3: Bridge Firefly tools via `ToolKit.as_pydantic_tools()`**
 
 Firefly `BaseTool` instances (created with `@firefly_tool`, `ToolBuilder`, or built-ins)
-live in the `ToolRegistry`.  To feed them into an agent, convert via `as_pydantic_tools()`:
+live in the `ToolRegistry`. To feed them into an agent, convert via `as_pydantic_tools()`:
 
 ```python
 from fireflyframework_genai.tools import ToolKit
@@ -941,19 +941,19 @@ kit = ToolKit("utilities", [DateTimeTool(), JsonTool()])
 agent = FireflyAgent(
     name="helper",
     model="openai:gpt-4o",
-    tools=kit.as_pydantic_tools(),  # Convert to Pydantic AI tools
+    tools=kit.as_pydantic_tools(), # Convert to Pydantic AI tools
 )
 ```
 
 > **Key distinction:** `ToolRegistry` is a framework-level catalog for discovery and
-> metadata.  An agent only calls tools that are in its own Pydantic AI tools list.
+> metadata. An agent only calls tools that are in its own Pydantic AI tools list.
 > Use `ToolKit.as_pydantic_tools()` or `agent.tool()` to bridge between the two.
 
 ### IDP Tie-In: OCR and Vendor Lookup Tools
 
-For our IDP pipeline, we need tools the extraction agent can call.  We define them
+For our IDP pipeline, we need tools the extraction agent can call. We define them
 with `@firefly_tool`, group them into a `ToolKit`, and attach them to the agent
-via `as_pydantic_tools()`.  This is the pattern you will see end-to-end in
+via `as_pydantic_tools()`. This is the pattern you will see end-to-end in
 Chapter 6 (reasoning patterns) and Chapter 20 (full IDP application).
 
 **Step 1 — Define the tools:**
@@ -994,27 +994,27 @@ extractor_agent = FireflyAgent(
     name="extractor",
     model="openai:gpt-4o",
     instructions="You are an invoice data extraction specialist.",
-    tools=extraction_kit.as_pydantic_tools(),  # Bridge Firefly tools → Pydantic AI
+    tools=extraction_kit.as_pydantic_tools(), # Bridge Firefly tools → Pydantic AI
 )
 ```
 
 > **What happens next:** In Chapter 6 we pass `extractor_agent` (with its tools
 > already attached) to reasoning patterns like Plan-and-Execute and Reflexion.
 > The pattern calls `agent.run()` internally — the tools are available because
-> they were bound here.  Chapter 20 shows the complete production module
+> they were bound here. Chapter 20 shows the complete production module
 > (`idp/tools.py`) with retries, guards, and the full ToolKit.
 
 ---
 
 ## Chapter 5: Prompts
 
-If tools are an agent's hands, prompts are its brain.  The exact wording of a system
-prompt can mean the difference between extracting 60% of invoice fields and 98%.  In
+If tools are an agent's hands, prompts are its brain. The exact wording of a system
+prompt can mean the difference between extracting 60% of invoice fields and 98%. In
 production you need to **version** prompts (so you can A/B test), **compose** them
 (system + context + task), **validate** them (catch missing variables before runtime),
 and **load** them from files (so non-engineers can edit them).
 
-The Prompts module provides all of this through a Jinja2-based template engine.  Every
+The Prompts module provides all of this through a Jinja2-based template engine. Every
 template is a first-class object with a name, a version, typed variables, and a render
 method — not just a raw string.
 
@@ -1073,7 +1073,7 @@ Render templates in order and join them — useful for building system + context
 ```python
 from fireflyframework_genai.prompts.composer import SequentialComposer
 
-# By default, templates are joined with "\n\n".  Override with `separator=`.
+# By default, templates are joined with "\n\n". Override with `separator=`.
 composer = SequentialComposer(
     templates=[system_prompt, context_prompt, task_prompt],
     separator="\n\n",
@@ -1083,7 +1083,7 @@ full_prompt = composer.render(document_text="Invoice #INV-001...")
 
 #### Conditional Composition
 
-Select a template based on a runtime condition.  The `condition_fn` receives the
+Select a template based on a runtime condition. The `condition_fn` receives the
 render kwargs and returns a string key that maps into `template_map`:
 
 ```python
@@ -1136,9 +1136,9 @@ if not result.valid:
 ### Using Prompts with Agents
 
 So far we've created templates, versioned them, and composed them — but none of that
-is useful until the rendered text reaches an agent.  Here is how the two systems connect.
+is useful until the rendered text reaches an agent. Here is how the two systems connect.
 
-**Direct rendering → `agent.run()`** — The simplest path.  Render a template and pass
+**Direct rendering → `agent.run()`** — The simplest path. Render a template and pass
 the result as the prompt:
 
 ```python
@@ -1156,7 +1156,7 @@ agent = FireflyAgent(name="extractor", model="openai:gpt-4o", output_type=dict)
 # Render the template, then feed the result to the agent.
 rendered = extraction_prompt.render(document_text=ocr_output)
 result = await agent.run(rendered)
-print(result.output)  # {"invoice_number": "INV-001", ...}
+print(result.output) # {"invoice_number": "INV-001", ...}
 ```
 
 **Composed prompts → `agent.run()`** — Use a composer when you need to assemble
@@ -1175,9 +1175,9 @@ result = await agent.run(full_prompt)
 ```
 
 **Reasoning patterns use prompts internally** — Every reasoning pattern (Chapter 6)
-has named prompt slots backed by `PromptTemplate` instances.  When a ReAct pattern
+has named prompt slots backed by `PromptTemplate` instances. When a ReAct pattern
 calls `agent.run()`, it first renders its `"thought"` template, passes the result
-to the agent, and records the output in the trace.  You can override any slot:
+to the agent, and records the output in the trace. You can override any slot:
 
 ```python
 from fireflyframework_genai.reasoning import ReActPattern
@@ -1232,11 +1232,11 @@ extraction_v2 = PromptTemplate(
     "idp_extraction",
     "You are an expert invoice parser. Extract structured data from the text below.\n\n"
     "Required fields:\n"
-    "  invoice_number: string (format: INV-NNNN)\n"
-    "  vendor_name: string\n"
-    "  total_amount: float\n"
-    "  due_date: string (ISO 8601)\n"
-    "  line_items: list of {description: str, quantity: int, unit_price: float}\n\n"
+    " invoice_number: string (format: INV-NNNN)\n"
+    " vendor_name: string\n"
+    " total_amount: float\n"
+    " due_date: string (ISO 8601)\n"
+    " line_items: list of {description: str, quantity: int, unit_price: float}\n\n"
     "Example output:\n"
     '{"invoice_number": "INV-0001", "vendor_name": "Example", "total_amount": 100.0, '
     '"due_date": "2026-01-01", "line_items": [{"description": "Widget", "quantity": 2, '
@@ -1249,7 +1249,7 @@ prompt_registry.register(extraction_v1)
 prompt_registry.register(extraction_v2)
 
 # In production, select the version based on experiment configuration
-template = prompt_registry.get("idp_extraction")  # Returns v2 (latest)
+template = prompt_registry.get("idp_extraction") # Returns v2 (latest)
 prompt = template.render(document_text=ocr_output)
 ```
 
@@ -1262,29 +1262,29 @@ prompt = template.render(document_text=ocr_output)
 ## Chapter 6: Reasoning Patterns
 
 Here's a hard truth about LLMs: if you throw a complex question at an agent in a
-single prompt, you're gambling.  Sometimes the model nails it; sometimes it
-hallucinated half the answer.  **Reasoning patterns** fix that by giving the agent a
+single prompt, you're gambling. Sometimes the model nails it; sometimes it
+hallucinated half the answer. **Reasoning patterns** fix that by giving the agent a
 structured way to *think before it answers* — loops of thinking, acting, observing,
 and reflecting, each step recorded so you can see exactly what happened.
 
 The framework ships six patterns out of the box (ReAct, Chain of Thought,
-Plan-and-Execute, Reflexion, Tree of Thoughts, Goal Decomposition).  Each one is a
+Plan-and-Execute, Reflexion, Tree of Thoughts, Goal Decomposition). Each one is a
 different strategy for the same problem: how do you turn "figure this out" into a
 repeatable, observable, debuggable process?
 
 ### The Architecture
 
-All patterns share the same core engine.  `AbstractReasoningPattern` implements the
+All patterns share the same core engine. `AbstractReasoningPattern` implements the
 **Template Method** design pattern: the base class runs the outer loop (step counting,
 trace recording, max-steps enforcement, optional output review), and each concrete
 pattern overrides five hooks that define its behaviour:
 
 ```
-_reason(state)        → Generate a thought ("what do I think?")
-_act(state)           → Perform an action ("what should I do?")
-_observe(state, act)  → Process the action's result ("what happened?")
-_should_continue()    → Decide whether to loop again ("am I done?")
-_extract_output()     → Produce the final answer ("what's the result?")
+_reason(state) → Generate a thought ("what do I think?")
+_act(state) → Perform an action ("what should I do?")
+_observe(state, act) → Process the action's result ("what happened?")
+_should_continue() → Decide whether to loop again ("am I done?")
+_extract_output() → Produce the final answer ("what's the result?")
 ```
 
 Here is how all the pieces fit together:
@@ -1325,8 +1325,8 @@ graph TD
 
 ### How Reasoning Patterns Use Agent Tools
 
-An important thing to understand: **reasoning patterns don't manage tools**.  They
-manage *thinking*.  When a pattern needs to interact with the outside world (search a
+An important thing to understand: **reasoning patterns don't manage tools**. They
+manage *thinking*. When a pattern needs to interact with the outside world (search a
 database, call an API, do math), it delegates to `agent.run()` — and the agent's
 configured Pydantic AI tools handle the rest.
 
@@ -1345,7 +1345,7 @@ async def vendor_lookup(vendor_name: str) -> str:
 
 @firefly_tool(name="calculate", description="Evaluate a math expression safely")
 async def calculate(expression: str) -> str:
-    return str(eval(expression))  # simplified
+    return str(eval(expression)) # simplified
 
 # ── Step 2: Group tools in a ToolKit and bridge to Pydantic AI ───────────
 # ToolKit.as_pydantic_tools() converts framework BaseTool instances into
@@ -1364,7 +1364,7 @@ from fireflyframework_genai.agents import FireflyAgent
 extractor = FireflyAgent(
     name="extractor",
     model="openai:gpt-4o",
-    tools=extraction_tools.as_pydantic_tools(),  # Bridge: Firefly → Pydantic AI
+    tools=extraction_tools.as_pydantic_tools(), # Bridge: Firefly → Pydantic AI
 )
 
 # ── Step 4: Pass the tool-equipped agent to a reasoning pattern ─────────
@@ -1388,25 +1388,25 @@ for all three approaches.
 You may wonder: *"If `@firefly_tool` already registers a tool in the global
 `ToolRegistry`, why doesn't every agent automatically see every tool?"*
 
-This is by design.  The framework has **two separate layers** with different purposes:
+This is by design. The framework has **two separate layers** with different purposes:
 
 1. **`ToolRegistry` (discovery layer)** — A global catalog of all tools in the system.
    Used for admin dashboards, documentation generation, plugin discovery, and pipeline
-   wiring.  Think of it as a phone book: it lists everything that exists.
+   wiring. Think of it as a phone book: it lists everything that exists.
 
 2. **Agent tool binding (execution layer)** — The specific set of tools an agent can
-   invoke during an LLM run.  Only tools explicitly passed via `FireflyAgent(tools=[])`
+   invoke during an LLM run. Only tools explicitly passed via `FireflyAgent(tools=[])`
    or `agent.tool()` are available to the model.
 
 **Why explicit binding?**
 
 - **Security** — An agent that processes user input should not have access to
-  `ShellTool` or `delete_record`.  Implicit auto-injection of all registered tools
+  `ShellTool` or `delete_record`. Implicit auto-injection of all registered tools
   would create a dangerous attack surface.
 - **Predictability** — When you read an agent definition, you can see *exactly* which
-  tools it can call.  No surprises from a plugin that registered a tool at import time.
+  tools it can call. No surprises from a plugin that registered a tool at import time.
 - **Cost control** — Each tool in a Pydantic AI agent's tool list adds tokens to the
-  system prompt.  Injecting 50 tools when an agent only needs 3 wastes tokens and
+  system prompt. Injecting 50 tools when an agent only needs 3 wastes tokens and
   confuses the model.
 - **Principle of least privilege** — Each agent gets the minimum set of tools required
   for its task, not the maximum set available.
@@ -1432,9 +1432,9 @@ extractor = FireflyAgent(
 
 ### Memory in Reasoning Patterns
 
-Reasoning patterns can also access the framework's memory system.  When you pass a
+Reasoning patterns can also access the framework's memory system. When you pass a
 `MemoryManager` via the `memory` keyword argument, it becomes available in the
-pattern's internal state as `state["memory"]`.  This lets pattern hooks read and write
+pattern's internal state as `state["memory"]`. This lets pattern hooks read and write
 working memory during iterations:
 
 ```python
@@ -1451,7 +1451,7 @@ pattern = PlanAndExecutePattern(max_steps=15)
 result = await pattern.execute(
     extractor_agent,
     "Extract invoice fields from the OCR text.",
-    memory=memory,  # Available as state["memory"] in _reason(), _act(), etc.
+    memory=memory, # Available as state["memory"] in _reason(), _act(), etc.
 )
 ```
 
@@ -1460,9 +1460,9 @@ In pipelines, this happens automatically — `ReasoningStep` passes
 
 ### Structured Output Models
 
-Patterns use typed Pydantic models instead of raw text.  This is a big deal: instead
+Patterns use typed Pydantic models instead of raw text. This is a big deal: instead
 of parsing free-form strings for magic words like "FINISH", the model returns structured
-objects with explicit fields.  No more fragile regex parsing:
+objects with explicit fields. No more fragile regex parsing:
 
 ```python
 from fireflyframework_genai.reasoning.models import (
@@ -1694,14 +1694,14 @@ reasoning_registry.register("verify_and_correct", VerifyAndCorrectPattern)
 
 ### IDP Tie-In: Extraction with Plan-and-Execute + Reflexion
 
-Now let's put reasoning patterns to work in our invoice pipeline.  In Chapter 4
+Now let's put reasoning patterns to work in our invoice pipeline. In Chapter 4
 we defined IDP tools (`ocr_extract`, `vendor_lookup`) and grouped them into
-`extraction_kit`.  We also created `extractor_agent` with those tools attached
-via `extraction_kit.as_pydantic_tools()`.  Here we pass that agent — tools and
+`extraction_kit`. We also created `extractor_agent` with those tools attached
+via `extraction_kit.as_pydantic_tools()`. Here we pass that agent — tools and
 all — to reasoning patterns.
 
 The extraction phase is the hardest part — we need to find invoice numbers,
-vendor names, amounts, and line items from messy OCR text.  A single-shot prompt
+vendor names, amounts, and line items from messy OCR text. A single-shot prompt
 might miss something, so we use **Plan-and-Execute** to break it into steps, and
 **Reflexion** as a safety net when validation catches errors:
 
@@ -1710,9 +1710,9 @@ from fireflyframework_genai.reasoning import PlanAndExecutePattern, ReflexionPat
 
 # ── Recall from Chapter 4 ───────────────────────────────────────────
 # extractor_agent = FireflyAgent(
-#     name="extractor",
-#     model="openai:gpt-4o",
-#     tools=extraction_kit.as_pydantic_tools(),  # ocr_extract, vendor_lookup, CalculatorTool
+# name="extractor",
+# model="openai:gpt-4o",
+# tools=extraction_kit.as_pydantic_tools(), # ocr_extract, vendor_lookup, CalculatorTool
 # )
 # The tools are already bound — reasoning patterns call agent.run() internally,
 # so the agent can invoke any of its tools during each reasoning step.
@@ -1720,10 +1720,10 @@ from fireflyframework_genai.reasoning import PlanAndExecutePattern, ReflexionPat
 
 # Phase 3: Systematic extraction.
 # Plan-and-Execute generates a plan ("find invoice number", "find vendor", ...)
-# and executes each step with status tracking.  If a step fails, it can replan.
+# and executes each step with status tracking. If a step fails, it can replan.
 extraction_pattern = PlanAndExecutePattern(max_steps=15, allow_replan=True)
 extraction_result = await extraction_pattern.execute(
-    extractor_agent,  # Tools already attached in Ch4 via ToolKit.as_pydantic_tools()
+    extractor_agent, # Tools already attached in Ch4 via ToolKit.as_pydantic_tools()
     f"Extract invoice fields from:\n{ocr_text}",
 )
 
@@ -1737,8 +1737,8 @@ if not validation_passed:
     )
 ```
 
-> **Architecture recap:** Reasoning patterns never see tools directly.  They receive
-> an agent (which owns its tools) and call `agent.run()`.  This is why tools must be
+> **Architecture recap:** Reasoning patterns never see tools directly. They receive
+> an agent (which owns its tools) and call `agent.run()`. This is why tools must be
 > bound to the agent *before* passing it to a pattern — see the "Attaching Tools to
 > Agents" section in Chapter 4 and the full `idp/tools.py` module in Chapter 20.
 
@@ -1748,18 +1748,18 @@ if not validation_passed:
 
 Here's a problem you'll hit fast: your 50-page invoice PDF produces OCR text that is
 200,000 tokens long — but your model's context window is 128K, and you're paying per
-token.  You can't just shove the entire document into one call.
+token. You can't just shove the entire document into one call.
 
 The Content module solves this with a three-stage pipeline:
 
 1. **Chunk** — Split oversized content into overlapping pieces that each fit within a
-   token budget.  `TextChunker` handles text (by token, sentence, or paragraph),
+   token budget. `TextChunker` handles text (by token, sentence, or paragraph),
    `DocumentSplitter` handles multi-page documents, and `ImageTiler` handles large
    images.
 2. **Process** — Send chunks through an agent concurrently via `BatchProcessor`.
    This is where you do per-chunk OCR cleanup, translation, or summarisation.
 3. **Compress** — Merge the results back into a single context that fits the
-   downstream agent's window.  `ContextCompressor` supports three strategies:
+   downstream agent's window. `ContextCompressor` supports three strategies:
    truncation (cheap, lossy), summarisation (LLM-based, preserves meaning), and
    map-reduce (chunk → summarise each → merge).
 
@@ -1812,8 +1812,8 @@ graph LR
 from fireflyframework_genai.content.chunking import TextChunker
 
 chunker = TextChunker(
-    chunk_size=4000,      # Max tokens per chunk
-    chunk_overlap=200,    # Overlap between consecutive chunks
+    chunk_size=4000, # Max tokens per chunk
+    chunk_overlap=200, # Overlap between consecutive chunks
     strategy="paragraph", # "token" | "sentence" | "paragraph"
 )
 
@@ -1920,7 +1920,7 @@ from fireflyframework_genai.content.compression import SlidingWindowManager
 window = SlidingWindowManager(max_tokens=8000)
 window.add("First OCR page output...")
 window.add("Second OCR page output...")
-current_context = window.get_context()  # Only recent items that fit
+current_context = window.get_context() # Only recent items that fit
 ```
 
 ### Token Estimator
@@ -1930,7 +1930,7 @@ Estimate token counts without an API call:
 ```python
 from fireflyframework_genai.content.compression import TokenEstimator
 
-estimator = TokenEstimator()  # Default ratio: 1.33 tokens per word
+estimator = TokenEstimator() # Default ratio: 1.33 tokens per word
 tokens = estimator.estimate("This is a test sentence.")
 ```
 
@@ -1965,9 +1965,9 @@ compressed_text = await compressor.compress(full_text, max_tokens=8000)
 
 Without memory, every `agent.run()` call starts from scratch — the agent has no idea
 what happened in the previous turn, what the pipeline figured out two steps ago, or
-what facts a delegated sub-agent discovered.  That's fine for one-shot tasks, but
+what facts a delegated sub-agent discovered. That's fine for one-shot tasks, but
 real applications need context: multi-turn conversations, session state, pipeline
-variables.  The Memory module gives your agents a brain that persists across calls.
+variables. The Memory module gives your agents a brain that persists across calls.
 
 There are two kinds of memory here:
 - **Conversation memory** — the actual chat history ("what was said"), automatically
@@ -2017,12 +2017,12 @@ graph TD
 
 The system has four layers:
 
-1. **ConversationMemory** — Token-aware, per-conversation chat history.  Wraps
+1. **ConversationMemory** — Token-aware, per-conversation chat history. Wraps
    Pydantic AI's `message_history` and drops the oldest turns when you exceed budget.
 2. **WorkingMemory** — Scoped key-value scratchpad for facts and intermediate state.
 3. **MemoryStore** — Pluggable persistence (`InMemoryStore`, `FileStore`, or yours).
 4. **MemoryManager** — Facade that composes conversation + working memory behind a
-   single API.  This is the object you wire into agents, pipelines, and patterns.
+   single API. This is the object you wire into agents, pipelines, and patterns.
 
 ### Quick Start
 
@@ -2037,7 +2037,7 @@ from fireflyframework_genai.memory import MemoryManager
 # When the history exceeds this, the oldest turns get dropped automatically.
 memory = MemoryManager(max_conversation_tokens=32_000)
 
-# Wire the memory into the agent.  From now on, every run() call
+# Wire the memory into the agent. From now on, every run() call
 # can participate in a persistent conversation.
 agent = FireflyAgent(name="assistant", model="openai:gpt-4o", memory=memory)
 
@@ -2089,8 +2089,8 @@ wm = WorkingMemory(scope_id="idp-session-42")
 wm.set("doc_type", "invoice")
 wm.set("vendor", "Acme Corp")
 
-print(wm.get("doc_type"))  # "invoice"
-print(wm.to_dict())        # {"doc_type": "invoice", "vendor": "Acme Corp"}
+print(wm.get("doc_type")) # "invoice"
+print(wm.to_dict()) # {"doc_type": "invoice", "vendor": "Acme Corp"}
 
 # Render as a context block for prompt injection
 print(wm.to_context_string())
@@ -2111,7 +2111,7 @@ agent_b_mem = WorkingMemory(store=store, scope_id="agent_b")
 
 agent_a_mem.set("key", "from A")
 agent_b_mem.set("key", "from B")
-assert agent_a_mem.get("key") == "from A"  # Isolated
+assert agent_a_mem.get("key") == "from A" # Isolated
 ```
 
 ### Storage Backends
@@ -2169,7 +2169,7 @@ history = mgr.get_message_history(cid)
 
 # Working memory
 mgr.set_fact("doc_type", "invoice")
-mgr.get_fact("doc_type")  # "invoice"
+mgr.get_fact("doc_type") # "invoice"
 ```
 
 ### Forking
@@ -2185,14 +2185,14 @@ mgr.set_fact("session_id", "abc-123")
 # Fork for a sub-agent — it gets its own working memory scope
 # but can still read the same conversation history.
 child = mgr.fork(working_scope_id="sub-agent-classify")
-child.set_fact("classification", "invoice")  # Only visible in child
-assert mgr.get_fact("classification") is None  # Parent is unaffected
-assert child.get_fact("session_id") is None     # Child has its own scope
+child.set_fact("classification", "invoice") # Only visible in child
+assert mgr.get_fact("classification") is None # Parent is unaffected
+assert child.get_fact("session_id") is None # Child has its own scope
 ```
 
 ### Memory Integration Points
 
-Memory flows through the framework in four ways.  Understanding these is key to
+Memory flows through the framework in four ways. Understanding these is key to
 building applications where context is never lost:
 
 **1. Agent integration** — When `FireflyAgent` has a `MemoryManager` attached,
@@ -2206,10 +2206,10 @@ scope while sharing conversation context.
 
 **3. Pipeline integration** — When you create `PipelineContext(memory=mgr)`,
 both `AgentStep` and `ReasoningStep` propagate the memory to the agent and
-pattern respectively.  Facts stored in one step are readable in subsequent steps.
+pattern respectively. Facts stored in one step are readable in subsequent steps.
 
 **4. Reasoning integration** — Pass `memory=mgr` as a keyword argument to
-`pattern.execute(agent, input, memory=mgr)`.  The memory object becomes
+`pattern.execute(agent, input, memory=mgr)`. The memory object becomes
 available as `state["memory"]` inside all pattern hooks (`_reason`, `_act`, etc.),
 so custom patterns can read and write working memory during reasoning iterations.
 
@@ -2226,9 +2226,9 @@ export FIREFLY_GENAI_MEMORY_FILE_DIR=.firefly_memory
 
 ### IDP Tie-In: Carrying Facts Across Pipeline Steps
 
-Now let's see why memory matters for our IDP pipeline.  When the classifier figures
+Now let's see why memory matters for our IDP pipeline. When the classifier figures
 out that a document is an invoice, the extractor needs to know that — it selects
-different prompts for invoices vs. receipts.  Working memory is the bridge:
+different prompts for invoices vs. receipts. Working memory is the bridge:
 
 ```python
 from fireflyframework_genai.memory import MemoryManager
@@ -2246,7 +2246,7 @@ memory.set_fact("page_count", classification["page_count"])
 
 # Phase 3: The extractor reads what the classifier discovered.
 # This works because both steps share the same MemoryManager.
-doc_type = memory.get_fact("doc_type")  # "invoice"
+doc_type = memory.get_fact("doc_type") # "invoice"
 # Now we can pick the invoice-specific extraction prompt.
 ```
 
@@ -2257,22 +2257,22 @@ doc_type = memory.get_fact("doc_type")  # "invoice"
 You've built an agent that extracts invoice data — but how do you *trust* the output?
 LLMs are probabilistic: they can hallucinate an invoice number that doesn't exist,
 format a date as "January 15th" instead of ISO 8601, or return an amount as a string
-instead of a number.  In production, bad data propagates downstream and causes real
+instead of a number. In production, bad data propagates downstream and causes real
 damage.
 
 The Validation module gives you a **two-layer defence**:
 
-- **Layer 1 — Structural validation** catches deterministic errors.  You define rules
+- **Layer 1 — Structural validation** catches deterministic errors. You define rules
   (regex, range, format, enum, or custom functions) for each field, group them into
   an `OutputValidator`, and run them against the extracted dict or Pydantic model.
   This is fast, cheap (no LLM call), and catches the most common failures: wrong
   date formats, out-of-range amounts, invalid invoice number patterns.
 
 - **Layer 2 — Quality of Service (QoS)** catches statistical errors that rules can't
-  see.  `ConfidenceScorer` asks the LLM to self-rate its own output.
+  see. `ConfidenceScorer` asks the LLM to self-rate its own output.
   `ConsistencyChecker` runs the same prompt multiple times and measures agreement —
-  low agreement suggests hallucination.  `GroundingChecker` verifies that extracted
-  values actually appear in the source document (no LLM needed).  `QoSGuard`
+  low agreement suggests hallucination. `GroundingChecker` verifies that extracted
+  values actually appear in the source document (no LLM needed). `QoSGuard`
   composes all three into a single pass/fail gate.
 
 Both layers can be wired into an `OutputReviewer` that wraps an agent call with
@@ -2327,7 +2327,7 @@ assert all(r.passed for r in results)
 
 ### Output Validator
 
-Validates an entire structured output (dict or Pydantic model).  The constructor
+Validates an entire structured output (dict or Pydantic model). The constructor
 takes a dict mapping field names to lists of rules:
 
 ```python
@@ -2345,12 +2345,12 @@ validator = OutputValidator({
 report = validator.validate(extracted_data)
 if not report.valid:
     for err in report.errors:
-        print(f"  {err.field_name}: {err.message}")
+        print(f" {err.field_name}: {err.message}")
 ```
 
 ### Quality of Service (QoS)
 
-The QoS module provides post-generation quality checks.  Each checker requires an
+The QoS module provides post-generation quality checks. Each checker requires an
 agent (for LLM-based evaluation) or operates purely on text (grounding).
 
 #### Confidence Scorer
@@ -2362,7 +2362,7 @@ from fireflyframework_genai.validation.qos import ConfidenceScorer
 
 # The scorer needs an agent — it sends a self-evaluation prompt to the LLM.
 scorer = ConfidenceScorer(evaluator_agent)
-score = await scorer.score("The invoice total is $1,234.56")  # 0.0–1.0
+score = await scorer.score("The invoice total is $1,234.56") # 0.0–1.0
 ```
 
 #### Consistency Checker
@@ -2373,7 +2373,7 @@ outputs (Jaccard similarity):
 ```python
 from fireflyframework_genai.validation.qos import ConsistencyChecker
 
-# The checker needs an agent and a run count.  It runs the prompt num_runs times.
+# The checker needs an agent and a run count. It runs the prompt num_runs times.
 checker = ConsistencyChecker(extractor_agent, num_runs=3)
 score, outputs = await checker.check("What is the capital of France?")
 # score: float (1.0 = all answers agree), outputs: list[str]
@@ -2396,13 +2396,13 @@ score, field_map = checker.check(
     extracted_fields={"total": "$1,234.56", "vendor": "Acme Corp", "id": "INV-999"},
 )
 # score: float (fraction of grounded fields), field_map: dict[str, bool]
-print(f"Grounding: {score:.2f}")           # 0.67 (2 of 3 grounded)
-print(f"Ungrounded: {[k for k, v in field_map.items() if not v]}")  # ["id"]
+print(f"Grounding: {score:.2f}") # 0.67 (2 of 3 grounded)
+print(f"Ungrounded: {[k for k, v in field_map.items() if not v]}") # ["id"]
 ```
 
 #### QoS Guard
 
-Composes all checks into a single gate.  You build the individual checkers and
+Composes all checks into a single gate. You build the individual checkers and
 pass them in:
 
 ```python
@@ -2459,7 +2459,7 @@ result = await reviewer.review(
     agent,
     "Extract invoice data from: Acme Corp, $1,234, 2026-01-15",
 )
-print(result.output)   # InvoiceData(vendor="Acme Corp", amount=1234.0, ...)
+print(result.output) # InvoiceData(vendor="Acme Corp", amount=1234.0, ...)
 print(result.attempts) # 1 if first try succeeded, 2+ if retries needed
 ```
 
@@ -2566,7 +2566,7 @@ lookup), reasoning patterns (Plan-and-Execute, Reflexion), validation rules, and
 Each piece works in isolation — but a real IDP system needs to **wire them together**
 into a single, reliable flow: classify → digitise → extract → validate → assemble.
 
-The Pipeline module does exactly that.  It models your processing flow as a **Directed
+The Pipeline module does exactly that. It models your processing flow as a **Directed
 Acyclic Graph (DAG)** where nodes are processing steps and edges define data flow.
 The engine schedules nodes by topological level — nodes at the same level run
 concurrently — and handles retries, timeouts, and conditional execution automatically.
@@ -2732,11 +2732,11 @@ else:
 
 # Inspect individual nodes
 for node_id, node_result in result.outputs.items():
-    print(f"  {node_id}: {'ok' if node_result.success else 'FAILED'}")
+    print(f" {node_id}: {'ok' if node_result.success else 'FAILED'}")
 
 # Execution trace for observability
 for entry in result.execution_trace:
-    print(f"  [{entry.node_id}] {entry.status} ({entry.duration_ms:.0f} ms)")
+    print(f" [{entry.node_id}] {entry.status} ({entry.duration_ms:.0f} ms)")
 ```
 
 ### Manual DAG Construction
@@ -2817,15 +2817,15 @@ else:
 
 ## Chapter 11: Observability
 
-Your pipeline is running in production, processing thousands of invoices a day.  Then
-latency spikes.  Or accuracy drops.  Or a customer reports a missing field.  Without
+Your pipeline is running in production, processing thousands of invoices a day. Then
+latency spikes. Or accuracy drops. Or a customer reports a missing field. Without
 observability you're flying blind — you have no idea which agent is slow, which tool is
 failing, or how many tokens you're burning.
 
 The Observability module wraps OpenTelemetry and gives you three primitives out of the
 box: **tracing** (distributed spans across agents, tools, and pipeline steps), **metrics**
 (counters, histograms, and gauges for latency, throughput, and token usage), and
-**events** (structured logs for significant occurrences).  When observability is
+**events** (structured logs for significant occurrences). When observability is
 enabled, the framework instruments agent runs automatically — you get spans for free.
 
 ### Tracing
@@ -2917,7 +2917,7 @@ export FIREFLY_GENAI_LOG_LEVEL=DEBUG
 ### Usage Tracking & Cost Estimation
 
 The framework automatically tracks token usage and estimates cost for every agent
-run, reasoning step, and pipeline execution.  `UsageTracker` accumulates
+run, reasoning step, and pipeline execution. `UsageTracker` accumulates
 `UsageRecord` objects with input/output tokens, cost, latency, and model details.
 
 ```python
@@ -2926,8 +2926,8 @@ from fireflyframework_genai.observability import default_usage_tracker
 # After running agents, inspect accumulated usage
 summary = default_usage_tracker.get_summary()
 print(f"Total tokens: {summary.total_tokens}")
-print(f"Total cost:   ${summary.total_cost_usd:.4f}")
-print(f"Requests:     {summary.total_requests}")
+print(f"Total cost: ${summary.total_cost_usd:.4f}")
+print(f"Requests: {summary.total_requests}")
 
 # Filter by agent or pipeline correlation ID
 agent_summary = default_usage_tracker.get_summary_for_agent("extractor")
@@ -2940,7 +2940,7 @@ the optional `genai-prices` library for up-to-date pricing:
 ```python
 from fireflyframework_genai.observability import get_cost_calculator
 
-calc = get_cost_calculator()  # auto-selects best available
+calc = get_cost_calculator() # auto-selects best available
 cost = calc.estimate("openai:gpt-4o", input_tokens=1000, output_tokens=500)
 ```
 
@@ -2994,9 +2994,9 @@ async def process_document(document_bytes: bytes) -> dict:
 ## Chapter 12: Explainability
 
 In regulated industries — finance, healthcare, legal — "the model said so" is not an
-acceptable answer.  Auditors, compliance officers, and customers need to see **why** the
+acceptable answer. Auditors, compliance officers, and customers need to see **why** the
 agent classified a document as an invoice, **why** it chose one vendor name over
-another, and **what** alternatives it considered.  The Explainability module provides
+another, and **what** alternatives it considered. The Explainability module provides
 four building blocks: a **trace recorder** that captures every decision, an
 **explanation generator** that turns raw records into natural-language narratives, a
 tamper-evident **audit trail**, and a **report builder** that compiles everything into
@@ -3119,10 +3119,10 @@ print(report.build_markdown())
 
 ## Chapter 13: Experiments
 
-You've built a working extraction agent — but is GPT-4o the right model?  Would
-Claude give better results?  What about lowering the temperature from 0.5 to 0.1?
+You've built a working extraction agent — but is GPT-4o the right model? Would
+Claude give better results? What about lowering the temperature from 0.5 to 0.1?
 Answering these questions by hand (run each variant, eyeball the output, repeat) doesn't
-scale.  The Experiments module gives you a structured way to **define variants**,
+scale. The Experiments module gives you a structured way to **define variants**,
 **run them against the same inputs**, **collect metrics** (latency, token usage, output
 length), and **compare results** — all in a few lines of code.
 
@@ -3207,8 +3207,8 @@ print(VariantComparator().summary(results))
 
 The Experiments module helps you compare *variants* — but sometimes you just need a
 sandbox to poke at an agent interactively, run quick benchmarks, compare side-by-side
-outputs, or evaluate accuracy against a labelled dataset.  The Lab module is that
-sandbox.  It provides interactive sessions (REPL-like), benchmarking helpers, model
+outputs, or evaluate accuracy against a labelled dataset. The Lab module is that
+sandbox. It provides interactive sessions (REPL-like), benchmarking helpers, model
 comparison tables, evaluation datasets, and pluggable scorers — everything you need to
 iterate on agent quality before going to production.
 
@@ -3261,7 +3261,7 @@ entries = await comparison.compare({
 })
 for entry in entries:
     for agent_name, response in entry.responses.items():
-        print(f"  {agent_name}: {response}")
+        print(f" {agent_name}: {response}")
 ```
 
 ### Datasets
@@ -3322,8 +3322,8 @@ print(f"Extraction accuracy: {report.avg_score:.1%}")
 ## Chapter 15: Exposure: REST API
 
 Your agents work, your pipeline passes validation, your experiments prove which model is
-best.  Now you need to put it all behind an HTTP endpoint so other services (or a UI)
-can call it.  The Exposure REST module gives you a one-liner FastAPI application factory
+best. Now you need to put it all behind an HTTP endpoint so other services (or a UI)
+can call it. The Exposure REST module gives you a one-liner FastAPI application factory
 that auto-generates endpoints for every agent in the `AgentRegistry` — including
 streaming via Server-Sent Events, health probes, CORS, and correlation-ID propagation.
 You can also add custom endpoints for pipelines.
@@ -3437,7 +3437,7 @@ async def process_document(file: UploadFile):
 
 REST is great for synchronous request/response, but many production systems are
 **event-driven**: documents arrive on a Kafka topic, processing results go back on
-another topic, and nothing blocks.  The Queues module gives you both sides of that
+another topic, and nothing blocks. The Queues module gives you both sides of that
 coin — **consumers** that listen for incoming messages and route them to agents, and
 **producers** that publish agent results back to the broker.
 
@@ -3480,7 +3480,7 @@ uv add "fireflyframework-genai[redis]"
 ### Consumers
 
 Consumers listen on a topic/queue/channel and route each incoming message to a
-registered agent.  They run continuously — think of them as your agent's "inbox".
+registered agent. They run continuously — think of them as your agent's "inbox".
 
 #### Kafka Consumer
 
@@ -3493,9 +3493,9 @@ consumer = KafkaAgentConsumer(
     agent_name="document_classifier",
     topic="idp-incoming-documents",
     bootstrap_servers="localhost:9092",
-    group_id="idp-workers",  # Kafka consumer group for load balancing
+    group_id="idp-workers", # Kafka consumer group for load balancing
 )
-await consumer.start()  # Blocks and processes messages until stopped
+await consumer.start() # Blocks and processes messages until stopped
 ```
 
 #### RabbitMQ Consumer
@@ -3527,7 +3527,7 @@ await consumer.start()
 ### Producers
 
 Producers are the other half — they publish messages (typically agent results) back
-to the broker.  Each producer satisfies the `QueueProducer` protocol.
+to the broker. Each producer satisfies the `QueueProducer` protocol.
 
 #### Kafka Producer
 
@@ -3663,8 +3663,8 @@ agent automatically.
 
 ### IDP Tie-In: Processing Documents from Kafka
 
-In our IDP system, documents arrive on a Kafka topic.  The consumer classifies them
-and routes to specialised extractors.  Results go back on a results topic for
+In our IDP system, documents arrive on a Kafka topic. The consumer classifies them
+and routes to specialised extractors. Results go back on a results topic for
 downstream systems to pick up:
 
 ```python
@@ -3703,12 +3703,12 @@ await consumer.start()
 
 ## Chapter 17: Template Agents
 
-By now you've written several agents from scratch — classifier, extractor, OCR.  Each
-time you had to think about the system prompt, output type, and registration.  But many
+By now you've written several agents from scratch — classifier, extractor, OCR. Each
+time you had to think about the system prompt, output type, and registration. But many
 agent patterns are universal: *summarise text*, *classify into categories*, *extract
-structured data*, *hold a conversation*, *route to sub-agents*.  The framework ships
+structured data*, *hold a conversation*, *route to sub-agents*. The framework ships
 five **template agents** as factory functions that encode best practices for each
-pattern.  You provide the domain-specific bits (categories, schemas, personality), and
+pattern. You provide the domain-specific bits (categories, schemas, personality), and
 the factory handles prompt engineering, output typing, and registry registration.
 
 ### Summarizer
@@ -3717,9 +3717,9 @@ the factory handles prompt engineering, output typing, and registry registration
 from fireflyframework_genai.agents.templates import create_summarizer_agent
 
 agent = create_summarizer_agent(
-    max_length="short",        # concise | short | medium | detailed
-    style="technical",         # professional | casual | technical | academic
-    output_format="bullets",   # paragraph | bullets | numbered
+    max_length="short", # concise | short | medium | detailed
+    style="technical", # professional | casual | technical | academic
+    output_format="bullets", # paragraph | bullets | numbered
     model="openai:gpt-4o",
 )
 result = await agent.run("Long invoice description text here...")
@@ -3858,11 +3858,11 @@ extractor_agent = create_extractor_agent(
 
 ## Chapter 18: Multi-Agent Delegation
 
-Not every document is an invoice.  Your IDP system might receive receipts, contracts,
+Not every document is an invoice. Your IDP system might receive receipts, contracts,
 and forms — each requiring a specialised agent with different prompts, tools, and
-validation rules.  Instead of building one mega-agent that tries to do everything,
+validation rules. Instead of building one mega-agent that tries to do everything,
 you build **specialised agents** and let a **delegation router** decide which one
-handles each request.  The router picks an agent based on a **strategy** (round-robin
+handles each request. The router picks an agent based on a **strategy** (round-robin
 for load balancing, capability-based for expertise matching), delegates the work, and
 optionally **forks memory** so the sub-agent gets its own working-memory scope.
 
@@ -3974,9 +3974,9 @@ router = DelegationRouter(
 ## Chapter 19: Plugin System
 
 As your application grows, you'll want to share agents, tools, and reasoning patterns
-across projects — or let third-party teams contribute their own.  The Plugin module
+across projects — or let third-party teams contribute their own. The Plugin module
 uses Python's standard **entry-point** mechanism so that any installed package can
-register components that are discovered and loaded automatically at startup.  No manual
+register components that are discovered and loaded automatically at startup. No manual
 imports, no central configuration file — just install the package and go.
 
 ### Discovering Plugins
@@ -4038,8 +4038,8 @@ agents automatically.
 
 ## Chapter 20: Putting It All Together
 
-You've learned every module in fireflyframework-genai, each in isolation.  Now it's time
-to see how they all fit together in a single, production-grade application.  The diagram
+You've learned every module in fireflyframework-genai, each in isolation. Now it's time
+to see how they all fit together in a single, production-grade application. The diagram
 below shows the full system architecture — every layer, every connection:
 
 ### Full System Architecture
@@ -4113,7 +4113,7 @@ graph TB
     CFG -.-> FA & PIPE & MEM & OBS
 ```
 
-Let's assemble the complete IDP pipeline using everything we've learned.  This is the
+Let's assemble the complete IDP pipeline using everything we've learned. This is the
 full, production-ready implementation.
 
 ### Project Structure
@@ -4123,17 +4123,17 @@ idp-service/
 ├── pyproject.toml
 ├── .env
 ├── prompts/
-│   ├── classification.jinja2
-│   └── extraction.jinja2
+│ ├── classification.jinja2
+│ └── extraction.jinja2
 ├── src/
-│   └── idp_service/
-│       ├── __init__.py
-│       ├── agents.py          # Agent definitions
-│       ├── tools.py           # Tool definitions
-│       ├── pipeline.py        # Pipeline wiring
-│       ├── validation.py      # Validation rules
-│       ├── app.py             # REST application
-│       └── consumers.py       # Queue consumers
+│ └── idp_service/
+│ ├── __init__.py
+│ ├── agents.py # Agent definitions
+│ ├── tools.py # Tool definitions
+│ ├── pipeline.py # Pipeline wiring
+│ ├── validation.py # Validation rules
+│ ├── app.py # REST application
+│ └── consumers.py # Queue consumers
 └── tests/
     └── test_pipeline.py
 ```
@@ -4207,7 +4207,7 @@ extractor_agent = create_extractor_agent(
     },
     name="field_extractor",
     model="openai:gpt-4o",
-    tools=extraction_kit.as_pydantic_tools(),  # Bridge Firefly tools → Pydantic AI
+    tools=extraction_kit.as_pydantic_tools(), # Bridge Firefly tools → Pydantic AI
 )
 ```
 

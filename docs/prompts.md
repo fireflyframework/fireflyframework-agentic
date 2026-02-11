@@ -72,7 +72,7 @@ registry = PromptRegistry()
 registry.register(template_v1)
 registry.register(template_v2)
 
-latest = registry.get("greeting")            # Returns v2
+latest = registry.get("greeting") # Returns v2
 specific = registry.get("greeting", "1.0.0") # Returns v1
 ```
 

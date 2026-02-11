@@ -1,24 +1,24 @@
 [![CI](https://github.com/fireflyframework/fireflyframework-genai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fireflyframework/fireflyframework-genai/actions/workflows/ci.yml)
 
 ```
-  _____.__                _____.__                                   
-_/ ____\__|______   _____/ ____\  | ___.__.                          
-\   __\|  \_  __ \_/ __ \   __\|  |<   |  |                          
- |  |  |  ||  | \/\  ___/|  |  |  |_\___  |                          
- |__|  |__||__|    \___  >__|  |____/ ____|                          
-                       \/           \/                               
-  _____                                                 __     /\    
-_/ ____\___________    _____   ______  _  _____________|  | __ \ \   
-\   __\\_  __ \__  \  /     \_/ __ \ \/ \/ /  _ \_  __ \  |/ /  \ \  
- |  |   |  | \// __ \|  Y Y  \  ___/\     (  <_> )  | \/    <    \ \ 
- |__|   |__|  (____  /__|_|  /\___  >\/\_/ \____/|__|  |__|_ \    \ \
-                   \/      \/     \/                        \/     \/
-  ________                  _____  .__                               
- /  _____/  ____   ____    /  _  \ |__|                              
-/   \  ____/ __ \ /    \  /  /_\  \|  |                              
-\    \_\  \  ___/|   |  \/    |    \  |                              
- \______  /\___  >___|  /\____|__  /__|                              
-        \/     \/     \/         \/                                  
+  _____.__ _____.__
+_/ ____\__|______ _____/ ____\ | ___.__.
+\ __\| \_ __ \_/ __ \ __\| |< | |
+ | | | || | \/\ ___/| | | |_\___ |
+ |__| |__||__| \___ >__| |____/ ____|
+                       \/ \/
+  _____ __ /\
+_/ ____\___________ _____ ______ _ _____________| | __ \ \
+\ __\\_ __ \__ \ / \_/ __ \ \/ \/ / _ \_ __ \ |/ / \ \
+ | | | | \// __ \| Y Y \ ___/\ ( <_> ) | \/ < \ \
+ |__| |__| (____ /__|_| /\___ >\/\_/ \____/|__| |__|_ \ \ \
+                   \/ \/ \/ \/ \/
+  ________ _____ .__
+ / _____/ ____ ____ / _ \ |__|
+/ \ ____/ __ \ / \ / /_\ \| |
+\ \_\ \ ___/| | \/ | \ |
+ \______ /\___ >___| /\____|__ /__|
+        \/ \/ \/ \/
 ```
 
 # fireflyframework-genai
@@ -58,8 +58,8 @@ Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License
 ## Why fireflyframework-genai?
 
 [Pydantic AI](https://ai.pydantic.dev/) provides an excellent foundation: type-safe,
-model-agnostic agents with structured output.  But a production GenAI system demands
-far more than a single agent call.  You need to orchestrate multi-step reasoning,
+model-agnostic agents with structured output. But a production GenAI system demands
+far more than a single agent call. You need to orchestrate multi-step reasoning,
 validate and retry LLM outputs against schemas, manage conversation memory across
 turns, observe every call with traces and metrics, run A/B experiments to compare
 models, and expose the whole thing over REST or message queues — all without coupling
@@ -85,7 +85,7 @@ You write your business logic; the framework provides the architecture.
 ## Key Principles
 
 1. **Protocol-driven contracts** — Every extension point is defined as a
-   `@runtime_checkable` `Protocol` or abstract base class.  The framework ships eleven
+   `@runtime_checkable` `Protocol` or abstract base class. The framework ships eleven
    protocols (`AgentLike`, `ToolProtocol`, `GuardProtocol`, `ReasoningPattern`,
    `DelegationStrategy`, `StepExecutor`, `CompressionStrategy`, `MemoryStore`,
    `ValidationRule`, `Chunker`, `QueueConsumer` / `QueueProducer`) so you can swap or
@@ -93,7 +93,7 @@ You write your business logic; the framework provides the architecture.
 
 2. **Convention over configuration** — Sensible defaults everywhere.
    `FireflyGenAIConfig` is a Pydantic Settings singleton that reads from environment
-   variables prefixed with `FIREFLY_GENAI_` and `.env` files.  One config object
+   variables prefixed with `FIREFLY_GENAI_` and `.env` files. One config object
    governs model defaults, retry counts, token limits, observability endpoints,
    memory backends, and validation thresholds — override only what you need.
 
@@ -104,7 +104,7 @@ You write your business logic; the framework provides the architecture.
 
 4. **Optional dependencies** — Heavy libraries (`fastapi`, `aiokafka`, `aio-pika`,
    `redis`) are declared as pip extras (`[rest]`, `[kafka]`, `[rabbitmq]`, `[redis]`,
-   `[all]`).  The core framework imports them lazily inside factory functions so that
+   `[all]`). The core framework imports them lazily inside factory functions so that
    you install only what your deployment requires.
 
 ---
@@ -175,7 +175,7 @@ graph TD
 
 ### Protocol Hierarchy
 
-Every extension point is a `@runtime_checkable` protocol.  Implement the protocol to
+Every extension point is a `@runtime_checkable` protocol. Implement the protocol to
 create your own components; the framework discovers them via duck typing.
 
 ```mermaid
@@ -275,27 +275,27 @@ classDiagram
 ## Feature Highlights
 
 - **Agents** — `FireflyAgent` wraps `pydantic_ai.Agent` with metadata, lifecycle hooks,
-  and automatic registration.  `AgentRegistry` provides singleton name-based discovery.
+  and automatic registration. `AgentRegistry` provides singleton name-based discovery.
   `DelegationRouter` routes prompts across agent pools via `RoundRobinStrategy` or
-  `CapabilityStrategy`.  The `@firefly_agent` decorator defines an agent in one
-  statement.  Five template factories (`create_summarizer_agent`,
+  `CapabilityStrategy`. The `@firefly_agent` decorator defines an agent in one
+  statement. Five template factories (`create_summarizer_agent`,
   `create_classifier_agent`, `create_extractor_agent`, `create_conversational_agent`,
   `create_router_agent`) cover common use cases out of the box.
 
 - **Tools** — `ToolProtocol` (duck-typed) and `BaseTool` (inheritance) let you choose
-  your extensibility style.  `ToolBuilder` provides a fluent API for building tools
-  without subclassing.  Five guard types (`ValidationGuard`, `RateLimitGuard`,
+  your extensibility style. `ToolBuilder` provides a fluent API for building tools
+  without subclassing. Five guard types (`ValidationGuard`, `RateLimitGuard`,
   `ApprovalGuard`, `SandboxGuard`, `CompositeGuard`) intercept calls before execution.
   Three composition patterns (`SequentialComposer`, `FallbackComposer`,
-  `ConditionalComposer`) build higher-order tools.  `ToolKit` groups tools for
-  bulk registration.  Nine built-in tools (calculator, datetime, filesystem, HTTP,
+  `ConditionalComposer`) build higher-order tools. `ToolKit` groups tools for
+  bulk registration. Nine built-in tools (calculator, datetime, filesystem, HTTP,
   JSON, search, shell, text, database) are ready to attach to any agent.
 
 - **Prompts** — `PromptTemplate` renders Jinja2 templates with variable validation
-  and token estimation.  `PromptRegistry` maps names to versioned templates.
+  and token estimation. `PromptRegistry` maps names to versioned templates.
   Three composers (`SequentialComposer`, `ConditionalComposer`, `MergeComposer`)
-  combine templates at render time.  `PromptValidator` enforces token limits and
-  required sections.  `PromptLoader` loads templates from strings, files, or
+  combine templates at render time. `PromptValidator` enforces token limits and
+  required sections. `PromptLoader` loads templates from strings, files, or
   entire directories.
 
 - **Reasoning** — Six pluggable patterns implement `AbstractReasoningPattern`'s
@@ -304,74 +304,74 @@ classDiagram
   **Plan-and-Execute** (goal → plan → steps with optional replanning),
   **Reflexion** (execute → critique → retry), **Tree of Thoughts** (branch →
   evaluate → select), and **Goal Decomposition** (goal → phases → tasks).
-  All produce structured `ReasoningResult` with `ReasoningTrace`.  Prompts are
-  slot-overridable.  `OutputReviewer` can validate final outputs.  `ReasoningPipeline`
+  All produce structured `ReasoningResult` with `ReasoningTrace`. Prompts are
+  slot-overridable. `OutputReviewer` can validate final outputs. `ReasoningPipeline`
   chains patterns sequentially.
 
 - **Content** — `TextChunker` splits by tokens, sentences, or paragraphs with
-  configurable overlap.  `DocumentSplitter` detects page breaks and section
-  separators.  `ImageTiler` computes tile coordinates for VLM processing.
+  configurable overlap. `DocumentSplitter` detects page breaks and section
+  separators. `ImageTiler` computes tile coordinates for VLM processing.
   `BatchProcessor` runs chunks through an agent concurrently with a semaphore.
   `ContextCompressor` delegates to pluggable strategies (`TruncationStrategy`,
-  `SummarizationStrategy`, `MapReduceStrategy`).  `SlidingWindowManager` maintains
+  `SummarizationStrategy`, `MapReduceStrategy`). `SlidingWindowManager` maintains
   a rolling token-budgeted context window.
 
 - **Memory** — `ConversationMemory` stores per-conversation turn history with
-  token-budget enforcement (newest-first FIFO eviction).  `WorkingMemory` provides
+  token-budget enforcement (newest-first FIFO eviction). `WorkingMemory` provides
   a scoped key-value scratchpad backed by `MemoryStore` (`InMemoryStore` or
-  `FileStore`).  `MemoryManager` composes both behind a unified API and supports
+  `FileStore`). `MemoryManager` composes both behind a unified API and supports
   `fork()` for isolating working memory in delegated agents or pipeline branches
   while sharing conversation context.
 
 - **Validation** — Five composable rules (`RegexRule`, `FormatRule`, `RangeRule`,
   `EnumRule`, `CustomRule`) feed into `FieldValidator` and `OutputValidator`.
   `OutputReviewer` wraps agent calls with parse-then-validate retry logic: on
-  failure it builds a feedback prompt and retries up to N times.  QoS guards
+  failure it builds a feedback prompt and retries up to N times. QoS guards
   (`ConfidenceScorer`, `ConsistencyChecker`, `GroundingChecker`) detect
   hallucinations and low-quality extractions before they propagate downstream.
 
 - **Pipeline** — `DAG` holds `DAGNode` and `DAGEdge` objects with cycle detection
-  and topological sort.  `PipelineEngine` executes nodes level-by-level via
+  and topological sort. `PipelineEngine` executes nodes level-by-level via
   `asyncio.gather` for maximum concurrency, with per-node condition gates, retries,
-  and timeouts.  `PipelineBuilder` offers a fluent API (`add_node` / `add_edge` /
-  `chain`).  Five step types (`AgentStep`, `ReasoningStep`, `CallableStep`,
+  and timeouts. `PipelineBuilder` offers a fluent API (`add_node` / `add_edge` /
+  `chain`). Five step types (`AgentStep`, `ReasoningStep`, `CallableStep`,
   `FanOutStep`, `FanInStep`) adapt agents, patterns, and functions to DAG nodes.
 
 - **Observability** — `FireflyTracer` creates OpenTelemetry spans scoped to agents,
-  tools, and reasoning steps.  `FireflyMetrics` records tokens (total, prompt,
+  tools, and reasoning steps. `FireflyMetrics` records tokens (total, prompt,
   completion), latency, cost, errors, and reasoning depth via the OTel metrics API.
-  `FireflyEvents` emits structured log records.  `@traced` and `@metered` decorators
-  instrument any function with one line.  `configure_exporters` sets up OTLP or
-  console exporters.  `UsageTracker` automatically records token usage, cost
+  `FireflyEvents` emits structured log records. `@traced` and `@metered` decorators
+  instrument any function with one line. `configure_exporters` sets up OTLP or
+  console exporters. `UsageTracker` automatically records token usage, cost
   estimates, and latency for every agent run, reasoning step, and pipeline
-  execution.  `CostCalculator` supports a built-in static price table and optional
-  `genai-prices` integration.  Budget enforcement logs warnings when configurable
+  execution. `CostCalculator` supports a built-in static price table and optional
+  `genai-prices` integration. Budget enforcement logs warnings when configurable
   thresholds are exceeded.
 
 - **Explainability** — `TraceRecorder` captures every LLM call, tool invocation,
-  and reasoning step as `DecisionRecord` objects.  `ExplanationGenerator` turns
-  records into human-readable narratives.  `AuditTrail` provides an append-only,
-  immutable log with JSON export for compliance.  `ReportBuilder` produces
+  and reasoning step as `DecisionRecord` objects. `ExplanationGenerator` turns
+  records into human-readable narratives. `AuditTrail` provides an append-only,
+  immutable log with JSON export for compliance. `ReportBuilder` produces
   Markdown and JSON reports with statistics.
 
 - **Experiments** — `Experiment` defines variants with model, temperature, and
-  prompt overrides.  `ExperimentRunner` executes all variants against a dataset.
+  prompt overrides. `ExperimentRunner` executes all variants against a dataset.
   `ExperimentTracker` persists results with optional JSON export.
   `VariantComparator` computes latency, output length, and comparison summaries.
 
 - **Lab** — `LabSession` manages interactive agent sessions with history.
   `Benchmark` runs agents against standardised inputs and reports p95 latency.
   `EvalOrchestrator` scores agent outputs with pluggable `Scorer` functions.
-  `EvalDataset` loads/saves test cases from JSON.  `ModelComparison` runs the
+  `EvalDataset` loads/saves test cases from JSON. `ModelComparison` runs the
   same prompts across multiple agents for side-by-side analysis.
 
 - **Exposure** — `create_genai_app()` produces a FastAPI application with
   auto-generated `POST /agents/{name}/run` endpoints, SSE streaming via
   `sse_stream`, health/readiness/liveness checks, CORS and request-ID middleware,
-  and multimodal input support.  Queue consumers (`KafkaAgentConsumer`,
+  and multimodal input support. Queue consumers (`KafkaAgentConsumer`,
   `RabbitMQAgentConsumer`, `RedisAgentConsumer`) route messages to agents.
   Queue producers (`KafkaAgentProducer`, `RabbitMQAgentProducer`,
-  `RedisAgentProducer`) publish results back.  `QueueRouter` provides
+  `RedisAgentProducer`) publish results back. `QueueRouter` provides
   pattern-based message routing across agents.
 
 ---
@@ -449,7 +449,7 @@ curl -fsSL https://raw.githubusercontent.com/fireflyframework/fireflyframework-g
 ```bash
 git clone https://github.com/fireflyframework/fireflyframework-genai.git
 cd fireflyframework-genai
-uv sync --all-extras    # or: pip install -e ".[all]"
+uv sync --all-extras # or: pip install -e ".[all]"
 ```
 
 ### Optional Extras
@@ -568,7 +568,7 @@ class Answer(BaseModel):
 
 reviewer = OutputReviewer(output_type=Answer, max_retries=2)
 result = await reviewer.review(agent, "What is 2+2?")
-print(result.output)  # Answer(answer="4", confidence=0.99)
+print(result.output) # Answer(answer="4", confidence=0.99)
 ```
 
 ### 7. Wire a Pipeline
@@ -627,10 +627,10 @@ Since the framework is async-first, use `await` directly in notebook cells
 ```bash
 # From your clone directory
 cd fireflyframework-genai
-source .venv/bin/activate     # activate the venv created by the installer
-pip install ipykernel          # install Jupyter kernel support
+source .venv/bin/activate # activate the venv created by the installer
+pip install ipykernel # install Jupyter kernel support
 python -m ipykernel install --user --name fireflygenai --display-name "Firefly GenAI"
-jupyter lab                    # or: jupyter notebook
+jupyter lab # or: jupyter notebook
 ```
 
 Then select the **Firefly GenAI** kernel when creating a new notebook.
@@ -640,7 +640,7 @@ Then select the **Firefly GenAI** kernel when creating a new notebook.
 ```python
 # Cell 1 — configure
 import os
-os.environ["OPENAI_API_KEY"] = "sk-..."    # or set in .env
+os.environ["OPENAI_API_KEY"] = "sk-..." # or set in .env
 os.environ["FIREFLY_GENAI_DEFAULT_MODEL"] = "openai:gpt-4o"
 ```
 
@@ -665,7 +665,7 @@ result = await agent_with_mem.run("My name is Alice.", conversation_id=cid)
 print(result.output)
 
 result = await agent_with_mem.run("What is my name?", conversation_id=cid)
-print(result.output)  # Alice
+print(result.output) # Alice
 ```
 
 ```python
@@ -689,7 +689,7 @@ class Summary(BaseModel):
 
 reviewer = OutputReviewer(output_type=Summary, max_retries=2)
 result = await reviewer.review(agent, "Summarize the benefits of async Python.")
-result.output  # displays the structured Summary object in the notebook
+result.output # displays the structured Summary object in the notebook
 ```
 
 > **Tip:** You do not need `asyncio.run()` or `nest_asyncio` in Jupyter — `await`
@@ -743,9 +743,9 @@ uv sync --all-extras
 ```
 
 ```bash
-uv run pytest                    # Run 367+ tests
-uv run ruff check src/ tests/   # Lint
-uv run pyright src/              # Type check
+uv run pytest # Run 367+ tests
+uv run ruff check src/ tests/ # Lint
+uv run pyright src/ # Type check
 ```
 
 **Dev dependencies** (installed with `uv sync`):

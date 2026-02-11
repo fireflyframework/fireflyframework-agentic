@@ -43,9 +43,9 @@ Summarizes text and documents with tuneable length, style, and output format.
 from fireflyframework_genai.agents.templates import create_summarizer_agent
 
 agent = create_summarizer_agent(
-    max_length="short",        # concise | short | medium | detailed
-    style="technical",         # professional | casual | technical | academic
-    output_format="bullets",   # paragraph | bullets | numbered
+    max_length="short", # concise | short | medium | detailed
+    style="technical", # professional | casual | technical | academic
+    output_format="bullets", # paragraph | bullets | numbered
     model="openai:gpt-4o",
 )
 result = await agent.run("Long document text here...")
@@ -98,7 +98,7 @@ from fireflyframework_genai.agents.templates.classifier import ClassificationRes
 
 class ClassificationResult(BaseModel):
     category: str
-    confidence: float  # 0.0 – 1.0
+    confidence: float # 0.0 – 1.0
     reasoning: str
 ```
 
@@ -210,7 +210,7 @@ from fireflyframework_genai.agents.templates.router import RoutingDecision
 
 class RoutingDecision(BaseModel):
     target_agent: str
-    confidence: float  # 0.0 – 1.0
+    confidence: float # 0.0 – 1.0
     reasoning: str
 ```
 

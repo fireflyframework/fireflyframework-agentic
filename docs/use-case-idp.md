@@ -135,7 +135,7 @@ from fireflyframework_genai.validation import OutputReviewer, OutputValidator
 from fireflyframework_genai.validation.rules import RegexRule, FormatRule, EnumRule
 
 extractor_agent = create_extractor_agent(
-    CorporateDocumentData,  # Pydantic model
+    CorporateDocumentData, # Pydantic model
     name="idp_extractor",
     model="openai:gpt-4o",
 )
@@ -317,7 +317,7 @@ if result.success:
     print(f"Nodes executed: {len(result.execution_trace)}")
     print(f"Total duration: {result.total_duration_ms}ms")
     for entry in result.execution_trace:
-        print(f"  {entry.node_id}: {entry.status} ({entry.duration_ms}ms)")
+        print(f" {entry.node_id}: {entry.status} ({entry.duration_ms}ms)")
 else:
     print(f"Pipeline failed at: {result.failed_nodes}")
 ```

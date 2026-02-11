@@ -197,7 +197,7 @@ from fireflyframework_genai.tools.builtins import DateTimeTool, CalculatorTool
 agent = FireflyAgent(
     name="assistant",
     model="openai:gpt-4o",
-    tools=[DateTimeTool(), CalculatorTool()],  # auto-converted
+    tools=[DateTimeTool(), CalculatorTool()], # auto-converted
 )
 ```
 
@@ -229,8 +229,8 @@ http_tool = HttpTool()
 
 # Make requests
 response = await http_tool.run("GET", "https://api.example.com/data")
-print(response["status"])    # 200
-print(response["body"])      # Response text
+print(response["status"]) # 200
+print(response["body"]) # Response text
 ```
 
 ### Connection Pooling
@@ -242,10 +242,10 @@ latency and improving throughput:
 from fireflyframework_genai.tools.builtins import HttpTool
 
 http_tool = HttpTool(
-    use_pool=True,              # Enable connection pooling (default: True)
-    pool_size=100,              # Max concurrent connections (default: 100)
-    pool_max_keepalive=20,      # Max keepalive connections (default: 20)
-    timeout=30.0,               # Request timeout in seconds
+    use_pool=True, # Enable connection pooling (default: True)
+    pool_size=100, # Max concurrent connections (default: 100)
+    pool_max_keepalive=20, # Max keepalive connections (default: 20)
+    timeout=30.0, # Request timeout in seconds
 )
 ```
 
@@ -277,7 +277,7 @@ with `asyncio.to_thread()` for non-blocking I/O:
 
 ```python
 # Works even without httpx installed
-http_tool = HttpTool(use_pool=False)  # Forces urllib
+http_tool = HttpTool(use_pool=False) # Forces urllib
 ```
 
 ### Performance Comparison
@@ -314,7 +314,7 @@ http_tool = HttpTool(use_pool=True)
 try:
     response = await http_tool.run("GET", "https://api.example.com")
 finally:
-    await http_tool.close()  # Release connection pool
+    await http_tool.close() # Release connection pool
 ```
 
 Or use as an async context manager:

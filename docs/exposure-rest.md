@@ -248,9 +248,9 @@ sequenceDiagram
 **Server → Client** (JSON, one or more):
 
 ```json
-{"type": "token",   "data": "partial text..."}
-{"type": "result",  "data": "full output", "success": true}
-{"type": "error",   "data": "error message", "success": false}
+{"type": "token", "data": "partial text..."}
+{"type": "result", "data": "full output", "success": true}
+{"type": "error", "data": "error message", "success": false}
 ```
 
 If no `conversation_id` is provided, the server generates one and sends it
@@ -266,7 +266,7 @@ between concurrent sessions.
 The agent router includes CRUD endpoints for managing conversations:
 
 - **POST /agents/conversations** — Create a new conversation. Returns
-  `{"conversation_id": "..."}`. 
+  `{"conversation_id": "..."}`.
 - **GET /agents/conversations/{conversation_id}** — Return the message history
   with `conversation_id`, `message_count`, and serialised `messages`.
 - **DELETE /agents/conversations/{conversation_id}** — Clear a conversation's

@@ -147,15 +147,15 @@ pipeline = (
     .add_node("load", lambda ctx, inp: ["Review 1", "Review 2", "Review 3"])
     .add_node("classify", BatchLLMStep(
         classifier,
-        prompts_key="load",      # Get prompts from "load" step output
-        batch_size=10,           # Process up to 10 concurrently
+        prompts_key="load", # Get prompts from "load" step output
+        batch_size=10, # Process up to 10 concurrently
     ))
     .add_edge("load", "classify")
     .build()
 )
 
 result = await pipeline.run(inputs={})
-classifications = result.outputs["classify"].output  # List of results
+classifications = result.outputs["classify"].output # List of results
 ```
 
 ### Parameters
@@ -182,7 +182,7 @@ This allows flexible data flow in pipelines:
 ```python
 # Pattern 1: From previous step
 async def load_documents(context, inputs):
-    return ["Doc 1", "Doc 2", "Doc 3"]  # Returns list directly
+    return ["Doc 1", "Doc 2", "Doc 3"] # Returns list directly
 
 builder.add_node("load", load_documents)
 builder.add_node("classify", BatchLLMStep(agent, prompts_key="load"))
@@ -207,7 +207,7 @@ classifier = FireflyAgent(
     model="anthropic:claude-haiku-4",
     instructions="Classify documents...",
     middleware=[
-        PromptCacheMiddleware(),                       # Cache system prompt
+        PromptCacheMiddleware(), # Cache system prompt
         CircuitBreakerMiddleware(failure_threshold=5), # Protect against failures
     ],
 )

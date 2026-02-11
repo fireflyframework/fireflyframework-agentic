@@ -99,7 +99,7 @@ graph TD
 
 ### Protocol & Class Hierarchy
 
-Every extension point is a `@runtime_checkable` protocol.  Implement the protocol to
+Every extension point is a `@runtime_checkable` protocol. Implement the protocol to
 provide your own components; the framework discovers them via duck typing.
 
 ```mermaid
@@ -358,7 +358,7 @@ sequenceDiagram
 ### Pipeline Execution Flow
 
 When agents are orchestrated through a `DAG` pipeline, `PipelineEngine` executes
-nodes level-by-level.  Each node wraps a `StepExecutor` implementation.
+nodes level-by-level. Each node wraps a `StepExecutor` implementation.
 
 ```mermaid
 sequenceDiagram

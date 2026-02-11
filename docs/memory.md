@@ -77,7 +77,7 @@ conv_mem.add_turn(
     cid,
     user_prompt="Hello",
     assistant_response="Hi there!",
-    raw_messages=result.new_messages(),  # pydantic-ai ModelMessage list
+    raw_messages=result.new_messages(), # pydantic-ai ModelMessage list
 )
 
 # Before the next run, get the trimmed history
@@ -153,8 +153,8 @@ wm = WorkingMemory(scope_id="idp-session-42")
 wm.set("doc_type", "invoice")
 wm.set("vendor", "Acme Corp")
 
-print(wm.get("doc_type"))  # "invoice"
-print(wm.to_dict())        # {"doc_type": "invoice", "vendor": "Acme Corp"}
+print(wm.get("doc_type")) # "invoice"
+print(wm.to_dict()) # {"doc_type": "invoice", "vendor": "Acme Corp"}
 
 # Render as a text block for prompt injection
 print(wm.to_context_string())
@@ -396,7 +396,7 @@ history = mgr.get_message_history(cid)
 
 # Working memory
 mgr.set_fact("doc_type", "invoice")
-mgr.get_fact("doc_type")  # "invoice"
+mgr.get_fact("doc_type") # "invoice"
 ```
 
 ### Forking
@@ -469,7 +469,7 @@ Pass `conversation_id` in the request body for multi-turn conversations:
 Memory settings are configured via environment variables:
 
 ```bash
-export FIREFLY_GENAI_MEMORY_BACKEND=in_memory        # or "file"
+export FIREFLY_GENAI_MEMORY_BACKEND=in_memory # or "file"
 export FIREFLY_GENAI_MEMORY_MAX_CONVERSATION_TOKENS=128000
 export FIREFLY_GENAI_MEMORY_SUMMARIZE_THRESHOLD=10
 export FIREFLY_GENAI_MEMORY_FILE_DIR=.firefly_memory
