@@ -85,7 +85,7 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://fireflyframework.com/"
+Homepage = "https://fireflyframework.org/"
 Documentation = "https://github.com/fireflyframework/fireflyframework-genai/tree/main/docs"
 Repository = "https://github.com/fireflyframework/fireflyframework-genai"
 Issues = "https://github.com/fireflyframework/fireflyframework-genai/issues"
