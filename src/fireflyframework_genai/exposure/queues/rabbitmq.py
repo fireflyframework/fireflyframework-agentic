@@ -21,7 +21,7 @@ Requires the ``aio-pika`` optional dependency (install via
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from fireflyframework_genai.exposure.queues.base import BaseQueueConsumer, QueueMessage
 
@@ -142,7 +142,7 @@ class RabbitMQAgentProducer:
         )
         amqp_message = aio_pika.Message(
             body=message.body.encode("utf-8"),
-            headers=message.headers or None,
+            headers=cast("dict[str, Any]", message.headers) or None,
             reply_to=message.reply_to or None,
         )
         await exchange.publish(amqp_message, routing_key=message.routing_key)
