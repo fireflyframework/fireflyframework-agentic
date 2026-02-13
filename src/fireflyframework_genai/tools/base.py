@@ -52,6 +52,8 @@ _TYPE_MAP: dict[str, type] = {
     "number": float,
     "bool": bool,
     "boolean": bool,
+    "list": list,
+    "dict": dict,
 }
 
 
