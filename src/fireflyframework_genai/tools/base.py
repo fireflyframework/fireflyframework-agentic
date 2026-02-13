@@ -30,16 +30,29 @@ Users who prefer inheritance can subclass :class:`BaseTool` and override
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from typing import Any, Protocol, runtime_checkable
+from typing import Annotated, Any, Protocol, runtime_checkable
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from fireflyframework_genai.exceptions import ToolError, ToolTimeoutError
 
 logger = logging.getLogger(__name__)
+
+# Mapping from ParameterSpec.type_annotation strings to Python types.
+_TYPE_MAP: dict[str, type] = {
+    "str": str,
+    "string": str,
+    "int": int,
+    "integer": int,
+    "float": float,
+    "number": float,
+    "bool": bool,
+    "boolean": bool,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -208,12 +221,18 @@ class BaseTool(ABC):
     def pydantic_handler(self) -> Any:
         """Return a callable suitable for :class:`pydantic_ai.Tool`.
 
-        By default this returns :meth:`execute`.  Subclasses that wrap a
-        typed handler (e.g. decorated tools) should override this to
-        return a wrapper preserving the original function's signature so
-        that Pydantic AI can generate correct JSON schemas for the LLM.
+        When :attr:`parameters` is non-empty, builds a wrapper whose
+        signature mirrors the declared :class:`ParameterSpec` entries so
+        that Pydantic AI can generate a correct JSON schema for the LLM.
+
+        Subclasses that wrap a typed handler (e.g. decorated tools) may
+        override this to return a wrapper preserving the original
+        function's signature instead.
         """
-        return self.execute
+        if not self._parameters:
+            return self.execute
+
+        return _build_typed_handler(self)
 
     @abstractmethod
     async def _execute(self, **kwargs: Any) -> Any:
@@ -233,3 +252,53 @@ class BaseTool(ABC):
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(name={self._name!r})"
+
+
+# ---------------------------------------------------------------------------
+# Typed handler builder
+# ---------------------------------------------------------------------------
+
+
+def _build_typed_handler(tool: BaseTool) -> Any:
+    """Create a wrapper with a proper signature from *tool.parameters*.
+
+    Pydantic AI introspects the handler's signature to build a JSON schema
+    for the LLM.  The default ``execute(**kwargs)`` gives an empty schema.
+    This helper constructs a wrapper whose ``inspect.Signature`` and
+    ``__annotations__`` reflect the declared :class:`ParameterSpec` entries,
+    so the LLM receives correct parameter names, types, and descriptions.
+    """
+    params: list[inspect.Parameter] = []
+    annotations: dict[str, Any] = {}
+
+    for spec in tool.parameters:
+        py_type = _TYPE_MAP.get(spec.type_annotation, str)
+        annotated_type = Annotated[py_type, Field(description=spec.description)]  # type: ignore[valid-type]
+
+        if spec.required:
+            param = inspect.Parameter(
+                spec.name,
+                inspect.Parameter.KEYWORD_ONLY,
+                annotation=annotated_type,
+            )
+        else:
+            param = inspect.Parameter(
+                spec.name,
+                inspect.Parameter.KEYWORD_ONLY,
+                default=spec.default,
+                annotation=annotated_type,
+            )
+        params.append(param)
+        annotations[spec.name] = annotated_type
+
+    sig = inspect.Signature(params)
+
+    async def handler(**kwargs: Any) -> Any:
+        return await tool.execute(**kwargs)
+
+    handler.__signature__ = sig  # type: ignore[attr-defined]
+    handler.__annotations__ = annotations
+    handler.__name__ = tool.name
+    handler.__qualname__ = tool.name
+    handler.__doc__ = tool.description
+    return handler

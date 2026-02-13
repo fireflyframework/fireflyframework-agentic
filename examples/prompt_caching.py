@@ -89,7 +89,7 @@ async def demo_without_caching():
     agent = FireflyAgent(
         "legal-no-cache",
         model=os.getenv("MODEL", "anthropic:claude-3-5-sonnet-20241022"),
-        system_prompt=LEGAL_ASSISTANT_PROMPT,
+        instructions=LEGAL_ASSISTANT_PROMPT,
         auto_register=False,
         # No caching middleware
     )
@@ -129,7 +129,7 @@ async def demo_with_caching():
     agent = FireflyAgent(
         "legal-cached",
         model=os.getenv("MODEL", "anthropic:claude-3-5-sonnet-20241022"),
-        system_prompt=LEGAL_ASSISTANT_PROMPT,
+        instructions=LEGAL_ASSISTANT_PROMPT,
         middleware=[
             PromptCacheMiddleware(
                 cache_system_prompt=True,
@@ -316,7 +316,7 @@ async def main():
     print("  agent = FireflyAgent(")
     print("      'assistant',")
     print("      model='anthropic:claude-3-5-sonnet-20241022',")
-    print("      system_prompt=long_system_prompt,  # Will be cached")
+    print("      instructions=long_system_prompt,  # Will be cached")
     print("      middleware=[PromptCacheMiddleware()],")
     print("  )")
     print()

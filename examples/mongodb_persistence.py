@@ -83,7 +83,7 @@ async def main() -> None:
         name="mongodb_assistant",
         model="openai:gpt-4o-mini",
         description="An assistant with MongoDB-backed memory",
-        memory_manager=memory,
+        memory=memory,
     )
 
     # Start a conversation
@@ -96,7 +96,7 @@ async def main() -> None:
         "I'm working on a machine learning project using PyTorch. Please remember this.",
         conversation_id=conversation_id,
     )
-    print(f"Agent: {result.data}")
+    print(f"Agent: {result.output}")
 
     # Store structured data in working memory
     memory.set_fact(
@@ -117,7 +117,7 @@ async def main() -> None:
         "What framework am I using for my ML project?",
         conversation_id=conversation_id,
     )
-    print(f"Agent: {result.data}")
+    print(f"Agent: {result.output}")
 
     # Retrieve structured data from working memory
     print("\n--- Working memory (from MongoDB) ---")
@@ -142,7 +142,7 @@ async def main() -> None:
         "This is a completely different conversation about travel plans.",
         conversation_id=conversation_2,
     )
-    print(f"Conversation 2 - Agent: {result.data}")
+    print(f"Conversation 2 - Agent: {result.output}")
 
     history_1 = memory.get_message_history(conversation_id)
     history_2 = memory.get_message_history(conversation_2)
@@ -159,7 +159,7 @@ async def main() -> None:
         name="mongodb_assistant",
         model="openai:gpt-4o-mini",
         description="Restarted agent with same memory",
-        memory_manager=new_memory,
+        memory=new_memory,
     )
 
     # All data is still available!
@@ -178,7 +178,7 @@ async def main() -> None:
         "Remind me what I told you about my project.",
         conversation_id=conversation_id,
     )
-    print(f"Agent: {result.data}")
+    print(f"Agent: {result.output}")
 
     # Cleanup: remove expired entries
     print("\n--- Maintenance: Cleanup expired entries ---")

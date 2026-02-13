@@ -94,9 +94,9 @@ async def agent_service_a() -> str:
 
         # Service A calls Service B via HTTP
         print("\n→ Service A calling Service B via HTTP...")
-        await simulate_http_request("http://service-b/process", result.data)
+        await simulate_http_request("http://service-b/process", result.output)
 
-        return result.data
+        return result.output
 
 
 async def agent_service_b(incoming_headers: dict[str, str], prompt: str) -> str:
@@ -121,9 +121,9 @@ async def agent_service_b(incoming_headers: dict[str, str], prompt: str) -> str:
 
         # Service B calls Service C
         print("\n→ Service B calling Service C via HTTP...")
-        await simulate_http_request("http://service-c/finalize", result.data)
+        await simulate_http_request("http://service-c/finalize", result.output)
 
-        return result.data
+        return result.output
 
 
 async def agent_service_c(incoming_headers: dict[str, str], prompt: str) -> str:
@@ -146,7 +146,7 @@ async def agent_service_c(incoming_headers: dict[str, str], prompt: str) -> str:
     with trace_context_scope(span_context), default_tracer.agent_span("service_c", model="gpt-4o-mini"):
         result = await agent.run(f"Add a surprising plot twist to this story: {prompt}")
 
-        return result.data
+        return result.output
 
 
 async def main() -> None:

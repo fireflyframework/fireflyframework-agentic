@@ -250,7 +250,7 @@ async def demonstrate_production_pattern():
             # 2. Make API request
             print("  → Making API call...")
             result = await agent.run(prompt)
-            print(f"  ✓ Response: {result.data[:50]}...")
+            print(f"  ✓ Response: {result.output[:50]}...")
 
             # 3. Record successful request
             quota.record_request(agent.model, cost_usd=0.008, success=True)

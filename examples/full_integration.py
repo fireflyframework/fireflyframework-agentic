@@ -83,7 +83,7 @@ async def demo_full_stack_agent():
     agent = FireflyAgent(
         "production-assistant",
         model=os.getenv("MODEL", "openai:gpt-4o-mini"),
-        system_prompt="""You are a helpful AI assistant for a production application.
+        instructions="""You are a helpful AI assistant for a production application.
 
         You provide accurate, helpful responses while maintaining conversation context.
         You are cost-effective, resilient, and secure."""
@@ -173,7 +173,7 @@ async def demo_pipeline_with_batch():
     classifier = FireflyAgent(
         "classifier",
         model=os.getenv("MODEL", "openai:gpt-4o-mini"),
-        system_prompt="Classify sentiment as: positive, negative, or neutral.",
+        instructions="Classify sentiment as: positive, negative, or neutral.",
         memory=memory,
         middleware=[
             LoggingMiddleware(),

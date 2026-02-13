@@ -83,7 +83,7 @@ async def main() -> None:
         name="postgres_assistant",
         model="openai:gpt-4o-mini",
         description="An assistant with PostgreSQL-backed memory",
-        memory_manager=memory,
+        memory=memory,
     )
 
     # Start a conversation
@@ -96,7 +96,7 @@ async def main() -> None:
         "Remember that my favorite color is blue and I live in San Francisco.",
         conversation_id=conversation_id,
     )
-    print(f"Agent: {result.data}")
+    print(f"Agent: {result.output}")
 
     # Store a fact in working memory (persisted to PostgreSQL)
     memory.set_fact("user_name", "Alice")
@@ -109,7 +109,7 @@ async def main() -> None:
         "What's my favorite color and where do I live?",
         conversation_id=conversation_id,
     )
-    print(f"Agent: {result.data}")
+    print(f"Agent: {result.output}")
 
     # Retrieve facts from working memory
     print("\n--- Working memory (from PostgreSQL) ---")
@@ -132,7 +132,7 @@ async def main() -> None:
         name="postgres_assistant",
         model="openai:gpt-4o-mini",
         description="Restarted agent with same memory",
-        memory_manager=new_memory,
+        memory=new_memory,
     )
 
     # The conversation history and facts are still available!
@@ -151,7 +151,7 @@ async def main() -> None:
         "What do you remember about me?",
         conversation_id=conversation_id,
     )
-    print(f"Agent: {result.data}")
+    print(f"Agent: {result.output}")
 
     # Cleanup: remove expired entries
     print("\n--- Maintenance: Cleanup expired entries ---")

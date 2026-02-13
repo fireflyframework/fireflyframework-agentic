@@ -50,7 +50,7 @@ async def demo_basic_batch_processing():
     agent = FireflyAgent(
         "classifier",
         model=os.getenv("MODEL", "openai:gpt-4o-mini"),
-        system_prompt="You are a sentiment classifier. Respond with only: positive, negative, or neutral.",
+        instructions="You are a sentiment classifier. Respond with only: positive, negative, or neutral.",
         auto_register=False,
     )
 
@@ -96,7 +96,7 @@ async def demo_large_scale_batch():
     agent = FireflyAgent(
         "summarizer",
         model=os.getenv("MODEL", "openai:gpt-4o-mini"),
-        system_prompt="Summarize the following in 10 words or less.",
+        instructions="Summarize the following in 10 words or less.",
         auto_register=False,
     )
 
@@ -141,7 +141,7 @@ async def demo_batch_with_callback():
     agent = FireflyAgent(
         "extractor",
         model=os.getenv("MODEL", "openai:gpt-4o-mini"),
-        system_prompt="Extract the main keyword from the text. Respond with just the keyword.",
+        instructions="Extract the main keyword from the text. Respond with just the keyword.",
         auto_register=False,
     )
 
@@ -191,7 +191,7 @@ async def demo_batch_in_pipeline():
     classifier_agent = FireflyAgent(
         "topic-classifier",
         model=os.getenv("MODEL", "openai:gpt-4o-mini"),
-        system_prompt="Classify the topic. Respond with: technology, business, or other.",
+        instructions="Classify the topic. Respond with: technology, business, or other.",
         auto_register=False,
     )
 
@@ -258,7 +258,7 @@ async def demo_cost_comparison():
     agent = FireflyAgent(
         "cost-test",
         model="openai:gpt-4o-mini",
-        system_prompt="Say 'done'",
+        instructions="Say 'done'",
         auto_register=False,
     )
 
