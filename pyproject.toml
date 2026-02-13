@@ -1,6 +1,6 @@
 [project]
 name = "fireflyframework-genai"
-version = "26.02.01"
+version = "26.02.05"
 description = "A GenAI metaframework built on Pydantic AI for building production-grade GenAI applications with agents, reasoning patterns, prompt engineering, observability, and more."
 readme = "README.md"
 license = { text = "Apache-2.0" }
