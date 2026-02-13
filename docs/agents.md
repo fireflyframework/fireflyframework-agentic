@@ -451,11 +451,32 @@ arbitrary `metadata` dict for sharing state between `before_run` and `after_run`
 `before_run` hooks execute in order; `after_run` hooks execute in **reverse**
 order (LIFO).
 
+### Built-in Middleware: RetryMiddleware
+
+`RetryMiddleware` injects rate limit retry configuration into the middleware
+context. It is auto-wired by default alongside `LoggingMiddleware`.
+
+```python
+from fireflyframework_genai.agents.builtin_middleware import RetryMiddleware
+
+# Custom retry settings
+agent = FireflyAgent(
+    name="high-retry",
+    model="openai:gpt-4o",
+    middleware=[RetryMiddleware(max_retries=5, base_delay=2.0, max_delay=120.0)],
+)
+```
+
+The retry is applied inside `FireflyAgent.run()` — see
+[Automatic Rate Limit Retry](observability.md#automatic-rate-limit-retry) for
+full details on how 429 errors are handled.
+
 ### Auto-Wired Default Middleware
 
-By default, every `FireflyAgent` is auto-wired with a `LoggingMiddleware`
-instance prepended to the middleware chain. This provides structured logging
-for every execution path without any explicit configuration.
+By default, every `FireflyAgent` is auto-wired with `LoggingMiddleware` and
+`RetryMiddleware` prepended to the middleware chain. This provides structured
+logging and transparent rate limit retry for every execution path without any
+explicit configuration.
 
 Disable auto-wiring by passing `default_middleware=False`:
 

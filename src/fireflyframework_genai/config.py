@@ -165,7 +165,7 @@ class FireflyGenAIConfig(BaseSettings):
     are evicted when this limit is reached (FIFO)."""
 
     # -- Quota & Rate Limiting -----------------------------------------------
-    quota_enabled: bool = False
+    quota_enabled: bool = True
     """Whether API quota management and rate limiting is active."""
 
     quota_budget_daily_usd: float | None = None
@@ -177,6 +177,15 @@ class FireflyGenAIConfig(BaseSettings):
 
     quota_adaptive_backoff: bool = True
     """Whether to use adaptive exponential backoff for 429 (rate limit) responses."""
+
+    rate_limit_max_retries: int = 3
+    """Max retry attempts for HTTP 429 rate limit errors."""
+
+    rate_limit_base_delay: float = 1.0
+    """Base delay (seconds) for rate limit exponential backoff."""
+
+    rate_limit_max_delay: float = 60.0
+    """Maximum delay (seconds) between rate limit retries."""
 
     # -- Security (RBAC & Encryption) ----------------------------------------
     rbac_enabled: bool = False
