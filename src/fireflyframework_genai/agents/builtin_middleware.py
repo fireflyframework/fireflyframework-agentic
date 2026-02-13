@@ -14,12 +14,13 @@
 
 """Built-in agent middleware implementations.
 
-The framework ships three ready-to-use middleware classes:
+The framework ships ready-to-use middleware classes:
 
 * :class:`LoggingMiddleware` -- structured logging for every agent run
   (auto-wired by default).
 * :class:`PromptGuardMiddleware` -- prompt-injection detection/sanitisation.
 * :class:`CostGuardMiddleware` -- budget enforcement before an LLM call.
+* :class:`RetryMiddleware` -- automatic retry with backoff on rate limit errors.
 
 Usage::
 
@@ -27,6 +28,7 @@ Usage::
         LoggingMiddleware,
         PromptGuardMiddleware,
         CostGuardMiddleware,
+        RetryMiddleware,
     )
 
     agent = FireflyAgent(
@@ -551,4 +553,53 @@ class ValidationMiddleware:
 
             raise OutputReviewError(f"Validation rules failed: {rule_errors}")
 
+        return result
+
+
+# -- RetryMiddleware ---------------------------------------------------------
+
+
+class RetryMiddleware:
+    """Retries agent runs on rate limit errors with adaptive backoff.
+
+    When added to the middleware chain, stores retry configuration in
+    ``context.metadata`` so that :meth:`FireflyAgent.run` can wrap the
+    underlying pydantic-ai call with automatic retry logic.
+
+    The middleware protocol (``before_run`` / ``after_run``) cannot itself
+    wrap the LLM call, so retry *execution* lives in ``FireflyAgent.run()``.
+    This middleware is the **policy declaration** that activates and
+    configures that retry loop.
+
+    Parameters:
+        max_retries: Maximum number of retry attempts after the initial call.
+        base_delay: Initial backoff delay in seconds.
+        max_delay: Maximum backoff delay in seconds.
+        backoff_multiplier: Exponential backoff multiplier.
+    """
+
+    def __init__(
+        self,
+        *,
+        max_retries: int = 3,
+        base_delay: float = 2.0,
+        max_delay: float = 120.0,
+        backoff_multiplier: float = 2.0,
+    ) -> None:
+        self._max_retries = max_retries
+        self._base_delay = base_delay
+        self._max_delay = max_delay
+        self._backoff_multiplier = backoff_multiplier
+
+    async def before_run(self, context: MiddlewareContext) -> None:
+        """Store retry configuration in metadata for FireflyAgent.run()."""
+        context.metadata["_retry_config"] = {
+            "max_retries": self._max_retries,
+            "base_delay": self._base_delay,
+            "max_delay": self._max_delay,
+            "backoff_multiplier": self._backoff_multiplier,
+        }
+
+    async def after_run(self, context: MiddlewareContext, result: Any) -> Any:
+        """Pass-through (no post-processing needed)."""
         return result

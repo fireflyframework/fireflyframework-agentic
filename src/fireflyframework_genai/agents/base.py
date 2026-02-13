@@ -265,11 +265,9 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         t0 = time.monotonic()
         self._inject_memory(conversation_id, kwargs)
 
-        coro = self._agent.run(mw_ctx.prompt, deps=deps, **kwargs)
-        if timeout is not None:
-            result = await asyncio.wait_for(coro, timeout=timeout)
-        else:
-            result = await coro
+        result = await self._run_with_rate_limit_retry(
+            mw_ctx.prompt, deps=deps, timeout=timeout, **kwargs
+        )
 
         elapsed_ms = (time.monotonic() - t0) * 1000
         self._persist_memory(conversation_id, prompt, result)
@@ -315,7 +313,11 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
 
         t0 = time.monotonic()
         self._inject_memory(conversation_id, kwargs)
-        result = self._agent.run_sync(mw_ctx.prompt, deps=deps, **kwargs)
+        result = _run_sync_coro(
+            self._run_with_rate_limit_retry(
+                mw_ctx.prompt, deps=deps, timeout=timeout, **kwargs
+            )
+        )
         elapsed_ms = (time.monotonic() - t0) * 1000
         self._persist_memory(conversation_id, prompt, result)
         self._record_usage(result, elapsed_ms, correlation_id=context.correlation_id)
@@ -549,6 +551,101 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
     def instructions(self, func: Any) -> Any:
         """Register a dynamic instructions function.  See ``Agent.instructions``."""
         return self._agent.instructions(func)
+
+    # -- Rate limit detection --------------------------------------------------
+
+    @staticmethod
+    def _is_rate_limit_error(exc: Exception) -> bool:
+        """Detect rate limit errors from any LLM provider.
+
+        Checks for:
+        - Framework :class:`RateLimitError`
+        - HTTP 429 status code (Anthropic, OpenAI SDKs)
+        - String patterns as a fallback
+        """
+        from fireflyframework_genai.exceptions import RateLimitError
+
+        if isinstance(exc, RateLimitError):
+            return True
+        if hasattr(exc, "status_code") and exc.status_code == 429:
+            return True
+        msg = str(exc).lower()
+        return ("rate" in msg and "limit" in msg) or "429" in str(exc)
+
+    # -- Rate limit retry -----------------------------------------------------
+
+    async def _run_with_rate_limit_retry(
+        self,
+        prompt: str | Sequence[UserContent] | None,
+        *,
+        deps: AgentDepsT = None,  # type: ignore[assignment]
+        timeout: float | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Execute ``self._agent.run()`` with automatic 429 retry using AdaptiveBackoff.
+
+        Reads retry parameters from :func:`get_config` and uses the
+        :class:`~fireflyframework_genai.observability.quota.AdaptiveBackoff`
+        instance on the default :class:`QuotaManager` when quota is enabled,
+        or creates a standalone backoff otherwise.
+        """
+        import re
+
+        from fireflyframework_genai.observability.quota import (
+            AdaptiveBackoff,
+            default_quota_manager,
+        )
+
+        cfg = get_config()
+        max_retries = cfg.rate_limit_max_retries
+        max_delay = cfg.rate_limit_max_delay
+
+        # Reuse the QuotaManager's backoff if available, else standalone
+        if default_quota_manager is not None and default_quota_manager._backoff is not None:
+            backoff = default_quota_manager._backoff
+        else:
+            backoff = AdaptiveBackoff(
+                base_delay=cfg.rate_limit_base_delay,
+                max_delay=max_delay,
+            )
+
+        key = self._model_identifier
+
+        for attempt in range(max_retries + 1):
+            try:
+                coro = self._agent.run(prompt, deps=deps, **kwargs)
+                if timeout is not None:
+                    result = await asyncio.wait_for(coro, timeout=timeout)
+                else:
+                    result = await coro
+                # Success — reset backoff counter
+                backoff.reset(key)
+                return result
+            except Exception as exc:
+                if not self._is_rate_limit_error(exc) or attempt >= max_retries:
+                    raise
+
+                backoff.record_failure(key)
+                delay = backoff.get_delay(key)
+
+                # Try to parse a suggested delay from the error body
+                retry_match = re.search(
+                    r"retry.*?(\d+\.?\d*)\s*s", str(exc).lower()
+                )
+                if retry_match:
+                    delay = min(float(retry_match.group(1)), max_delay)
+
+                logger.warning(
+                    "Rate limit hit on '%s' (attempt %d/%d), retrying in %.1fs…",
+                    key,
+                    attempt + 1,
+                    max_retries,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+
+        # Should not be reached; final attempt raises in the loop
+        raise RuntimeError("Unexpected state in _run_with_rate_limit_retry")
 
     # -- Default middleware resolution ----------------------------------------
 
