@@ -349,10 +349,49 @@ backoff.reset("openai:gpt-4o")
 
 Exponential backoff with jitter prevents thundering herd issues when rate limits reset.
 
+### Automatic Rate Limit Retry
+
+`FireflyAgent.run()` automatically retries on HTTP 429 (rate limit) errors using
+adaptive backoff. This is transparent — callers do not need to handle rate limits.
+
+The retry loop:
+1. Catches `ModelHTTPError(429)` and exceptions with "rate limit" in the message
+2. Parses `Retry-After` hints from error bodies when available
+3. Uses `AdaptiveBackoff` for exponential delay with jitter
+4. Resets backoff on success
+
+Configuration via environment variables or `FireflyGenAIConfig`:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FIREFLY_GENAI_RATE_LIMIT_MAX_RETRIES` | `3` | Max retry attempts for 429 errors |
+| `FIREFLY_GENAI_RATE_LIMIT_BASE_DELAY` | `1.0` | Base delay in seconds |
+| `FIREFLY_GENAI_RATE_LIMIT_MAX_DELAY` | `60.0` | Maximum delay between retries |
+
+```python
+from fireflyframework_genai.config import get_config, reset_config
+import os
+
+# Configure via environment
+os.environ["FIREFLY_GENAI_RATE_LIMIT_MAX_RETRIES"] = "5"
+os.environ["FIREFLY_GENAI_RATE_LIMIT_BASE_DELAY"] = "2.0"
+reset_config()  # Pick up new values
+
+# Or read current config
+cfg = get_config()
+print(f"Max retries: {cfg.rate_limit_max_retries}")
+print(f"Base delay: {cfg.rate_limit_base_delay}s")
+print(f"Max delay: {cfg.rate_limit_max_delay}s")
+```
+
+When `quota_enabled` is `True` (the default), the agent uses the global
+`QuotaManager`'s `AdaptiveBackoff` instance for shared state across all agents.
+When disabled, each agent creates a standalone backoff tracker.
+
 ### Environment Configuration
 
 ```bash
-# Enable quota management
+# Enable quota management (default: true)
 export FIREFLY_GENAI_QUOTA_ENABLED=true
 
 # Set daily budget cap
@@ -363,6 +402,11 @@ export FIREFLY_GENAI_QUOTA_RATE_LIMITS='{"openai:gpt-4o": 60, "anthropic:claude-
 
 # Enable adaptive backoff (default: true)
 export FIREFLY_GENAI_QUOTA_ADAPTIVE_BACKOFF=true
+
+# Rate limit retry settings
+export FIREFLY_GENAI_RATE_LIMIT_MAX_RETRIES=3
+export FIREFLY_GENAI_RATE_LIMIT_BASE_DELAY=1.0
+export FIREFLY_GENAI_RATE_LIMIT_MAX_DELAY=60.0
 ```
 
 ### Integration with Agents
