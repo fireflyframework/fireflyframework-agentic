@@ -133,7 +133,7 @@ async def demo_with_connection_pooling():
             method="GET",
             headers={
                 "X-Custom-Header": "my-value",
-                "User-Agent": "FireflyFramework/26.02.05",
+                "User-Agent": "FireflyFramework/26.02.06",
             },
         )
         print(f"   Status: HTTP {result['status']}")
