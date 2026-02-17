@@ -1,26 +1,5 @@
 [![CI](https://github.com/fireflyframework/fireflyframework-genai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fireflyframework/fireflyframework-genai/actions/workflows/ci.yml)
 
-```
-  _____.__ _____.__
-_/ ____\__|______ _____/ ____\ | ___.__.
-\ __\| \_ __ \_/ __ \ __\| |< | |
- | | | || | \/\ ___/| | | |_\___ |
- |__| |__||__| \___ >__| |____/ ____|
-                       \/ \/
-  _____ __ /\
-_/ ____\___________ _____ ______ _ _____________| | __ \ \
-\ __\\_ __ \__ \ / \_/ __ \ \/ \/ / _ \_ __ \ |/ / \ \
- | | | | \// __ \| Y Y \ ___/\ ( <_> ) | \/ < \ \
- |__| |__| (____ /__|_| /\___ >\/\_/ \____/|__| |__|_ \ \ \
-                   \/ \/ \/ \/ \/
-  ________ _____ .__
- / _____/ ____ ____ / _ \ |__|
-/ \ ____/ __ \ / \ / /_\ \| |
-\ \_\ \ ___/| | \/ | \ |
- \______ /\___ >___| /\____|__ /__|
-        \/ \/ \/ \/
-```
-
 # fireflyframework-genai
 **The production-grade GenAI metaframework built on [Pydantic AI](https://ai.pydantic.dev/).**
 
