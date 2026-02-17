@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from fireflyframework_genai.agents.fallback import FallbackModelWrapper
@@ -41,3 +43,21 @@ class TestFallbackModelWrapper:
         models = fw.models
         models.append("c")
         assert len(fw.models) == 2
+
+    def test_accepts_model_objects(self) -> None:
+        """FallbackModelWrapper should accept Model objects alongside strings."""
+        mock_model = MagicMock()
+        mock_model.model_name = "gpt-4o"
+        fw = FallbackModelWrapper(models=["openai:gpt-4o-mini", mock_model])
+        assert fw.primary == "openai:gpt-4o-mini"
+        next_m = fw.next_model()
+        assert next_m is mock_model
+
+    def test_mixed_string_and_model_objects(self) -> None:
+        """Fallback chain with mixed strings and Model objects."""
+        mock_model = MagicMock()
+        mock_model.model_name = "claude-3-5-sonnet"
+        fw = FallbackModelWrapper(models=["openai:gpt-4o", mock_model, "anthropic:claude-3-5-haiku-latest"])
+        assert fw.next_model() is mock_model
+        assert fw.next_model() == "anthropic:claude-3-5-haiku-latest"
+        assert fw.next_model() is None

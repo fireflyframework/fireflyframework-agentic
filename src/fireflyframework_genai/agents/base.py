@@ -137,11 +137,9 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         resolved_retries = retries if retries is not None else cfg.max_retries
 
         # Keep the original model identifier for cost tracking.
-        self._model_identifier: str = (
-            resolved_model
-            if isinstance(resolved_model, str)
-            else getattr(resolved_model, "model_name", str(resolved_model))
-        )
+        from fireflyframework_genai.model_utils import get_model_identifier
+
+        self._model_identifier: str = get_model_identifier(resolved_model)
 
         self._memory = memory
 
@@ -561,6 +559,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         Checks for:
         - Framework :class:`RateLimitError`
         - HTTP 429 status code (Anthropic, OpenAI SDKs)
+        - Bedrock ``ThrottlingException`` / ``TooManyRequestsException``
         - String patterns as a fallback
         """
         from fireflyframework_genai.exceptions import RateLimitError
@@ -569,8 +568,14 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             return True
         if hasattr(exc, "status_code") and exc.status_code == 429:
             return True
+        # Bedrock: boto3 ClientError with ThrottlingException code
+        exc_class = type(exc).__name__
+        if exc_class in ("ThrottlingException", "ClientError"):
+            error_code = getattr(exc, "response", {}).get("Error", {}).get("Code", "")
+            if error_code in ("ThrottlingException", "TooManyRequestsException"):
+                return True
         msg = str(exc).lower()
-        return ("rate" in msg and "limit" in msg) or "429" in str(exc)
+        return ("rate" in msg and "limit" in msg) or "throttl" in msg or "429" in str(exc)
 
     # -- Rate limit retry -----------------------------------------------------
 

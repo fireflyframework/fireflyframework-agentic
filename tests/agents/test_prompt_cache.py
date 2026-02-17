@@ -101,6 +101,32 @@ class TestPromptCacheMiddleware:
         assert context.metadata["_gemini_cache_enabled"] is True
         assert context.metadata["_cache_ttl_seconds"] == 600
 
+    async def test_before_hook_bedrock_anthropic_routes_to_anthropic_caching(self):
+        """Bedrock-hosted Claude should route to Anthropic caching."""
+        middleware = PromptCacheMiddleware(
+            cache_system_prompt=True,
+            cache_min_tokens=2048,
+        )
+
+        context = Mock()
+        context.model = "bedrock:anthropic.claude-3-5-sonnet-latest"
+        context.metadata = {}
+
+        await middleware.before(context)
+
+        assert context.metadata["_prompt_cache_enabled"] is True
+        assert context.metadata["_cache_min_tokens"] == 2048
+
+    async def test_before_hook_azure_openai_routes_to_openai_caching(self):
+        """Azure-hosted GPT should route to OpenAI caching."""
+        middleware = PromptCacheMiddleware()
+
+        context = Mock()
+        context.model = "azure:gpt-4o"
+
+        # Should not raise (OpenAI caching is automatic)
+        await middleware.before(context)
+
     async def test_before_hook_unsupported_provider(self):
         """Test behavior with unsupported provider."""
         middleware = PromptCacheMiddleware()

@@ -241,7 +241,12 @@ a global registry, delegation strategies, and declarative decorators.
 - **middleware.py** -- `AgentMiddleware` protocol and `MiddlewareChain` for
   pluggable before/after hooks on every agent run.
 - **fallback.py** -- `FallbackModelWrapper` and `run_with_fallback()` for
-  automatic model failover.
+  automatic model failover. Accepts both `str` and `Model` objects for
+  cross-provider fallback chains.
+- **model_utils.py** -- Centralized model identity extraction
+  (`extract_model_info`, `get_model_identifier`, `detect_model_family`) for
+  uniform handling of both `"provider:model"` strings and `Model` objects
+  across the framework's observability and resilience layers.
 - **cache.py** -- `ResultCache` with TTL, LRU eviction, and thread-safe access.
 - **templates/** -- Pre-built template agents (summarizer, classifier, extractor,
   conversational, router) available as factory functions. See the

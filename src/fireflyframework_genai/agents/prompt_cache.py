@@ -147,17 +147,20 @@ class PromptCacheMiddleware:
         if not model:
             return
 
-        # Provider-specific caching configuration
-        if "anthropic" in model.lower() or "claude" in model.lower():
+        from fireflyframework_genai.model_utils import detect_model_family
+
+        family = detect_model_family(model)
+        if family == "anthropic":
             await self._configure_anthropic_caching(context)
-        elif "openai" in model.lower() or "gpt" in model.lower():
+        elif family == "openai":
             await self._configure_openai_caching(context)
-        elif "gemini" in model.lower():
+        elif family == "google":
             await self._configure_gemini_caching(context)
         else:
             logger.debug(
-                "PromptCacheMiddleware: Model '%s' does not support prompt caching",
+                "PromptCacheMiddleware: Model '%s' (family=%s) does not support prompt caching",
                 model,
+                family,
             )
 
     async def after(self, context: Any, result: Any) -> Any:

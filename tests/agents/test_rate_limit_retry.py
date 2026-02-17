@@ -155,3 +155,65 @@ class TestRunWithRateLimitRetry:
 
         assert result is mock_result
         assert agent._agent.run.call_count == 2
+
+    async def test_bedrock_throttling_exception_detected(self):
+        """Bedrock ThrottlingException (ClientError shape) is detected as rate limit."""
+        agent = _make_agent()
+        mock_result = MagicMock()
+        mock_result.output = "ok"
+
+        # Simulate a boto3 ClientError with ThrottlingException code
+        class ClientError(Exception):
+            def __init__(self):
+                self.response = {"Error": {"Code": "ThrottlingException", "Message": "Rate exceeded"}}
+                super().__init__("ThrottlingException")
+
+        agent._agent.run = AsyncMock(
+            side_effect=[ClientError(), mock_result]
+        )
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            result = await agent._run_with_rate_limit_retry("hello")
+
+        assert result is mock_result
+        assert agent._agent.run.call_count == 2
+
+    async def test_bedrock_too_many_requests_detected(self):
+        """Bedrock TooManyRequestsException (ClientError shape) is detected as rate limit."""
+        agent = _make_agent()
+        mock_result = MagicMock()
+        mock_result.output = "ok"
+
+        class ClientError(Exception):
+            def __init__(self):
+                self.response = {"Error": {"Code": "TooManyRequestsException", "Message": "Too many"}}
+                super().__init__("TooManyRequestsException")
+
+        agent._agent.run = AsyncMock(
+            side_effect=[ClientError(), mock_result]
+        )
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            result = await agent._run_with_rate_limit_retry("hello")
+
+        assert result is mock_result
+        assert agent._agent.run.call_count == 2
+
+    async def test_throttling_string_detection(self):
+        """Exceptions with 'throttl' in message are detected as rate limit."""
+        agent = _make_agent()
+        mock_result = MagicMock()
+        mock_result.output = "ok"
+
+        class CustomError(Exception):
+            pass
+
+        agent._agent.run = AsyncMock(
+            side_effect=[CustomError("Request throttled by provider"), mock_result]
+        )
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            result = await agent._run_with_rate_limit_retry("hello")
+
+        assert result is mock_result
+        assert agent._agent.run.call_count == 2

@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
 
+## [26.02.07] - 2026-02-17
+
+### Added
+
+- **Multi-Provider Support Hardening** -- New `model_utils` module providing
+  centralized model identity extraction (`extract_model_info`,
+  `get_model_identifier`, `detect_model_family`) for uniform handling of both
+  `"provider:model"` strings and `pydantic_ai.models.Model` objects across the
+  framework's observability and resilience layers.
+
+- **Cross-Provider Cost Tracking** -- `StaticPriceCostCalculator` now resolves
+  pricing through proxy providers. `bedrock:anthropic.claude-3-5-sonnet-latest`
+  maps to Anthropic pricing, `azure:gpt-4o` maps to OpenAI pricing, and
+  `ollama:*` models report `$0.00`. Added Mistral pricing entries.
+
+- **Bedrock Throttling Detection** -- `_is_rate_limit_error()` now detects
+  AWS Bedrock `ThrottlingException` and `TooManyRequestsException` (boto3
+  `ClientError` shapes) in addition to HTTP 429 and string-pattern matching.
+  Also added `"throttl"` as a fallback string pattern.
+
+- **Cross-Provider Prompt Caching** -- `PromptCacheMiddleware` now uses
+  `detect_model_family()` to route caching configuration by model family
+  rather than string matching. `bedrock:anthropic.claude-*` correctly routes
+  to Anthropic caching; `azure:gpt-*` routes to OpenAI caching.
+
+- **Model Object Fallback** -- `FallbackModelWrapper` now accepts
+  `Sequence[str | Model]`, allowing cross-provider fallback chains with
+  pre-configured `Model` objects (e.g. Azure → OpenAI → Anthropic).
+  `run_with_fallback()` updates `_model_identifier` on each swap so cost
+  tracking and rate-limit backoff keys remain accurate.
+
 ## [26.01.01] - 2026-02-10
 
 ### Changed

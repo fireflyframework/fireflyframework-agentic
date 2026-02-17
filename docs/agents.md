@@ -713,10 +713,13 @@ agent = FireflyAgent(
 )
 ```
 
-The middleware automatically configures caching based on the provider:
-- **Anthropic**: Uses `cache_control` blocks for Claude models
-- **OpenAI**: Uses `cached_content` for supported models
-- **Gemini**: Uses `cachedContent` for Gemini models
+The middleware automatically configures caching based on the **model family**
+(resolved via `detect_model_family()`), not the provider string. This means
+proxy providers route correctly:
+
+- **Anthropic** (including `bedrock:anthropic.claude-*`): Uses `cache_control` blocks
+- **OpenAI** (including `azure:gpt-*`): Uses `cached_content` for supported models
+- **Google**: Uses `cachedContent` for Gemini models
 
 Cache statistics are tracked and can be retrieved via `get_cache_stats()`:
 
@@ -893,7 +896,10 @@ production pipelines.
 ## Model Fallback
 
 The `FallbackModelWrapper` provides automatic retry with backup models when
-the primary model is unavailable or returns an error.
+the primary model is unavailable or returns an error. The fallback chain
+accepts both `"provider:model"` strings **and** pre-configured `Model` objects,
+so you can mix providers freely (e.g. fall from Azure to direct OpenAI to a
+local Ollama instance).
 
 ```mermaid
 flowchart LR
@@ -916,6 +922,32 @@ result = await run_with_fallback(agent, "Hello!", fallback)
 `run_with_fallback()` tries the current model, advances through the fallback
 chain on failure, and resets to the primary after completion. The
 `max_fallback_attempts` parameter limits how many models are tried.
+
+When falling back, the framework automatically updates the agent's
+`_model_identifier` so that cost tracking and rate-limit backoff keys remain
+accurate for whichever model is currently active.
+
+### Cross-Provider Fallback
+
+You can mix `Model` objects and strings for cross-provider failover:
+
+```python
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.azure import AzureProvider
+
+azure_model = OpenAIChatModel(
+    "my-gpt4o-deployment",
+    provider=AzureProvider(
+        azure_endpoint="https://my-resource.openai.azure.com",
+        api_version="2025-03-01-preview",
+        api_key="...",
+    ),
+)
+
+fallback = FallbackModelWrapper(
+    models=[azure_model, "openai:gpt-4o", "anthropic:claude-3-5-sonnet-latest"],
+)
+```
 
 ---
 

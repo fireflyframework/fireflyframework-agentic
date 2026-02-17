@@ -224,6 +224,8 @@ The simplest method — set the appropriate API key as an environment variable a
 | Groq | `GROQ_API_KEY` | `"groq:llama-3.3-70b"` |
 | DeepSeek | `DEEPSEEK_API_KEY` | `"deepseek:deepseek-chat"` |
 | Mistral | `MISTRAL_API_KEY` | `"mistral:mistral-large-latest"` |
+| AWS Bedrock | `AWS_*` credentials | `"bedrock:anthropic.claude-3-5-sonnet-latest"` |
+| Ollama (local) | *(none required)* | `"ollama:llama3.2"` |
 
 Pydantic AI reads these variables automatically — you do not need to pass them to the
 framework. Just set the key and use the model string:
@@ -298,6 +300,23 @@ model = AnthropicModel(
 agent = FireflyAgent(name="claude-agent", model=model)
 ```
 
+**AWS Bedrock:**
+
+```python
+from pydantic_ai.models.bedrock import BedrockConverseModel
+
+model = BedrockConverseModel(
+    "anthropic.claude-3-5-sonnet-20241022-v2:0",
+    region_name="us-east-1",
+)
+agent = FireflyAgent(name="bedrock-agent", model=model)
+```
+
+The framework's observability layer automatically detects Bedrock-hosted
+models and resolves them to the correct model family for cost tracking
+(Anthropic pricing), prompt caching (Anthropic cache configuration), and
+rate-limit retry (Bedrock `ThrottlingException` detection).
+
 **OpenAI-compatible endpoints** (e.g. Ollama, vLLM, LiteLLM):
 
 ```python
@@ -322,8 +341,11 @@ agent = FireflyAgent(name="local-agent", model=model)
   OpenAI-compatible servers, or when API keys are loaded from a secrets manager at
   runtime.
 
-Both approaches work identically with every framework feature — tools, reasoning patterns,
-pipelines, REST exposure, queue consumers, and all other modules.
+Both approaches work identically with every framework feature — tools, reasoning
+patterns, pipelines, REST exposure, queue consumers, cost tracking, prompt caching,
+and all other modules. The framework's `model_utils` module normalizes model
+identity from both strings and `Model` objects, so observability and resilience
+features work uniformly across all providers.
 
 #### IDP Tie-In
 

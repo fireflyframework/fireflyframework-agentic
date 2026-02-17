@@ -59,6 +59,12 @@ _DEFAULT_PRICES: dict[str, tuple[float, float]] = {
     # Groq
     "groq:llama-3.3-70b-versatile": (0.59, 0.79),
     "groq:llama-3.1-8b-instant": (0.05, 0.08),
+    # Mistral
+    "mistral:mistral-large-latest": (2.00, 6.00),
+    "mistral:mistral-small-latest": (0.10, 0.30),
+    "mistral:codestral-latest": (0.30, 0.90),
+    # Ollama (local — free)
+    "ollama:": (0.0, 0.0),
 }
 
 
@@ -112,9 +118,69 @@ class StaticPriceCostCalculator:
                     best_key = key
             price = self._prices.get(best_key) if best_key else None
         if price is None:
+            # Cross-provider alias matching: strip provider prefix and
+            # try to match against known entries from the canonical provider.
+            price = self._cross_provider_lookup(model)
+        if price is None:
             return 0.0
         input_cost, output_cost = price
         return (input_tokens * input_cost + output_tokens * output_cost) / 1_000_000
+
+    def _cross_provider_lookup(self, model: str) -> tuple[float, float] | None:
+        """Attempt to match a model across providers.
+
+        For proxy providers (Bedrock, Azure, Groq, etc.) strip the
+        provider prefix and match the underlying model against known
+        canonical entries.
+
+        E.g. ``"bedrock:anthropic.claude-3-5-sonnet-latest"`` →
+        strips ``"bedrock:anthropic."`` → matches ``"anthropic:claude-3-5-sonnet"``
+        entries.  ``"azure:gpt-4o"`` → matches ``"openai:gpt-4o"``.
+        """
+        if ":" not in model:
+            return None
+
+        provider, _, model_name = model.partition(":")
+
+        # Provider alias map: which canonical provider to search.
+        alias_map: dict[str, str] = {
+            "azure": "openai",
+            "bedrock": "",  # Determined by model name below.
+            "groq": "",
+        }
+        if provider not in alias_map:
+            return None
+
+        # For Bedrock, strip nested provider prefix (e.g. "anthropic." or "meta.").
+        canonical = alias_map.get(provider, "")
+        bare_name = model_name
+        if provider == "bedrock" and "." in model_name:
+            nested_provider, _, bare_name = model_name.partition(".")
+            canonical = nested_provider
+
+        if not canonical:
+            # Try matching by model name patterns against all keys.
+            best: tuple[float, float] | None = None
+            best_len = 0
+            for key, price in self._prices.items():
+                _, _, key_name = key.partition(":")
+                if key_name and bare_name.startswith(key_name) and len(key_name) > best_len:
+                    best = price
+                    best_len = len(key_name)
+            return best
+
+        # Search for canonical provider entries matching the bare model name.
+        target_prefix = f"{canonical}:"
+        best_price: tuple[float, float] | None = None
+        best_key_len = 0
+        for key, price in self._prices.items():
+            if not key.startswith(target_prefix):
+                continue
+            canonical_model = key[len(target_prefix):]
+            if bare_name.startswith(canonical_model) and len(canonical_model) > best_key_len:
+                best_price = price
+                best_key_len = len(canonical_model)
+        return best_price
 
 
 class GenAIPricesCostCalculator:

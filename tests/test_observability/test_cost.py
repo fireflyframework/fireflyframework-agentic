@@ -75,6 +75,47 @@ class TestGenAIPricesCostCalculator:
         assert isinstance(calc, CostCalculator)
 
 
+class TestCrossProviderPriceLookup:
+    """Test cross-provider alias matching in StaticPriceCostCalculator."""
+
+    def test_azure_maps_to_openai(self):
+        calc = StaticPriceCostCalculator()
+        cost = calc.estimate("azure:gpt-4o", input_tokens=1000, output_tokens=500)
+        expected = calc.estimate("openai:gpt-4o", input_tokens=1000, output_tokens=500)
+        assert cost == expected
+        assert cost > 0
+
+    def test_bedrock_anthropic_maps_to_anthropic(self):
+        calc = StaticPriceCostCalculator()
+        cost = calc.estimate(
+            "bedrock:anthropic.claude-3-5-sonnet-latest",
+            input_tokens=1000,
+            output_tokens=500,
+        )
+        expected = calc.estimate(
+            "anthropic:claude-3-5-sonnet-latest",
+            input_tokens=1000,
+            output_tokens=500,
+        )
+        assert cost == expected
+        assert cost > 0
+
+    def test_ollama_is_free(self):
+        calc = StaticPriceCostCalculator()
+        cost = calc.estimate("ollama:llama3.2", input_tokens=10000, output_tokens=5000)
+        assert cost == 0.0
+
+    def test_mistral_known_model(self):
+        calc = StaticPriceCostCalculator()
+        cost = calc.estimate("mistral:mistral-large-latest", input_tokens=1000, output_tokens=500)
+        assert cost > 0
+
+    def test_unknown_provider_still_zero(self):
+        calc = StaticPriceCostCalculator()
+        cost = calc.estimate("randomcloud:gpt-4o", input_tokens=1000, output_tokens=500)
+        assert cost == 0.0
+
+
 class TestGetCostCalculator:
     def test_static_preference(self):
         calc = get_cost_calculator("static")

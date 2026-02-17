@@ -238,8 +238,9 @@ into `PipelineResult.usage`.
 Two cost calculator implementations are provided:
 
 - **`StaticPriceCostCalculator`** — uses a built-in lookup table with prices for
-  OpenAI, Anthropic, Google, DeepSeek, and Groq models. Supports exact and prefix
-  matching (e.g. `openai:gpt-4o-2024-08-06` matches `openai:gpt-4o`).
+  OpenAI, Anthropic, Google, DeepSeek, Groq, Mistral, and Ollama models. Supports
+  exact match, prefix match (e.g. `openai:gpt-4o-2024-08-06` matches `openai:gpt-4o`),
+  and **cross-provider alias matching** for proxy providers.
 - **`GenAIPricesCostCalculator`** — delegates to the optional `genai-prices` package
   for up-to-date pricing data. Install with `pip install fireflyframework-genai[costs]`.
 
@@ -253,6 +254,20 @@ calc = get_cost_calculator()
 cost = calc.estimate("openai:gpt-4o", input_tokens=1000, output_tokens=500)
 print(f"Estimated cost: ${cost:.6f}")
 ```
+
+### Cross-Provider Price Resolution
+
+When a model identifier uses a proxy provider (Bedrock, Azure, Groq), the
+static calculator automatically resolves pricing through the canonical provider:
+
+| Model identifier | Resolves to | Pricing source |
+|---|---|---|
+| `azure:gpt-4o` | `openai:gpt-4o` | OpenAI pricing |
+| `bedrock:anthropic.claude-3-5-sonnet-latest` | `anthropic:claude-3-5-sonnet-latest` | Anthropic pricing |
+| `ollama:llama3.2` | `ollama:` prefix | Free (local) |
+
+This ensures cost tracking works correctly regardless of which provider
+routes the request to the underlying model.
 
 ---
 
@@ -355,10 +370,11 @@ Exponential backoff with jitter prevents thundering herd issues when rate limits
 adaptive backoff. This is transparent — callers do not need to handle rate limits.
 
 The retry loop:
-1. Catches `ModelHTTPError(429)` and exceptions with "rate limit" in the message
-2. Parses `Retry-After` hints from error bodies when available
-3. Uses `AdaptiveBackoff` for exponential delay with jitter
-4. Resets backoff on success
+1. Catches `ModelHTTPError(429)` and exceptions with "rate limit" or "throttl" in the message
+2. Detects Bedrock `ThrottlingException` and `TooManyRequestsException` (boto3 `ClientError` shapes)
+3. Parses `Retry-After` hints from error bodies when available
+4. Uses `AdaptiveBackoff` for exponential delay with jitter
+5. Resets backoff on success
 
 Configuration via environment variables or `FireflyGenAIConfig`:
 

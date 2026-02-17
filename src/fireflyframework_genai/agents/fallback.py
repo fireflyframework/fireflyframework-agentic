@@ -35,6 +35,8 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
+from pydantic_ai.models import Model
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,42 +47,43 @@ class FallbackModelWrapper:
     list.  Once all models are exhausted, it wraps back to the primary.
 
     Parameters:
-        models: Ordered list of model identifiers (primary first).
+        models: Ordered list of model identifiers or :class:`Model`
+            objects (primary first).
         max_fallback_attempts: Maximum number of fallback retries.
     """
 
     def __init__(
         self,
-        models: Sequence[str],
+        models: Sequence[str | Model],
         *,
         max_fallback_attempts: int | None = None,
     ) -> None:
         if not models:
             raise ValueError("At least one model must be provided")
-        self._models = list(models)
+        self._models: list[str | Model] = list(models)
         self._max_attempts = max_fallback_attempts or len(self._models)
         self._current_index = 0
 
     @property
-    def primary(self) -> str:
+    def primary(self) -> str | Model:
         """The primary (first) model."""
         return self._models[0]
 
     @property
-    def current(self) -> str:
+    def current(self) -> str | Model:
         """The currently selected model."""
         return self._models[self._current_index]
 
     @property
-    def models(self) -> list[str]:
+    def models(self) -> list[str | Model]:
         """All available models."""
         return list(self._models)
 
-    def next_model(self) -> str | None:
+    def next_model(self) -> str | Model | None:
         """Advance to the next fallback model.
 
-        Returns the next model identifier, or *None* if the maximum
-        number of attempts has been reached.
+        Returns the next model identifier or :class:`Model` object,
+        or *None* if the maximum number of attempts has been reached.
         """
         next_idx = self._current_index + 1
         if next_idx >= self._max_attempts or next_idx >= len(self._models):
@@ -122,8 +125,11 @@ async def run_with_fallback(
     Raises:
         The last exception encountered if all models fail.
     """
+    from fireflyframework_genai.model_utils import get_model_identifier
+
     fallback.reset()
     original_model = agent.agent.model
+    original_identifier = agent._model_identifier
     last_error: Exception | None = None
 
     while True:
@@ -140,8 +146,10 @@ async def run_with_fallback(
                 break
             # Swap the underlying model on the pydantic_ai agent
             agent.agent.model = next_model
+            agent._model_identifier = get_model_identifier(next_model)
 
     # Restore the original model regardless of outcome
     agent.agent.model = original_model
+    agent._model_identifier = original_identifier
     fallback.reset()
     raise last_error  # type: ignore[misc]
