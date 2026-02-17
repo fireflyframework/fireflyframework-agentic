@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -102,7 +101,6 @@ class TestRunWithRateLimitRetry:
         agent._agent.run = AsyncMock(side_effect=[err, mock_result])
 
         sleep_delays: list[float] = []
-        original_sleep = asyncio.sleep
 
         async def capture_sleep(delay: float) -> None:
             sleep_delays.append(delay)
