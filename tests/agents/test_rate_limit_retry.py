@@ -41,9 +41,7 @@ class TestRunWithRateLimitRetry:
         mock_result = MagicMock()
         mock_result.output = "success"
 
-        agent._agent.run = AsyncMock(
-            side_effect=[_make_429(), _make_429(), mock_result]
-        )
+        agent._agent.run = AsyncMock(side_effect=[_make_429(), _make_429(), mock_result])
 
         with patch("asyncio.sleep", new_callable=AsyncMock):
             result = await agent._run_with_rate_limit_retry("hello")
@@ -144,9 +142,7 @@ class TestRunWithRateLimitRetry:
         class CustomError(Exception):
             pass
 
-        agent._agent.run = AsyncMock(
-            side_effect=[CustomError("Rate limit exceeded"), mock_result]
-        )
+        agent._agent.run = AsyncMock(side_effect=[CustomError("Rate limit exceeded"), mock_result])
 
         with patch("asyncio.sleep", new_callable=AsyncMock):
             result = await agent._run_with_rate_limit_retry("hello")
@@ -166,9 +162,7 @@ class TestRunWithRateLimitRetry:
                 self.response = {"Error": {"Code": "ThrottlingException", "Message": "Rate exceeded"}}
                 super().__init__("ThrottlingException")
 
-        agent._agent.run = AsyncMock(
-            side_effect=[ClientError(), mock_result]
-        )
+        agent._agent.run = AsyncMock(side_effect=[ClientError(), mock_result])
 
         with patch("asyncio.sleep", new_callable=AsyncMock):
             result = await agent._run_with_rate_limit_retry("hello")
@@ -187,9 +181,7 @@ class TestRunWithRateLimitRetry:
                 self.response = {"Error": {"Code": "TooManyRequestsException", "Message": "Too many"}}
                 super().__init__("TooManyRequestsException")
 
-        agent._agent.run = AsyncMock(
-            side_effect=[ClientError(), mock_result]
-        )
+        agent._agent.run = AsyncMock(side_effect=[ClientError(), mock_result])
 
         with patch("asyncio.sleep", new_callable=AsyncMock):
             result = await agent._run_with_rate_limit_retry("hello")
@@ -206,9 +198,7 @@ class TestRunWithRateLimitRetry:
         class CustomError(Exception):
             pass
 
-        agent._agent.run = AsyncMock(
-            side_effect=[CustomError("Request throttled by provider"), mock_result]
-        )
+        agent._agent.run = AsyncMock(side_effect=[CustomError("Request throttled by provider"), mock_result])
 
         with patch("asyncio.sleep", new_callable=AsyncMock):
             result = await agent._run_with_rate_limit_retry("hello")

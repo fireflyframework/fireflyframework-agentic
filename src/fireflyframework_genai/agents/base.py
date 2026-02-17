@@ -263,9 +263,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         t0 = time.monotonic()
         self._inject_memory(conversation_id, kwargs)
 
-        result = await self._run_with_rate_limit_retry(
-            mw_ctx.prompt, deps=deps, timeout=timeout, **kwargs
-        )
+        result = await self._run_with_rate_limit_retry(mw_ctx.prompt, deps=deps, timeout=timeout, **kwargs)
 
         elapsed_ms = (time.monotonic() - t0) * 1000
         self._persist_memory(conversation_id, prompt, result)
@@ -311,11 +309,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
 
         t0 = time.monotonic()
         self._inject_memory(conversation_id, kwargs)
-        result = _run_sync_coro(
-            self._run_with_rate_limit_retry(
-                mw_ctx.prompt, deps=deps, timeout=timeout, **kwargs
-            )
-        )
+        result = _run_sync_coro(self._run_with_rate_limit_retry(mw_ctx.prompt, deps=deps, timeout=timeout, **kwargs))
         elapsed_ms = (time.monotonic() - t0) * 1000
         self._persist_memory(conversation_id, prompt, result)
         self._record_usage(result, elapsed_ms, correlation_id=context.correlation_id)
@@ -634,9 +628,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
                 delay = backoff.get_delay(key)
 
                 # Try to parse a suggested delay from the error body
-                retry_match = re.search(
-                    r"retry.*?(\d+\.?\d*)\s*s", str(exc).lower()
-                )
+                retry_match = re.search(r"retry.*?(\d+\.?\d*)\s*s", str(exc).lower())
                 if retry_match:
                     delay = min(float(retry_match.group(1)), max_delay)
 

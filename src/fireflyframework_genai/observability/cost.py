@@ -176,7 +176,7 @@ class StaticPriceCostCalculator:
         for key, price in self._prices.items():
             if not key.startswith(target_prefix):
                 continue
-            canonical_model = key[len(target_prefix):]
+            canonical_model = key[len(target_prefix) :]
             if bare_name.startswith(canonical_model) and len(canonical_model) > best_key_len:
                 best_price = price
                 best_key_len = len(canonical_model)
