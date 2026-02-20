@@ -1,0 +1,152 @@
+name: Desktop Build
+
+on:
+  push:
+    tags: ['desktop-v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build-sidecar:
+    name: Build Sidecar (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-arm64
+            runner: macos-latest
+            artifact: firefly-studio-macos-arm64
+          - platform: macos-x86
+            runner: macos-13
+            artifact: firefly-studio-macos-x86
+          - platform: linux
+            runner: ubuntu-latest
+            artifact: firefly-studio-linux
+          - platform: windows
+            runner: windows-latest
+            artifact: firefly-studio-windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: studio-frontend/package-lock.json
+
+      - name: Build frontend
+        run: npm ci && npm run build
+        working-directory: studio-frontend
+
+      - name: Bundle frontend into static dir
+        run: uv run python scripts/build_studio.py
+
+      - name: Install PyInstaller and deps
+        run: uv sync --extra studio && uv pip install pyinstaller
+
+      - name: Build sidecar
+        run: uv run pyinstaller studio-desktop/pyinstaller/firefly_studio.spec --noconfirm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/firefly-studio/
+          retention-days: 1
+
+  build-tauri:
+    name: Build Desktop (${{ matrix.platform }})
+    needs: build-sidecar
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-arm64
+            runner: macos-latest
+            sidecar-artifact: firefly-studio-macos-arm64
+          - platform: macos-x86
+            runner: macos-13
+            sidecar-artifact: firefly-studio-macos-x86
+          - platform: linux
+            runner: ubuntu-latest
+            sidecar-artifact: firefly-studio-linux
+          - platform: windows
+            runner: windows-latest
+            sidecar-artifact: firefly-studio-windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.sidecar-artifact }}
+          path: studio-desktop/src-tauri/sidecar/
+
+      - name: Make sidecar executable
+        if: runner.os != 'Windows'
+        run: chmod +x studio-desktop/src-tauri/sidecar/firefly-studio
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2"
+
+      - name: Build Tauri app
+        run: cargo tauri build
+        working-directory: studio-desktop
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.platform }}
+          path: |
+            studio-desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            studio-desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+            studio-desktop/src-tauri/target/release/bundle/deb/*.deb
+            studio-desktop/src-tauri/target/release/bundle/msi/*.msi
+            studio-desktop/src-tauri/target/release/bundle/nsis/*.exe
+          retention-days: 3
+
+  release-desktop:
+    name: Create Desktop Release
+    needs: build-tauri
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          pattern: desktop-*
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          find artifacts/ -type f \( -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.msi" -o -name "*.exe" \) > release_files.txt
+          if [ -s release_files.txt ]; then
+            xargs gh release create "$TAG_NAME" --generate-notes --title "Firefly Studio Desktop $TAG_NAME" < release_files.txt
+          else
+            gh release create "$TAG_NAME" --generate-notes --title "Firefly Studio Desktop $TAG_NAME"
+          fi

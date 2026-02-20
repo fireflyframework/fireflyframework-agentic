@@ -76,6 +76,10 @@ If `OPENAI_API_KEY` is not set, each script will prompt you interactively.
 
   Requires `pdfplumber` (included in dev dependencies).
 
+## Studio Examples
+
+- **`studio_launch.py`** — Launch Firefly Studio programmatically with custom `StudioConfig`. Shows how to embed the Studio app with a custom port, host, and project directory. Requires `pip install "fireflyframework-genai[studio]"`. **No API key required** (the AI assistant requires one, but the IDE itself does not).
+
 ## Reasoning Pattern Examples
 
 - **`reasoning_cot.py`** — Chain of Thought: step-by-step reasoning with `ReasoningThought` and trace inspection.

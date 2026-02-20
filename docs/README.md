@@ -89,6 +89,12 @@ below it, keeping the dependency graph acyclic and each module independently tes
 | **[REST Exposure](exposure-rest.md)** | `create_genai_app()`, auto-generated routes, SSE streaming, WebSocket, auth middleware, conversation CRUD, rate limiting, health checks |
 | **[Queue Exposure](exposure-queues.md)** | Kafka, RabbitMQ, Redis consumers/producers, `QueueRouter` |
 
+### Studio
+
+| | |
+|---|---|
+| **[Studio](studio.md)** | Visual IDE, `firefly` CLI, interactive canvas, code generation, AI assistant, project management, checkpoints, keyboard shortcuts, REST & WebSocket API |
+
 ---
 
 ## Tutorial

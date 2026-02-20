@@ -52,7 +52,7 @@ class RedisAgentConsumer(BaseQueueConsumer):
     async def start(self) -> None:
         """Connect to Redis and begin subscribing."""
         try:
-            import redis.asyncio as aioredis
+            import redis.asyncio as aioredis  # type: ignore[import-not-found]
         except ImportError as _err:
             raise ImportError(
                 "redis[hiredis] is required for Redis support. "
@@ -129,7 +129,7 @@ class RedisAgentProducer:
     async def start(self) -> None:
         """Open a Redis connection."""
         try:
-            import redis.asyncio as aioredis
+            import redis.asyncio as aioredis  # type: ignore[import-not-found]
         except ImportError as _err:
             raise ImportError(
                 "redis[hiredis] is required for Redis support. "

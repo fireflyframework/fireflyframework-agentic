@@ -1,8 +1,8 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
-build/
-dist/
+/build/
+/dist/
 wheels/
 *.egg-info/
 *.egg
@@ -12,8 +12,8 @@ wheels/
 SDIST/
 develop-eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 var/
 *.manifest
@@ -119,6 +119,18 @@ uv.lock
 
 # Vibe coding
 .vibe/
+
+# Design/plan docs (local only)
+docs/plans/
+
+# Studio bundled frontend (build artifact — run scripts/build_studio.py)
+src/fireflyframework_genai/studio/static/*
+!src/fireflyframework_genai/studio/static/.gitkeep
+
+# Studio frontend build output
+studio-frontend/build/
+studio-frontend/.svelte-kit/
+studio-frontend/node_modules/
 
 # Distribution / packaging
 *.tar.gz

@@ -1,16 +1,41 @@
 name: Release
+
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:
-    inputs:
-      triggered-by:
-        description: 'Orchestrator run ID'
-        required: false
-        type: string
+
+permissions:
+  contents: write
+
 jobs:
   release:
-    uses: fireflyframework/.github/.github/workflows/python-release.yml@main
-    permissions:
-      contents: write
-    secrets: inherit
+    name: Build & Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: studio-frontend/package-lock.json
+      - run: npm ci
+        working-directory: studio-frontend
+      - run: npm run build
+        working-directory: studio-frontend
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - run: uv run python scripts/build_studio.py
+      - run: uv build
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: gh release create "$TAG_NAME" dist/* --generate-notes

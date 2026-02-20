@@ -1,0 +1,69 @@
+@import 'tailwindcss';
+
+@theme {
+	--color-bg-primary: #0a0a0f;
+	--color-bg-secondary: #12121a;
+	--color-bg-elevated: #1a1a26;
+	--color-border: #2a2a3a;
+	--color-text-primary: #e8e8ed;
+	--color-text-secondary: #8888a0;
+	--color-accent: #ff6b35;
+	--color-accent-glow: oklch(from #ff6b35 l c h / 20%);
+	--color-success: #22c55e;
+	--color-error: #ef4444;
+	--color-warning: #f59e0b;
+	--color-info: #3b82f6;
+	--color-node-agent: #6366f1;
+	--color-node-tool: #8b5cf6;
+	--color-node-reasoning: #ec4899;
+	--color-node-pipeline: #06b6d4;
+
+	--font-sans: 'Inter', system-ui, sans-serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* Reset for full-height app */
+html,
+body {
+	height: 100%;
+	margin: 0;
+	padding: 0;
+	overflow: hidden;
+}
+
+/* Scrollbar styling for the dark theme */
+::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+
+::-webkit-scrollbar-track {
+	background: var(--color-bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+	background: var(--color-border);
+	border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: var(--color-text-secondary);
+}
+
+/* Focus-visible ring for keyboard navigation */
+*:focus-visible {
+	outline: 2px solid oklch(from var(--color-accent) l c h / 60%);
+	outline-offset: 2px;
+}
+
+/* Respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}

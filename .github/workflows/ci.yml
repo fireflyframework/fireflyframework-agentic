@@ -1,28 +1,113 @@
 name: CI
+
 on:
   push:
-    branches: [develop, main]
+    branches: [main]
     paths-ignore:
       - '**.md'
       - 'docs/**'
       - 'LICENSE'
       - '.gitignore'
   pull_request:
-    branches: [develop, main]
+    branches: [main]
     paths-ignore:
       - '**.md'
       - 'docs/**'
       - 'LICENSE'
       - '.gitignore'
   workflow_dispatch:
-    inputs:
-      triggered-by:
-        description: 'Orchestrator run ID'
-        required: false
-        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  lint-and-test:
-    uses: fireflyframework/.github/.github/workflows/python-ci.yml@main
-    with:
-      python-version: '3.13'
-    secrets: inherit
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: uv sync --extra dev
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: uv sync --extra dev --extra studio
+      - run: uv run pyright
+
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: studio-frontend/package-lock.json
+      - run: npm ci
+        working-directory: studio-frontend
+      - run: npm run build
+        working-directory: studio-frontend
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: studio-frontend/build/
+          retention-days: 1
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: frontend-build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: uv sync --extra dev --extra studio
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: src/fireflyframework_genai/studio/static/
+      - run: uv run pytest --cov --cov-report=term-missing
+
+  build:
+    name: Build Package
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7

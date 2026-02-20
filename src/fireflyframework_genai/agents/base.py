@@ -560,7 +560,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
 
         if isinstance(exc, RateLimitError):
             return True
-        if hasattr(exc, "status_code") and exc.status_code == 429:
+        if hasattr(exc, "status_code") and getattr(exc, "status_code", None) == 429:
             return True
         # Bedrock: boto3 ClientError with ThrottlingException code
         exc_class = type(exc).__name__

@@ -4,7 +4,7 @@
 [![CI](https://github.com/fireflyframework/fireflyframework-genai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fireflyframework/fireflyframework-genai/actions/workflows/ci.yml)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-819%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-1074%20passing-brightgreen.svg)]()
 [![Ruff](https://img.shields.io/badge/linting-ruff-orange.svg)](https://docs.astral.sh/ruff/)
 
 Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
@@ -81,9 +81,9 @@ You write your business logic; the framework provides the architecture.
    dependency graph acyclic and each module independently testable.
 
 4. **Optional dependencies** — Heavy libraries (`fastapi`, `aiokafka`, `aio-pika`,
-   `redis`) are declared as pip extras (`[rest]`, `[kafka]`, `[rabbitmq]`, `[redis]`,
-   `[all]`). The core framework imports them lazily inside factory functions so that
-   you install only what your deployment requires.
+   `redis`) are declared as pip extras (`[rest]`, `[studio]`, `[kafka]`, `[rabbitmq]`,
+   `[redis]`, `[all]`). The core framework imports them lazily inside factory
+   functions so that you install only what your deployment requires.
 
 ---
 
@@ -352,6 +352,15 @@ classDiagram
   `RedisAgentProducer`) publish results back. `QueueRouter` provides
   pattern-based message routing across agents.
 
+- **Studio** — `firefly studio` launches a browser-based visual IDE for
+  building agent pipelines. Drag and connect Agent, Tool, Reasoning, and
+  Condition nodes on an interactive canvas. The Code tab generates Python
+  code from your graph in real time. An AI assistant (via WebSocket) helps
+  you build pipelines through natural language. Project management persists
+  graphs to disk. Checkpoints enable time-travel debugging. The frontend
+  is a SvelteKit 5 SPA bundled inside the Python package — no Node.js needed.
+  Install with `pip install "fireflyframework-genai[studio]"`.
+
 ---
 
 ## Requirements
@@ -435,17 +444,29 @@ uv sync --all-extras # or: pip install -e ".[all]"
 | Extra | What it adds | When you need it |
 |---|---|---|
 | `rest` | FastAPI, Uvicorn, SSE | Exposing agents as REST endpoints |
+| `studio` | FastAPI, Uvicorn, httpx | Visual Studio IDE (`firefly studio`) |
 | `kafka` | aiokafka | Consuming/producing via Apache Kafka |
 | `rabbitmq` | aio-pika | Consuming/producing via RabbitMQ |
 | `redis` | redis-py | Consuming/producing via Redis Pub/Sub |
 | `queues` | All of the above | Any message queue integration |
-| `all` | REST + all queues + costs | Full deployment with all integrations |
+| `postgres` | asyncpg, SQLAlchemy | PostgreSQL memory persistence |
+| `mongodb` | motor, pymongo | MongoDB memory persistence |
+| `security` | PyJWT, cryptography | RBAC, encryption, JWT auth |
+| `http` | httpx | HTTP connection pooling for tools |
+| `costs` | genai-prices | Up-to-date LLM pricing data |
+| `all` | Everything above | Full deployment with all integrations |
 
 ### Verify Installation
 
 ```bash
 python -c "import fireflyframework_genai; print(fireflyframework_genai.__version__)"
-# 26.01.01
+# 26.02.07
+```
+
+If you installed with `[studio]`, verify the CLI:
+
+```bash
+firefly --help
 ```
 
 ### Uninstall
@@ -710,6 +731,7 @@ Detailed guides for each module:
 - [Lab](docs/lab.md) — Benchmarks, datasets, evaluators
 - [Exposure REST](docs/exposure-rest.md) — FastAPI integration, SSE streaming
 - [Exposure Queues](docs/exposure-queues.md) — Kafka, RabbitMQ, Redis integration
+- [Studio](docs/studio.md) — Visual IDE, canvas, code generation, AI assistant, CLI
 ---
 
 ## Development

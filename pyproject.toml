@@ -66,11 +66,16 @@ security = [
 http = [
     "httpx>=0.28.0",
 ]
+studio = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "httpx>=0.28.0",
+]
 costs = [
     "genai-prices>=0.0.1",
 ]
 all = [
-    "fireflyframework-genai[rest,queues,postgres,mongodb,security,http,costs]",
+    "fireflyframework-genai[rest,queues,postgres,mongodb,security,http,studio,costs]",
 ]
 dev = [
     "pytest>=8.3.0",
@@ -83,6 +88,9 @@ dev = [
     "httpx>=0.28.0",
     "pdfplumber>=0.11.0",
 ]
+
+[project.scripts]
+firefly = "fireflyframework_genai.studio.cli:main"
 
 [project.urls]
 Homepage = "https://fireflyframework.org/"

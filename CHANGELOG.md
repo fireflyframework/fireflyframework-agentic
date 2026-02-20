@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
 
+## [Unreleased]
+
+### Added
+
+- **Firefly Studio** -- Visual browser-based IDE for building agent pipelines.
+  Launch with `firefly studio` or `pip install "fireflyframework-genai[studio]"`.
+  Features include:
+  - Interactive canvas with drag-and-drop Agent, Tool, Reasoning, and Condition
+    nodes powered by @xyflow/svelte.
+  - Real-time Python code generation from the visual graph with syntax
+    highlighting and auto-sync.
+  - AI assistant (WebSocket) that builds pipelines through natural language
+    using canvas manipulation tools (add/remove/configure/connect nodes).
+  - File-based project management with pipeline persistence.
+  - Checkpoint system for time-travel debugging with fork and diff support.
+  - Component registry endpoints that discover registered agents, tools, and
+    reasoning patterns from the framework.
+  - Usage monitoring dashboard connected to the framework's `UsageTracker`.
+  - Command palette (`Cmd+K`) with fuzzy search across 25 commands.
+  - Keyboard shortcuts for pipeline execution, canvas manipulation, and
+    navigation.
+  - SvelteKit 5 SPA frontend bundled inside the Python package (no Node.js
+    required in production).
+  - `StudioConfig` with environment variable overrides (`FIREFLY_STUDIO_*`).
+  - Path traversal protection on project storage.
+  - WebSocket lifecycle management with automatic UI state cleanup on
+    disconnect.
+
+- **`firefly` CLI** -- Console script entry point for launching Studio.
+  Supports `--port`, `--host`, `--no-browser`, and `--dev` flags. Defaults
+  to the `studio` subcommand when run without arguments.
+
 ## [26.02.07] - 2026-02-17
 
 ### Added
