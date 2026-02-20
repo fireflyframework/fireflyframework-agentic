@@ -18,6 +18,7 @@ parts/
 var/
 *.manifest
 *.spec
+!studio-desktop/pyinstaller/*.spec
 pip-log.txt
 pip-delete-this-directory.txt
 
