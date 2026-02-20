@@ -14,10 +14,20 @@ import os
 import sys
 from pathlib import Path
 
+from PyInstaller.utils.hooks import copy_metadata
+
 # Resolve paths relative to the repository root
 REPO_ROOT = Path(SPECPATH).resolve().parent.parent
 SRC_DIR = REPO_ROOT / "src"
 STATIC_DIR = SRC_DIR / "fireflyframework_genai" / "studio" / "static"
+
+# Collect package metadata for packages that call importlib.metadata.version()
+pkg_metadata = []
+for pkg in ["genai_prices", "pydantic_ai", "pydantic_ai_slim", "fireflyframework-genai"]:
+    try:
+        pkg_metadata += copy_metadata(pkg)
+    except Exception:
+        pass  # Package may not be installed
 
 block_cipher = None
 
@@ -28,11 +38,12 @@ a = Analysis(
     datas=[
         # Bundle the built frontend static files
         (str(STATIC_DIR), os.path.join("fireflyframework_genai", "studio", "static")),
-    ],
+    ]
+    + pkg_metadata,
     hiddenimports=[],
     hookspath=[str(REPO_ROOT / "studio-desktop" / "pyinstaller")],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(REPO_ROOT / "studio-desktop" / "pyinstaller" / "rthook_disable_logfire.py")],
     excludes=[
         "tkinter",
         "matplotlib",
@@ -40,6 +51,7 @@ a = Analysis(
         "scipy",
         "numpy",
         "pandas",
+        "logfire",
     ],
     noarchive=False,
     optimize=0,

@@ -45,6 +45,15 @@
             font-size: 13px;
             color: #888;
             margin-top: -12px;
+            transition: color 0.3s;
+        }
+
+        .subtitle.error {
+            color: #e05050;
+        }
+
+        .subtitle.success {
+            color: #50c878;
         }
 
         .spinner {
@@ -54,6 +63,24 @@
             border-top-color: #F68000;
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
+        }
+
+        .spinner.error {
+            border-color: rgba(224, 80, 80, 0.2);
+            border-top-color: #e05050;
+            animation: none;
+        }
+
+        .spinner.success {
+            border-color: #50c878;
+            border-top-color: #50c878;
+            animation: none;
+        }
+
+        .details {
+            font-size: 11px;
+            color: #555;
+            margin-top: -12px;
         }
 
         @keyframes spin {
@@ -76,8 +103,67 @@
             </svg>
         </div>
         <span class="title">Firefly Studio</span>
-        <span class="subtitle">Starting server...</span>
-        <div class="spinner"></div>
+        <span id="status" class="subtitle">Starting server...</span>
+        <div id="spinner" class="spinner"></div>
+        <span id="details" class="details"></span>
     </div>
+    <script>
+        // Poll health endpoint to show startup progress.
+        // Tauri navigates the webview once health passes, but this
+        // gives users visual feedback and error info in the meantime.
+        (function () {
+            var statusEl = document.getElementById('status');
+            var spinnerEl = document.getElementById('spinner');
+            var detailsEl = document.getElementById('details');
+            var attempt = 0;
+            var startTime = Date.now();
+            var maxAttempts = 60; // 30 seconds at 500ms interval
+            var done = false;
+
+            function elapsed() {
+                return ((Date.now() - startTime) / 1000).toFixed(0);
+            }
+
+            function poll() {
+                if (done) return;
+                attempt++;
+
+                // Try common ports — Tauri picks a random port so we
+                // scan window.location if already redirected, otherwise
+                // this is just a visual aid (Tauri handles actual navigation)
+                var port = window.location.port || '8000';
+                var url = 'http://127.0.0.1:' + port + '/api/health';
+
+                fetch(url, { signal: AbortSignal.timeout(2000) })
+                    .then(function (r) {
+                        if (r.ok) {
+                            done = true;
+                            statusEl.textContent = 'Connected!';
+                            statusEl.className = 'subtitle success';
+                            spinnerEl.className = 'spinner success';
+                            detailsEl.textContent = '';
+                            return;
+                        }
+                        throw new Error('Status ' + r.status);
+                    })
+                    .catch(function () {
+                        if (done) return;
+                        if (attempt >= maxAttempts) {
+                            statusEl.textContent = 'Server failed to start';
+                            statusEl.className = 'subtitle error';
+                            spinnerEl.className = 'spinner error';
+                            detailsEl.textContent = 'Timed out after ' + elapsed() + 's. Try restarting the app.';
+                            return;
+                        }
+                        statusEl.textContent = 'Starting server... (' + elapsed() + 's)';
+                        detailsEl.textContent = 'Attempt ' + attempt;
+                        setTimeout(poll, 500);
+                    });
+            }
+
+            // Start polling after a brief delay to let the sidecar spawn
+            setTimeout(poll, 1000);
+        })();
+    </script>
 </body>
 </html>

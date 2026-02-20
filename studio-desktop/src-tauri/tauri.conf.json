@@ -34,9 +34,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "sidecar/firefly-studio*"
-    ]
+    "resources": {
+      "sidecar": "sidecar"
+    }
   },
   "plugins": {
     "shell": {
