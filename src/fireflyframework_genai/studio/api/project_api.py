@@ -47,6 +47,17 @@ _runtimes: dict[str, Any] = {}
 _executions: dict[str, dict[str, Any]] = {}
 """Map of execution_id -> execution result dict for async runs."""
 
+_MAX_EXECUTIONS = 1000
+"""Cap on stored execution records to prevent unbounded memory growth."""
+
+
+def _store_execution(record: dict[str, Any]) -> None:
+    """Store an execution record, evicting the oldest if at capacity."""
+    _executions[record["execution_id"]] = record
+    if len(_executions) > _MAX_EXECUTIONS:
+        oldest_key = next(iter(_executions))
+        del _executions[oldest_key]
+
 # ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
@@ -152,7 +163,7 @@ def create_project_api_router(project_manager: ProjectManager) -> APIRouter:
             "result": result,
             "duration_ms": duration_ms,
         }
-        _executions[execution_id] = record
+        _store_execution(record)
 
         return {
             "result": result,
@@ -172,13 +183,13 @@ def create_project_api_router(project_manager: ProjectManager) -> APIRouter:
         graph_model = _load_graph_model(project_manager, name)
 
         execution_id = str(uuid.uuid4())
-        _executions[execution_id] = {
+        _store_execution({
             "execution_id": execution_id,
             "project": name,
             "status": "running",
             "result": None,
             "duration_ms": None,
-        }
+        })
 
         async def _run_in_background() -> None:
             start_time = time.monotonic()
@@ -258,6 +269,14 @@ def create_project_api_router(project_manager: ProjectManager) -> APIRouter:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
         duration_ms = round((time.monotonic() - start_time) * 1000, 2)
+
+        _store_execution({
+            "execution_id": execution_id,
+            "project": name,
+            "status": "completed",
+            "result": result,
+            "duration_ms": duration_ms,
+        })
 
         return {
             "result": result,
