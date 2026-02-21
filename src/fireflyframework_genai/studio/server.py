@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""FastAPI application factory for Firefly Studio.
+"""FastAPI application factory for Firefly Agentic Studio.
 
 Call :func:`create_studio_app` to get a fully-configured FastAPI instance
 with health, registry, project, and execution endpoints.
@@ -40,7 +40,7 @@ _ALLOWED_ORIGINS: list[str] = [
 async def _lifespan(app: Any) -> AsyncIterator[None]:
     """FastAPI lifespan: startup and shutdown hooks for Studio."""
     # -- Startup -----------------------------------------------------------
-    logger.info("Firefly Studio starting up")
+    logger.info("Firefly Agentic Studio starting up")
 
     # Load persisted settings and inject API keys into the environment
     # so that PydanticAI providers pick them up automatically.
@@ -50,16 +50,25 @@ async def _lifespan(app: Any) -> AsyncIterator[None]:
     settings = load_settings(settings_path)
     apply_settings_to_env(settings)
 
+    # Register persisted custom tools at startup
+    from fireflyframework_genai.studio.custom_tools import CustomToolManager
+
+    custom_tools_dir = getattr(app.state, "custom_tools_dir", None)
+    custom_manager = CustomToolManager(custom_tools_dir)
+    count = custom_manager.register_all()
+    if count:
+        logger.info("Loaded %d custom tool(s) from disk", count)
+
     yield
     # -- Shutdown ----------------------------------------------------------
-    logger.info("Firefly Studio shutting down")
+    logger.info("Firefly Agentic Studio shutting down")
 
 
 def create_studio_app(
     config: Any | None = None,
     settings_path: Any | None = None,
 ) -> Any:
-    """Create a FastAPI application for Firefly Studio.
+    """Create a FastAPI application for Firefly Agentic Studio.
 
     Parameters:
         config: Optional :class:`~fireflyframework_genai.studio.config.StudioConfig`.
@@ -83,7 +92,7 @@ def create_studio_app(
     pkg_version = importlib.metadata.version("fireflyframework-genai")
 
     app = FastAPI(
-        title="Firefly Studio",
+        title="Firefly Agentic Studio",
         version=pkg_version,
         lifespan=_lifespan,
     )
@@ -121,6 +130,22 @@ def create_studio_app(
 
     project_manager = ProjectManager(config.projects_dir)
     app.include_router(create_projects_router(project_manager))
+
+    # -- Per-project runtime & execution API -------------------------------
+    from fireflyframework_genai.studio.api.project_api import create_project_api_router
+    app.include_router(create_project_api_router(project_manager))
+
+    # -- Version history endpoints -------------------------------------------
+    from fireflyframework_genai.studio.api.projects import create_versioning_router
+    app.include_router(create_versioning_router(project_manager))
+
+    # -- Custom tools endpoints --------------------------------------------
+    from fireflyframework_genai.studio.api.custom_tools import create_custom_tools_router
+    from fireflyframework_genai.studio.custom_tools import CustomToolManager
+
+    custom_tool_manager = CustomToolManager(config.custom_tools_dir)
+    app.include_router(create_custom_tools_router(custom_tool_manager))
+    app.state.custom_tools_dir = config.custom_tools_dir
 
     # -- File browsing endpoints -------------------------------------------
     from fireflyframework_genai.studio.api.files import create_files_router
@@ -165,6 +190,11 @@ def create_studio_app(
 
     app.include_router(create_assistant_router())
 
+    # -- Oracle WebSocket & REST -------------------------------------------
+    from fireflyframework_genai.studio.api.oracle import create_oracle_router
+
+    app.include_router(create_oracle_router())
+
     # Store config on app state for downstream routers
     app.state.studio_config = config
 
@@ -187,17 +217,47 @@ def _get_default_static_dir() -> Path:
     return Path(__file__).parent / "static"
 
 
+class _SPAStaticFiles:
+    """Starlette-compatible ASGI app that serves static files with SPA fallback.
+
+    Tries to serve files from *directory* first.  When the requested path
+    does not match a real file, it falls back to ``index.html`` so that
+    client-side routing (SvelteKit) can handle the URL.
+    """
+
+    def __init__(self, directory: str) -> None:
+        from starlette.staticfiles import StaticFiles  # type: ignore[import-not-found]
+
+        self._static = StaticFiles(directory=directory, html=True)
+        self._index = Path(directory) / "index.html"
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:  # noqa: ANN401
+        from starlette.responses import HTMLResponse  # type: ignore[import-not-found]
+
+        if scope["type"] != "http":
+            await self._static(scope, receive, send)
+            return
+
+        try:
+            await self._static(scope, receive, send)
+        except Exception:
+            # File not found — serve index.html for SPA fallback
+            response = HTMLResponse(self._index.read_text())
+            await response(scope, receive, send)
+
+
 def _mount_static_files(app: Any, static_dir: Path | None = None) -> None:
-    """Mount the bundled Studio frontend as static files.
+    """Mount the bundled Studio frontend with SPA fallback.
 
     When the ``studio/static/`` directory contains a built SvelteKit SPA
-    (i.e. an ``index.html`` file), mount it via :class:`StaticFiles` so
-    the entire Studio is served from the Python package — no separate
-    frontend server needed in production.
+    (i.e. an ``index.html`` file), mount it so the entire Studio is
+    served from the Python package — no separate frontend server needed
+    in production.
 
-    The mount is placed at ``/`` with ``html=True`` so that the SPA's
-    ``index.html`` is served for all non-API routes (SPA fallback).
-    This must be registered **last** so API/WebSocket routes take priority.
+    Uses :class:`_SPAStaticFiles` which serves real files normally and
+    falls back to ``index.html`` for any unrecognised path, enabling
+    client-side routing.  Must be registered **last** so API/WebSocket
+    routes take priority.
     """
     if static_dir is None:
         static_dir = _get_default_static_dir()
@@ -211,7 +271,5 @@ def _mount_static_files(app: Any, static_dir: Path | None = None) -> None:
         )
         return
 
-    from starlette.staticfiles import StaticFiles  # type: ignore[import-not-found]
-
-    app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+    app.mount("/", _SPAStaticFiles(directory=str(static_dir)), name="static")
     logger.info("Serving bundled Studio frontend from %s", static_dir)
