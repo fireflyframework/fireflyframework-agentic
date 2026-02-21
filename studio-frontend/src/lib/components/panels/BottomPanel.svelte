@@ -1,20 +1,43 @@
 <script lang="ts">
-	import { fade } from 'svelte/transition';
-	import { Terminal, Code, Clock, MessageSquare, ChevronDown, ChevronUp } from 'lucide-svelte';
+	import { onDestroy } from 'svelte';
+	import { Terminal, Code, Clock, Plug, FlaskConical, GitBranch, Rocket, Activity, FolderOpen, History, Eye, ListChecks, ChevronDown, ChevronUp } from 'lucide-svelte';
+	import type { BottomPanelTab } from '$lib/stores/ui';
 	import { bottomPanelOpen, bottomPanelTab } from '$lib/stores/ui';
+	import { executionEvents, checkpoints } from '$lib/stores/execution';
 	import ConsoleTab from './ConsoleTab.svelte';
 	import CodeTab from './CodeTab.svelte';
 	import TimelineTab from './TimelineTab.svelte';
-	import ChatTab from './ChatTab.svelte';
+	import HistoryPanel from './HistoryPanel.svelte';
+	import IntegrationsPanel from './IntegrationsPanel.svelte';
+	import EvaluatePanel from './EvaluatePanel.svelte';
+	import ExperimentsPanel from './ExperimentsPanel.svelte';
+	import DeployPanel from './DeployPanel.svelte';
+	import MonitorPanel from './MonitorPanel.svelte';
+	import FilesPanel from './FilesPanel.svelte';
+	import OraclePanel from './OraclePanel.svelte';
+	import ExecutionsPanel from './ExecutionsPanel.svelte';
+	import { oracleInsights } from '$lib/stores/oracle';
 
-	const tabs = [
-		{ id: 'console' as const, label: 'Console', icon: Terminal },
-		{ id: 'code' as const, label: 'Code', icon: Code },
-		{ id: 'timeline' as const, label: 'Timeline', icon: Clock },
-		{ id: 'chat' as const, label: 'Chat', icon: MessageSquare }
+	const errorCount = $derived($executionEvents.filter(e => e.type === 'node_error').length);
+	const checkpointCount = $derived($checkpoints.length);
+	const oraclePendingCount = $derived($oracleInsights.filter(i => i.status === 'pending').length);
+
+	const tabs: Array<{ id: BottomPanelTab; label: string; icon: typeof Terminal }> = [
+		{ id: 'console', label: 'Console', icon: Terminal },
+		{ id: 'code', label: 'Code', icon: Code },
+		{ id: 'timeline', label: 'Timeline', icon: Clock },
+		{ id: 'integrations', label: 'Integrate', icon: Plug },
+		{ id: 'evaluate', label: 'Evaluate', icon: FlaskConical },
+		{ id: 'experiments', label: 'Experiments', icon: GitBranch },
+		{ id: 'deploy', label: 'Deploy', icon: Rocket },
+		{ id: 'monitor', label: 'Monitor', icon: Activity },
+		{ id: 'files', label: 'Files', icon: FolderOpen },
+		{ id: 'history', label: 'History', icon: History },
+		{ id: 'oracle', label: 'Oracle', icon: Eye },
+		{ id: 'executions', label: 'Executions', icon: ListChecks },
 	];
 
-	let panelHeight = $state(280);
+	let panelHeight = $state(320);
 	let isDragging = $state(false);
 	let dragStartY = $state(0);
 	let dragStartHeight = $state(0);
@@ -26,7 +49,7 @@
 		bottomPanelOpen.update((v) => !v);
 	}
 
-	function selectTab(tabId: typeof tabs[number]['id']) {
+	function selectTab(tabId: BottomPanelTab) {
 		bottomPanelTab.set(tabId);
 		if (!$bottomPanelOpen) {
 			bottomPanelOpen.set(true);
@@ -55,6 +78,12 @@
 		document.removeEventListener('mousemove', onDragMove);
 		document.removeEventListener('mouseup', onDragEnd);
 	}
+
+	onDestroy(() => {
+		// Safety cleanup in case component destroys mid-drag
+		document.removeEventListener('mousemove', onDragMove);
+		document.removeEventListener('mouseup', onDragEnd);
+	});
 </script>
 
 <div
@@ -80,6 +109,13 @@
 				>
 					<TabIcon size={13} />
 					<span>{tab.label}</span>
+					{#if tab.id === 'console' && errorCount > 0}
+						<span class="tab-badge error">{errorCount > 99 ? '99+' : errorCount}</span>
+					{:else if tab.id === 'timeline' && checkpointCount > 0}
+						<span class="tab-badge accent">{checkpointCount > 99 ? '99+' : checkpointCount}</span>
+					{:else if tab.id === 'oracle' && oraclePendingCount > 0}
+						<span class="tab-badge accent">{oraclePendingCount > 99 ? '99+' : oraclePendingCount}</span>
+					{/if}
 				</button>
 			{/each}
 		</div>
@@ -95,19 +131,31 @@
 
 	{#if $bottomPanelOpen}
 		<div class="tab-content">
-			{#key $bottomPanelTab}
-				<div class="tab-content-inner" transition:fade={{ duration: 120 }}>
-					{#if $bottomPanelTab === 'console'}
-						<ConsoleTab />
-					{:else if $bottomPanelTab === 'code'}
-						<CodeTab />
-					{:else if $bottomPanelTab === 'timeline'}
-						<TimelineTab />
-					{:else if $bottomPanelTab === 'chat'}
-						<ChatTab />
-					{/if}
-				</div>
-			{/key}
+			{#if $bottomPanelTab === 'console'}
+				<ConsoleTab />
+			{:else if $bottomPanelTab === 'code'}
+				<CodeTab />
+			{:else if $bottomPanelTab === 'timeline'}
+				<TimelineTab />
+			{:else if $bottomPanelTab === 'integrations'}
+				<IntegrationsPanel />
+			{:else if $bottomPanelTab === 'evaluate'}
+				<EvaluatePanel />
+			{:else if $bottomPanelTab === 'experiments'}
+				<ExperimentsPanel />
+			{:else if $bottomPanelTab === 'deploy'}
+				<DeployPanel />
+			{:else if $bottomPanelTab === 'monitor'}
+				<MonitorPanel />
+			{:else if $bottomPanelTab === 'files'}
+				<FilesPanel />
+			{:else if $bottomPanelTab === 'history'}
+				<HistoryPanel />
+			{:else if $bottomPanelTab === 'oracle'}
+				<OraclePanel />
+			{:else if $bottomPanelTab === 'executions'}
+				<ExecutionsPanel />
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -164,6 +212,14 @@
 		display: flex;
 		align-items: center;
 		gap: 2px;
+		overflow-x: auto;
+		scrollbar-width: none;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.tab-list::-webkit-scrollbar {
+		display: none;
 	}
 
 	.tab-btn {
@@ -191,6 +247,31 @@
 		border-bottom-color: var(--color-accent, #ff6b35);
 	}
 
+	.tab-badge {
+		min-width: 16px;
+		height: 16px;
+		padding: 0 4px;
+		border-radius: 8px;
+		font-size: 9px;
+		font-weight: 700;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		line-height: 1;
+	}
+
+	.tab-badge.error {
+		background: rgba(239, 68, 68, 0.2);
+		color: var(--color-error, #ef4444);
+		border: 1px solid rgba(239, 68, 68, 0.3);
+	}
+
+	.tab-badge.accent {
+		background: oklch(from var(--color-accent, #ff6b35) l c h / 15%);
+		color: var(--color-accent, #ff6b35);
+		border: 1px solid oklch(from var(--color-accent, #ff6b35) l c h / 25%);
+	}
+
 	.toggle-btn {
 		display: flex;
 		align-items: center;
@@ -216,8 +297,4 @@
 		position: relative;
 	}
 
-	.tab-content-inner {
-		width: 100%;
-		height: 100%;
-	}
 </style>

@@ -1,8 +1,13 @@
 import { writable } from 'svelte/store';
 
+export type BottomPanelTab = 'console' | 'timeline' | 'code' | 'integrations' | 'evaluate' | 'experiments' | 'deploy' | 'monitor' | 'files' | 'history' | 'oracle' | 'executions';
+export type AppView = 'home' | 'construct';
+
 export const rightPanelOpen = writable(true);
-export const bottomPanelOpen = writable(true);
-export const bottomPanelTab = writable<'chat' | 'console' | 'timeline' | 'code'>('console');
+export const bottomPanelOpen = writable(false);
+export const bottomPanelTab = writable<BottomPanelTab>('console');
+export const appView = writable<AppView>('home');
+export const architectSidebarOpen = writable(true);
 export const commandPaletteOpen = writable(false);
 export const shortcutsModalOpen = writable(false);
 export const settingsModalOpen = writable(false);
