@@ -3,6 +3,8 @@ import { api } from '$lib/api/client';
 import { StudioWebSocket } from '$lib/api/websocket';
 import type { ExecutionEvent } from '$lib/types/graph';
 import { nodes, edges } from './pipeline';
+import { chatMessages } from './chat';
+import { currentProject } from './project';
 
 export interface OracleInsight {
 	id: string;
@@ -164,17 +166,38 @@ export function disconnectOracle(): void {
 	oracleChatStreaming.set(false);
 }
 
+/**
+ * Build a context summary with project info and recent Architect
+ * conversation so the Oracle understands what the user is building.
+ */
+function _buildContext(): Record<string, unknown> {
+	const proj = get(currentProject);
+	const msgs = get(chatMessages);
+
+	// Take up to last 20 Architect messages for context
+	const recent = msgs.slice(-20).map((m) => ({
+		role: m.role,
+		content: m.content.length > 500 ? m.content.slice(0, 500) + '...' : m.content,
+	}));
+
+	return {
+		project_name: proj?.name ?? '',
+		project_description: proj?.description ?? '',
+		architect_history: recent,
+	};
+}
+
 export function requestAnalysis(): void {
 	if (oracleWs?.connected) {
 		oracleAnalyzing.set(true);
-		oracleWs.send({ action: 'analyze' });
+		oracleWs.send({ action: 'analyze', context: _buildContext() });
 	}
 }
 
 export function requestNodeAnalysis(nodeId: string): void {
 	if (oracleWs?.connected) {
 		oracleAnalyzing.set(true);
-		oracleWs.send({ action: 'analyze_node', node_id: nodeId });
+		oracleWs.send({ action: 'analyze_node', node_id: nodeId, context: _buildContext() });
 	}
 }
 
@@ -193,8 +216,8 @@ export function sendOracleChat(message: string): void {
 		},
 	]);
 
-	// Send to backend
-	oracleWs.send({ action: 'chat', message: message.trim() });
+	// Send to backend with context
+	oracleWs.send({ action: 'chat', message: message.trim(), context: _buildContext() });
 }
 
 export function clearOracleChat(): void {

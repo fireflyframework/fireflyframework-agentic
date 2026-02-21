@@ -144,11 +144,15 @@ def create_oracle_router() -> APIRouter:
                 elif action == "analyze":
                     # Full pipeline review
                     try:
+                        context_block = _build_context_block(message)
                         result = await oracle.run(
-                            "Analyze the current pipeline thoroughly. "
+                            context_block
+                            + "Analyze the current pipeline thoroughly. "
                             "Use analyze_pipeline, check_connectivity, and review_agent_setup "
                             "to gather data. Then use suggest_improvement for each issue or "
-                            "recommendation you find.",
+                            "recommendation you find. Consider the project purpose and "
+                            "what the user discussed with The Architect when formulating "
+                            "your insights.",
                             message_history=message_history,
                         )
 
@@ -207,8 +211,10 @@ def create_oracle_router() -> APIRouter:
                         continue
 
                     try:
+                        context_block = _build_context_block(message)
                         result = await oracle.run(
-                            f"Analyze node '{node_id}' specifically. "
+                            context_block
+                            + f"Analyze node '{node_id}' specifically. "
                             f"Use analyze_node_config to check its configuration, "
                             f"then suggest improvements if needed.",
                             message_history=message_history,
@@ -269,8 +275,9 @@ def create_oracle_router() -> APIRouter:
                         continue
 
                     try:
+                        context_block = _build_context_block(message)
                         result = await oracle.run(
-                            user_msg,
+                            context_block + user_msg,
                             message_history=message_history,
                         )
 
@@ -373,3 +380,56 @@ def _extract_oracle_insights(result: Any) -> list[dict[str, Any]]:
     except Exception as exc:
         logger.warning("Could not extract Oracle insights: %s", exc)
     return insights
+
+
+def _build_context_block(message: dict[str, Any]) -> str:
+    """Build a context preamble from frontend-supplied project and Architect data.
+
+    The frontend sends a ``context`` dict with::
+
+        {
+            "project_name": str,
+            "project_description": str,
+            "architect_history": [{"role": ..., "content": ...}, ...]
+        }
+
+    Returns a formatted string block to prepend to the Oracle prompt,
+    giving it awareness of the project purpose and Architect conversation.
+    """
+    ctx = message.get("context")
+    if not ctx or not isinstance(ctx, dict):
+        return ""
+
+    parts: list[str] = []
+
+    proj_name = ctx.get("project_name", "")
+    proj_desc = ctx.get("project_description", "")
+    if proj_name or proj_desc:
+        parts.append(
+            f"[PROJECT CONTEXT]\n"
+            f"Project: {proj_name or '(unnamed)'}\n"
+            f"Description: {proj_desc or '(no description)'}\n"
+        )
+
+    history = ctx.get("architect_history", [])
+    if history and isinstance(history, list):
+        lines: list[str] = []
+        for msg_item in history[-20:]:
+            role = msg_item.get("role", "unknown")
+            content = msg_item.get("content", "")
+            if content:
+                label = "User" if role == "user" else "Architect"
+                lines.append(f"  {label}: {content}")
+        if lines:
+            parts.append(
+                "[ARCHITECT CONVERSATION SUMMARY]\n"
+                "The user has been working with The Architect. "
+                "Here is their recent conversation for context:\n"
+                + "\n".join(lines)
+                + "\n"
+            )
+
+    if not parts:
+        return ""
+
+    return "\n".join(parts) + "\n"
