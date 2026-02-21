@@ -195,6 +195,11 @@ def create_studio_app(
 
     app.include_router(create_oracle_router())
 
+    # -- GraphQL endpoint --------------------------------------------------
+    from fireflyframework_genai.studio.api.graphql_api import create_graphql_router
+
+    app.include_router(create_graphql_router(project_manager))
+
     # Store config on app state for downstream routers
     app.state.studio_config = config
 
