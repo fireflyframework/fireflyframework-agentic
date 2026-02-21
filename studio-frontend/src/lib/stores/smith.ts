@@ -116,20 +116,27 @@ function handleSmithMessage(data: Record<string, unknown>): void {
 		});
 	} else if (type === 'smith_response_complete') {
 		smithIsThinking.set(false);
-		// If this response includes generated code, update only the code pane
 		if (data.code) {
 			smithCode.set(data.code as string);
 		}
-		// Only add full_text as a chat message when it is NOT a code response
 		const content = (data.full_text ?? data.content ?? '') as string;
-		if (content && !data.code) {
+		if (content) {
 			smithMessages.update((msgs) => {
 				const last = msgs[msgs.length - 1];
-				// If last message was streamed, replace it with complete content
+				// Replace streamed tokens with the final complete text
 				if (last && last.role === 'assistant') {
 					return [...msgs.slice(0, -1), { ...last, content }];
 				}
 				return [...msgs, { role: 'assistant', content, timestamp: new Date().toISOString() }];
+			});
+		} else if (data.code) {
+			// Code-only response with no narrative — remove streamed placeholder
+			smithMessages.update((msgs) => {
+				const last = msgs[msgs.length - 1];
+				if (last && last.role === 'assistant' && !last.content.trim()) {
+					return msgs.slice(0, -1);
+				}
+				return msgs;
 			});
 		}
 	} else if (type === 'code_generated') {

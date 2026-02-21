@@ -43,6 +43,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import tempfile
 import uuid
 from pathlib import Path
@@ -278,13 +279,57 @@ async def _handle_chat(
         if hasattr(result, "new_messages"):
             message_history.extend(result.new_messages())
 
-        # Send the response as small chunks so the frontend can render
-        # progressively, simulating streaming.
-        _CHUNK_SIZE = 80
-        for i in range(0, len(full_text), _CHUNK_SIZE):
-            chunk = full_text[i : i + _CHUNK_SIZE]
+        # Check if the response contains code blocks that should go to
+        # the Code tab instead of being displayed inline in chat.
+        extracted_files = _extract_code_blocks(full_text)
+
+        if extracted_files:
+            # Route code to the Code tab via files_generated
             await websocket.send_json(
-                {"type": "smith_token", "content": chunk}
+                {
+                    "type": "files_generated",
+                    "files": extracted_files,
+                    "notes": [],
+                }
+            )
+
+            # Strip code blocks from the chat text, keep only narrative
+            narrative = _strip_code_blocks(full_text).strip()
+
+            # Send narrative as chat tokens (or a brief note if empty)
+            chat_text = narrative or "Code generated — see the Code tab."
+            _CHUNK_SIZE = 80
+            for i in range(0, len(chat_text), _CHUNK_SIZE):
+                chunk = chat_text[i : i + _CHUNK_SIZE]
+                await websocket.send_json(
+                    {"type": "smith_token", "content": chunk}
+                )
+
+            combined_code = "\n\n".join(
+                f"# --- {f['path']} ---\n{f['content']}" for f in extracted_files
+            )
+
+            await websocket.send_json(
+                {
+                    "type": "smith_response_complete",
+                    "full_text": chat_text,
+                    "code": combined_code,
+                }
+            )
+        else:
+            # No code blocks — send as regular chat
+            _CHUNK_SIZE = 80
+            for i in range(0, len(full_text), _CHUNK_SIZE):
+                chunk = full_text[i : i + _CHUNK_SIZE]
+                await websocket.send_json(
+                    {"type": "smith_token", "content": chunk}
+                )
+
+            await websocket.send_json(
+                {
+                    "type": "smith_response_complete",
+                    "full_text": full_text,
+                }
             )
 
         # Extract any tool calls for visibility
@@ -302,13 +347,6 @@ async def _handle_chat(
         # Check for pending approvals in tool return parts
         await _check_pending_approvals(
             websocket, result, pending_commands
-        )
-
-        await websocket.send_json(
-            {
-                "type": "smith_response_complete",
-                "full_text": full_text,
-            }
         )
 
     except Exception as exc:
@@ -511,6 +549,64 @@ async def _handle_approve_command(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+# Regex for fenced code blocks: ```lang\n...code...\n```
+_CODE_BLOCK_RE = re.compile(
+    r"```(\w*)\n(.*?)```",
+    re.DOTALL,
+)
+
+# Map language tags to file extensions
+_LANG_TO_EXT: dict[str, str] = {
+    "python": ".py", "py": ".py",
+    "javascript": ".js", "js": ".js",
+    "typescript": ".ts", "ts": ".ts",
+    "json": ".json", "yaml": ".yaml", "yml": ".yaml",
+    "bash": ".sh", "sh": ".sh", "shell": ".sh",
+    "sql": ".sql", "html": ".html", "css": ".css",
+    "xml": ".xml", "toml": ".toml", "ini": ".ini",
+}
+
+# Minimum total code length to be considered "substantial" (skip tiny snippets)
+_MIN_CODE_LENGTH = 120
+
+
+def _extract_code_blocks(text: str) -> list[dict[str, Any]]:
+    """Extract fenced code blocks from markdown text as file entries.
+
+    Returns a list of ``{"path": ..., "content": ..., "language": ...}``
+    dicts suitable for a ``files_generated`` WebSocket message.
+    Only returns results when the total code is substantial enough to
+    warrant display in the Code tab (>= ``_MIN_CODE_LENGTH`` chars).
+    """
+    matches = _CODE_BLOCK_RE.findall(text)
+    if not matches:
+        return []
+
+    total_code = sum(len(content.strip()) for _, content in matches)
+    if total_code < _MIN_CODE_LENGTH:
+        return []
+
+    files: list[dict[str, Any]] = []
+    counters: dict[str, int] = {}
+    for lang_tag, content in matches:
+        lang = lang_tag.lower() or "python"
+        ext = _LANG_TO_EXT.get(lang, ".py")
+        # Generate a short filename per block
+        count = counters.get(lang, 0) + 1
+        counters[lang] = count
+        name = f"smith_code_{count}{ext}" if count > 1 else f"smith_code{ext}"
+        files.append({
+            "path": name,
+            "content": content.strip(),
+            "language": lang,
+        })
+    return files
+
+
+def _strip_code_blocks(text: str) -> str:
+    """Remove fenced code blocks from markdown, keeping surrounding narrative."""
+    return _CODE_BLOCK_RE.sub("", text)
 
 
 async def _check_pending_approvals(
