@@ -924,8 +924,23 @@ Templates:
 """
 
 
-def _build_instructions(settings: Any) -> str:
-    """Build personalised assistant instructions from settings."""
+def _build_instructions(settings: Any = None, settings_path: Any = None) -> str:
+    """Build personalised assistant instructions from settings.
+
+    Parameters
+    ----------
+    settings:
+        A pre-loaded :class:`StudioSettings` instance.  When *None*,
+        settings are loaded from *settings_path* (or the default location).
+    settings_path:
+        Optional path to a settings JSON file.  Only used when *settings*
+        is ``None``.
+    """
+    if settings is None:
+        from fireflyframework_genai.studio.settings import load_settings
+
+        settings = load_settings(path=settings_path)
+
     profile = getattr(settings, "user_profile", None)
 
     assistant_name = "The Architect"
@@ -960,12 +975,25 @@ def _build_instructions(settings: Any) -> str:
     else:
         personality_block = personality_block.replace("{user_name_placeholder}", "The One")
 
-    return _STUDIO_ASSISTANT_INSTRUCTIONS_TEMPLATE.format(
+    instructions = _STUDIO_ASSISTANT_INSTRUCTIONS_TEMPLATE.format(
         assistant_name=assistant_name,
         personality_block=personality_block,
         user_block=user_block,
         framework_knowledge=_FRAMEWORK_KNOWLEDGE,
     )
+
+    # Inject the user's configured default model so the assistant knows
+    # which model to use when creating agent nodes.
+    default_model = settings.model_defaults.default_model or "openai:gpt-4o"
+    model_directive = (
+        f"\n\nDEFAULT MODEL: {default_model}\n"
+        f'When creating agent nodes, use "{default_model}" as the model '
+        "unless the user explicitly requests a different model. "
+        "This is their configured default from settings.\n"
+    )
+    instructions += model_directive
+
+    return instructions
 
 
 def _resolve_assistant_model() -> str:
