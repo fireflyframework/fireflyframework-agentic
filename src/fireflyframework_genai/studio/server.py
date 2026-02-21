@@ -200,6 +200,11 @@ def create_studio_app(
 
     app.include_router(create_graphql_router(project_manager))
 
+    # -- Tunnel management -------------------------------------------------
+    from fireflyframework_genai.studio.api.tunnel import create_tunnel_router
+
+    app.include_router(create_tunnel_router(port=config.port))
+
     # Store config on app state for downstream routers
     app.state.studio_config = config
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""CLI entry point for Firefly Studio.
+"""CLI entry point for Firefly Agentic Studio.
 
 Usage::
 
@@ -44,8 +44,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command")
 
     # "studio" subcommand
-    studio_parser = subparsers.add_parser("studio", help="Launch Firefly Studio")
+    studio_parser = subparsers.add_parser("studio", help="Launch Firefly Agentic Studio")
     _add_studio_args(studio_parser)
+
+    # "expose" subcommand
+    expose_parser = subparsers.add_parser("expose", help="Expose Studio via Cloudflare Tunnel")
+    expose_parser.add_argument("--port", type=int, default=8470, help="Local port to expose")
 
     # Also add studio args to the top-level parser for convenience
     _add_studio_args(parser)
@@ -106,13 +110,15 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "studio":
         _run_studio(args)
+    elif args.command == "expose":
+        _run_expose(args)
     else:
         print(f"Unknown command: {args.command}", file=sys.stderr)
         sys.exit(1)
 
 
 def _run_studio(args: argparse.Namespace) -> None:
-    """Launch the Firefly Studio server."""
+    """Launch the Firefly Agentic Studio server."""
     import uvicorn  # type: ignore[import-not-found]
 
     from fireflyframework_genai.studio.config import StudioConfig
@@ -130,7 +136,7 @@ def _run_studio(args: argparse.Namespace) -> None:
     app = create_studio_app(config=config)
 
     url = f"http://{config.host}:{config.port}"
-    print(f"Firefly Studio running at {url}")
+    print(f"Firefly Agentic Studio running at {url}")
 
     if config.open_browser:
         _open_browser_after_delay(url)
@@ -141,3 +147,33 @@ def _run_studio(args: argparse.Namespace) -> None:
         port=config.port,
         log_level=config.log_level,
     )
+
+
+def _run_expose(args: argparse.Namespace) -> None:
+    """Start a Cloudflare Tunnel to expose the local Studio."""
+    import asyncio
+
+    from fireflyframework_genai.studio.tunnel import TunnelManager
+
+    tm = TunnelManager(port=args.port)
+
+    if not tm.is_available():
+        print(
+            "Error: cloudflared is not installed.\n"
+            "Install from: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    async def _expose() -> None:
+        url = await tm.start()
+        print(f"Studio is now publicly accessible at: {url}")
+        print("Press Ctrl+C to stop the tunnel.")
+        try:
+            while True:
+                await asyncio.sleep(1)
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            await tm.stop()
+            print("Tunnel stopped.")
+
+    asyncio.run(_expose())
