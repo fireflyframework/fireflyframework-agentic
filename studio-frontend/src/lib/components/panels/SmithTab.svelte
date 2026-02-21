@@ -52,8 +52,11 @@
 		pendingCommand,
 		approveCommand,
 		connectSmith,
-		disconnectSmith
+		disconnectSmith,
+		loadSmithHistory,
+		loadSmithFiles
 	} from '$lib/stores/smith';
+	import { currentProject } from '$lib/stores/project';
 	import CommandApprovalModal from '$lib/components/shared/CommandApprovalModal.svelte';
 	import { nodes, edges } from '$lib/stores/pipeline';
 
@@ -339,10 +342,18 @@
 	// Connection error derived from smithConnected
 	let connectionError = $derived(!$smithConnected && $smithMessages.length > 0 ? 'Connection to Smith lost. Attempting to reconnect...' : '');
 
-	onMount(() => {
+	onMount(async () => {
 		connectSmith();
 		inputElement?.focus();
 		window.addEventListener('architect-canvas-complete', handleArchitectComplete);
+		// Load persisted history and files for current project
+		const proj = $currentProject;
+		if (proj?.name) {
+			await Promise.all([
+				loadSmithHistory(proj.name),
+				loadSmithFiles(proj.name),
+			]);
+		}
 	});
 
 	onDestroy(() => {

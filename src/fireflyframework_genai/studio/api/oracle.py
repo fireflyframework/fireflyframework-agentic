@@ -27,8 +27,13 @@ from dataclasses import asdict
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect  # type: ignore[import-not-found]
+from pydantic import BaseModel  # type: ignore[import-not-found]
 
 logger = logging.getLogger(__name__)
+
+
+class _SaveChatHistoryBody(BaseModel):
+    messages: list[dict]
 
 
 def create_oracle_router() -> APIRouter:
@@ -84,6 +89,27 @@ def create_oracle_router() -> APIRouter:
         if updated is None:
             raise HTTPException(status_code=404, detail="Insight not found")
         return {"status": "skipped"}
+
+    # ------------------------------------------------------------------
+    # REST endpoints — Oracle chat history
+    # ------------------------------------------------------------------
+
+    @router.get("/api/oracle/{project}/chat-history")
+    async def get_oracle_chat_history(project: str):
+        from fireflyframework_genai.studio.assistant.history import load_oracle_history
+        return load_oracle_history(project)
+
+    @router.post("/api/oracle/{project}/chat-history")
+    async def save_oracle_chat_history(project: str, body: _SaveChatHistoryBody):
+        from fireflyframework_genai.studio.assistant.history import save_oracle_history
+        save_oracle_history(project, body.messages)
+        return {"status": "saved"}
+
+    @router.delete("/api/oracle/{project}/chat-history")
+    async def delete_oracle_chat_history(project: str):
+        from fireflyframework_genai.studio.assistant.history import clear_oracle_history
+        clear_oracle_history(project)
+        return {"status": "cleared"}
 
     # ------------------------------------------------------------------
     # WebSocket endpoint
@@ -144,7 +170,7 @@ def create_oracle_router() -> APIRouter:
                 elif action == "analyze":
                     # Full pipeline review
                     try:
-                        context_block = _build_context_block(message)
+                        context_block = _build_shared_context_for_oracle(project, canvas_state)
                         result = await oracle.run(
                             context_block
                             + "Analyze the current pipeline thoroughly. "
@@ -211,7 +237,7 @@ def create_oracle_router() -> APIRouter:
                         continue
 
                     try:
-                        context_block = _build_context_block(message)
+                        context_block = _build_shared_context_for_oracle(project, canvas_state)
                         result = await oracle.run(
                             context_block
                             + f"Analyze node '{node_id}' specifically. "
@@ -275,7 +301,7 @@ def create_oracle_router() -> APIRouter:
                         continue
 
                     try:
-                        context_block = _build_context_block(message)
+                        context_block = _build_shared_context_for_oracle(project, canvas_state)
                         result = await oracle.run(
                             context_block + user_msg,
                             message_history=message_history,
@@ -382,54 +408,19 @@ def _extract_oracle_insights(result: Any) -> list[dict[str, Any]]:
     return insights
 
 
-def _build_context_block(message: dict[str, Any]) -> str:
-    """Build a context preamble from frontend-supplied project and Architect data.
+def _build_shared_context_for_oracle(
+    project: str, canvas_state: dict[str, Any]
+) -> str:
+    """Build cross-agent context for the Oracle using the shared builder.
 
-    The frontend sends a ``context`` dict with::
-
-        {
-            "project_name": str,
-            "project_description": str,
-            "architect_history": [{"role": ..., "content": ...}, ...]
-        }
-
-    Returns a formatted string block to prepend to the Oracle prompt,
-    giving it awareness of the project purpose and Architect conversation.
+    Replaces the old frontend-supplied context approach — context is now
+    assembled server-side from persisted conversation histories.
     """
-    ctx = message.get("context")
-    if not ctx or not isinstance(ctx, dict):
-        return ""
-
-    parts: list[str] = []
-
-    proj_name = ctx.get("project_name", "")
-    proj_desc = ctx.get("project_description", "")
-    if proj_name or proj_desc:
-        parts.append(
-            f"[PROJECT CONTEXT]\n"
-            f"Project: {proj_name or '(unnamed)'}\n"
-            f"Description: {proj_desc or '(no description)'}\n"
+    try:
+        from fireflyframework_genai.studio.assistant.shared_context import (
+            build_shared_context,
         )
 
-    history = ctx.get("architect_history", [])
-    if history and isinstance(history, list):
-        lines: list[str] = []
-        for msg_item in history[-20:]:
-            role = msg_item.get("role", "unknown")
-            content = msg_item.get("content", "")
-            if content:
-                label = "User" if role == "user" else "Architect"
-                lines.append(f"  {label}: {content}")
-        if lines:
-            parts.append(
-                "[ARCHITECT CONVERSATION SUMMARY]\n"
-                "The user has been working with The Architect. "
-                "Here is their recent conversation for context:\n"
-                + "\n".join(lines)
-                + "\n"
-            )
-
-    if not parts:
+        return build_shared_context(project, canvas_state, exclude_agent="oracle")
+    except Exception:
         return ""
-
-    return "\n".join(parts) + "\n"

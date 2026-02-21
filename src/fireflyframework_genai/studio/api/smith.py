@@ -50,8 +50,17 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect  # type: ignore[import-not-found]
+from pydantic import BaseModel  # type: ignore[import-not-found]
 
 logger = logging.getLogger(__name__)
+
+
+class _SaveHistoryBody(BaseModel):
+    messages: list[dict]
+
+
+class _SaveFilesBody(BaseModel):
+    files: list[dict]
 
 
 def create_smith_router() -> APIRouter:
@@ -63,8 +72,54 @@ def create_smith_router() -> APIRouter:
         Accept a WebSocket connection for Agent Smith code generation
         and chat.  Supports actions: ``generate``, ``chat``,
         ``sync_canvas``, ``execute``, ``approve_command``.
+    ``GET /api/smith/{project}/history``
+        Load saved Smith chat history.
+    ``POST /api/smith/{project}/history``
+        Save Smith chat history.
+    ``DELETE /api/smith/{project}/history``
+        Clear Smith chat history.
+    ``GET /api/smith/{project}/files``
+        Load saved Smith generated files.
+    ``POST /api/smith/{project}/files``
+        Save Smith generated files.
     """
     router = APIRouter(tags=["smith"])
+
+    # ------------------------------------------------------------------
+    # REST endpoints — Smith chat history & generated files
+    # ------------------------------------------------------------------
+
+    @router.get("/api/smith/{project}/history")
+    async def get_smith_history(project: str):
+        from fireflyframework_genai.studio.assistant.history import load_smith_history
+        return load_smith_history(project)
+
+    @router.post("/api/smith/{project}/history")
+    async def save_smith_history_endpoint(project: str, body: _SaveHistoryBody):
+        from fireflyframework_genai.studio.assistant.history import save_smith_history
+        save_smith_history(project, body.messages)
+        return {"status": "saved"}
+
+    @router.delete("/api/smith/{project}/history")
+    async def delete_smith_history(project: str):
+        from fireflyframework_genai.studio.assistant.history import clear_smith_history
+        clear_smith_history(project)
+        return {"status": "cleared"}
+
+    @router.get("/api/smith/{project}/files")
+    async def get_smith_files(project: str):
+        from fireflyframework_genai.studio.assistant.history import load_smith_files
+        return load_smith_files(project)
+
+    @router.post("/api/smith/{project}/files")
+    async def save_smith_files_endpoint(project: str, body: _SaveFilesBody):
+        from fireflyframework_genai.studio.assistant.history import save_smith_files
+        save_smith_files(project, body.files)
+        return {"status": "saved"}
+
+    # ------------------------------------------------------------------
+    # WebSocket endpoint
+    # ------------------------------------------------------------------
 
     @router.websocket("/ws/smith")
     async def smith_ws(
@@ -97,12 +152,13 @@ def create_smith_router() -> APIRouter:
 
                 if action == "generate":
                     await _handle_generate(
-                        websocket, data, canvas_state, message_history
+                        websocket, data, canvas_state, message_history,
+                        project,
                     )
                 elif action == "chat":
                     await _handle_chat(
                         websocket, data, canvas_state, message_history,
-                        pending_commands,
+                        pending_commands, project,
                     )
                 elif action == "sync_canvas":
                     await _handle_sync_canvas(websocket, data, canvas_state)
@@ -141,6 +197,7 @@ async def _handle_generate(
     data: dict[str, Any],
     canvas_state: dict[str, Any],
     message_history: list[Any],
+    project: str = "",
 ) -> None:
     """Handle the ``generate`` action: convert canvas graph to Python code.
 
@@ -176,7 +233,23 @@ async def _handle_generate(
         except Exception:
             pass
 
-        result = await generate_code_with_smith(graph, settings_dict, user_name=user_name)
+        # Build shared cross-agent context for generation
+        shared_context = ""
+        try:
+            from fireflyframework_genai.studio.assistant.shared_context import (
+                build_shared_context,
+            )
+
+            shared_context = build_shared_context(
+                project, canvas_state, exclude_agent="smith"
+            )
+        except Exception:
+            pass
+
+        result = await generate_code_with_smith(
+            graph, settings_dict, user_name=user_name,
+            shared_context=shared_context,
+        )
 
         code = result.get("code", "")
         files = result.get("files", [])
@@ -222,6 +295,7 @@ async def _handle_chat(
     canvas_state: dict[str, Any],
     message_history: list[Any],
     pending_commands: dict[str, dict[str, Any]],
+    project: str = "",
 ) -> None:
     """Handle the ``chat`` action: free-form conversation with Smith.
 
@@ -252,9 +326,20 @@ async def _handle_chat(
 
         smith = create_smith_agent(user_name=_user_name)
 
-        # Enrich the prompt with canvas context so Smith knows what the
-        # user is working on
+        # Enrich the prompt with shared cross-agent context and canvas state
         context_parts: list[str] = []
+        try:
+            from fireflyframework_genai.studio.assistant.shared_context import (
+                build_shared_context,
+            )
+
+            shared = build_shared_context(
+                project, canvas_state, exclude_agent="smith"
+            )
+            if shared:
+                context_parts.append(shared)
+        except Exception:
+            pass
         if canvas_state.get("nodes"):
             context_parts.append(
                 "[CURRENT PIPELINE STATE]\n"

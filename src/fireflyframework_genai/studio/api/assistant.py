@@ -614,11 +614,12 @@ async def _handle_chat(
         })
 
 
-def _build_project_context(canvas: Any = None) -> str:
+def _build_project_context(canvas: Any = None, project_name: str = "") -> str:
     """Gather live project, integration, and tool state for the Architect.
 
     This context is prepended (invisibly) to the first user message so the
     assistant knows what the user is working on without them having to explain.
+    Includes cross-agent conversation summaries from Smith and Oracle.
     """
     parts: list[str] = []
 
@@ -688,6 +689,34 @@ def _build_project_context(canvas: Any = None) -> str:
             )
     except Exception:
         pass
+
+    # Cross-agent context: what Smith and Oracle have discussed with the user
+    if project_name:
+        try:
+            from fireflyframework_genai.studio.assistant.shared_context import (
+                build_shared_context,
+            )
+
+            # Canvas here is the typed object, convert to dict for shared context
+            canvas_dict = None
+            if canvas and canvas.nodes:
+                canvas_dict = {
+                    "nodes": [
+                        {"id": n.id, "type": n.type, "data": {"label": n.label or "", "config": n.config or {}}}
+                        for n in canvas.nodes
+                    ],
+                    "edges": [
+                        {"source": e.source, "target": e.target}
+                        for e in canvas.edges
+                    ],
+                }
+            shared = build_shared_context(
+                project_name, canvas_dict, exclude_agent="architect"
+            )
+            if shared:
+                parts.append(shared)
+        except Exception:
+            pass
 
     return "\n".join(parts)
 
@@ -824,7 +853,7 @@ def create_assistant_router() -> APIRouter:
 
                     # Inject live project context so The Architect knows what
                     # the user is currently working on.
-                    project_context = _build_project_context(canvas=canvas)
+                    project_context = _build_project_context(canvas=canvas, project_name=project)
                     if project_context:
                         user_message = f"{project_context}\n\n{user_message}"
 

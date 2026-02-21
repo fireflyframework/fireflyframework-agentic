@@ -1,4 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
+import { api } from '$lib/api/client';
+import { currentProject } from '$lib/stores/project';
 import { nodes, edges } from '$lib/stores/pipeline';
 
 // ---------------------------------------------------------------------------
@@ -45,10 +47,14 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempts = 0;
 const MAX_RECONNECT = 5;
 let intentionalClose = false;
+let currentSmithProject = '';
 
 function getWsUrl(): string {
 	const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-	return `${protocol}//${window.location.host}/ws/smith`;
+	const proj = get(currentProject);
+	const projectParam = proj?.name ? `?project=${encodeURIComponent(proj.name)}` : '';
+	currentSmithProject = proj?.name ?? '';
+	return `${protocol}//${window.location.host}/ws/smith${projectParam}`;
 }
 
 function attemptReconnect(): void {
@@ -139,6 +145,8 @@ function handleSmithMessage(data: Record<string, unknown>): void {
 				return msgs;
 			});
 		}
+		// Auto-save chat history
+		_autoSaveSmithHistory();
 	} else if (type === 'code_generated') {
 		const code = data.code as string;
 		smithCode.set(code);
@@ -154,6 +162,8 @@ function handleSmithMessage(data: Record<string, unknown>): void {
 		}
 		const combined = files.map(f => `# --- ${f.path} ---\n${f.content}`).join('\n\n');
 		smithCode.set(combined);
+		// Auto-save generated files
+		_autoSaveSmithFiles(files);
 	} else if (type === 'approval_required') {
 		pendingCommand.set({
 			commandId: data.command_id as string,
@@ -308,4 +318,64 @@ export function disconnectSmith(): void {
 	}
 	ws?.close();
 	ws = null;
+}
+
+// ---------------------------------------------------------------------------
+// Persistence — auto-save & load
+// ---------------------------------------------------------------------------
+
+function _autoSaveSmithHistory(): void {
+	if (!currentSmithProject) return;
+	const msgs = get(smithMessages).map((m) => ({
+		role: m.role,
+		content: m.content,
+		timestamp: m.timestamp,
+	}));
+	api.smith.saveHistory(currentSmithProject, msgs).catch(() => {});
+}
+
+function _autoSaveSmithFiles(files: SmithFile[]): void {
+	if (!currentSmithProject) return;
+	api.smith.saveFiles(currentSmithProject, files).catch(() => {});
+}
+
+export async function loadSmithHistory(project: string): Promise<void> {
+	try {
+		const msgs = await api.smith.getHistory(project);
+		if (msgs.length > 0) {
+			smithMessages.set(
+				msgs.map((m) => ({
+					role: m.role as 'user' | 'assistant',
+					content: m.content,
+					timestamp: m.timestamp,
+				}))
+			);
+		}
+	} catch {
+		// No saved history — start fresh
+	}
+}
+
+export async function loadSmithFiles(project: string): Promise<void> {
+	try {
+		const files = await api.smith.getFiles(project);
+		if (files.length > 0) {
+			smithFiles.set(files);
+			smithActiveFile.set(files[0].path);
+			const combined = files.map((f) => `# --- ${f.path} ---\n${f.content}`).join('\n\n');
+			smithCode.set(combined);
+		}
+	} catch {
+		// No saved files — start fresh
+	}
+}
+
+export function clearSmithChat(): void {
+	smithMessages.set([]);
+	smithCode.set('');
+	smithFiles.set([]);
+	smithActiveFile.set(null);
+	if (currentSmithProject) {
+		api.smith.clearHistory(currentSmithProject).catch(() => {});
+	}
 }

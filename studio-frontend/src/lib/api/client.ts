@@ -202,6 +202,25 @@ export const api = {
 			}),
 	},
 
+	smith: {
+		getHistory: (project: string) =>
+			request<Array<{ role: string; content: string; timestamp: string }>>(`/smith/${encodeURIComponent(project)}/history`),
+		saveHistory: (project: string, messages: Array<{ role: string; content: string; timestamp: string }>) =>
+			request<{ status: string }>(`/smith/${encodeURIComponent(project)}/history`, {
+				method: 'POST',
+				body: JSON.stringify({ messages })
+			}),
+		clearHistory: (project: string) =>
+			request<{ status: string }>(`/smith/${encodeURIComponent(project)}/history`, { method: 'DELETE' }),
+		getFiles: (project: string) =>
+			request<Array<{ path: string; content: string; language: string }>>(`/smith/${encodeURIComponent(project)}/files`),
+		saveFiles: (project: string, files: Array<{ path: string; content: string; language: string }>) =>
+			request<{ status: string }>(`/smith/${encodeURIComponent(project)}/files`, {
+				method: 'POST',
+				body: JSON.stringify({ files })
+			}),
+	},
+
 	oracle: {
 		getInsights: (project: string) =>
 			request<Array<{ id: string; title: string; description: string; severity: string; action_instruction: string | null; timestamp: string; status: string }>>(`/oracle/${encodeURIComponent(project)}/insights`),
@@ -209,6 +228,15 @@ export const api = {
 			request<{ status: string; action_instruction: string | null }>(`/oracle/${encodeURIComponent(project)}/insights/${insightId}/approve`, { method: 'POST' }),
 		skipInsight: (project: string, insightId: string) =>
 			request<{ status: string }>(`/oracle/${encodeURIComponent(project)}/insights/${insightId}/skip`, { method: 'POST' }),
+		getChatHistory: (project: string) =>
+			request<Array<{ role: string; content: string; timestamp: string }>>(`/oracle/${encodeURIComponent(project)}/chat-history`),
+		saveChatHistory: (project: string, messages: Array<{ role: string; content: string; timestamp: string }>) =>
+			request<{ status: string }>(`/oracle/${encodeURIComponent(project)}/chat-history`, {
+				method: 'POST',
+				body: JSON.stringify({ messages })
+			}),
+		clearChatHistory: (project: string) =>
+			request<{ status: string }>(`/oracle/${encodeURIComponent(project)}/chat-history`, { method: 'DELETE' }),
 	},
 
 	tunnel: {

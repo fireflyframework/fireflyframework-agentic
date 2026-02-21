@@ -42,6 +42,7 @@
 		clearOracleChat,
 		approveInsight,
 		skipInsight,
+		loadOracleChatHistory,
 	} from '$lib/stores/oracle';
 	import { currentProject } from '$lib/stores/project';
 
@@ -247,8 +248,13 @@
 		}
 	}
 
-	onMount(() => {
+	onMount(async () => {
 		window.addEventListener('architect-canvas-complete', handleCanvasComplete);
+		// Load persisted Oracle chat history for current project
+		const proj = $currentProject;
+		if (proj?.name) {
+			await loadOracleChatHistory(proj.name);
+		}
 	});
 
 	onDestroy(() => {

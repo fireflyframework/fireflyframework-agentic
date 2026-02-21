@@ -3,7 +3,6 @@ import { api } from '$lib/api/client';
 import { StudioWebSocket } from '$lib/api/websocket';
 import type { ExecutionEvent } from '$lib/types/graph';
 import { nodes, edges } from './pipeline';
-import { chatMessages } from './chat';
 import { currentProject } from './project';
 
 export interface OracleInsight {
@@ -33,6 +32,7 @@ export const oracleChatStreaming = writable(false);
 let oracleWs: StudioWebSocket | null = null;
 let chatMsgCounter = 0;
 let currentOracleMsgId = '';
+let currentOracleProject = '';
 
 // --- Canvas auto-sync ---
 let syncTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -74,6 +74,7 @@ export function stopCanvasAutoSync(): void {
 
 export function connectOracle(project: string): void {
 	disconnectOracle();
+	currentOracleProject = project;
 
 	oracleWs = new StudioWebSocket(`/ws/oracle?project=${encodeURIComponent(project)}`);
 
@@ -130,6 +131,8 @@ export function connectOracle(project: string): void {
 		}
 		currentOracleMsgId = '';
 		oracleChatStreaming.set(false);
+		// Auto-save chat history
+		_autoSaveOracleHistory();
 	});
 
 	oracleWs.on('error', () => {
@@ -166,38 +169,20 @@ export function disconnectOracle(): void {
 	oracleChatStreaming.set(false);
 }
 
-/**
- * Build a context summary with project info and recent Architect
- * conversation so the Oracle understands what the user is building.
- */
-function _buildContext(): Record<string, unknown> {
-	const proj = get(currentProject);
-	const msgs = get(chatMessages);
-
-	// Take up to last 20 Architect messages for context
-	const recent = msgs.slice(-20).map((m) => ({
-		role: m.role,
-		content: m.content.length > 500 ? m.content.slice(0, 500) + '...' : m.content,
-	}));
-
-	return {
-		project_name: proj?.name ?? '',
-		project_description: proj?.description ?? '',
-		architect_history: recent,
-	};
-}
+// Context is now built server-side via shared_context.py — no need to send
+// project/architect history from the frontend.
 
 export function requestAnalysis(): void {
 	if (oracleWs?.connected) {
 		oracleAnalyzing.set(true);
-		oracleWs.send({ action: 'analyze', context: _buildContext() });
+		oracleWs.send({ action: 'analyze' });
 	}
 }
 
 export function requestNodeAnalysis(nodeId: string): void {
 	if (oracleWs?.connected) {
 		oracleAnalyzing.set(true);
-		oracleWs.send({ action: 'analyze_node', node_id: nodeId, context: _buildContext() });
+		oracleWs.send({ action: 'analyze_node', node_id: nodeId });
 	}
 }
 
@@ -216,14 +201,17 @@ export function sendOracleChat(message: string): void {
 		},
 	]);
 
-	// Send to backend with context
-	oracleWs.send({ action: 'chat', message: message.trim(), context: _buildContext() });
+	// Send to backend — context is assembled server-side
+	oracleWs.send({ action: 'chat', message: message.trim() });
 }
 
 export function clearOracleChat(): void {
 	oracleChatMessages.set([]);
 	currentOracleMsgId = '';
 	oracleChatStreaming.set(false);
+	if (currentOracleProject) {
+		api.oracle.clearChatHistory(currentOracleProject).catch(() => {});
+	}
 }
 
 export async function approveInsight(project: string, insightId: string): Promise<string | null> {
@@ -244,4 +232,39 @@ export async function skipInsight(project: string, insightId: string): Promise<v
 export async function loadInsights(project: string): Promise<void> {
 	const insights = await api.oracle.getInsights(project);
 	oracleInsights.set(insights);
+}
+
+// ---------------------------------------------------------------------------
+// Persistence — auto-save & load
+// ---------------------------------------------------------------------------
+
+function _autoSaveOracleHistory(): void {
+	if (!currentOracleProject) return;
+	const msgs = get(oracleChatMessages)
+		.filter((m) => !m.streaming)
+		.map((m) => ({
+			role: m.role,
+			content: m.content,
+			timestamp: m.timestamp,
+		}));
+	api.oracle.saveChatHistory(currentOracleProject, msgs).catch(() => {});
+}
+
+export async function loadOracleChatHistory(project: string): Promise<void> {
+	try {
+		const msgs = await api.oracle.getChatHistory(project);
+		if (msgs.length > 0) {
+			oracleChatMessages.set(
+				msgs.map((m, i) => ({
+					id: `oracle_loaded_${i}`,
+					role: m.role as 'user' | 'oracle',
+					content: m.content,
+					timestamp: m.timestamp,
+				}))
+			);
+			chatMsgCounter = msgs.length;
+		}
+	} catch {
+		// No saved history — start fresh
+	}
 }
