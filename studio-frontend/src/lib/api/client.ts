@@ -12,7 +12,9 @@ import type {
 	Checkpoint,
 	StudioSettingsResponse,
 	SaveSettingsPayload,
-	SettingsStatus
+	SettingsStatus,
+	CustomToolDefinition,
+	SaveCustomToolPayload
 } from '$lib/types/graph';
 
 const BASE_URL = '/api';
@@ -53,7 +55,19 @@ export const api = {
 				body: JSON.stringify({ graph })
 			}),
 		loadPipeline: (project: string, pipeline: string) =>
-			request<object>(`/projects/${project}/pipelines/${pipeline}`)
+			request<object>(`/projects/${project}/pipelines/${pipeline}`),
+		getHistory: (project: string) =>
+			request<Array<{ sha: string; message: string; timestamp: string; bookmarked: boolean }>>(`/projects/${project}/history`),
+		restoreVersion: (project: string, commitSha: string) =>
+			request<{ status: string }>(`/projects/${project}/restore`, {
+				method: 'POST',
+				body: JSON.stringify({ commit_sha: commitSha })
+			}),
+		bookmarkVersion: (project: string, commitSha: string, label: string) =>
+			request<{ status: string }>(`/projects/${project}/bookmark`, {
+				method: 'POST',
+				body: JSON.stringify({ commit_sha: commitSha, label })
+			})
 	},
 
 	files: {
@@ -126,6 +140,10 @@ export const api = {
 				method: 'POST',
 				body: JSON.stringify({ from_index: fromIndex, modified_state: modifiedState })
 			}),
+		rewind: (index: number) =>
+			request<{ status: string; index: number; node_id: string }>(`/checkpoints/${index}/rewind`, {
+				method: 'POST'
+			}),
 		diff: (indexA: number, indexB: number) =>
 			request<{ added: string[]; removed: string[]; changed: string[] }>('/checkpoints/diff', {
 				method: 'POST',
@@ -143,5 +161,86 @@ export const api = {
 				body: JSON.stringify(payload)
 			}),
 		status: () => request<SettingsStatus>('/settings/status')
+	},
+
+	assistant: {
+		getHistory: (project: string) =>
+			request<Array<{ role: string; content: string; timestamp: string; toolCalls?: unknown[] }>>(`/assistant/${project}/history`),
+		saveHistory: (project: string, messages: Array<{ role: string; content: string; timestamp: string; toolCalls?: unknown[] }>) =>
+			request<{ status: string }>(`/assistant/${project}/history`, {
+				method: 'POST',
+				body: JSON.stringify({ messages })
+			}),
+		inferProjectName: (message: string) =>
+			request<{ name: string }>('/assistant/infer-project-name', {
+				method: 'POST',
+				body: JSON.stringify({ message })
+			}),
+	},
+
+	oracle: {
+		getInsights: (project: string) =>
+			request<Array<{ id: string; title: string; description: string; severity: string; action_instruction: string | null; timestamp: string; status: string }>>(`/oracle/${project}/insights`),
+		approveInsight: (project: string, insightId: string) =>
+			request<{ status: string; action_instruction: string | null }>(`/oracle/${project}/insights/${insightId}/approve`, { method: 'POST' }),
+		skipInsight: (project: string, insightId: string) =>
+			request<{ status: string }>(`/oracle/${project}/insights/${insightId}/skip`, { method: 'POST' }),
+	},
+
+	tunnel: {
+		status: () => request<{ active: boolean; url: string | null; port: number }>('/tunnel/status'),
+		start: () => request<{ url: string; status: string }>('/tunnel/start', { method: 'POST' }),
+		stop: () => request<{ status: string }>('/tunnel/stop', { method: 'POST' }),
+	},
+
+	runtime: {
+		start: (project: string) => request<{ status: string }>(`/projects/${project}/runtime/start`, { method: 'POST' }),
+		stop: (project: string) => request<{ status: string }>(`/projects/${project}/runtime/stop`, { method: 'POST' }),
+		status: (project: string) => request<{ project: string; status: string; trigger_type: string | null; consumers: number; scheduler_active: boolean }>(`/projects/${project}/runtime/status`),
+		executions: (project: string) => request<{ executions: Array<{ execution_id: string; status: string; duration_ms: number | null }> }>(`/projects/${project}/runtime/executions`),
+	},
+
+	customTools: {
+		list: () => request<CustomToolDefinition[]>('/custom-tools'),
+		get: (name: string) => request<CustomToolDefinition>(`/custom-tools/${name}`),
+		save: (tool: SaveCustomToolPayload) =>
+			request<CustomToolDefinition>('/custom-tools', {
+				method: 'POST',
+				body: JSON.stringify(tool)
+			}),
+		delete: (name: string) =>
+			request<{ status: string }>(`/custom-tools/${name}`, { method: 'DELETE' }),
+		register: (name: string) =>
+			request<{ status: string; tool_name: string }>(`/custom-tools/${name}/register`, {
+				method: 'POST'
+			}),
+		test: (name: string) =>
+			request<{ status: string; tool_name: string; response_time?: number; result?: string; error?: string }>(
+				`/custom-tools/${name}/test`,
+				{ method: 'POST' }
+			),
+		catalog: () =>
+			request<
+				Array<{
+					id: string;
+					name: string;
+					category: string;
+					description: string;
+					icon: string;
+					requires_credential: string | null;
+					installed: boolean;
+					tool_name: string;
+					setup_guide: string;
+				}>
+			>('/custom-tools/catalog'),
+		installConnector: (connectorId: string, overrides?: Record<string, string>) =>
+			request<{ status: string; tool_name: string }>(`/custom-tools/catalog/${connectorId}/install`, {
+				method: 'POST',
+				body: JSON.stringify(overrides ?? {})
+			}),
+		verifyConnector: (connectorId: string) =>
+			request<{ status: string; message: string }>(`/custom-tools/catalog/${connectorId}/verify`, {
+				method: 'POST'
+			})
 	}
 };
