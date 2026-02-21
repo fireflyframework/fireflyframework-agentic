@@ -21,7 +21,7 @@
 	import type { Component } from 'svelte';
 
 	// Resizable width
-	let panelWidth = $state(320);
+	let panelWidth = $state(280);
 	let isDragging = $state(false);
 	let dragStartX = $state(0);
 	let dragStartWidth = $state(0);
@@ -37,7 +37,7 @@
 
 	function onResizeMove(e: MouseEvent) {
 		if (!isDragging) return;
-		panelWidth = Math.max(240, Math.min(480, dragStartWidth + (dragStartX - e.clientX)));
+		panelWidth = Math.max(220, Math.min(480, dragStartWidth + (dragStartX - e.clientX)));
 	}
 
 	function onResizeEnd() {
@@ -115,9 +115,9 @@
 			<ConfigPanel />
 		{:else}
 			<div class="palette-items">
-				<div class="palette-group-label">Pipeline I/O</div>
-				{#each palette.filter(i => i.group === 'io') as item}
-					<Tooltip text={item.label} description={item.description} position="left" delay={300}>
+				<div class="palette-group">
+					<div class="palette-group-label">Pipeline I/O</div>
+					{#each palette.filter(i => i.group === 'io') as item}
 						<button
 							class="palette-item"
 							onclick={() => addNode(item.type, item.label)}
@@ -129,13 +129,16 @@
 							>
 								<item.icon size={14} />
 							</div>
-							<span class="palette-label">{item.label}</span>
+							<div class="palette-text">
+								<span class="palette-label">{item.label}</span>
+								<span class="palette-desc">{item.description}</span>
+							</div>
 						</button>
-					</Tooltip>
-				{/each}
-				<div class="palette-group-label" style="margin-top: 8px;">Processing</div>
-				{#each palette.filter(i => !i.group) as item}
-					<Tooltip text={item.label} description={item.description} position="left" delay={300}>
+					{/each}
+				</div>
+				<div class="palette-group">
+					<div class="palette-group-label">Processing</div>
+					{#each palette.filter(i => !i.group) as item}
 						<button
 							class="palette-item"
 							onclick={() => addNode(item.type, item.label)}
@@ -147,10 +150,13 @@
 							>
 								<item.icon size={14} />
 							</div>
-							<span class="palette-label">{item.label}</span>
+							<div class="palette-text">
+								<span class="palette-label">{item.label}</span>
+								<span class="palette-desc">{item.description}</span>
+							</div>
 						</button>
-					</Tooltip>
-				{/each}
+					{/each}
+				</div>
 			</div>
 		{/if}
 	</div>
@@ -158,7 +164,7 @@
 
 <style>
 	.component-panel {
-		min-width: 240px;
+		min-width: 220px;
 		background: var(--color-bg-secondary, #12121a);
 		border-left: 1px solid var(--color-border, #2a2a3a);
 		display: flex;
@@ -231,31 +237,38 @@
 	.palette-items {
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
-		padding: 8px;
+		gap: 0;
+		padding: 4px 0;
 	}
 
-	.palette-items :global(.tooltip-wrapper) {
+	.palette-group {
 		display: flex;
-		width: 100%;
+		flex-direction: column;
+		gap: 2px;
+		padding: 2px 6px 6px;
+	}
+
+	.palette-group + .palette-group {
+		border-top: 1px solid oklch(from var(--color-border, #2a2a3a) l c h / 50%);
+		padding-top: 8px;
 	}
 
 	.palette-item {
 		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 8px 8px;
+		align-items: flex-start;
+		gap: 8px;
+		padding: 6px 10px;
 		border: none;
 		background: transparent;
 		border-radius: 8px;
 		cursor: pointer;
-		transition: background 0.15s ease, transform 0.1s ease;
+		transition: background 0.2s ease, transform 0.1s ease;
 		width: 100%;
 		text-align: left;
 	}
 
 	.palette-item:hover {
-		background: rgba(255, 255, 255, 0.05);
+		background: oklch(from var(--color-text-primary) l c h / 5%);
 	}
 
 	.palette-item:active {
@@ -263,19 +276,43 @@
 	}
 
 	.palette-icon {
-		width: 28px;
-		height: 28px;
+		width: 26px;
+		height: 26px;
 		border-radius: 6px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
+		transition: transform 0.15s ease;
+	}
+
+	.palette-item:hover .palette-icon {
+		transform: scale(1.05);
+	}
+
+	.palette-text {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		min-width: 0;
+		padding-top: 1px;
 	}
 
 	.palette-label {
 		font-size: 12px;
-		font-weight: 500;
+		font-weight: 600;
 		color: var(--color-text-primary, #e8e8ed);
+	}
+
+	.palette-desc {
+		font-size: 9px;
+		line-height: 1.3;
+		color: var(--color-text-secondary, #8888a0);
+		opacity: 0.7;
+		display: -webkit-box;
+		-webkit-line-clamp: 1;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
 	}
 
 	.palette-group-label {
@@ -284,7 +321,7 @@
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		color: var(--color-text-secondary, #8888a0);
-		padding: 6px 8px 2px;
-		opacity: 0.7;
+		padding: 2px 10px 4px;
+		opacity: 0.6;
 	}
 </style>

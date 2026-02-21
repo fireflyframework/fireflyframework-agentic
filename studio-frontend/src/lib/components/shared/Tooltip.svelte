@@ -119,10 +119,10 @@
 		z-index: 99999;
 		pointer-events: none;
 		padding: 6px 10px;
-		background: #1e1e2a;
-		border: 1px solid rgba(255, 255, 255, 0.10);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-overlay-medium);
 		border-radius: 8px;
-		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.03);
+		box-shadow: var(--shadow-lg), 0 0 0 1px oklch(from var(--color-text-primary) l c h / 3%);
 		display: flex;
 		flex-direction: column;
 		gap: 3px;
@@ -141,7 +141,7 @@
 		font-family: var(--font-sans, system-ui);
 		font-size: 11px;
 		font-weight: 600;
-		color: #e8e8ed;
+		color: var(--color-text-primary);
 		white-space: nowrap;
 		display: flex;
 		align-items: center;
@@ -154,9 +154,9 @@
 		font-family: var(--font-mono, monospace);
 		font-size: 10px;
 		font-weight: 500;
-		color: #8888a0;
-		background: rgba(255, 255, 255, 0.06);
-		border: 1px solid rgba(255, 255, 255, 0.08);
+		color: var(--color-text-secondary);
+		background: var(--color-overlay-subtle);
+		border: 1px solid var(--color-overlay-light);
 		border-radius: 4px;
 		padding: 1px 5px;
 		line-height: 1.4;
@@ -166,7 +166,7 @@
 		font-family: var(--font-sans, system-ui);
 		font-size: 10px;
 		font-weight: 400;
-		color: #8888a0;
+		color: var(--color-text-secondary);
 		line-height: 1.4;
 		white-space: normal;
 	}

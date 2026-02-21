@@ -108,7 +108,7 @@
 	.bp-state-error { color: var(--color-error, #ef4444); }
 
 	.bp-body {
-		background: #1a1a26;
+		background: var(--color-bg-elevated, #1a1a26);
 		padding: 8px 0;
 	}
 
@@ -133,7 +133,7 @@
 		gap: 6px;
 	}
 
-	.bp-pin-in, .bp-pin-out { display: flex; align-items: center; gap: 4px; font-size: 9px; color: #8888a0; }
+	.bp-pin-in, .bp-pin-out { display: flex; align-items: center; gap: 4px; font-size: 9px; color: var(--color-text-muted); }
 	.bp-dot { width: 6px; height: 6px; border-radius: 50%; background: #64748b; flex-shrink: 0; }
 
 	.bp-prop {
@@ -143,10 +143,10 @@
 		padding: 2px 10px;
 		gap: 8px;
 	}
-	.bp-key { font-size: 10px; color: #6a6a80; font-family: var(--font-mono, monospace); white-space: nowrap; }
+	.bp-key { font-size: 10px; color: var(--color-text-muted); font-family: var(--font-mono, monospace); white-space: nowrap; }
 	.bp-val {
 		font-size: 10px;
-		color: #a0a0b8;
+		color: var(--color-text-secondary);
 		font-family: var(--font-mono, monospace);
 		overflow: hidden;
 		text-overflow: ellipsis;

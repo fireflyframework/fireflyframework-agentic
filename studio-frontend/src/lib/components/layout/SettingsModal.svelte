@@ -899,7 +899,7 @@
 	}
 
 	.sidebar-item:hover {
-		background: rgba(255, 255, 255, 0.04);
+		background: oklch(from var(--color-text-primary) l c h / 4%);
 		color: var(--color-text-primary);
 	}
 
@@ -945,7 +945,7 @@
 		font-size: 10px;
 		font-weight: 600;
 		color: var(--color-text-secondary);
-		background: rgba(255, 255, 255, 0.05);
+		background: oklch(from var(--color-text-primary) l c h / 5%);
 		border-radius: 4px;
 		padding: 2px 6px;
 		margin-top: 2px;
@@ -975,7 +975,7 @@
 	}
 
 	.btn-close-sidebar:hover {
-		background: rgba(255, 255, 255, 0.04);
+		background: oklch(from var(--color-text-primary) l c h / 4%);
 		color: var(--color-text-primary);
 	}
 
@@ -1216,7 +1216,7 @@
 	}
 
 	.field-toggle:hover {
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--color-overlay-subtle);
 		color: var(--color-text-primary);
 	}
 
@@ -1296,7 +1296,7 @@
 	}
 
 	.personality-preview.neutral {
-		background: rgba(255, 255, 255, 0.02);
+		background: oklch(from var(--color-text-primary) l c h / 2%);
 		border-color: var(--color-border);
 	}
 
@@ -1402,7 +1402,7 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 10px 0;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+		border-bottom: 1px solid oklch(from var(--color-text-primary) l c h / 4%);
 	}
 
 	.about-row:last-child {
@@ -1434,7 +1434,7 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 8px 0;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+		border-bottom: 1px solid oklch(from var(--color-text-primary) l c h / 4%);
 	}
 
 	.shortcut-row:last-child {
@@ -1540,7 +1540,7 @@
 	.dropdown-category + .dropdown-category {
 		margin-top: 4px;
 		padding-top: 4px;
-		border-top: 1px solid rgba(255, 255, 255, 0.04);
+		border-top: 1px solid oklch(from var(--color-text-primary) l c h / 4%);
 	}
 
 	.dropdown-category-label {
@@ -1572,7 +1572,7 @@
 	}
 
 	.dropdown-item:hover {
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--color-overlay-subtle);
 	}
 
 	.dropdown-item-dot {
@@ -1633,7 +1633,7 @@
 		align-items: center;
 		gap: 10px;
 		padding: 12px 14px;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+		border-bottom: 1px solid oklch(from var(--color-text-primary) l c h / 3%);
 	}
 
 	.service-card-icon {
@@ -1658,7 +1658,7 @@
 		font-family: var(--font-mono);
 		font-size: 10px;
 		color: var(--color-text-secondary);
-		background: rgba(255, 255, 255, 0.04);
+		background: oklch(from var(--color-text-primary) l c h / 4%);
 		border-radius: 4px;
 		padding: 2px 6px;
 		opacity: 0.7;
@@ -1685,7 +1685,7 @@
 	}
 
 	.btn-service-action:hover {
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--color-overlay-subtle);
 		color: var(--color-text-primary);
 	}
 

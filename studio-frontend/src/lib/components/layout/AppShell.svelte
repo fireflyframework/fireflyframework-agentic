@@ -6,8 +6,9 @@
 	import ShortcutsModal from './ShortcutsModal.svelte';
 	import SettingsModal from './SettingsModal.svelte';
 	import FirstStartWizard from './FirstStartWizard.svelte';
+	import ProjectSettingsModal from './ProjectSettingsModal.svelte';
 	import ToastContainer from './ToastContainer.svelte';
-	import ArchitectSidebar from '$lib/components/panels/ArchitectSidebar.svelte';
+	import AgentSidebar from '$lib/components/panels/AgentSidebar.svelte';
 	import { commandPaletteOpen, architectSidebarOpen, shortcutsModalOpen, settingsModalOpen } from '$lib/stores/ui';
 	import { nodes, edges, selectedNodeId, getGraphSnapshot, isDirty } from '$lib/stores/pipeline';
 	import { debugPipeline } from '$lib/execution/bridge';
@@ -16,8 +17,6 @@
 	import { api } from '$lib/api/client';
 	import { addToast } from '$lib/stores/notifications';
 	import { onMount } from 'svelte';
-	import { themeMode, cycleTheme } from '$lib/stores/theme';
-	import { Sun, Moon, Monitor } from 'lucide-svelte';
 
 	let { children } = $props();
 
@@ -56,20 +55,14 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
-		// Only handle keyboard shortcuts in construct view
-		if (isHomePage) return;
-
 		const meta = e.metaKey || e.ctrlKey;
 
-		// Cmd/Ctrl + S  —  save pipeline
-		if (e.key === 's' && meta) {
+		// ── Global shortcuts (work on ALL pages) ──────────────────────
+
+		// Cmd/Ctrl + K  —  toggle command palette
+		if (e.key === 'k' && meta) {
 			e.preventDefault();
-			const proj = get(currentProject);
-			if (proj) {
-				api.projects.savePipeline(proj.name, 'main', getGraphSnapshot())
-					.then(() => { isDirty.set(false); addToast('Pipeline saved', 'success'); })
-					.catch(() => addToast('Failed to save pipeline', 'error'));
-			}
+			commandPaletteOpen.update((v) => !v);
 			return;
 		}
 
@@ -80,10 +73,25 @@
 			return;
 		}
 
-		// Cmd/Ctrl + K  —  toggle command palette
-		if (e.key === 'k' && meta) {
+		// Cmd/Ctrl + /  —  toggle AI assistant sidebar
+		if (e.key === '/' && meta) {
 			e.preventDefault();
-			commandPaletteOpen.update((v) => !v);
+			architectSidebarOpen.update((v) => !v);
+			return;
+		}
+
+		// ── Construct-only shortcuts ──────────────────────────────────
+		if (isHomePage) return;
+
+		// Cmd/Ctrl + S  —  save pipeline
+		if (e.key === 's' && meta) {
+			e.preventDefault();
+			const proj = get(currentProject);
+			if (proj) {
+				api.projects.savePipeline(proj.name, 'main', getGraphSnapshot())
+					.then(() => { isDirty.set(false); addToast('Pipeline saved', 'success'); })
+					.catch(() => addToast('Failed to save pipeline', 'error'));
+			}
 			return;
 		}
 
@@ -98,13 +106,6 @@
 		if (e.key === 'D' && meta && e.shiftKey) {
 			e.preventDefault();
 			debugPipeline(getGraphSnapshot());
-			return;
-		}
-
-		// Cmd/Ctrl + /  —  toggle AI assistant sidebar
-		if (e.key === '/' && meta) {
-			e.preventDefault();
-			architectSidebarOpen.update((v) => !v);
 			return;
 		}
 
@@ -167,7 +168,7 @@
 		</main>
 	{:else}
 		<div class="app-body">
-			<ArchitectSidebar />
+			<AgentSidebar />
 			<main class="app-content">
 				{@render children()}
 			</main>
@@ -177,15 +178,6 @@
 		<span>Made with</span>
 		<span class="heart">&#10084;</span>
 		<span>by Firefly Software Solutions</span>
-		<button class="theme-toggle" onclick={cycleTheme} title={`Theme: ${$themeMode}`}>
-			{#if $themeMode === 'dark'}
-				<Moon size={14} />
-			{:else if $themeMode === 'light'}
-				<Sun size={14} />
-			{:else}
-				<Monitor size={14} />
-			{/if}
-		</button>
 	</footer>
 </div>
 
@@ -193,6 +185,7 @@
 <ShortcutsModal />
 <SettingsModal />
 <FirstStartWizard />
+<ProjectSettingsModal />
 <ToastContainer />
 
 <style>
@@ -238,26 +231,6 @@
 		border-top: 1px solid var(--color-border);
 		opacity: 0.7;
 		user-select: none;
-	}
-
-	.theme-toggle {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 28px;
-		height: 28px;
-		border-radius: 6px;
-		border: 1px solid var(--color-border);
-		background: var(--color-bg-elevated);
-		color: var(--color-text-secondary);
-		cursor: pointer;
-		transition: all 0.2s;
-		margin-left: 8px;
-	}
-
-	.theme-toggle:hover {
-		color: var(--color-text-primary);
-		border-color: var(--color-accent);
 	}
 
 	.heart {

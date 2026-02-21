@@ -694,7 +694,7 @@
 	}
 
 	.close-btn:hover {
-		background: rgba(255, 255, 255, 0.05);
+		background: oklch(from var(--color-text-primary) l c h / 5%);
 		color: var(--color-text-primary, #e8e8ed);
 	}
 
@@ -774,7 +774,7 @@
 	}
 
 	.info-card-muted {
-		background: rgba(255, 255, 255, 0.02);
+		background: oklch(from var(--color-text-primary) l c h / 2%);
 		border-color: var(--color-border, #2a2a3a);
 	}
 
@@ -797,7 +797,7 @@
 	.info-card-text :global(code) {
 		font-family: var(--font-mono, 'JetBrains Mono', monospace);
 		font-size: 10px;
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--color-overlay-subtle);
 		padding: 1px 4px;
 		border-radius: 3px;
 		color: var(--color-text-primary, #e8e8ed);
@@ -817,7 +817,7 @@
 		gap: 2px;
 		margin-top: 4px;
 		padding-top: 4px;
-		border-top: 1px solid rgba(255, 255, 255, 0.05);
+		border-top: 1px solid oklch(from var(--color-text-primary) l c h / 5%);
 	}
 
 	.info-param-row {
@@ -864,7 +864,7 @@
 		align-items: center;
 		gap: 6px;
 		padding: 5px 8px;
-		background: rgba(255, 255, 255, 0.03);
+		background: oklch(from var(--color-text-primary) l c h / 3%);
 		border: 1px solid var(--color-border, #2a2a3a);
 		border-radius: 6px;
 		cursor: pointer;
@@ -874,7 +874,7 @@
 	}
 
 	.connection-item:hover {
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--color-overlay-subtle);
 		border-color: var(--color-accent, #ff6b35);
 	}
 
@@ -941,13 +941,13 @@
 		justify-content: space-between;
 		width: 100%;
 		padding: 8px 10px;
-		background: rgba(255, 255, 255, 0.02);
+		background: oklch(from var(--color-text-primary) l c h / 2%);
 		border: none;
 		cursor: pointer;
 		color: var(--color-text-primary, #e8e8ed);
 	}
 
-	.mm-toggle:hover { background: rgba(255, 255, 255, 0.04); }
+	.mm-toggle:hover { background: oklch(from var(--color-text-primary) l c h / 4%); }
 
 	.mm-toggle-label {
 		font-size: 10px;

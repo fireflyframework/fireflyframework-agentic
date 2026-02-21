@@ -145,7 +145,7 @@
 	}
 
 	.action-btn:hover {
-		background: rgba(255, 255, 255, 0.05);
+		background: oklch(from var(--color-text-primary) l c h / 5%);
 		color: var(--color-text-primary, #e8e8ed);
 	}
 

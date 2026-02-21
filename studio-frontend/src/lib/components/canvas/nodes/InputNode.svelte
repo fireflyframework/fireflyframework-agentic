@@ -270,7 +270,7 @@
 
 	/* --- Body --- */
 	.input-body {
-		background: #1a1a26;
+		background: var(--color-bg-elevated, #1a1a26);
 		padding: 8px 0 6px;
 	}
 
@@ -288,11 +288,11 @@
 		align-items: center;
 		gap: 4px;
 		font-size: 9px;
-		color: #8888a0;
+		color: var(--color-text-muted);
 		transition: color 0.15s ease;
 	}
 	.pin:hover {
-		color: #b0b0c8;
+		color: var(--color-text-secondary);
 	}
 	.pin-dot {
 		width: 6px;
@@ -308,7 +308,7 @@
 
 	.description-text {
 		font-size: 10px;
-		color: #a0a0b8;
+		color: var(--color-text-secondary);
 		padding: 2px 10px 4px;
 		line-height: 1.4;
 	}
@@ -332,7 +332,7 @@
 
 	.config-text {
 		font-size: 10px;
-		color: #7a7a94;
+		color: var(--color-text-muted);
 		font-family: 'JetBrains Mono', monospace;
 		line-height: 1.35;
 		margin: 2px 0 0;

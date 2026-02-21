@@ -110,7 +110,7 @@
 		text-align: left;
 	}
 	.palette-item:hover {
-		background: rgba(255, 255, 255, 0.05);
+		background: oklch(from var(--color-text-primary) l c h / 5%);
 	}
 	.palette-item:active {
 		transform: scale(0.97);

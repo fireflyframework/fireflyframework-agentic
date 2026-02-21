@@ -4,9 +4,12 @@
 	--color-bg-primary: #0a0a0f;
 	--color-bg-secondary: #12121a;
 	--color-bg-elevated: #1a1a26;
+	--color-bg-hover: #22222e;
 	--color-border: #2a2a3a;
+	--color-border-light: #333346;
 	--color-text-primary: #e8e8ed;
 	--color-text-secondary: #8888a0;
+	--color-text-muted: #5a5a72;
 	--color-accent: #ff6b35;
 	--color-accent-glow: oklch(from #ff6b35 l c h / 20%);
 	--color-success: #22c55e;
@@ -17,6 +20,12 @@
 	--color-node-tool: #8b5cf6;
 	--color-node-reasoning: #ec4899;
 	--color-node-pipeline: #06b6d4;
+	--color-grid-line: rgba(255, 255, 255, 0.10);
+	--color-vignette: rgba(0, 0, 0, 0.4);
+	--color-overlay-subtle: rgba(255, 255, 255, 0.06);
+	--color-overlay-light: rgba(255, 255, 255, 0.08);
+	--color-overlay-medium: rgba(255, 255, 255, 0.10);
+	--shadow-dropdown: 0 8px 24px rgba(0, 0, 0, 0.3);
 
 	--font-sans: 'Inter', system-ui, sans-serif;
 	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
@@ -47,6 +56,13 @@
 	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
 	--shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
 	--shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+	/* Theme-aware transparent overlays */
+	--color-grid-line: rgba(255, 255, 255, 0.10);
+	--color-vignette: rgba(0, 0, 0, 0.4);
+	--color-overlay-subtle: rgba(255, 255, 255, 0.06);
+	--color-overlay-light: rgba(255, 255, 255, 0.08);
+	--color-overlay-medium: rgba(255, 255, 255, 0.10);
+	--shadow-dropdown: 0 8px 24px rgba(0, 0, 0, 0.3);
 }
 
 [data-theme="light"] {
@@ -72,6 +88,13 @@
 	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
 	--shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
 	--shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+	/* Theme-aware transparent overlays */
+	--color-grid-line: rgba(0, 0, 0, 0.06);
+	--color-vignette: rgba(0, 0, 0, 0.08);
+	--color-overlay-subtle: rgba(0, 0, 0, 0.04);
+	--color-overlay-light: rgba(0, 0, 0, 0.06);
+	--color-overlay-medium: rgba(0, 0, 0, 0.08);
+	--shadow-dropdown: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
 /* Reset for full-height app */

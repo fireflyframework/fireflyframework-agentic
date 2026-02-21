@@ -200,7 +200,7 @@
 
 	/* --- Body --- */
 	.tool-body {
-		background: #1a1a26;
+		background: var(--color-bg-elevated, #1a1a26);
 		padding: 8px 0 6px;
 	}
 
@@ -215,11 +215,11 @@
 		align-items: center;
 		gap: 4px;
 		font-size: 9px;
-		color: #8888a0;
+		color: var(--color-text-muted);
 		transition: color 0.15s ease;
 	}
 	.pin:hover {
-		color: #b0b0c8;
+		color: var(--color-text-secondary);
 	}
 	.pin-dot {
 		width: 6px;
@@ -240,11 +240,11 @@
 		font-size: 10px;
 	}
 	.prop-key {
-		color: #6a6a80;
+		color: var(--color-text-muted);
 		font-family: 'JetBrains Mono', monospace;
 	}
 	.prop-val {
-		color: #a0a0b8;
+		color: var(--color-text-secondary);
 		font-family: 'JetBrains Mono', monospace;
 		text-overflow: ellipsis;
 		overflow: hidden;
@@ -255,7 +255,7 @@
 
 	.tool-description {
 		font-size: 10px;
-		color: #8888a0;
+		color: var(--color-text-muted);
 		padding: 2px 10px 4px;
 		line-height: 1.35;
 	}

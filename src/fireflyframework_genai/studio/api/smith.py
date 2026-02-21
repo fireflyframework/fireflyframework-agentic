@@ -168,12 +168,29 @@ async def _handle_generate(
             {"type": "smith_token", "content": "Generating code from pipeline...\n"}
         )
 
-        result = await generate_code_with_smith(graph, settings_dict)
+        # Pass user name so Smith can personalise responses
+        user_name = ""
+        try:
+            user_name = settings.user_profile.name or ""
+        except Exception:
+            pass
+
+        result = await generate_code_with_smith(graph, settings_dict, user_name=user_name)
 
         code = result.get("code", "")
+        files = result.get("files", [])
         notes = result.get("notes", [])
 
-        # Send the generated code
+        # Send structured multi-file result
+        await websocket.send_json(
+            {
+                "type": "files_generated",
+                "files": files,
+                "notes": notes,
+            }
+        )
+
+        # Backward-compatible single code message
         await websocket.send_json(
             {
                 "type": "code_generated",
@@ -223,7 +240,16 @@ async def _handle_chat(
             create_smith_agent,
         )
 
-        smith = create_smith_agent()
+        from fireflyframework_genai.studio.settings import load_settings as _load_settings
+
+        _user_name = ""
+        try:
+            _settings = _load_settings()
+            _user_name = _settings.user_profile.name or ""
+        except Exception:
+            pass
+
+        smith = create_smith_agent(user_name=_user_name)
 
         # Enrich the prompt with canvas context so Smith knows what the
         # user is working on

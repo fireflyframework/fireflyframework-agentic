@@ -144,7 +144,7 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
-		background: var(--color-bg-primary, #0a0a12);
+		background: var(--color-bg-primary);
 		font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
 	}
 
@@ -178,7 +178,7 @@
 	}
 
 	.refresh-btn:hover {
-		background: rgba(255, 255, 255, 0.05);
+		background: oklch(from var(--color-text-primary) l c h / 5%);
 		color: var(--color-text-primary, #e8e8ed);
 	}
 
@@ -298,7 +298,7 @@
 	}
 
 	.action-btn:hover {
-		background: rgba(255, 255, 255, 0.08);
+		background: var(--color-overlay-light);
 		color: var(--color-text-primary, #e8e8ed);
 	}
 
@@ -349,12 +349,12 @@
 	}
 
 	.confirm-no {
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--color-overlay-subtle);
 		color: var(--color-text-secondary, #8888a0);
 	}
 
 	.confirm-no:hover {
-		background: rgba(255, 255, 255, 0.1);
+		background: var(--color-overlay-medium);
 		color: var(--color-text-primary, #e8e8ed);
 	}
 </style>

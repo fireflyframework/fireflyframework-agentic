@@ -83,7 +83,7 @@
 	}
 
 	.nav-item:hover {
-		background: rgba(255,255,255,0.05);
+		background: var(--color-overlay-subtle);
 		color: var(--color-text-primary);
 		opacity: 1;
 	}

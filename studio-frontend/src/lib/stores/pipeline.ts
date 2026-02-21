@@ -184,7 +184,7 @@ export function addNode(type: string, label: string): void {
 			id,
 			type,
 			position: { x, y },
-			data: { label: `${label} ${_nodeIdCounter}` }
+			data: { label: `${label} ${_nodeIdCounter}`, origin: 'user' }
 		}
 	]);
 }

@@ -18,12 +18,20 @@ interface PendingCommand {
 	level: string;
 }
 
+export interface SmithFile {
+	path: string;
+	content: string;
+	language: string;
+}
+
 // ---------------------------------------------------------------------------
 // Stores
 // ---------------------------------------------------------------------------
 
 export const smithMessages = writable<SmithMessage[]>([]);
 export const smithCode = writable<string>('');
+export const smithFiles = writable<SmithFile[]>([]);
+export const smithActiveFile = writable<string | null>(null);
 export const smithIsThinking = writable(false);
 export const smithConnected = writable(false);
 export const pendingCommand = writable<PendingCommand | null>(null);
@@ -125,8 +133,20 @@ function handleSmithMessage(data: Record<string, unknown>): void {
 			});
 		}
 	} else if (type === 'code_generated') {
-		smithCode.set(data.code as string);
+		const code = data.code as string;
+		smithCode.set(code);
+		smithFiles.set([{ path: 'main.py', content: code, language: 'python' }]);
+		smithActiveFile.set('main.py');
 		smithIsThinking.set(false);
+	} else if (type === 'files_generated') {
+		const files = (data.files ?? []) as SmithFile[];
+		smithFiles.set(files);
+		smithIsThinking.set(false);
+		if (files.length > 0) {
+			smithActiveFile.set(files[0].path);
+		}
+		const combined = files.map(f => `# --- ${f.path} ---\n${f.content}`).join('\n\n');
+		smithCode.set(combined);
 	} else if (type === 'approval_required') {
 		pendingCommand.set({
 			commandId: data.command_id as string,
@@ -214,6 +234,10 @@ export function generateCode(graph?: object): void {
 	} else {
 		send('generate');
 	}
+}
+
+export function triggerSmithGeneration(): void {
+	generateCode();
 }
 
 export function executeCode(code: string): void {

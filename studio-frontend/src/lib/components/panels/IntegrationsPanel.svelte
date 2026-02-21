@@ -488,12 +488,12 @@
 	}
 
 	.sub-tab:hover {
-		background: rgba(255, 255, 255, 0.05);
+		background: oklch(from var(--color-text-primary) l c h / 5%);
 		color: var(--color-text-primary, #e8e8ed);
 	}
 
 	.sub-tab.active {
-		background: rgba(255, 255, 255, 0.08);
+		background: var(--color-overlay-light);
 		color: var(--color-text-primary, #e8e8ed);
 	}
 
@@ -537,7 +537,7 @@
 	}
 
 	.action-btn:hover {
-		background: rgba(255, 255, 255, 0.05);
+		background: oklch(from var(--color-text-primary) l c h / 5%);
 		color: var(--color-text-primary, #e8e8ed);
 	}
 
@@ -614,7 +614,7 @@
 	}
 
 	.connector-card:hover {
-		border-color: rgba(255, 255, 255, 0.12);
+		border-color: oklch(from var(--color-text-primary) l c h / 12%);
 		box-shadow: 0 2px 12px -4px rgba(0,0,0,0.3);
 	}
 
@@ -733,7 +733,7 @@
 	}
 
 	.install-btn:hover:not(:disabled) {
-		background: rgba(255, 255, 255, 0.05);
+		background: oklch(from var(--color-text-primary) l c h / 5%);
 		border-color: var(--color-accent, #ff6b35);
 	}
 
@@ -775,7 +775,7 @@
 	}
 
 	.tool-item:hover {
-		border-color: rgba(255, 255, 255, 0.12);
+		border-color: oklch(from var(--color-text-primary) l c h / 12%);
 	}
 
 	.tool-icon-wrap {
@@ -814,7 +814,7 @@
 		font-size: 9px;
 		padding: 1px 6px;
 		border-radius: 4px;
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--color-overlay-subtle);
 		color: var(--color-text-secondary, #8888a0);
 		font-weight: 500;
 		text-transform: uppercase;
@@ -851,7 +851,7 @@
 	}
 
 	.icon-btn:hover {
-		background: rgba(255, 255, 255, 0.05);
+		background: oklch(from var(--color-text-primary) l c h / 5%);
 		color: var(--color-text-primary, #e8e8ed);
 	}
 
@@ -951,7 +951,7 @@
 	}
 
 	.cancel-btn:hover {
-		background: rgba(255, 255, 255, 0.05);
+		background: oklch(from var(--color-text-primary) l c h / 5%);
 		color: var(--color-text-primary, #e8e8ed);
 	}
 

@@ -130,11 +130,12 @@ export function loadTemplate(templateId: string, defaultModel?: string): void {
 	if (!template) return;
 
 	// Apply the user's default model to all agent nodes in the template
-	const templateNodes = defaultModel
-		? template.nodes.map((n) =>
-				n.type === 'agent' ? { ...n, data: { ...n.data, model: defaultModel } } : n
-			)
-		: template.nodes;
+	const templateNodes = template.nodes.map((n) => {
+		const patched = defaultModel && n.type === 'agent'
+			? { ...n, data: { ...n.data, model: defaultModel, origin: 'template' } }
+			: { ...n, data: { ...n.data, origin: 'template' } };
+		return patched;
+	});
 
 	const resume = suppressAutoSave();
 	nodes.set(templateNodes);

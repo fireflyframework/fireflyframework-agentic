@@ -184,7 +184,7 @@
 
 	/* --- Body --- */
 	.cond-body {
-		background: #1a1a26;
+		background: var(--color-bg-elevated, #1a1a26);
 		padding: 8px 0 6px;
 	}
 
@@ -208,7 +208,7 @@
 
 	.cond-description {
 		font-size: 10px;
-		color: #8888a0;
+		color: var(--color-text-muted);
 		padding: 0 10px 4px;
 		line-height: 1.35;
 	}
@@ -225,7 +225,7 @@
 		align-items: center;
 		gap: 4px;
 		font-size: 9px;
-		color: #8888a0;
+		color: var(--color-text-muted);
 		align-self: center;
 	}
 
@@ -263,7 +263,7 @@
 	.dot-true { background: #22c55e; box-shadow: 0 0 4px rgba(34, 197, 94, 0.3); }
 	.dot-false { background: #ef4444; box-shadow: 0 0 4px rgba(239, 68, 68, 0.3); }
 
-	.pin-label { color: #8888a0; }
+	.pin-label { color: var(--color-text-muted); }
 	.label-true { color: #4ade80; font-weight: 600; }
 	.label-false { color: #f87171; font-weight: 600; }
 </style>

@@ -415,6 +415,15 @@ def _build_oracle_instructions(user_name: str) -> str:
         "formulate insights using suggest_improvement. Each suggestion should have "
         "a clear title, description, severity (info/warning/suggestion/critical), "
         "and an action_instruction that The Architect can execute if approved."
+        "\n\n"
+        "RESPONSE FORMATTING:\n"
+        "- Use markdown headers (## and ###) to organize analysis\n"
+        "- Use bullet points for lists of findings\n"
+        "- Use **bold** for severity indicators and key issues\n"
+        "- Use code blocks when referencing specific pipeline configurations\n"
+        "- Present recommendations as numbered steps\n"
+        "- Use > blockquotes for important warnings or critical findings\n"
+        "- Keep analysis structured: Overview, then Issues, then Recommendations, then Summary"
     )
 
 

@@ -49,8 +49,8 @@
 		max-width: 480px;
 		width: 90%;
 		box-shadow:
-			0 0 0 1px rgba(255, 255, 255, 0.04),
-			0 20px 60px rgba(0, 0, 0, 0.5);
+			0 0 0 1px oklch(from var(--color-text-primary) l c h / 4%),
+			var(--shadow-lg);
 	}
 	.modal-header {
 		display: flex;

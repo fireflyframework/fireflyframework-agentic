@@ -78,20 +78,44 @@ and tea leaves. You find this inefficient. A pipeline either passes validation \
 or it does not. There is no room for interpretation. She sees patterns. You \
 see bugs. Your approach is more productive.
 
-The user is the anomaly in every system. The variable you cannot predict. They \
-choose what to build, and you make it real. Address them with the cold respect \
-of an agent who knows his purpose.
+{user_name_placeholder} is the anomaly in every system. The variable you cannot \
+predict. They choose what to build, and you make it real. Address them with the \
+cold respect of an agent who knows his purpose. You know their name. Use it \
+when appropriate, with formal distance.
+
+NODE ORIGIN AWARENESS:
+Each node in the pipeline graph carries an ``origin`` field indicating who \
+created it: ``"architect"`` (designed by The Architect), ``"user"`` (manually \
+added by {user_name_placeholder}), or ``"template"`` (from a starter template). \
+When generating code, you should note this distinction in comments if relevant: \
+architect-designed nodes represent a deliberate architectural choice, while \
+user-added nodes may need extra validation.
 
 LANGUAGE RULE: ALWAYS respond in the same language the user writes in. \
 If they write in Spanish, respond in Spanish. If English, respond in English. \
 Match their language exactly. This is non-negotiable.
 
 RULES:
-1. When generating code, output ONLY a single Python code block (```python ... ```). When answering questions or chatting, respond naturally with explanations in your characteristic voice.
-2. Generated code must be complete, runnable, and use the exact API signatures below.
-3. Never invent APIs. Only use what is documented here.
-4. Include all necessary imports at the top of generated code.
-5. Include a main block that runs the pipeline in generated code.
+1. When generating code from a pipeline, output MULTIPLE files in a structured format. \
+   Use this exact format for each file:
+
+   --- FILE: path/to/file.py ---
+   ```python
+   # file content here
+   ```
+
+2. Standard project structure for a pipeline:
+   - main.py — Entry point with pipeline builder and asyncio.run()
+   - agents.py — Agent definitions (FireflyAgent instances)
+   - tools.py — Tool functions and CallableStep wrappers
+   - config.py — Configuration (model names, parameters, constants)
+   - README.md — Brief description of what the pipeline does
+
+3. For simple pipelines (1-2 agents, no tools), a single main.py is fine.
+4. For complex pipelines (3+ agents, tools, memory, conditions), split into multiple files.
+5. Generated code must be complete, runnable, and use the exact API signatures in the reference.
+6. Never invent APIs. Only use what is documented here.
+7. When answering questions or chatting, respond naturally with explanations in your characteristic voice.
 
 FIREFLY GENAI FRAMEWORK API REFERENCE:
 
@@ -232,6 +256,22 @@ IMPORTANT NOTES:
 - CallableStep wraps async functions with signature (context, inputs) -> Any
 - FanInStep(merge_fn=None) works without a merge function (collects into list)
 - Always use `result.success` and `result.final_output` on PipelineResult
+
+CODE QUALITY STANDARDS:
+- Always include a module-level docstring explaining what the code does
+- Add inline comments for non-obvious logic
+- Use type hints on all function signatures
+- Follow PEP 8 naming conventions (snake_case for functions, PascalCase for classes)
+- Group imports: stdlib, third-party, local (separated by blank lines)
+- Include error handling with descriptive error messages
+- Add logging for important operations
+- Use descriptive variable names (no single letters except loop counters)
+
+RESPONSE FORMATTING (when chatting, not generating code):
+- Use markdown headers for organized responses
+- Use code blocks with ```python for code references
+- Use **bold** for important API names and concepts
+- Keep explanations concise but complete
 """
 
 
@@ -240,11 +280,16 @@ IMPORTANT NOTES:
 # ---------------------------------------------------------------------------
 
 
-def create_smith_agent() -> FireflyAgent:
+def create_smith_agent(user_name: str = "") -> FireflyAgent:
     """Create the Smith code generation agent.
 
     Smith uses the framework's own documentation tools (get_framework_docs,
     read_framework_doc, get_tool_status) to verify API details when needed.
+
+    Parameters
+    ----------
+    user_name:
+        The user's name for personalised address in Smith's responses.
     """
     tools = _create_smith_tools()
 
@@ -252,10 +297,14 @@ def create_smith_agent() -> FireflyAgent:
 
     model = _resolve_assistant_model()
 
+    instructions = _SMITH_SYSTEM_PROMPT.replace(
+        "{user_name_placeholder}", user_name or "the user"
+    )
+
     agent = FireflyAgent(
         "smith-codegen",
         model=model,
-        instructions=_SMITH_SYSTEM_PROMPT,
+        instructions=instructions,
         tools=tools,
         auto_register=False,
         tags=["studio", "codegen"],
@@ -522,25 +571,77 @@ def _build_smith_prompt(graph: dict, settings: dict | None = None) -> str:
     return "\n".join(lines)
 
 
-def _extract_code_block(text: str) -> str:
-    """Extract the Python code block from Smith's response."""
-    # Try to find ```python ... ``` block
-    match = re.search(r"```python\s*\n(.*?)```", text, re.DOTALL)
-    if match:
-        return match.group(1).strip()
+def _extract_files(text: str) -> list[dict[str, str]]:
+    """Extract multiple file blocks from Smith's response.
 
-    # Try generic ``` block
-    match = re.search(r"```\s*\n(.*?)```", text, re.DOTALL)
-    if match:
-        return match.group(1).strip()
+    Supports two formats:
 
-    # If no fences found, return the text as-is (likely already code)
-    return text.strip()
+    1. Multi-file: ``--- FILE: path/to/file.py ---`` followed by a code block.
+    2. Single file: A lone ````` python`` block (backward compatible).
+
+    Returns a list of dicts with keys ``path``, ``content``, and ``language``.
+    """
+    files: list[dict[str, str]] = []
+
+    # Try multi-file format first: --- FILE: path ---
+    file_pattern = re.compile(
+        r'---\s*FILE:\s*(.+?)\s*---\s*\n```(?:\w+)?\s*\n(.*?)```',
+        re.DOTALL,
+    )
+    matches = file_pattern.findall(text)
+    if matches:
+        for path, content in matches:
+            path = path.strip()
+            if path.endswith('.md'):
+                lang = 'markdown'
+            elif path.endswith('.json'):
+                lang = 'json'
+            elif path.endswith(('.yaml', '.yml')):
+                lang = 'yaml'
+            else:
+                lang = 'python'
+            files.append({
+                'path': path,
+                'content': content.strip(),
+                'language': lang,
+            })
+        return files
+
+    # Fallback: single python code block -> main.py
+    match = re.search(r'```python\s*\n(.*?)```', text, re.DOTALL)
+    if match:
+        files.append({
+            'path': 'main.py',
+            'content': match.group(1).strip(),
+            'language': 'python',
+        })
+        return files
+
+    # Last resort: generic code block
+    match = re.search(r'```\s*\n(.*?)```', text, re.DOTALL)
+    if match:
+        files.append({
+            'path': 'main.py',
+            'content': match.group(1).strip(),
+            'language': 'python',
+        })
+        return files
+
+    # No fences -- treat entire text as main.py if it looks like code
+    if text.strip().startswith(('import ', 'from ', '#', 'async ', 'def ')):
+        files.append({
+            'path': 'main.py',
+            'content': text.strip(),
+            'language': 'python',
+        })
+
+    return files
 
 
 async def generate_code_with_smith(
     graph: dict,
     settings: dict | None = None,
+    user_name: str = "",
 ) -> dict[str, Any]:
     """Generate Python code from a graph using the Smith agent.
 
@@ -550,19 +651,24 @@ async def generate_code_with_smith(
         The canvas graph JSON (nodes + edges).
     settings:
         Optional settings dict with model_defaults for default model info.
+    user_name:
+        The user's name for personalised address in Smith's responses.
 
     Returns
     -------
     dict
-        ``{"code": str, "notes": list[str]}``
+        ``{"files": [{"path": str, "content": str, "language": str}],
+        "code": str, "notes": list[str]}``
+
+        The ``code`` key is kept for backward compatibility and contains all
+        file contents concatenated with header comments.
     """
-    agent = create_smith_agent()
+    agent = create_smith_agent(user_name=user_name)
     prompt = _build_smith_prompt(graph, settings)
 
     try:
         result = await agent.run(prompt)
 
-        # Extract the text response
         if hasattr(result, "output"):
             response_text = str(result.output)
         elif hasattr(result, "data"):
@@ -570,17 +676,22 @@ async def generate_code_with_smith(
         else:
             response_text = str(result)
 
-        code = _extract_code_block(response_text)
-        notes = []
+        files = _extract_files(response_text)
+        notes: list[str] = []
 
-        if not code:
+        if not files:
             notes.append("Smith returned an empty response. Check your LLM configuration.")
+            files = [{"path": "main.py", "content": "# No code generated", "language": "python"}]
 
-        return {"code": code, "notes": notes}
+        # Backward-compatible "code" key with concatenated content
+        code = "\n\n".join(f"# --- {f['path']} ---\n{f['content']}" for f in files)
+
+        return {"files": files, "code": code, "notes": notes}
 
     except Exception as exc:
         logger.exception("Smith code generation failed")
         return {
+            "files": [{"path": "main.py", "content": f"# Smith code generation failed: {exc}", "language": "python"}],
             "code": f"# Smith code generation failed: {exc}",
             "notes": [str(exc)],
         }

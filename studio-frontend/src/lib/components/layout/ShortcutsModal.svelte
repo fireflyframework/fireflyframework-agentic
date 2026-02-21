@@ -132,8 +132,8 @@
 		flex-direction: column;
 		overflow: hidden;
 		box-shadow:
-			0 0 0 1px rgba(255, 255, 255, 0.04),
-			0 16px 48px rgba(0, 0, 0, 0.6),
+			0 0 0 1px oklch(from var(--color-text-primary) l c h / 4%),
+			var(--shadow-lg),
 			0 0 80px color-mix(in srgb, var(--color-accent) 4%, transparent);
 		animation: shortcuts-slide-in 0.15s ease-out;
 	}
@@ -205,7 +205,7 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 7px 0;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+		border-bottom: 1px solid oklch(from var(--color-text-primary) l c h / 4%);
 	}
 
 	.shortcuts-row:last-child {

@@ -180,7 +180,7 @@
 	}
 
 	.action-btn:hover:not(:disabled) {
-		background: rgba(255, 255, 255, 0.05);
+		background: oklch(from var(--color-text-primary) l c h / 5%);
 		color: var(--color-text-primary, #e8e8ed);
 	}
 
@@ -322,7 +322,7 @@
 	}
 
 	.table-row:hover {
-		background: rgba(255, 255, 255, 0.02);
+		background: oklch(from var(--color-text-primary) l c h / 2%);
 	}
 
 	.col-name {

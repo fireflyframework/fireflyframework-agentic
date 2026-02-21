@@ -27,6 +27,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query  # type: ignore[import-not-found]
@@ -613,13 +614,26 @@ async def _handle_chat(
         })
 
 
-def _build_project_context() -> str:
+def _build_project_context(canvas: Any = None) -> str:
     """Gather live project, integration, and tool state for the Architect.
 
     This context is prepended (invisibly) to the first user message so the
     assistant knows what the user is working on without them having to explain.
     """
     parts: list[str] = []
+
+    # Current canvas state
+    if canvas and canvas.nodes:
+        node_summaries = []
+        for n in canvas.nodes:
+            cfg_keys = ", ".join(f"{k}={v!r}" for k, v in list(n.config.items())[:4]) if n.config else "unconfigured"
+            node_summaries.append(f"  - {n.id} ({n.type}): {n.label or 'unlabeled'} [{cfg_keys}]")
+        edge_summaries = [f"  - {e.source} -> {e.target}" for e in canvas.edges]
+        parts.append(
+            f"[CONTEXT] Current canvas has {len(canvas.nodes)} nodes and {len(canvas.edges)} edges:\n"
+            + "\n".join(node_summaries)
+            + ("\nConnections:\n" + "\n".join(edge_summaries) if edge_summaries else "")
+        )
 
     # Current project
     try:
@@ -744,6 +758,8 @@ def create_assistant_router() -> APIRouter:
 
         # Per-connection state
         from fireflyframework_genai.studio.assistant.agent import (
+            CanvasEdge,
+            CanvasNode,
             CanvasState,
             create_studio_assistant,
         )
@@ -808,7 +824,7 @@ def create_assistant_router() -> APIRouter:
 
                     # Inject live project context so The Architect knows what
                     # the user is currently working on.
-                    project_context = _build_project_context()
+                    project_context = _build_project_context(canvas=canvas)
                     if project_context:
                         user_message = f"{project_context}\n\n{user_message}"
 
@@ -831,6 +847,41 @@ def create_assistant_router() -> APIRouter:
                 elif action == "clear_history":
                     message_history.clear()
                     await websocket.send_json({"type": "history_cleared"})
+
+                elif action == "sync_canvas":
+                    # Restore canvas state from frontend (e.g. after refresh)
+                    sync_nodes = message.get("nodes", [])
+                    sync_edges = message.get("edges", [])
+                    canvas.nodes.clear()
+                    canvas.edges.clear()
+                    max_id = 0
+                    for n in sync_nodes:
+                        data = n.get("data", {})
+                        config = {k: v for k, v in data.items() if k not in ("label", "_executionState")}
+                        canvas.nodes.append(CanvasNode(
+                            id=n.get("id", ""),
+                            type=n.get("type", "pipeline_step"),
+                            label=data.get("label", n.get("id", "")),
+                            position=n.get("position", {"x": 0, "y": 0}),
+                            config=config,
+                        ))
+                        # Track highest numeric suffix for counter
+                        m = re.search(r"(\d+)$", n.get("id", ""))
+                        if m:
+                            max_id = max(max_id, int(m.group(1)))
+                    for e in sync_edges:
+                        canvas.edges.append(CanvasEdge(
+                            id=e.get("id", ""),
+                            source=e.get("source", ""),
+                            target=e.get("target", ""),
+                            source_handle=e.get("sourceHandle"),
+                            target_handle=e.get("targetHandle"),
+                        ))
+                    canvas._counter = max_id
+                    logger.info(
+                        "Canvas synced from frontend: %d nodes, %d edges (counter=%d)",
+                        len(canvas.nodes), len(canvas.edges), max_id,
+                    )
 
                 else:
                     await websocket.send_json(

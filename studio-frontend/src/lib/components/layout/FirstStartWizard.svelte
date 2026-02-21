@@ -398,8 +398,8 @@
 		flex-direction: column;
 		overflow: hidden;
 		box-shadow:
-			0 0 0 1px rgba(255, 255, 255, 0.04),
-			0 24px 64px rgba(0, 0, 0, 0.7),
+			0 0 0 1px oklch(from var(--color-text-primary) l c h / 4%),
+			0 24px 64px oklch(from var(--color-bg-primary) l c h / 70%),
 			0 0 120px color-mix(in srgb, var(--color-accent) 6%, transparent);
 		animation: wizard-slide-in 0.25s ease-out;
 	}
@@ -527,7 +527,7 @@
 		font-family: var(--font-sans);
 		font-size: 12px;
 		color: var(--color-text-secondary);
-		background: rgba(255, 255, 255, 0.03);
+		background: oklch(from var(--color-text-primary) l c h / 3%);
 		padding: 8px 14px;
 		border-radius: 8px;
 		border: 1px solid var(--color-border);
@@ -563,7 +563,7 @@
 		justify-content: center;
 		gap: 4px;
 		padding: 16px 12px 14px;
-		background: rgba(255, 255, 255, 0.02);
+		background: oklch(from var(--color-text-primary) l c h / 2%);
 		border: 1px solid var(--color-border);
 		border-radius: 10px;
 		cursor: pointer;
@@ -571,7 +571,7 @@
 	}
 
 	.wizard-provider-card:hover {
-		background: rgba(255, 255, 255, 0.04);
+		background: oklch(from var(--color-text-primary) l c h / 4%);
 		transform: translateY(-1px);
 	}
 
@@ -618,7 +618,7 @@
 		border: 1px solid var(--color-border);
 		border-radius: 10px;
 		padding: 14px 16px;
-		background: rgba(255, 255, 255, 0.02);
+		background: oklch(from var(--color-text-primary) l c h / 2%);
 	}
 
 	.wizard-key-provider {
@@ -671,7 +671,7 @@
 		border: 1px solid var(--color-border);
 		border-radius: 10px;
 		padding: 14px 16px;
-		background: rgba(255, 255, 255, 0.02);
+		background: oklch(from var(--color-text-primary) l c h / 2%);
 	}
 
 	.wizard-defaults-row {

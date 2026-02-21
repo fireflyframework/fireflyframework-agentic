@@ -290,8 +290,8 @@
 		flex-direction: column;
 		overflow: hidden;
 		box-shadow:
-			0 0 0 1px rgba(255, 255, 255, 0.04),
-			0 20px 60px rgba(0, 0, 0, 0.5),
+			0 0 0 1px oklch(from var(--color-text-primary) l c h / 4%),
+			var(--shadow-lg),
 			0 0 100px oklch(from var(--color-accent) l c h / 4%);
 		animation: share-slide-in 0.15s ease-out;
 	}
@@ -482,7 +482,7 @@
 	.install-desc code {
 		font-family: var(--font-mono);
 		font-size: 11px;
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--color-overlay-subtle);
 		padding: 1px 5px;
 		border-radius: 4px;
 		color: var(--color-text-primary);
@@ -546,7 +546,7 @@
 	}
 
 	.copy-btn-sm:hover {
-		background: rgba(255, 255, 255, 0.08);
+		background: var(--color-overlay-light);
 		color: var(--color-text-primary);
 	}
 

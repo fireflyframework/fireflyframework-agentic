@@ -14,7 +14,8 @@
 	import { runtimeStatus } from '$lib/stores/runtime';
 	import { runPipeline, debugPipeline } from '$lib/execution/bridge';
 	import { getGraphSnapshot, nodes as nodesStore, isDirty } from '$lib/stores/pipeline';
-	import { settingsModalOpen, architectSidebarOpen } from '$lib/stores/ui';
+	import { settingsModalOpen, architectSidebarOpen, projectSettingsModalOpen } from '$lib/stores/ui';
+	import Pencil from 'lucide-svelte/icons/pencil';
 	import { connectionState } from '$lib/stores/connection';
 	import { currentProject, projects, selectProject, initProjects } from '$lib/stores/project';
 	import { api } from '$lib/api/client';
@@ -22,6 +23,10 @@
 	import { onMount } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
 	import { addToast } from '$lib/stores/notifications';
+	import Sun from 'lucide-svelte/icons/sun';
+	import Moon from 'lucide-svelte/icons/moon';
+	import Monitor from 'lucide-svelte/icons/monitor';
+	import { themeMode, cycleTheme } from '$lib/stores/theme';
 	import logo from '$lib/assets/favicon.svg';
 	import ShareModal from './ShareModal.svelte';
 	import Tooltip from '$lib/components/shared/Tooltip.svelte';
@@ -283,6 +288,11 @@
 					</div>
 				{/if}
 			</div>
+			<Tooltip text="Project Settings" description="Edit project name and description">
+				<button class="btn-icon btn-project-settings" onclick={() => projectSettingsModalOpen.set(true)}>
+					<Pencil size={13} />
+				</button>
+			</Tooltip>
 			<Tooltip text={$isDirty ? "Save Pipeline (unsaved changes)" : "Save Pipeline"} shortcut="Cmd+S" description="Save the current pipeline graph to this project">
 				<button class="btn-save" class:has-changes={$isDirty} onclick={savePipeline}>
 					<Save size={14} />
@@ -347,14 +357,25 @@
 				</button>
 			</Tooltip>
 		{/if}
+		<Tooltip text={`Theme: ${$themeMode}`} description="Cycle between dark, light, and system themes">
+			<button class="btn-icon" onclick={cycleTheme}>
+				{#if $themeMode === 'dark'}
+					<Moon size={16} />
+				{:else if $themeMode === 'light'}
+					<Sun size={16} />
+				{:else}
+					<Monitor size={16} />
+				{/if}
+			</button>
+		</Tooltip>
 		<Tooltip text="Settings" description="Configure API keys, model defaults, and studio preferences">
 			<button class="btn-icon" onclick={() => settingsModalOpen.set(true)}>
 				<Settings size={16} />
 			</button>
 		</Tooltip>
 		{#if !isHomePage}
-			<Tooltip text="The Architect" shortcut="Cmd+/" description="Toggle the AI assistant sidebar — describe what you want to build and The Architect will design it">
-				<button class="btn-icon" class:architect-active={$architectSidebarOpen} onclick={toggleArchitect}>
+			<Tooltip text="AI Agents" shortcut="Cmd+/" description="Toggle the AI agents sidebar — Architect, Smith, and Oracle">
+				<button class="btn-icon" class:agents-active={$architectSidebarOpen} onclick={toggleArchitect}>
 					<PanelLeft size={16} />
 				</button>
 			</Tooltip>
@@ -425,7 +446,7 @@
 	}
 
 	.brand-link:hover {
-		background: rgba(255,255,255,0.04);
+		background: var(--color-overlay-subtle);
 	}
 
 	.brand-logo {
@@ -486,8 +507,8 @@
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		background: rgba(255,255,255,0.03);
-		border: 1px solid rgba(255,255,255,0.06);
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--color-border);
 		color: var(--color-text-primary);
 		font-family: var(--font-mono);
 		font-size: 12px;
@@ -498,8 +519,8 @@
 	}
 
 	.project-selector:hover {
-		background: rgba(255,255,255,0.06);
-		border-color: rgba(255,255,255,0.10);
+		background: var(--color-bg-hover);
+		border-color: var(--color-border-light);
 	}
 
 	.project-dot {
@@ -769,6 +790,11 @@
 		background: rgba(239, 68, 68, 0.25);
 	}
 
+	.btn-project-settings {
+		width: 26px;
+		height: 26px;
+	}
+
 	/* Save button */
 	.btn-save {
 		display: flex;
@@ -786,7 +812,7 @@
 	}
 
 	.btn-save:hover {
-		background: rgba(255,255,255,0.06);
+		background: var(--color-overlay-subtle);
 		color: var(--color-text-primary);
 		opacity: 1;
 	}
@@ -866,8 +892,8 @@
 		display: flex;
 		align-items: center;
 		gap: 5px;
-		background: rgba(255,255,255,0.03);
-		border: 1px solid rgba(255,255,255,0.06);
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--color-border);
 		color: var(--color-text-secondary);
 		padding: 5px 10px;
 		border-radius: 8px;
@@ -879,7 +905,7 @@
 	}
 
 	.btn-runtime:hover:not(:disabled) {
-		background: rgba(255,255,255,0.06);
+		background: var(--color-bg-hover);
 		color: var(--color-text-primary);
 	}
 
@@ -953,7 +979,7 @@
 	}
 
 	.btn-icon:hover:not(:disabled) {
-		background: rgba(255,255,255,0.06);
+		background: var(--color-overlay-subtle);
 		color: var(--color-text-primary);
 		opacity: 1;
 	}
@@ -968,7 +994,7 @@
 		opacity: 1;
 	}
 
-	.architect-active {
+	.agents-active {
 		color: var(--color-accent);
 		background: oklch(from var(--color-accent) l c h / 10%);
 		opacity: 1;
@@ -977,7 +1003,7 @@
 	.divider {
 		width: 1px;
 		height: 18px;
-		background: rgba(255,255,255,0.08);
+		background: var(--color-overlay-light);
 		margin: 0 5px;
 	}
 

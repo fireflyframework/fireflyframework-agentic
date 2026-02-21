@@ -198,7 +198,7 @@
 	}
 
 	.back-btn:hover {
-		background: rgba(255, 255, 255, 0.05);
+		background: oklch(from var(--color-text-primary) l c h / 5%);
 		color: var(--color-text-primary, #e8e8ed);
 	}
 
@@ -218,7 +218,7 @@
 	}
 
 	.action-btn:hover {
-		background: rgba(255, 255, 255, 0.05);
+		background: oklch(from var(--color-text-primary) l c h / 5%);
 		color: var(--color-text-primary, #e8e8ed);
 	}
 
@@ -299,7 +299,7 @@
 		font-weight: 600;
 		padding: 1px 4px;
 		border-radius: 2px;
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--color-overlay-subtle);
 		color: var(--color-text-secondary, #8888a0);
 		flex-shrink: 0;
 		text-transform: uppercase;
@@ -316,7 +316,7 @@
 	}
 
 	.ext-json {
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--color-overlay-subtle);
 		color: var(--color-text-secondary, #8888a0);
 	}
 

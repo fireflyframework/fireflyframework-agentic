@@ -411,7 +411,7 @@
 	}
 
 	.toolbar-btn:hover {
-		background: rgba(255, 255, 255, 0.05);
+		background: oklch(from var(--color-text-primary) l c h / 5%);
 		color: var(--color-text-primary, #e8e8ed);
 	}
 
@@ -528,7 +528,7 @@
 	}
 
 	.debug-btn:hover {
-		background: rgba(255, 255, 255, 0.05);
+		background: oklch(from var(--color-text-primary) l c h / 5%);
 		color: var(--color-text-primary, #e8e8ed);
 		border-color: var(--color-text-secondary, #8888a0);
 	}
@@ -679,7 +679,7 @@
 	}
 
 	.json-toggle:hover {
-		background: rgba(255, 255, 255, 0.03);
+		background: oklch(from var(--color-text-primary) l c h / 3%);
 	}
 
 	.json-label {

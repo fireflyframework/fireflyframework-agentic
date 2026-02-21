@@ -609,7 +609,7 @@
 	}
 
 	.message.assistant .message-avatar {
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--color-overlay-subtle);
 		color: var(--color-text-secondary, #8888a0);
 	}
 
@@ -695,13 +695,13 @@
 	.message-content.markdown :global(code) {
 		font-family: var(--font-mono, 'JetBrains Mono', ui-monospace, monospace);
 		font-size: 11px;
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--color-overlay-subtle);
 		padding: 1px 4px;
 		border-radius: 3px;
 	}
 
 	.message-content.markdown :global(pre) {
-		background: rgba(0, 0, 0, 0.3);
+		background: var(--color-code-bg, var(--color-bg-primary));
 		border-radius: 6px;
 		padding: 10px 12px;
 		overflow-x: auto;
@@ -758,7 +758,7 @@
 	}
 
 	.message-content.markdown :global(th) {
-		background: rgba(255, 255, 255, 0.04);
+		background: oklch(from var(--color-text-primary) l c h / 4%);
 		font-weight: 600;
 	}
 
@@ -832,7 +832,7 @@
 		border: 1px solid var(--color-border, #2a2a3a);
 		border-radius: 8px;
 		overflow: hidden;
-		background: rgba(0, 0, 0, 0.15);
+		background: oklch(from var(--color-bg-primary) l c h / 50%);
 	}
 
 	.tool-calls-header {
@@ -847,7 +847,7 @@
 	}
 
 	.tool-calls-header:hover {
-		background: rgba(255, 255, 255, 0.03);
+		background: oklch(from var(--color-text-primary) l c h / 3%);
 	}
 
 	.tool-calls-header-left {
@@ -891,7 +891,7 @@
 
 	.tool-call-item {
 		padding: 8px 10px;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+		border-bottom: 1px solid oklch(from var(--color-text-primary) l c h / 3%);
 	}
 
 	.tool-call-item:last-child {
@@ -909,7 +909,7 @@
 		width: 16px;
 		height: 16px;
 		border-radius: 50%;
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--color-overlay-subtle);
 		color: var(--color-text-secondary, #8888a0);
 		font-size: 9px;
 		font-weight: 600;
@@ -1065,7 +1065,7 @@
 	}
 
 	.action-btn:hover:not(:disabled) {
-		background: rgba(255, 255, 255, 0.05);
+		background: oklch(from var(--color-text-primary) l c h / 5%);
 		color: var(--color-text-primary, #e8e8ed);
 	}
 

@@ -47,7 +47,8 @@ def create_codegen_router() -> APIRouter:
         ``{"graph": {"nodes": [...], "edges": [...]}}``
 
         **Response:**
-        ``{"code": "...generated python code...", "notes": [...]}``
+        ``{"files": [{"path": str, "content": str, "language": str}],
+        "code": "...concatenated code...", "notes": [...]}``
     """
     router = APIRouter(prefix="/api/codegen", tags=["codegen"])
 
@@ -64,11 +65,13 @@ def create_codegen_router() -> APIRouter:
                     "default_model": settings.model_defaults.default_model,
                 }
             }
+            user_name = settings.user_profile.name or ""
         except Exception:
             settings_dict = None
+            user_name = ""
 
         try:
-            result = await generate_code_with_smith(req.graph, settings_dict)
+            result = await generate_code_with_smith(req.graph, settings_dict, user_name=user_name)
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         return result

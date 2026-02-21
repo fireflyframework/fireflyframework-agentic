@@ -478,7 +478,7 @@
 							</div>
 						{:else}
 							<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-							<div class="project-card" onclick={(e) => handleProjectClick(project, e)}>
+							<div class="project-card" class:menu-active={menuOpenFor === project.name} onclick={(e) => handleProjectClick(project, e)}>
 								<div class="project-icon">
 									<Folder size={18} />
 								</div>
@@ -565,8 +565,8 @@
 			</section>
 		{/if}
 
-		<!-- Click-outside to close menus -->
-		{#if menuOpenFor || editingDescProject || renamingProject || deletingProject}
+		<!-- Click-outside to close dropdown menu (rename/desc use blur handlers) -->
+		{#if menuOpenFor}
 			<button class="backdrop" onclick={clearProjectActions} aria-label="Close menu"></button>
 		{/if}
 	</div>
@@ -652,8 +652,8 @@
 		position: absolute;
 		inset: 0;
 		background-image:
-			linear-gradient(to right, rgba(255,255,255,0.10) 1px, transparent 1px),
-			linear-gradient(to bottom, rgba(255,255,255,0.10) 1px, transparent 1px);
+			linear-gradient(to right, var(--color-grid-line) 1px, transparent 1px),
+			linear-gradient(to bottom, var(--color-grid-line) 1px, transparent 1px);
 		background-size: 48px 48px;
 		mask-image: radial-gradient(ellipse 100% 90% at 50% 35%, black 10%, transparent 80%);
 		-webkit-mask-image: radial-gradient(ellipse 100% 90% at 50% 35%, black 10%, transparent 80%);
@@ -668,7 +668,7 @@
 	.bg-vignette {
 		position: absolute;
 		inset: 0;
-		background: radial-gradient(ellipse 80% 80% at 50% 50%, transparent 30%, rgba(0,0,0,0.4) 100%);
+		background: radial-gradient(ellipse 80% 80% at 50% 50%, transparent 30%, var(--color-vignette) 100%);
 	}
 
 	/* ===== Page content ===== */
@@ -829,7 +829,7 @@
 	}
 
 	.chip-remove:hover {
-		background: rgba(255,255,255,0.1);
+		background: var(--color-overlay-medium);
 		color: var(--color-text-primary);
 	}
 
@@ -868,7 +868,7 @@
 	}
 
 	.toolbar-btn:hover:not(:disabled) {
-		background: rgba(255,255,255,0.06);
+		background: var(--color-overlay-subtle);
 		color: var(--color-text-primary);
 	}
 
@@ -1098,12 +1098,12 @@
 	}
 
 	.confirm-btn.cancel {
-		background: rgba(255,255,255,0.06);
+		background: var(--color-overlay-subtle);
 		color: var(--color-text-secondary);
 	}
 
 	.confirm-btn.cancel:hover {
-		background: rgba(255,255,255,0.10);
+		background: var(--color-overlay-medium);
 		color: var(--color-text-primary);
 	}
 
@@ -1155,7 +1155,7 @@
 	}
 
 	.search-clear:hover {
-		background: rgba(255,255,255,0.08);
+		background: var(--color-overlay-light);
 		color: var(--color-text-primary);
 	}
 
@@ -1186,6 +1186,11 @@
 		background: oklch(from var(--color-accent) l c h / 4%);
 		transform: translateY(-2px);
 		box-shadow: 0 8px 24px -8px oklch(from var(--color-accent) l c h / 10%);
+	}
+
+	.project-card.menu-active {
+		z-index: 20;
+		transform: none;
 	}
 
 	.project-card.deleting {
@@ -1308,7 +1313,7 @@
 		font-size: 13px;
 		font-family: var(--font-sans);
 		color: var(--color-text-primary);
-		background: rgba(255,255,255,0.06);
+		background: var(--color-bg-elevated);
 		border: 1px solid oklch(from var(--color-accent) l c h / 40%);
 		border-radius: 6px;
 		padding: 2px 6px;
@@ -1357,7 +1362,7 @@
 
 	.card-menu-btn:hover {
 		opacity: 1 !important;
-		background: rgba(255,255,255,0.08);
+		background: var(--color-overlay-light);
 		color: var(--color-text-primary);
 	}
 
@@ -1371,7 +1376,7 @@
 		border-radius: 10px;
 		padding: 4px;
 		min-width: 140px;
-		box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+		box-shadow: var(--shadow-dropdown);
 		z-index: 10;
 		animation: menu-in 0.12s ease-out;
 	}
@@ -1398,7 +1403,7 @@
 	}
 
 	.menu-item:hover {
-		background: rgba(255,255,255,0.06);
+		background: var(--color-overlay-subtle);
 	}
 
 	.menu-item.danger {

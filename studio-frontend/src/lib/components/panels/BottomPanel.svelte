@@ -1,19 +1,12 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { Terminal, Code, Clock, Plug, FlaskConical, GitBranch, Rocket, Activity, FolderOpen, History, Eye, ListChecks, ChevronDown, ChevronUp } from 'lucide-svelte';
+	import { Terminal, Clock, History, Eye, ListChecks, ChevronDown, ChevronUp } from 'lucide-svelte';
 	import type { BottomPanelTab } from '$lib/stores/ui';
 	import { bottomPanelOpen, bottomPanelTab } from '$lib/stores/ui';
 	import { executionEvents, checkpoints } from '$lib/stores/execution';
 	import ConsoleTab from './ConsoleTab.svelte';
-	import CodeTab from './CodeTab.svelte';
 	import TimelineTab from './TimelineTab.svelte';
 	import HistoryPanel from './HistoryPanel.svelte';
-	import IntegrationsPanel from './IntegrationsPanel.svelte';
-	import EvaluatePanel from './EvaluatePanel.svelte';
-	import ExperimentsPanel from './ExperimentsPanel.svelte';
-	import DeployPanel from './DeployPanel.svelte';
-	import MonitorPanel from './MonitorPanel.svelte';
-	import FilesPanel from './FilesPanel.svelte';
 	import OraclePanel from './OraclePanel.svelte';
 	import ExecutionsPanel from './ExecutionsPanel.svelte';
 	import { oracleInsights } from '$lib/stores/oracle';
@@ -24,17 +17,10 @@
 
 	const tabs: Array<{ id: BottomPanelTab; label: string; icon: typeof Terminal }> = [
 		{ id: 'console', label: 'Console', icon: Terminal },
-		{ id: 'code', label: 'Code', icon: Code },
 		{ id: 'timeline', label: 'Timeline', icon: Clock },
-		{ id: 'integrations', label: 'Integrate', icon: Plug },
-		{ id: 'evaluate', label: 'Evaluate', icon: FlaskConical },
-		{ id: 'experiments', label: 'Experiments', icon: GitBranch },
-		{ id: 'deploy', label: 'Deploy', icon: Rocket },
-		{ id: 'monitor', label: 'Monitor', icon: Activity },
-		{ id: 'files', label: 'Files', icon: FolderOpen },
-		{ id: 'history', label: 'History', icon: History },
-		{ id: 'oracle', label: 'Oracle', icon: Eye },
 		{ id: 'executions', label: 'Executions', icon: ListChecks },
+		{ id: 'oracle', label: 'Insights', icon: Eye },
+		{ id: 'history', label: 'History', icon: History },
 	];
 
 	let panelHeight = $state(320);
@@ -43,7 +29,6 @@
 	let dragStartHeight = $state(0);
 
 	const MIN_HEIGHT = 120;
-	// Max height will be computed as 60% of viewport
 
 	function togglePanel() {
 		bottomPanelOpen.update((v) => !v);
@@ -80,7 +65,6 @@
 	}
 
 	onDestroy(() => {
-		// Safety cleanup in case component destroys mid-drag
 		document.removeEventListener('mousemove', onDragMove);
 		document.removeEventListener('mouseup', onDragEnd);
 	});
@@ -133,28 +117,14 @@
 		<div class="tab-content">
 			{#if $bottomPanelTab === 'console'}
 				<ConsoleTab />
-			{:else if $bottomPanelTab === 'code'}
-				<CodeTab />
 			{:else if $bottomPanelTab === 'timeline'}
 				<TimelineTab />
-			{:else if $bottomPanelTab === 'integrations'}
-				<IntegrationsPanel />
-			{:else if $bottomPanelTab === 'evaluate'}
-				<EvaluatePanel />
-			{:else if $bottomPanelTab === 'experiments'}
-				<ExperimentsPanel />
-			{:else if $bottomPanelTab === 'deploy'}
-				<DeployPanel />
-			{:else if $bottomPanelTab === 'monitor'}
-				<MonitorPanel />
-			{:else if $bottomPanelTab === 'files'}
-				<FilesPanel />
-			{:else if $bottomPanelTab === 'history'}
-				<HistoryPanel />
-			{:else if $bottomPanelTab === 'oracle'}
-				<OraclePanel />
 			{:else if $bottomPanelTab === 'executions'}
 				<ExecutionsPanel />
+			{:else if $bottomPanelTab === 'oracle'}
+				<OraclePanel />
+			{:else if $bottomPanelTab === 'history'}
+				<HistoryPanel />
 			{/if}
 		</div>
 	{/if}
@@ -287,7 +257,7 @@
 	}
 
 	.toggle-btn:hover {
-		background: rgba(255, 255, 255, 0.05);
+		background: oklch(from var(--color-text-primary) l c h / 5%);
 		color: var(--color-text-primary, #e8e8ed);
 	}
 
@@ -296,5 +266,4 @@
 		overflow: hidden;
 		position: relative;
 	}
-
 </style>

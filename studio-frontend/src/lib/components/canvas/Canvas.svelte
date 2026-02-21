@@ -23,6 +23,7 @@
 	import FanInNode from './nodes/FanInNode.svelte';
 	import InputNode from './nodes/InputNode.svelte';
 	import OutputNode from './nodes/OutputNode.svelte';
+	import { resolvedTheme } from '$lib/stores/theme';
 
 	const nodeTypes = {
 		input: InputNode,
@@ -51,7 +52,7 @@
 		bind:nodes={$nodes}
 		bind:edges={$edges}
 		fitView
-		colorMode="dark"
+		colorMode={$resolvedTheme === 'light' ? 'light' : 'dark'}
 		defaultEdgeOptions={{
 			type: 'smoothstep',
 			animated: true,
@@ -62,7 +63,7 @@
 	>
 		<Controls position="bottom-left" />
 		<MiniMap position="bottom-right" />
-		<Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#2a2a3a" />
+		<Background variant={BackgroundVariant.Dots} gap={24} size={1} color={$resolvedTheme === 'light' ? '#c8ccd4' : '#2a2a3a'} />
 	</SvelteFlow>
 
 	{#if !isEmpty}
@@ -120,10 +121,10 @@
 		display: flex;
 		align-items: center;
 		gap: 0;
-		background: rgba(18, 18, 28, 0.82);
+		background: oklch(from var(--color-bg-secondary) l c h / 85%);
 		backdrop-filter: blur(12px);
 		-webkit-backdrop-filter: blur(12px);
-		border: 1px solid rgba(255, 255, 255, 0.06);
+		border: 1px solid var(--color-border);
 		border-radius: 20px;
 		padding: 5px 14px;
 		box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
@@ -136,19 +137,19 @@
 		align-items: center;
 		gap: 5px;
 		padding: 0 8px;
-		color: rgba(160, 160, 184, 0.8);
+		color: var(--color-text-secondary);
 		font-size: 11px;
 		font-family: var(--font-sans, system-ui, sans-serif);
 		white-space: nowrap;
 	}
 
 	.stat-label {
-		color: rgba(136, 136, 160, 0.6);
+		color: var(--color-text-muted);
 		font-weight: 500;
 	}
 
 	.stat-value {
-		color: rgba(232, 232, 237, 0.9);
+		color: var(--color-text-primary);
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
 	}
@@ -156,7 +157,7 @@
 	.stat-divider {
 		width: 1px;
 		height: 14px;
-		background: rgba(255, 255, 255, 0.08);
+		background: var(--color-border);
 		flex-shrink: 0;
 	}
 

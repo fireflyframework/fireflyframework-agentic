@@ -1,17 +1,23 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { commandPaletteOpen, bottomPanelOpen, bottomPanelTab, rightPanelOpen, settingsModalOpen, architectSidebarOpen } from '$lib/stores/ui';
+	import { commandPaletteOpen, bottomPanelOpen, bottomPanelTab, rightPanelOpen, settingsModalOpen, architectSidebarOpen, shortcutsModalOpen } from '$lib/stores/ui';
 	import { addNode, getGraphSnapshot } from '$lib/stores/pipeline';
 	import { runPipeline, debugPipeline } from '$lib/execution/bridge';
-	import type { Component } from 'svelte';
+	import { projects, currentProject, selectProject, createAndSelectProject } from '$lib/stores/project';
+	import { cycleTheme } from '$lib/stores/theme';
+	import { generateCode } from '$lib/stores/smith';
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	type IconComponent = any;
 
 	// Navigation icons
+	import LayoutDashboard from 'lucide-svelte/icons/layout-dashboard';
 	import Blocks from 'lucide-svelte/icons/blocks';
 	import FlaskConical from 'lucide-svelte/icons/flask-conical';
 	import GitBranch from 'lucide-svelte/icons/git-branch';
 	import Rocket from 'lucide-svelte/icons/rocket';
 	import Activity from 'lucide-svelte/icons/activity';
 	import FolderOpen from 'lucide-svelte/icons/folder-open';
+	import Plug from 'lucide-svelte/icons/plug';
 
 	// Node icons
 	import Bot from 'lucide-svelte/icons/bot';
@@ -37,53 +43,101 @@
 	import MessageSquare from 'lucide-svelte/icons/message-square';
 	import Search from 'lucide-svelte/icons/search';
 	import SettingsIcon from 'lucide-svelte/icons/settings';
+	import SunMoon from 'lucide-svelte/icons/sun-moon';
+	import Plus from 'lucide-svelte/icons/plus';
+	import FolderKanban from 'lucide-svelte/icons/folder-kanban';
+	import Eye from 'lucide-svelte/icons/eye';
+	import History from 'lucide-svelte/icons/history';
+	import ListChecks from 'lucide-svelte/icons/list-checks';
+	import Keyboard from 'lucide-svelte/icons/keyboard';
+	import FileCode from 'lucide-svelte/icons/file-code';
 
 	interface Command {
 		id: string;
 		label: string;
 		category: string;
-		icon: Component<{ size?: number }>;
+		icon: IconComponent;
 		action: () => void;
 		shortcut?: string;
+		keywords?: string;
 	}
 
-	const commands: Command[] = [
+	const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent);
+	const mod = isMac ? '\u2318' : 'Ctrl';
+
+	const staticCommands: Command[] = [
 		// Navigation
-		{ id: 'nav-construct', label: 'Go to Construct', category: 'Navigation', icon: Blocks, action: () => goto('/construct') },
-		{ id: 'nav-evaluate', label: 'Go to Evaluate', category: 'Navigation', icon: FlaskConical, action: () => goto('/evaluate') },
-		{ id: 'nav-experiments', label: 'Go to Experiments', category: 'Navigation', icon: GitBranch, action: () => goto('/experiments') },
-		{ id: 'nav-deploy', label: 'Go to Deploy', category: 'Navigation', icon: Rocket, action: () => goto('/deploy') },
-		{ id: 'nav-monitor', label: 'Go to Monitor', category: 'Navigation', icon: Activity, action: () => goto('/monitor') },
-		{ id: 'nav-files', label: 'Go to Files', category: 'Navigation', icon: FolderOpen, action: () => goto('/files') },
+		{ id: 'nav-home', label: 'Go to Home', category: 'Navigation', icon: LayoutDashboard, action: () => goto('/'), keywords: 'dashboard overview' },
+		{ id: 'nav-construct', label: 'Go to Construct', category: 'Navigation', icon: Blocks, action: () => goto('/construct'), keywords: 'canvas build design pipeline' },
+		{ id: 'nav-integrations', label: 'Go to Integrations', category: 'Navigation', icon: Plug, action: () => goto('/integrations'), keywords: 'connect tools custom webhook api' },
+		{ id: 'nav-evaluate', label: 'Go to Evaluate', category: 'Navigation', icon: FlaskConical, action: () => goto('/evaluate'), keywords: 'test benchmark' },
+		{ id: 'nav-experiments', label: 'Go to Experiments', category: 'Navigation', icon: GitBranch, action: () => goto('/experiments'), keywords: 'ab test compare variants' },
+		{ id: 'nav-deploy', label: 'Go to Deploy', category: 'Navigation', icon: Rocket, action: () => goto('/deploy'), keywords: 'publish launch ship' },
+		{ id: 'nav-monitor', label: 'Go to Monitor', category: 'Navigation', icon: Activity, action: () => goto('/monitor'), keywords: 'metrics logs performance' },
+		{ id: 'nav-files', label: 'Go to Files', category: 'Navigation', icon: FolderOpen, action: () => goto('/files'), keywords: 'browse documents' },
+
+		// Pipeline Actions
+		{ id: 'pipeline-run', label: 'Run Pipeline', category: 'Pipeline', icon: Play, action: () => runPipeline(getGraphSnapshot()), shortcut: `${mod}+\u23CE`, keywords: 'execute start' },
+		{ id: 'pipeline-debug', label: 'Debug Pipeline', category: 'Pipeline', icon: Bug, action: () => debugPipeline(getGraphSnapshot()), shortcut: `${mod}+\u21E7+D`, keywords: 'step breakpoint inspect' },
+		{ id: 'pipeline-codegen', label: 'Generate Code', category: 'Pipeline', icon: FileCode, action: () => { bottomPanelOpen.set(true); bottomPanelTab.set('code'); queueMicrotask(() => generateCode(getGraphSnapshot())); }, keywords: 'smith code export python' },
 
 		// Add Node
 		{ id: 'node-input', label: 'Add Input Node', category: 'Add Node', icon: Antenna, action: () => addNode('input', 'Input') },
 		{ id: 'node-output', label: 'Add Output Node', category: 'Add Node', icon: Download, action: () => addNode('output', 'Output') },
-		{ id: 'node-agent', label: 'Add Agent Node', category: 'Add Node', icon: Bot, action: () => addNode('agent', 'Agent') },
-		{ id: 'node-tool', label: 'Add Tool Node', category: 'Add Node', icon: Wrench, action: () => addNode('tool', 'Tool') },
-		{ id: 'node-reasoning', label: 'Add Reasoning Node', category: 'Add Node', icon: Brain, action: () => addNode('reasoning', 'Reasoning') },
-		{ id: 'node-condition', label: 'Add Condition Node', category: 'Add Node', icon: CircleDot, action: () => addNode('condition', 'Condition') },
-		{ id: 'node-memory', label: 'Add Memory Node', category: 'Add Node', icon: Database, action: () => addNode('memory', 'Memory') },
-		{ id: 'node-validator', label: 'Add Validator Node', category: 'Add Node', icon: Shield, action: () => addNode('validator', 'Validator') },
-		{ id: 'node-code', label: 'Add Code Node', category: 'Add Node', icon: Code, action: () => addNode('custom_code', 'Code') },
-		{ id: 'node-fanout', label: 'Add Fan Out Node', category: 'Add Node', icon: GitFork, action: () => addNode('fan_out', 'Fan Out') },
-		{ id: 'node-fanin', label: 'Add Fan In Node', category: 'Add Node', icon: GitMerge, action: () => addNode('fan_in', 'Fan In') },
-
-		// Settings
-		{ id: 'open-settings', label: 'Open Settings', category: 'Settings', icon: SettingsIcon, action: () => settingsModalOpen.set(true), shortcut: '\u2318,' },
-
-		// Pipeline Actions
-		{ id: 'pipeline-run', label: 'Run Pipeline', category: 'Pipeline Actions', icon: Play, action: () => runPipeline(getGraphSnapshot()) },
-		{ id: 'pipeline-debug', label: 'Debug Pipeline', category: 'Pipeline Actions', icon: Bug, action: () => debugPipeline(getGraphSnapshot()) },
+		{ id: 'node-agent', label: 'Add Agent Node', category: 'Add Node', icon: Bot, action: () => addNode('agent', 'Agent'), keywords: 'llm model ai' },
+		{ id: 'node-tool', label: 'Add Tool Node', category: 'Add Node', icon: Wrench, action: () => addNode('tool', 'Tool'), keywords: 'function utility' },
+		{ id: 'node-reasoning', label: 'Add Reasoning Node', category: 'Add Node', icon: Brain, action: () => addNode('reasoning', 'Reasoning'), keywords: 'react cot chain thought' },
+		{ id: 'node-condition', label: 'Add Condition Node', category: 'Add Node', icon: CircleDot, action: () => addNode('condition', 'Condition'), keywords: 'branch if else switch' },
+		{ id: 'node-memory', label: 'Add Memory Node', category: 'Add Node', icon: Database, action: () => addNode('memory', 'Memory'), keywords: 'store retrieve context' },
+		{ id: 'node-validator', label: 'Add Validator Node', category: 'Add Node', icon: Shield, action: () => addNode('validator', 'Validator'), keywords: 'check validate guard' },
+		{ id: 'node-code', label: 'Add Code Node', category: 'Add Node', icon: Code, action: () => addNode('custom_code', 'Code'), keywords: 'python custom script' },
+		{ id: 'node-fanout', label: 'Add Fan Out Node', category: 'Add Node', icon: GitFork, action: () => addNode('fan_out', 'Fan Out'), keywords: 'parallel split' },
+		{ id: 'node-fanin', label: 'Add Fan In Node', category: 'Add Node', icon: GitMerge, action: () => addNode('fan_in', 'Fan In'), keywords: 'merge join collect' },
 
 		// View / Panels
+		{ id: 'view-architect', label: 'Toggle Architect Sidebar', category: 'View', icon: MessageSquare, action: () => architectSidebarOpen.update((v) => !v), shortcut: `${mod}+/`, keywords: 'ai assistant chat architect' },
 		{ id: 'view-bottom-panel', label: 'Toggle Bottom Panel', category: 'View', icon: PanelBottom, action: () => bottomPanelOpen.update((v) => !v) },
 		{ id: 'view-right-panel', label: 'Toggle Right Panel', category: 'View', icon: PanelRight, action: () => rightPanelOpen.update((v) => !v) },
-		{ id: 'view-tab-console', label: 'Switch to Console Tab', category: 'View', icon: Terminal, action: () => { bottomPanelOpen.set(true); bottomPanelTab.set('console'); } },
-		{ id: 'view-tab-code', label: 'Switch to Code Tab', category: 'View', icon: CodeXml, action: () => { bottomPanelOpen.set(true); bottomPanelTab.set('code'); } },
-		{ id: 'view-tab-timeline', label: 'Switch to Timeline Tab', category: 'View', icon: Clock, action: () => { bottomPanelOpen.set(true); bottomPanelTab.set('timeline'); } },
-		{ id: 'view-tab-chat', label: 'Toggle AI Assistant Sidebar', category: 'View', icon: MessageSquare, action: () => { architectSidebarOpen.update((v) => !v); } },
+		{ id: 'view-tab-console', label: 'Open Console Tab', category: 'View', icon: Terminal, action: () => { bottomPanelOpen.set(true); bottomPanelTab.set('console'); }, keywords: 'log output events' },
+		{ id: 'view-tab-code', label: 'Open Code Tab', category: 'View', icon: CodeXml, action: () => { bottomPanelOpen.set(true); bottomPanelTab.set('code'); }, keywords: 'smith codegen' },
+		{ id: 'view-tab-timeline', label: 'Open Timeline Tab', category: 'View', icon: Clock, action: () => { bottomPanelOpen.set(true); bottomPanelTab.set('timeline'); }, keywords: 'checkpoints' },
+		{ id: 'view-tab-oracle', label: 'Open Oracle Tab', category: 'View', icon: Eye, action: () => { bottomPanelOpen.set(true); bottomPanelTab.set('oracle'); }, keywords: 'insights analysis suggestions' },
+		{ id: 'view-tab-history', label: 'Open History Tab', category: 'View', icon: History, action: () => { bottomPanelOpen.set(true); bottomPanelTab.set('history'); }, keywords: 'past runs versions' },
+		{ id: 'view-tab-executions', label: 'Open Executions Tab', category: 'View', icon: ListChecks, action: () => { bottomPanelOpen.set(true); bottomPanelTab.set('executions'); }, keywords: 'runs results' },
+		{ id: 'view-tab-integrations', label: 'Open Integrations Tab', category: 'View', icon: Plug, action: () => { bottomPanelOpen.set(true); bottomPanelTab.set('integrations'); }, keywords: 'connect tools' },
+
+		// Settings & Preferences
+		{ id: 'open-settings', label: 'Open Settings', category: 'Settings', icon: SettingsIcon, action: () => settingsModalOpen.set(true), shortcut: `${mod}+,`, keywords: 'preferences config api keys' },
+		{ id: 'toggle-theme', label: 'Cycle Theme (Dark / Light / System)', category: 'Settings', icon: SunMoon, action: () => cycleTheme(), keywords: 'dark light mode appearance' },
+		{ id: 'open-shortcuts', label: 'Keyboard Shortcuts', category: 'Settings', icon: Keyboard, action: () => shortcutsModalOpen.set(true), shortcut: '?', keywords: 'help hotkeys keys bindings' },
+
+		// Project (create new — dynamic project switch items are appended below)
+		{ id: 'project-new', label: 'New Project', category: 'Project', icon: Plus, action: () => promptNewProject(), keywords: 'create project' },
 	];
+
+	function promptNewProject() {
+		const name = window.prompt('Project name:');
+		if (name?.trim()) {
+			createAndSelectProject(name.trim()).then(() => goto('/construct')).catch(() => {});
+		}
+	}
+
+	// Build the full commands list including dynamic project-switch entries
+	let commands = $derived.by(() => {
+		const projectList = $projects;
+		const current = $currentProject;
+		const projectCommands: Command[] = projectList
+			.filter((p) => p.name !== current?.name)
+			.map((p) => ({
+				id: `project-switch-${p.name}`,
+				label: `Switch to "${p.name}"`,
+				category: 'Project',
+				icon: FolderKanban,
+				action: () => { selectProject(p); goto('/construct'); },
+				keywords: 'project switch',
+			}));
+		return [...staticCommands, ...projectCommands];
+	});
 
 	let query = $state('');
 	let selectedIndex = $state(0);
@@ -110,9 +164,10 @@
 			.map((cmd) => {
 				const labelScore = fuzzyScore(cmd.label.toLowerCase(), q);
 				const catScore = fuzzyScore(cmd.category.toLowerCase(), q);
-				const best = labelScore >= 0 && catScore >= 0
-					? Math.min(labelScore, catScore)
-					: Math.max(labelScore, catScore);
+				const kwScore = cmd.keywords ? fuzzyScore(cmd.keywords.toLowerCase(), q) : -1;
+				// Pick the best (lowest non-negative) score
+				const scores = [labelScore, catScore, kwScore].filter((s) => s >= 0);
+				const best = scores.length > 0 ? Math.min(...scores) : -1;
 				return { cmd, score: best };
 			})
 			.filter((s) => s.score >= 0);
@@ -287,7 +342,7 @@
 		position: fixed;
 		inset: 0;
 		z-index: 9999;
-		background: rgba(0, 0, 0, 0.6);
+		background: rgba(0, 0, 0, 0.5);
 		display: flex;
 		align-items: flex-start;
 		justify-content: center;
@@ -315,8 +370,8 @@
 		flex-direction: column;
 		overflow: hidden;
 		box-shadow:
-			0 0 0 1px rgba(255, 255, 255, 0.04),
-			0 16px 48px rgba(0, 0, 0, 0.6),
+			0 0 0 1px var(--color-overlay-subtle),
+			var(--shadow-lg),
 			0 0 80px color-mix(in srgb, var(--color-accent) 4%, transparent);
 		animation: palette-slide-in 0.15s ease-out;
 	}
@@ -407,6 +462,7 @@
 		cursor: pointer;
 		transition: background 0.08s ease;
 		text-align: left;
+		color: inherit;
 	}
 
 	.command-palette-item:hover,
@@ -415,7 +471,7 @@
 	}
 
 	.command-palette-item.selected {
-		outline: 1px solid rgba(255, 255, 255, 0.06);
+		outline: 1px solid var(--color-border-light, var(--color-border));
 	}
 
 	.command-palette-item-icon {
@@ -425,7 +481,7 @@
 		width: 28px;
 		height: 28px;
 		border-radius: 6px;
-		background: rgba(255, 255, 255, 0.04);
+		background: var(--color-overlay-subtle);
 		color: var(--color-text-secondary);
 		flex-shrink: 0;
 	}

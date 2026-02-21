@@ -132,7 +132,7 @@
 	}
 
 	.bp-body {
-		background: #1a1a26;
+		background: var(--color-bg-elevated, #1a1a26);
 		padding: 8px 0;
 	}
 	.bp-pins {
@@ -147,7 +147,7 @@
 		align-items: center;
 		gap: 4px;
 		font-size: 9px;
-		color: #8888a0;
+		color: var(--color-text-muted);
 	}
 	.bp-dot {
 		width: 6px;
@@ -162,11 +162,11 @@
 		font-size: 10px;
 	}
 	.bp-key {
-		color: #6a6a80;
+		color: var(--color-text-muted);
 		font-family: 'JetBrains Mono', monospace;
 	}
 	.bp-val {
-		color: #a0a0b8;
+		color: var(--color-text-secondary);
 		font-family: 'JetBrains Mono', monospace;
 		text-overflow: ellipsis;
 		overflow: hidden;

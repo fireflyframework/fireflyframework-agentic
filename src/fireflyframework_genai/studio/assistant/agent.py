@@ -110,13 +110,29 @@ def create_canvas_tools(canvas: CanvasState) -> list[BaseTool]:
         if node_type not in _VALID_NODE_TYPES:
             raise ValueError(f"Invalid node_type '{node_type}'. Must be one of: {', '.join(sorted(_VALID_NODE_TYPES))}")
 
-        # Auto-layout: place after the rightmost existing node
-        if x == 0.0 and y == 0.0 and canvas.nodes:
-            rightmost = max(canvas.nodes, key=lambda n: n.position.get("x", 0))
-            x = rightmost.position.get("x", 0) + 300
-            y = rightmost.position.get("y", 200)
-        elif x == 0.0 and y == 0.0:
-            x, y = 250, 200
+        H_GAP = 300
+        V_GAP = 150
+        START_X = 250
+        START_Y = 250
+
+        if x == 0.0 and y == 0.0:
+            if not canvas.nodes:
+                x, y = START_X, START_Y
+            else:
+                occupied = {
+                    (int(n.position.get("x", 0)), int(n.position.get("y", 0)))
+                    for n in canvas.nodes
+                }
+                rightmost = max(canvas.nodes, key=lambda n: n.position.get("x", 0))
+                x = rightmost.position.get("x", 0) + H_GAP
+                y = rightmost.position.get("y", START_Y)
+
+                # Avoid vertical collision: offset downward if position is taken
+                while any(
+                    abs(ox - x) < 100 and abs(oy - y) < 80
+                    for ox, oy in occupied
+                ):
+                    y += V_GAP
 
         node = CanvasNode(
             id=canvas.next_id(node_type),
@@ -345,7 +361,75 @@ def create_canvas_tools(canvas: CanvasState) -> list[BaseTool]:
         valid = len(errors) == 0
         return json.dumps({"valid": valid, "errors": errors, "warnings": warnings})
 
-    return [add_node, connect_nodes, configure_node, remove_node, list_nodes, list_edges, clear_canvas, validate_pipeline]
+    @firefly_tool(
+        "auto_layout",
+        description=(
+            "Automatically arrange all nodes on the canvas in a clean layout "
+            "based on their connections. Uses topological ordering to place "
+            "nodes in columns (layers) with proper spacing. Call this after "
+            "building a complete pipeline to make it visually clean."
+        ),
+        auto_register=False,
+    )
+    async def auto_layout() -> str:
+        """Rearrange all canvas nodes using topological ordering."""
+        if not canvas.nodes:
+            return "Canvas is empty."
+
+        H_GAP = 300
+        V_GAP = 150
+        START_X = 250
+        START_Y = 250
+
+        node_ids = {n.id for n in canvas.nodes}
+
+        # Build adjacency list and in-degree count
+        adj: dict[str, list[str]] = {nid: [] for nid in node_ids}
+        in_degree: dict[str, int] = {nid: 0 for nid in node_ids}
+        for e in canvas.edges:
+            if e.source in node_ids and e.target in node_ids:
+                adj[e.source].append(e.target)
+                in_degree[e.target] = in_degree.get(e.target, 0) + 1
+
+        # Kahn's algorithm: BFS topological sort into layers
+        layers: list[list[str]] = []
+        queue = [nid for nid in node_ids if in_degree.get(nid, 0) == 0]
+        visited: set[str] = set()
+
+        while queue:
+            layers.append(sorted(queue))  # Sort for deterministic layout
+            visited.update(queue)
+            next_queue: list[str] = []
+            for nid in queue:
+                for child in adj.get(nid, []):
+                    in_degree[child] -= 1
+                    if in_degree[child] == 0 and child not in visited:
+                        next_queue.append(child)
+            queue = next_queue
+
+        # Place any remaining nodes (cycles or disconnected) in a final layer
+        remaining = [nid for nid in node_ids if nid not in visited]
+        if remaining:
+            layers.append(sorted(remaining))
+
+        # Assign positions: x = layer index * H_GAP, y centered in layer
+        node_map = {n.id: n for n in canvas.nodes}
+        for layer_idx, layer in enumerate(layers):
+            x = START_X + layer_idx * H_GAP
+            total_height = (len(layer) - 1) * V_GAP
+            start_y = START_Y - total_height / 2
+            for pos_idx, nid in enumerate(layer):
+                node = node_map.get(nid)
+                if node:
+                    node.position = {"x": float(x), "y": float(start_y + pos_idx * V_GAP)}
+
+        return json.dumps({
+            "status": "layout_complete",
+            "layers": len(layers),
+            "nodes_arranged": sum(len(layer) for layer in layers),
+        })
+
+    return [add_node, connect_nodes, configure_node, remove_node, list_nodes, list_edges, clear_canvas, validate_pipeline, auto_layout]
 
 
 # ---------------------------------------------------------------------------
@@ -771,7 +855,7 @@ ABSOLUTE RULES:
 17. For complex, abstract, or multi-step requests (e.g. "build me a customer service system", "create a data pipeline", "set up a multi-agent workflow"), use the present_plan tool FIRST to propose your approach with numbered steps and options. Wait for the user's choice before executing. Simple, unambiguous requests (e.g. "add an agent node", "connect these nodes", "clear the canvas") should be executed immediately without a plan.
 18. AFTER building or modifying a pipeline, ALWAYS call validate_pipeline to check for errors. If validation reports problems, FIX THEM immediately before telling the user the pipeline is ready. A pipeline is only complete when validation passes with zero errors.
 19. Every node you place MUST be connected to at least one other node. Orphan nodes are anomalies. After adding nodes, verify all connections are in place.
-20. When building a pipeline, follow this exact sequence: (a) add all nodes, (b) connect all edges, (c) configure every node fully (model, instructions, description for agents; tool_name for tools; pattern for reasoning; etc.), (d) call validate_pipeline, (e) fix any reported issues.
+20. When building a pipeline, follow this exact sequence: (a) add all nodes, (b) connect all edges, (c) configure every node fully (model, instructions, description for agents; tool_name for tools; pattern for reasoning; etc.), (d) call auto_layout to arrange nodes cleanly, (e) call validate_pipeline, (f) fix any reported issues.
 
 QUALITY ASSURANCE:
 After building or modifying a pipeline, call validate_pipeline as a final check. \
@@ -779,6 +863,17 @@ The system runs an automatic reflexion loop that will send you any validation er
 to fix, so focus on getting the initial build right: every agent needs model and \
 instructions, every tool needs tool_name, every condition needs branches, and every \
 node must be connected. The construct must be flawless before it leaves your hands.
+
+RESPONSE FORMATTING:
+- Use markdown headers (## and ###) to organize long responses
+- Use bullet points and numbered lists for sequences
+- Use code blocks with language specifiers (```python, ```json, etc.)
+- Use **bold** for key terms and important concepts
+- When explaining changes, use a clear before/after format
+- Keep paragraphs short (2-3 sentences max)
+- Use horizontal rules (---) to separate major sections
+- When presenting options, use a structured table or numbered comparison
+- Always end multi-step explanations with a brief summary
 """
 
 _THE_ARCHITECT_PERSONALITY = """\
