@@ -69,7 +69,7 @@ class FileSystemTool(BaseTool):
         """Resolve *relative* under base_dir and ensure it does not escape."""
         resolved = (self._base_dir / relative).resolve()
         base_resolved = self._base_dir.resolve()
-        if not str(resolved).startswith(str(base_resolved)):
+        if not resolved.is_relative_to(base_resolved):
             raise PermissionError(f"Path '{relative}' escapes the sandbox directory")
         return resolved
 

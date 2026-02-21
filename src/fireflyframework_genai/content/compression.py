@@ -21,6 +21,7 @@ preserving the most important information.
 from __future__ import annotations
 
 import logging
+from collections import deque
 from typing import Any, Protocol, runtime_checkable
 
 from fireflyframework_genai.content.chunking import TextChunker
@@ -241,11 +242,14 @@ class SlidingWindowManager:
     ) -> None:
         self._max_tokens = max_tokens
         self._estimator = estimator or TokenEstimator()
-        self._segments: list[str] = []
+        self._segments: deque[str] = deque()
+        self._running_tokens = 0
 
     def add(self, segment: str) -> None:
         """Append a new segment to the window, evicting oldest if needed."""
+        seg_tokens = self._estimator.estimate(segment)
         self._segments.append(segment)
+        self._running_tokens += seg_tokens
         self._evict()
 
     def get_context(self) -> str:
@@ -258,12 +262,14 @@ class SlidingWindowManager:
 
     @property
     def estimated_tokens(self) -> int:
-        return self._estimator.estimate(self.get_context()) if self._segments else 0
+        return self._running_tokens if self._segments else 0
 
     def clear(self) -> None:
         self._segments.clear()
+        self._running_tokens = 0
 
     def _evict(self) -> None:
         """Remove oldest segments until the window fits."""
-        while len(self._segments) > 1 and self._estimator.estimate(self.get_context()) > self._max_tokens:
-            self._segments.pop(0)
+        while len(self._segments) > 1 and self._running_tokens > self._max_tokens:
+            removed = self._segments.popleft()
+            self._running_tokens -= self._estimator.estimate(removed)

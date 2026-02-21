@@ -162,7 +162,7 @@ The framework ships with nine ready-to-use tools in `tools/builtins/`.
 - **TextTool** -- Text utilities: count (words/chars/sentences/lines), extract (regex), truncate, replace, and split.
 - **HttpTool** -- Make HTTP requests (GET, POST, PUT, DELETE). Uses `asyncio.to_thread` to keep the event loop non-blocking.
 - **FileSystemTool** -- Read, write, and list files within a sandboxed base directory. Path-traversal attacks are rejected.
-- **ShellTool** -- Execute shell commands restricted to an explicit allow-list. Empty allow-list rejects all commands (safe default).
+- **ShellTool** -- Execute shell commands restricted to an explicit allow-list using `create_subprocess_exec` (no shell metacharacter injection). Empty allow-list rejects all commands (safe default).
 
 ### Abstract tools (subclass to use)
 

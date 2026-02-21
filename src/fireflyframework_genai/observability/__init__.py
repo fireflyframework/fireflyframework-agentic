@@ -24,7 +24,13 @@ from fireflyframework_genai.observability.decorators import metered, traced
 from fireflyframework_genai.observability.events import FireflyEvent, FireflyEvents, default_events
 from fireflyframework_genai.observability.exporters import configure_exporters
 from fireflyframework_genai.observability.metrics import FireflyMetrics, default_metrics
-from fireflyframework_genai.observability.tracer import FireflyTracer, default_tracer
+from fireflyframework_genai.observability.tracer import (
+    FireflyTracer,
+    default_tracer,
+    extract_trace_context,
+    inject_trace_context,
+    trace_context_scope,
+)
 from fireflyframework_genai.observability.usage import (
     UsageRecord,
     UsageSummary,
@@ -48,7 +54,10 @@ __all__ = [
     "default_metrics",
     "default_tracer",
     "default_usage_tracker",
+    "extract_trace_context",
     "get_cost_calculator",
+    "inject_trace_context",
     "metered",
+    "trace_context_scope",
     "traced",
 ]

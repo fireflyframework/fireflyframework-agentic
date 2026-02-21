@@ -130,7 +130,7 @@ class PromptCacheMiddleware:
         self._cache_ttl_seconds = cache_ttl_seconds
         self._enabled = enabled
 
-    async def before(self, context: Any) -> None:
+    async def before_run(self, context: Any) -> None:
         """Configure prompt caching before agent execution.
 
         This method modifies the agent run parameters to enable provider-specific
@@ -163,7 +163,7 @@ class PromptCacheMiddleware:
                 family,
             )
 
-    async def after(self, context: Any, result: Any) -> Any:
+    async def after_run(self, context: Any, result: Any) -> Any:
         """Record cache usage metrics after agent execution.
 
         Args:

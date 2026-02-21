@@ -22,6 +22,7 @@ in the environment will override the ``default_model`` field.
 from __future__ import annotations
 
 import threading
+from typing import Literal
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -109,7 +110,7 @@ class FireflyGenAIConfig(BaseSettings):
     budget_alert_threshold_usd: float | None = None
     """Soft alert threshold in USD.  A warning is logged when reached."""
 
-    cost_calculator: str = "auto"
+    cost_calculator: Literal["auto", "genai_prices", "static"] = "auto"
     """Cost calculator preference: ``"auto"``, ``"genai_prices"``, or ``"static"``."""
 
     # -- Memory -------------------------------------------------------------
@@ -165,7 +166,7 @@ class FireflyGenAIConfig(BaseSettings):
     are evicted when this limit is reached (FIFO)."""
 
     # -- Quota & Rate Limiting -----------------------------------------------
-    quota_enabled: bool = True
+    quota_enabled: bool = False
     """Whether API quota management and rate limiting is active."""
 
     quota_budget_daily_usd: float | None = None

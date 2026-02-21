@@ -69,3 +69,30 @@ class ReasoningPatternRegistry:
 
 # Module-level singleton
 reasoning_registry = ReasoningPatternRegistry()
+
+
+def _auto_register_builtins() -> None:
+    """Lazily register the six built-in reasoning patterns."""
+    try:
+        from fireflyframework_genai.reasoning.chain_of_thought import ChainOfThoughtPattern
+        from fireflyframework_genai.reasoning.goal_decomposition import GoalDecompositionPattern
+        from fireflyframework_genai.reasoning.plan_and_execute import PlanAndExecutePattern
+        from fireflyframework_genai.reasoning.react import ReActPattern
+        from fireflyframework_genai.reasoning.reflexion import ReflexionPattern
+        from fireflyframework_genai.reasoning.tree_of_thoughts import TreeOfThoughtsPattern
+
+        for name, cls in [
+            ("react", ReActPattern),
+            ("chain_of_thought", ChainOfThoughtPattern),
+            ("plan_and_execute", PlanAndExecutePattern),
+            ("reflexion", ReflexionPattern),
+            ("tree_of_thoughts", TreeOfThoughtsPattern),
+            ("goal_decomposition", GoalDecompositionPattern),
+        ]:
+            if not reasoning_registry.has(name):
+                reasoning_registry.register(name, cls)
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not auto-register built-in reasoning patterns", exc_info=True)
+
+
+_auto_register_builtins()

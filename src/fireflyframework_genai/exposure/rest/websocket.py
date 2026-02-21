@@ -97,11 +97,6 @@ def create_websocket_router() -> APIRouter:
                         {"type": "conversation_id", "data": conversation_id},
                     )
 
-                # Set per-connection memory only if the agent doesn't already
-                # have one configured by the user.
-                if agent.memory is None:
-                    agent.memory = conn_memory
-
                 deps = msg.get("deps")
 
                 # Attempt streaming; if it fails, report the error rather than
@@ -123,8 +118,9 @@ def create_websocket_router() -> APIRouter:
                                         {"type": "token", "data": token},
                                     )
                                 final = "".join(full_output)
-                        except Exception:
+                        except Exception as exc:
                             # Streaming not supported or failed — fall back
+                            logger.debug("Streaming failed for '%s': %s", name, exc)
                             final = None
 
                     if final is None:

@@ -26,6 +26,7 @@ from fireflyframework_genai.pipeline.engine import PipelineEngine, PipelineEvent
 from fireflyframework_genai.pipeline.result import ExecutionTraceEntry, NodeResult, PipelineResult
 from fireflyframework_genai.pipeline.steps import (
     AgentStep,
+    BatchLLMStep,
     BranchStep,
     CallableStep,
     FanInStep,
@@ -36,6 +37,7 @@ from fireflyframework_genai.pipeline.steps import (
 
 __all__ = [
     "AgentStep",
+    "BatchLLMStep",
     "BranchStep",
     "CallableStep",
     "DAG",

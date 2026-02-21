@@ -282,7 +282,7 @@ class UsageTracker:
                     usage.model,
                 )
         except Exception:  # noqa: BLE001
-            pass
+            logger.debug("Failed to check budget", exc_info=True)
 
 
 def _create_default_tracker() -> UsageTracker:

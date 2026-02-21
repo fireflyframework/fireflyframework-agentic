@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -71,25 +72,31 @@ class InMemoryStore:
 
     def __init__(self) -> None:
         self._data: dict[str, dict[str, MemoryEntry]] = defaultdict(dict)
+        self._lock = threading.Lock()
 
     def save(self, namespace: str, entry: MemoryEntry) -> None:
-        self._data[namespace][entry.entry_id] = entry
+        with self._lock:
+            self._data[namespace][entry.entry_id] = entry
 
     def load(self, namespace: str) -> list[MemoryEntry]:
-        entries = list(self._data.get(namespace, {}).values())
+        with self._lock:
+            entries = list(self._data.get(namespace, {}).values())
         return [e for e in entries if not e.is_expired]
 
     def load_by_key(self, namespace: str, key: str) -> MemoryEntry | None:
-        for entry in self._data.get(namespace, {}).values():
-            if entry.key == key and not entry.is_expired:
-                return entry
+        with self._lock:
+            for entry in self._data.get(namespace, {}).values():
+                if entry.key == key and not entry.is_expired:
+                    return entry
         return None
 
     def delete(self, namespace: str, entry_id: str) -> None:
-        self._data.get(namespace, {}).pop(entry_id, None)
+        with self._lock:
+            self._data.get(namespace, {}).pop(entry_id, None)
 
     def clear(self, namespace: str) -> None:
-        self._data.pop(namespace, None)
+        with self._lock:
+            self._data.pop(namespace, None)
 
     @property
     def namespaces(self) -> list[str]:
@@ -112,7 +119,10 @@ class FileStore:
 
     def _path(self, namespace: str) -> Path:
         safe_name = namespace.replace("/", "_").replace("\\", "_")
-        return self._base_dir / f"{safe_name}.json"
+        resolved = (self._base_dir / f"{safe_name}.json").resolve()
+        if not resolved.is_relative_to(self._base_dir.resolve()):
+            raise ValueError(f"Path traversal detected in namespace: {namespace!r}")
+        return resolved
 
     def _read(self, namespace: str) -> dict[str, Any]:
         path = self._path(namespace)

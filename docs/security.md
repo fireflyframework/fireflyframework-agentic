@@ -422,6 +422,11 @@ memory = MemoryManager(store=encrypted_store)
 All data is encrypted before writing and decrypted after reading, with no
 changes to application code.
 
+Each call to `encrypt()` generates a random 16-byte salt for PBKDF2 key
+derivation and a random 12-byte nonce for AES-GCM.  The ciphertext is stored as
+`salt[16] + nonce[12] + ciphertext + tag`, ensuring that identical plaintexts
+produce different ciphertexts.
+
 ### Environment Configuration
 
 ```bash

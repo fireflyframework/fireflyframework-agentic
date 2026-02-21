@@ -326,33 +326,38 @@ def require_permission(
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
-            nonlocal rbac
-
             # Get RBAC manager
-            if rbac is None:
-                rbac = _get_default_rbac()
+            manager = rbac or _get_default_rbac()
 
-            if rbac is None:
+            if manager is None:
                 raise ValueError(
                     "No RBAC manager configured. Set FIREFLY_GENAI_RBAC_ENABLED=true "
                     "and FIREFLY_GENAI_RBAC_JWT_SECRET in environment."
                 )
 
-            # Extract token from kwargs
-            token = kwargs.get(token_param)
+            # Extract token from args/kwargs using signature binding
+            import inspect as _inspect
+
+            try:
+                sig = _inspect.signature(func)
+                bound = sig.bind(*args, **kwargs)
+                bound.apply_defaults()
+                token = bound.arguments.get(token_param)
+            except TypeError as exc:
+                raise ValueError(f"Missing required parameter: {token_param}") from exc
             if not token:
                 raise ValueError(f"Missing required parameter: {token_param}")
 
             # Validate token and check permission
             try:
-                claims = rbac.validate_token(token)
+                claims = manager.validate_token(token)
             except ValueError as exc:
                 logger.warning("Token validation failed: %s", exc)
                 raise
 
-            if not rbac.has_permission(claims, permission):
-                user_id = rbac.get_user_id(claims)
-                roles = rbac.get_roles(claims)
+            if not manager.has_permission(claims, permission):
+                user_id = manager.get_user_id(claims)
+                roles = manager.get_roles(claims)
                 logger.warning(
                     "Permission denied: user=%s, roles=%s, required=%s",
                     user_id,
@@ -366,33 +371,38 @@ def require_permission(
 
         @functools.wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
-            nonlocal rbac
-
             # Get RBAC manager
-            if rbac is None:
-                rbac = _get_default_rbac()
+            manager = rbac or _get_default_rbac()
 
-            if rbac is None:
+            if manager is None:
                 raise ValueError(
                     "No RBAC manager configured. Set FIREFLY_GENAI_RBAC_ENABLED=true "
                     "and FIREFLY_GENAI_RBAC_JWT_SECRET in environment."
                 )
 
-            # Extract token from kwargs
-            token = kwargs.get(token_param)
+            # Extract token from args/kwargs
+            import inspect as _inspect
+
+            try:
+                sig = _inspect.signature(func)
+                bound = sig.bind(*args, **kwargs)
+                bound.apply_defaults()
+                token = bound.arguments.get(token_param)
+            except TypeError as exc:
+                raise ValueError(f"Missing required parameter: {token_param}") from exc
             if not token:
                 raise ValueError(f"Missing required parameter: {token_param}")
 
             # Validate token and check permission
             try:
-                claims = rbac.validate_token(token)
+                claims = manager.validate_token(token)
             except ValueError as exc:
                 logger.warning("Token validation failed: %s", exc)
                 raise
 
-            if not rbac.has_permission(claims, permission):
-                user_id = rbac.get_user_id(claims)
-                roles = rbac.get_roles(claims)
+            if not manager.has_permission(claims, permission):
+                user_id = manager.get_user_id(claims)
+                roles = manager.get_roles(claims)
                 logger.warning(
                     "Permission denied: user=%s, roles=%s, required=%s",
                     user_id,

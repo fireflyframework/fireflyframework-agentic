@@ -76,8 +76,8 @@ class ShellTool(BaseTool):
         if executable not in self._allowed:
             raise PermissionError(f"Command '{executable}' is not in the allowed list: {sorted(self._allowed)}")
 
-        proc = await asyncio.create_subprocess_shell(
-            command,
+        proc = await asyncio.create_subprocess_exec(
+            *parts,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=self._working_dir,

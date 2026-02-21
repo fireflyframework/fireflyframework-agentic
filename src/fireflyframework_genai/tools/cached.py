@@ -32,6 +32,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import threading
 import time
 from typing import Any
 
@@ -72,6 +73,7 @@ class CachedTool:
         self._ttl = ttl_seconds
         self._max_entries = max_entries
         self._cache: dict[str, _CacheEntry] = {}
+        self._lock = threading.Lock()
 
     # -- ToolProtocol conformance --------------------------------------------
 
@@ -89,15 +91,17 @@ class CachedTool:
             return await self._tool.execute(**kwargs)
 
         key = self._make_key(kwargs)
-        entry = self._cache.get(key)
         now = time.monotonic()
 
-        if entry is not None and entry.expires_at > now:
-            logger.debug("Cache hit for tool '%s' (key=%s)", self.name, key[:12])
-            return entry.value
+        with self._lock:
+            entry = self._cache.get(key)
+            if entry is not None and entry.expires_at > now:
+                logger.debug("Cache hit for tool '%s' (key=%s)", self.name, key[:12])
+                return entry.value
 
         result = await self._tool.execute(**kwargs)
-        self._put(key, result, now)
+        with self._lock:
+            self._put(key, result, time.monotonic())
         return result
 
     # -- Cache management ----------------------------------------------------
@@ -105,18 +109,21 @@ class CachedTool:
     def invalidate(self, **kwargs: Any) -> bool:
         """Remove a specific entry from the cache.  Returns *True* if found."""
         key = self._make_key(kwargs)
-        return self._cache.pop(key, None) is not None
+        with self._lock:
+            return self._cache.pop(key, None) is not None
 
     def clear(self) -> int:
         """Drop all cached entries.  Returns the number evicted."""
-        count = len(self._cache)
-        self._cache.clear()
-        return count
+        with self._lock:
+            count = len(self._cache)
+            self._cache.clear()
+            return count
 
     @property
     def cache_size(self) -> int:
         """Number of entries currently in the cache (including expired)."""
-        return len(self._cache)
+        with self._lock:
+            return len(self._cache)
 
     # -- Internals -----------------------------------------------------------
 

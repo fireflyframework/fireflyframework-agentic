@@ -20,10 +20,13 @@ agent: ``POST /agents/{name}/run`` and ``GET /agents``.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from fastapi import APIRouter  # type: ignore[import-not-found]
+
+logger = logging.getLogger(__name__)
 
 from fireflyframework_genai.agents.registry import agent_registry
 from fireflyframework_genai.exposure.rest.schemas import AgentRequest, AgentResponse
@@ -76,15 +79,13 @@ def create_agent_router() -> APIRouter:
         agent = agent_registry.get(name)
         try:
             prompt = _resolve_prompt(request)
-            # Wire memory for conversational requests
             conv_id = request.conversation_id
-            if conv_id is not None and agent.memory is None:
-                agent.memory = _rest_memory
             result = await agent.run(prompt, deps=request.deps, conversation_id=conv_id)
             output = result.output if hasattr(result, "output") else str(result)
             return AgentResponse(agent_name=name, output=output)
         except Exception as exc:
-            return AgentResponse(agent_name=name, output=None, success=False, error=str(exc))
+            logger.exception("Agent '%s' run failed", name)
+            return AgentResponse(agent_name=name, output=None, success=False, error="Internal server error")
 
     @router.post("/{name}/stream")
     async def stream_agent(name: str, request: AgentRequest) -> Any:
@@ -100,8 +101,6 @@ def create_agent_router() -> APIRouter:
         agent = agent_registry.get(name)
         prompt = _resolve_prompt(request)
         conv_id = request.conversation_id
-        if conv_id is not None and agent.memory is None:
-            agent.memory = _rest_memory
         return StreamingResponse(
             sse_stream(agent, prompt, deps=request.deps, conversation_id=conv_id),
             media_type="text/event-stream",
@@ -131,8 +130,6 @@ def create_agent_router() -> APIRouter:
         agent = agent_registry.get(name)
         prompt = _resolve_prompt(request)
         conv_id = request.conversation_id
-        if conv_id is not None and agent.memory is None:
-            agent.memory = _rest_memory
         return StreamingResponse(
             sse_stream_incremental(
                 agent,

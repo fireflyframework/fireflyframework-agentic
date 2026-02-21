@@ -33,6 +33,9 @@ from fireflyframework_genai.types import Metadata
 # Shared Jinja2 environment with safe defaults
 _jinja_env = Environment(loader=BaseLoader(), autoescape=False, keep_trailing_newline=True)
 
+# Sentinel value to distinguish "no default" from ``default=None``.
+_UNSET = object()
+
 
 class PromptVariable(BaseModel):
     """Describes a single variable expected by a prompt template."""
@@ -40,7 +43,7 @@ class PromptVariable(BaseModel):
     name: str
     description: str = ""
     required: bool = True
-    default: Any = None
+    default: Any = _UNSET
 
 
 class PromptInfo(BaseModel):
@@ -129,7 +132,7 @@ class PromptTemplate:
         for var in self._variables:
             if var.name in kwargs:
                 merged[var.name] = kwargs[var.name]
-            elif var.default is not None:
+            elif var.default is not _UNSET:
                 merged[var.name] = var.default
         # Include any extra kwargs not declared as variables
         for k, v in kwargs.items():
