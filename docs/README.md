@@ -94,6 +94,12 @@ below it, keeping the dependency graph acyclic and each module independently tes
 | | |
 |---|---|
 | **[Studio](studio.md)** | Visual IDE, `firefly` CLI, interactive canvas, code generation, AI assistant, project management, checkpoints, keyboard shortcuts, REST & WebSocket API |
+| **[Input/Output Nodes](input-output-nodes.md)** | Boundary nodes: trigger types (manual, HTTP, queue, schedule, file_upload), destination types (response, queue, webhook, store, multi), schema validation |
+| **[Project API](project-api.md)** | Per-project REST endpoints, async execution, file upload, runtime management, GraphQL API, WebSocket streaming |
+| **[Scheduling](scheduling.md)** | Cron-based scheduled triggers, timezone configuration, payload injection, APScheduler setup |
+| **[Tunnel Exposure](tunnel-exposure.md)** | Cloudflare Quick Tunnels, `firefly expose` CLI, Share button, external access |
+| **[API Reference](api-reference.md)** | Complete endpoint reference for all Studio REST, WebSocket, and GraphQL APIs |
+| **[BPM Pipeline Tutorial](tutorial-bpm-pipeline.md)** | End-to-end walkthrough: build, test, and expose a document processing pipeline |
 
 ---
 

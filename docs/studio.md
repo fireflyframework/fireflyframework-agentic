@@ -30,6 +30,10 @@ helps you build pipelines through natural language.
 - [File Browser](#file-browser)
 - [Deploy](#deploy)
 - [Keyboard Shortcuts](#keyboard-shortcuts)
+- [Input/Output Boundary Nodes](#inputoutput-boundary-nodes)
+- [Project Runtime](#project-runtime)
+- [Per-Project API](#per-project-api)
+- [Tunnel Exposure (Share)](#tunnel-exposure-share)
 - [REST API Reference](#rest-api-reference)
 - [WebSocket API Reference](#websocket-api-reference)
 - [Desktop App](#desktop-app)
@@ -96,6 +100,7 @@ The `firefly` command is installed as a console script entry point.
 ```
 firefly studio [OPTIONS]
 firefly [OPTIONS]          # "studio" is the default subcommand
+firefly expose [OPTIONS]   # expose Studio via Cloudflare Tunnel
 ```
 
 ### Options
@@ -323,6 +328,8 @@ Studio supports ten node types that map to framework components:
 | **Memory** | `CallableStep` | Store, retrieve, or clear values in context memory |
 | **Validator** | `CallableStep` | Validate input against rules (not_empty, is_string, etc.) |
 | **Custom Code** | `CallableStep` | Execute user-authored async Python code |
+| **Input** | `CallableStep` | Pipeline entry point (triggers: manual, HTTP, queue, schedule, file_upload) |
+| **Output** | `CallableStep` | Pipeline exit point (destinations: response, queue, webhook, store, multi) |
 
 ### Node Configuration
 
@@ -617,6 +624,84 @@ The Deploy page helps you export your pipeline:
 The command palette (`Cmd+K`) provides fuzzy search across commands
 in five categories: Navigation, Add Node, Settings, Pipeline Actions,
 and View.
+
+---
+
+## Input/Output Boundary Nodes
+
+Input and Output nodes define pipeline entry and exit points, inspired by
+BPM start/end events. They enable auto-generated REST APIs, queue
+consumers, scheduled triggers, and structured schema validation.
+
+- **Input node** -- Configure a trigger type (`manual`, `http`, `queue`,
+  `schedule`, `file_upload`) and an optional JSON Schema for input
+  validation.
+- **Output node** -- Configure a destination type (`response`, `queue`,
+  `webhook`, `store`, `multi`) and an optional response schema.
+
+A pipeline must have exactly one Input node and at least one Output node
+when boundary nodes are used.
+
+See the [Input/Output Nodes Guide](input-output-nodes.md) for full
+configuration reference.
+
+---
+
+## Project Runtime
+
+The **runtime** manages background processes for a project: queue
+consumers (Kafka, RabbitMQ, Redis), cron schedulers (APScheduler), and
+the tunnel. Control it from the top bar:
+
+- **Play** button -- Start the runtime
+  (`POST /api/projects/{name}/runtime/start`)
+- **Stop** button -- Stop the runtime
+  (`POST /api/projects/{name}/runtime/stop`)
+- Status indicator shows `running` / `stopped`
+
+When started, the runtime reads the Input node configuration and
+automatically starts the appropriate consumers or scheduler.
+
+---
+
+## Per-Project API
+
+Every project exposes auto-generated REST endpoints:
+
+| Endpoint | Description |
+|---|---|
+| `POST /api/projects/{name}/run` | Synchronous pipeline execution |
+| `POST /api/projects/{name}/run/async` | Async execution |
+| `GET /api/projects/{name}/runs/{id}` | Poll async result |
+| `POST /api/projects/{name}/upload` | File upload trigger |
+| `GET /api/projects/{name}/schema` | Input/output schema |
+
+A GraphQL endpoint is also available at `/api/graphql` (requires
+`strawberry-graphql`).
+
+See the [Project API Guide](project-api.md) for curl examples and client
+code in Python and TypeScript.
+
+---
+
+## Tunnel Exposure (Share)
+
+The **Share** button in the top bar creates a Cloudflare Quick Tunnel,
+giving your local Studio a public HTTPS URL without configuration or
+a Cloudflare account.
+
+- Click **Share** to start the tunnel
+- The public URL appears and is copied to your clipboard
+- Click again to stop the tunnel
+
+Requires `cloudflared` to be installed. Also available via CLI:
+
+```bash
+firefly expose --port 8470
+```
+
+See the [Tunnel Exposure Guide](tunnel-exposure.md) for installation and
+security details.
 
 ---
 

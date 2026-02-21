@@ -312,6 +312,26 @@ a global registry, delegation strategies, and declarative decorators.
 - **exposure/queues/** -- Abstract consumer/producer with Kafka, RabbitMQ, and Redis
   implementations and a pattern-based message router.
 
+### Studio Layer
+
+- **studio/server.py** -- FastAPI application factory for Firefly Agentic Studio,
+  mounting all API routers and serving the bundled SvelteKit frontend.
+- **studio/execution/io_nodes.py** -- Input/Output boundary node configuration models
+  (trigger types: manual, HTTP, queue, schedule, file_upload; destination types:
+  response, queue, webhook, store, multi).
+- **studio/execution/compiler.py** -- Compiles the visual canvas graph into a
+  runnable `PipelineEngine`, mapping each node type to a `StepExecutor`.
+- **studio/api/project_api.py** -- Per-project REST API for pipeline execution,
+  runtime lifecycle, file upload, and schema introspection.
+- **studio/api/graphql_api.py** -- Strawberry GraphQL endpoint for project queries
+  and pipeline execution mutations.
+- **studio/runtime.py** -- `ProjectRuntime` manages queue consumers (Kafka, RabbitMQ,
+  Redis) and APScheduler for scheduled triggers.
+- **studio/tunnel.py** -- `TunnelManager` creates Cloudflare Quick Tunnels for
+  exposing Studio to the internet without configuration.
+- **studio/custom_tools.py** -- CRUD management for user-defined tools (Python,
+  webhook, API types) with a pre-built connector catalog.
+
 ---
 
 ## Request Flow
