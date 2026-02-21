@@ -87,24 +87,26 @@ def metered(operation: str | None = None) -> Callable[[F], F]:
             start = time.perf_counter()
             try:
                 result = await func(*args, **kwargs)
-                elapsed = (time.perf_counter() - start) * 1000
-                default_metrics.record_latency(elapsed, operation=op_name)
                 return result
             except Exception:
                 default_metrics.record_error(operation=op_name)
                 raise
+            finally:
+                elapsed = (time.perf_counter() - start) * 1000
+                default_metrics.record_latency(elapsed, operation=op_name)
 
         @functools.wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
             start = time.perf_counter()
             try:
                 result = func(*args, **kwargs)
-                elapsed = (time.perf_counter() - start) * 1000
-                default_metrics.record_latency(elapsed, operation=op_name)
                 return result
             except Exception:
                 default_metrics.record_error(operation=op_name)
                 raise
+            finally:
+                elapsed = (time.perf_counter() - start) * 1000
+                default_metrics.record_latency(elapsed, operation=op_name)
 
         import asyncio
 

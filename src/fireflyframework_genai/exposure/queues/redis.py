@@ -93,7 +93,11 @@ class RedisAgentConsumer(BaseQueueConsumer):
 
                     # Process message within trace context scope
                     with trace_context_scope(span_context):
-                        await self._process_message(message)
+                        try:
+                            await self._process_message(message)
+                        except Exception:
+                            logger.exception("Failed to process Redis message on channel '%s'", self._channel)
+                            continue
         finally:
             await self.stop()
 

@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import hmac
 import logging
 import time
 import uuid
@@ -83,7 +84,7 @@ def add_cors_middleware(
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allow_origins,
-        allow_credentials=True,
+        allow_credentials="*" not in allow_origins,
         allow_methods=allow_methods or ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
@@ -105,6 +106,11 @@ class RateLimiter:
     def is_allowed(self, key: str) -> bool:
         """Return *True* if the request is within the rate limit."""
         now = time.monotonic()
+        # Cleanup stale entries to prevent unbounded memory growth
+        if len(self._timestamps) > 10000:
+            stale_keys = [k for k, v in self._timestamps.items() if not v or now - v[-1] > self._window]
+            for k in stale_keys:
+                del self._timestamps[k]
         ts = self._timestamps.setdefault(key, [])
         ts[:] = [t for t in ts if now - t < self._window]
         if len(ts) >= self._max:
@@ -156,7 +162,7 @@ def add_auth_middleware(
             # Try API key
             if _api_keys:
                 key = request.headers.get(api_key_header, "")
-                if key in _api_keys:
+                if any(hmac.compare_digest(key, k) for k in _api_keys):
                     return await call_next(request)
 
             # Try bearer token
@@ -164,7 +170,7 @@ def add_auth_middleware(
                 auth_value = request.headers.get(auth_header, "")
                 if auth_value.startswith("Bearer "):
                     token = auth_value[7:]
-                    if token in _bearer_tokens:
+                    if any(hmac.compare_digest(token, t) for t in _bearer_tokens):
                         return await call_next(request)
 
             # If no auth methods configured, allow all requests

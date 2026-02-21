@@ -131,12 +131,14 @@ class TextChunker:
         step = max(1, words_per_chunk - overlap_words)
 
         chunks: list[Chunk] = []
+        search_offset = 0
         for start_idx in range(0, len(words), step):
             end_idx = min(start_idx + words_per_chunk, len(words))
             chunk_words = words[start_idx:end_idx]
             text = " ".join(chunk_words)
-            char_start = content.index(chunk_words[0]) if chunk_words else 0
+            char_start = content.index(chunk_words[0], search_offset) if chunk_words else search_offset
             char_end = char_start + len(text)
+            search_offset = char_start + 1
             chunks.append(
                 Chunk(
                     content=text,
@@ -238,7 +240,9 @@ class DocumentSplitter:
                         metadata={"type": "document_segment"},
                     )
                 )
-            offset += len(part)
+                offset = start + len(stripped)
+            else:
+                offset += len(part)
 
         for c in chunks:
             c.total_chunks = len(chunks)

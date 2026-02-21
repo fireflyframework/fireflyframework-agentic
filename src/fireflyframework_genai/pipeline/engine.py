@@ -269,6 +269,7 @@ class PipelineEngine:
         backoff_factor = node.backoff_factor
         retries = 0
         last_error: str | None = None
+        started_at = datetime.now(UTC)
 
         while retries <= max_retries:
             started_at = datetime.now(UTC)
@@ -323,7 +324,7 @@ class PipelineEngine:
         trace_entries.append(
             ExecutionTraceEntry(
                 node_id=node_id,
-                started_at=started_at,  # type: ignore[possibly-undefined]
+                started_at=started_at,
                 completed_at=completed_at,
                 status="failed",
             )
@@ -406,6 +407,13 @@ class PipelineEngine:
         for edge in edges:
             upstream_result = context.get_node_result(edge.source)
             if upstream_result is not None:
-                value = upstream_result.output if hasattr(upstream_result, "output") else upstream_result
+                raw = upstream_result.output if hasattr(upstream_result, "output") else upstream_result
+                if edge.output_key and edge.output_key != "output":
+                    if isinstance(raw, dict):
+                        value = raw.get(edge.output_key, raw)
+                    else:
+                        value = getattr(raw, edge.output_key, raw)
+                else:
+                    value = raw
                 inputs[edge.input_key] = value
         return inputs

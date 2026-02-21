@@ -21,12 +21,18 @@ This module provides:
 """
 
 from fireflyframework_genai.security.encryption import AESEncryptionProvider, EncryptedMemoryStore, EncryptionProvider
+from fireflyframework_genai.security.output_guard import OutputGuard, default_output_guard
+from fireflyframework_genai.security.prompt_guard import PromptGuard, default_prompt_guard
 from fireflyframework_genai.security.rbac import RBACManager, require_permission
 
 __all__ = [
-    "RBACManager",
-    "require_permission",
-    "EncryptionProvider",
     "AESEncryptionProvider",
     "EncryptedMemoryStore",
+    "EncryptionProvider",
+    "OutputGuard",
+    "PromptGuard",
+    "RBACManager",
+    "default_output_guard",
+    "default_prompt_guard",
+    "require_permission",
 ]

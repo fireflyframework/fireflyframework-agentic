@@ -39,6 +39,77 @@ Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License
   Supports `--port`, `--host`, `--no-browser`, and `--dev` flags. Defaults
   to the `studio` subcommand when run without arguments.
 
+### Changed
+
+- **Middleware Protocol** -- Renamed `before`/`after` to `before_run`/`after_run`
+  on `PromptCacheMiddleware` and `CircuitBreakerMiddleware` to conform to the
+  `AgentMiddleware` protocol contract.
+- **Exception Hierarchy** -- Renamed `MemoryError` to `FireflyMemoryError` to
+  avoid shadowing the Python built-in.  A deprecated alias is kept for backwards
+  compatibility.
+- **Quota Defaults** -- `quota_enabled` now defaults to `False` to avoid
+  unexpected enforcement on first install.
+- **Cost Calculator Type** -- `cost_calculator` config field is now
+  `Literal["auto", "genai_prices", "static"]`.
+
+### Security
+
+- **ShellTool** -- Replaced `create_subprocess_shell` with
+  `create_subprocess_exec` to prevent command-injection via shell metacharacters.
+- **FileSystemTool** -- Replaced `str.startswith` path check with
+  `Path.is_relative_to` to prevent symlink-based path traversal.
+- **RBAC Decorator** -- Fixed `require_permission` to use `inspect.signature`
+  for positional argument binding and replaced `nonlocal` mutation with local
+  `manager` variable.
+- **Encryption** -- Each `AESEncryptionProvider.encrypt()` call now generates a
+  random 16-byte salt for PBKDF2 key derivation, stored as
+  `salt[16]+nonce[12]+ciphertext+tag`.
+- **REST Middleware** -- `allow_credentials` is now automatically set to `False`
+  when `allow_origins=["*"]`.  API key comparison uses `hmac.compare_digest`.
+- **REST Router** -- Exception details are no longer exposed to clients; errors
+  are logged server-side and a generic message is returned.
+- **Database Store** -- Schema name is validated against `^[a-zA-Z_][a-zA-Z0-9_]*$`
+  to prevent SQL injection.
+- **FileStore** -- Added `Path.is_relative_to` check in `_path()` to prevent
+  namespace-based path traversal.
+
+### Fixed
+
+- **Thread Safety** -- Added `threading.Lock` to `InMemoryStore`, `CachedTool`,
+  `RateLimitGuard`, `ConversationMemory.get_turns/get_total_tokens/clear/
+  clear_all/new_conversation/conversation_ids`.
+- **Pipeline Engine** -- `_gather_inputs` now correctly extracts `output_key`
+  from dict and object results.  `started_at` is initialised before the retry
+  loop.
+- **asyncio.run Crash** -- `database_store.py` and `manager.py` sync wrappers
+  now detect a running event loop and offload to a `ThreadPoolExecutor` instead
+  of crashing.
+- **TextTool ReDoS** -- Regex operations in `_extract`, `_replace`, `_split` now
+  run via `asyncio.to_thread` with a 5-second timeout.
+- **SandboxGuard ReDoS** -- User-supplied patterns are compiled with a safe
+  `_safe_compile` helper.
+- **Observability Decorators** -- `@metered` now records latency in a `finally`
+  block so it is captured even on exceptions.
+- **Logging** -- `ColoredFormatter.format` now operates on a `copy.copy(record)`
+  to avoid mutating shared log records.
+- **SlidingWindowManager** -- Uses `collections.deque` and `_running_tokens`
+  counter instead of re-estimating the entire window on every eviction.
+- **PromptTemplate** -- Added `_UNSET` sentinel for `PromptVariable.default` so
+  that `default=None` is correctly propagated.
+- **Queue Consumers** -- Kafka, RabbitMQ, and Redis consumers now wrap
+  `_process_message` in try/except to prevent one bad message from killing the
+  consumer loop.
+- **Goal Decomposition** -- `_execute_task` now passes `memory=memory` to the
+  delegated `_task_pattern.execute()`.
+- **ConversationMemory** -- `clear()` and `clear_all()` now also clear
+  `_summaries` to prevent stale summary leaks.
+- **Reasoning Registry** -- Six built-in patterns are auto-registered at import
+  time.
+- **Observability Exports** -- `extract_trace_context`, `inject_trace_context`,
+  and `trace_context_scope` are now re-exported from `observability/__init__.py`.
+- **UsageTracker** -- `_check_budget` exception handler now logs at DEBUG instead
+  of silently passing.
+
 ## [26.02.07] - 2026-02-17
 
 ### Added

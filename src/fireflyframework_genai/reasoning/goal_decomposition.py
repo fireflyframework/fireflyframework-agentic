@@ -200,7 +200,7 @@ class GoalDecompositionPattern(AbstractReasoningPattern):
     ) -> str:
         """Execute a single task, optionally delegating to a sub-pattern."""
         if self._task_pattern is not None:
-            sub_result: ReasoningResult = await self._task_pattern.execute(agent, task, **kwargs)
+            sub_result: ReasoningResult = await self._task_pattern.execute(agent, task, memory=memory, **kwargs)
             return str(sub_result.output)
         template = self._get_prompt("execute_task", GOAL_TASK_EXECUTION_PROMPT)
         prompt = template.render(goal=goal, task=task)

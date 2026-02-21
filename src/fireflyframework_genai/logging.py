@@ -35,6 +35,7 @@ Or even shorter::
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import sys
@@ -114,6 +115,7 @@ class ColoredFormatter(logging.Formatter):
         super().__init__(fmt or _DEFAULT_FORMAT, datefmt or _DEFAULT_DATEFMT)
 
     def format(self, record: logging.LogRecord) -> str:  # noqa: C901
+        record = copy.copy(record)
         # Coloured level badge
         lvl = record.levelname
         color = _LEVEL_COLORS.get(lvl, "")

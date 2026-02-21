@@ -61,6 +61,7 @@ class RoundRobinStrategy:
     def __init__(self) -> None:
         # Lazily initialised so the cycle resets if the agent pool changes.
         self._cycle: itertools.cycle[FireflyAgent[Any, Any]] | None = None
+        self._last_agents: list[FireflyAgent[Any, Any]] = []
 
     async def select(
         self,
@@ -70,8 +71,9 @@ class RoundRobinStrategy:
     ) -> FireflyAgent[Any, Any]:
         if not agents:
             raise DelegationError("No agents available for delegation")
-        if self._cycle is None:
+        if self._cycle is None or self._last_agents != list(agents):
             self._cycle = itertools.cycle(agents)
+            self._last_agents = list(agents)
         return next(self._cycle)
 
 
@@ -214,7 +216,7 @@ class CostAwareStrategy:
         best_cost = float("inf")
 
         for agent in agents:
-            model_name = getattr(agent, "model_name", "")
+            model_name = getattr(agent, "model_name", "") or getattr(agent, "_model_identifier", "")
             cost = self._cost_tier(model_name) if model_name else 3
             if cost < best_cost:
                 best_cost = cost

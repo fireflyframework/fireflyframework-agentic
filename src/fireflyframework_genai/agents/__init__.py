@@ -26,8 +26,10 @@ from fireflyframework_genai.agents.builtin_middleware import (
     OutputGuardMiddleware,
     PromptGuardError,
     PromptGuardMiddleware,
+    RetryMiddleware,
     ValidationMiddleware,
 )
+from fireflyframework_genai.agents.prompt_cache import CacheStatistics, PromptCacheMiddleware
 from fireflyframework_genai.agents.cache import ResultCache
 from fireflyframework_genai.agents.context import AgentContext
 from fireflyframework_genai.agents.decorators import firefly_agent
@@ -64,6 +66,7 @@ __all__ = [
     "AgentRegistry",
     "BudgetExceededError",
     "CacheMiddleware",
+    "CacheStatistics",
     "CapabilityStrategy",
     "ContentBasedStrategy",
     "CostAwareStrategy",
@@ -80,8 +83,10 @@ __all__ = [
     "OutputGuardError",
     "OutputGuardMiddleware",
     "PromptGuardError",
+    "PromptCacheMiddleware",
     "PromptGuardMiddleware",
     "ResultCache",
+    "RetryMiddleware",
     "RoundRobinStrategy",
     "ValidationMiddleware",
     "agent_registry",

@@ -23,6 +23,7 @@ guard chain.
 from __future__ import annotations
 
 import re
+import threading
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
@@ -65,19 +66,21 @@ class RateLimitGuard:
         self._max_calls = max_calls
         self._period = period_seconds
         self._timestamps: list[float] = []
+        self._lock = threading.Lock()
 
     async def check(self, tool_name: str, kwargs: dict[str, Any]) -> GuardResult:
         now = time.monotonic()
-        # Sliding-window rate limiter: discard timestamps that have aged out
-        # of the current window, then check if capacity remains.
-        self._timestamps = [t for t in self._timestamps if now - t < self._period]
-        if len(self._timestamps) >= self._max_calls:
-            return GuardResult(
-                passed=False,
-                reason=f"Rate limit exceeded: {self._max_calls} calls per {self._period}s",
-            )
-        # Record this invocation timestamp to count against the window.
-        self._timestamps.append(now)
+        with self._lock:
+            # Sliding-window rate limiter: discard timestamps that have aged out
+            # of the current window, then check if capacity remains.
+            self._timestamps = [t for t in self._timestamps if now - t < self._period]
+            if len(self._timestamps) >= self._max_calls:
+                return GuardResult(
+                    passed=False,
+                    reason=f"Rate limit exceeded: {self._max_calls} calls per {self._period}s",
+                )
+            # Record this invocation timestamp to count against the window.
+            self._timestamps.append(now)
         return GuardResult(passed=True)
 
 
@@ -119,8 +122,16 @@ class SandboxGuard:
         allowed_patterns: Sequence[str] = (),
         denied_patterns: Sequence[str] = (),
     ) -> None:
-        self._allowed = [re.compile(p) for p in allowed_patterns]
-        self._denied = [re.compile(p) for p in denied_patterns]
+        self._allowed = [self._safe_compile(p) for p in allowed_patterns]
+        self._denied = [self._safe_compile(p) for p in denied_patterns]
+
+    @staticmethod
+    def _safe_compile(pattern: str) -> re.Pattern[str]:
+        """Compile a regex pattern, raising ValueError on invalid patterns."""
+        try:
+            return re.compile(pattern)
+        except re.error as exc:
+            raise ValueError(f"Invalid regex pattern {pattern!r}: {exc}") from exc
 
     async def check(self, tool_name: str, kwargs: dict[str, Any]) -> GuardResult:
         # Check every kwarg value against deny patterns.  An allowed pattern

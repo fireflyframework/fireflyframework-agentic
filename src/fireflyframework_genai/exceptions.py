@@ -165,11 +165,15 @@ class PipelineError(FireflyGenAIError):
 # -- Memory ------------------------------------------------------------------
 
 
-class MemoryError(FireflyGenAIError):
+class FireflyMemoryError(FireflyGenAIError):
     """Raised for errors during memory storage, retrieval, or management."""
 
 
-class DatabaseStoreError(MemoryError):
+# Deprecated alias for backwards compatibility
+MemoryError = FireflyMemoryError
+
+
+class DatabaseStoreError(FireflyMemoryError):
     """Raised for errors in database-backed memory store operations."""
 
 

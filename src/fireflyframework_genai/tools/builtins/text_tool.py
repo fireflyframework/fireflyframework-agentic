@@ -20,6 +20,7 @@ extraction, and truncation.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import Sequence
 from typing import Any
@@ -106,7 +107,7 @@ class TextTool(BaseTool):
             pattern = kwargs.get("pattern")
             if not pattern:
                 raise ValueError("'pattern' is required for the extract action")
-            return self._extract(text, pattern)
+            return await self._extract(text, pattern)
         if action == "truncate":
             max_words = kwargs.get("max_words")
             if max_words is None:
@@ -117,10 +118,10 @@ class TextTool(BaseTool):
             replacement = kwargs.get("replacement", "")
             if not pattern:
                 raise ValueError("'pattern' is required for the replace action")
-            return self._replace(text, pattern, replacement or "")
+            return await self._replace(text, pattern, replacement or "")
         if action == "split":
             pattern = kwargs.get("pattern", r"\n")
-            return self._split(text, pattern or r"\n")
+            return await self._split(text, pattern or r"\n")
 
         raise ValueError(f"Unknown action '{action}'; expected count, extract, truncate, replace, or split")
 
@@ -139,9 +140,9 @@ class TextTool(BaseTool):
         raise ValueError(f"Unknown unit '{unit}'; expected words, chars, sentences, or lines")
 
     @staticmethod
-    def _extract(text: str, pattern: str) -> list[str]:
-        """Extract all regex matches."""
-        return re.findall(pattern, text)
+    async def _extract(text: str, pattern: str) -> list[str]:
+        """Extract all regex matches with timeout protection."""
+        return await asyncio.wait_for(asyncio.to_thread(re.findall, pattern, text), timeout=5.0)
 
     @staticmethod
     def _truncate(text: str, max_words: int) -> str:
@@ -152,11 +153,11 @@ class TextTool(BaseTool):
         return " ".join(words[:max_words]) + "..."
 
     @staticmethod
-    def _replace(text: str, pattern: str, replacement: str) -> str:
-        """Regex-based find-and-replace."""
-        return re.sub(pattern, replacement, text)
+    async def _replace(text: str, pattern: str, replacement: str) -> str:
+        """Regex-based find-and-replace with timeout protection."""
+        return await asyncio.wait_for(asyncio.to_thread(re.sub, pattern, replacement, text), timeout=5.0)
 
     @staticmethod
-    def _split(text: str, pattern: str) -> list[str]:
-        """Split text by a regex pattern."""
-        return re.split(pattern, text)
+    async def _split(text: str, pattern: str) -> list[str]:
+        """Split text by a regex pattern with timeout protection."""
+        return await asyncio.wait_for(asyncio.to_thread(re.split, pattern, text), timeout=5.0)

@@ -68,6 +68,7 @@ class HttpTool(BaseTool):
             description="Send HTTP requests (GET, POST, PUT, DELETE)",
             tags=["http", "web"],
             guards=guards,
+            timeout=timeout,
             parameters=[
                 ParameterSpec(name="url", type_annotation="str", description="Request URL", required=True),
                 ParameterSpec(
@@ -111,6 +112,17 @@ class HttpTool(BaseTool):
             self._client = None
             if use_pool and not HTTPX_AVAILABLE:
                 logger.warning("Connection pooling requested but httpx not available. Install with: pip install httpx")
+
+    def __del__(self) -> None:
+        """Warn if the client was not explicitly closed."""
+        if self._client is not None:
+            import warnings
+
+            warnings.warn(
+                f"Unclosed {self.__class__.__name__!r}. Call 'await tool.close()' to release connections.",
+                ResourceWarning,
+                stacklevel=2,
+            )
 
     async def close(self) -> None:
         """Close the HTTP client and release connections."""

@@ -87,8 +87,23 @@ class MemoryManager:
             ``pip install fireflyframework-genai[mongodb]``
         """
         import asyncio
+        from concurrent.futures import ThreadPoolExecutor
 
         from fireflyframework_genai.config import get_config
+
+        def _run_sync(coro: object) -> object:
+            """Run *coro* synchronously, safe even when an event loop is already running."""
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop is not None:
+                pool = ThreadPoolExecutor(max_workers=1)
+                try:
+                    return pool.submit(asyncio.run, coro).result()
+                finally:
+                    pool.shutdown(wait=False)
+            return asyncio.run(coro)
 
         cfg = get_config()
 
@@ -114,7 +129,7 @@ class MemoryManager:
                 schema_name=cfg.memory_postgres_schema,
             )
             # Initialize the database connection pool
-            asyncio.run(store.initialize())
+            _run_sync(store.initialize())
             logger.info("PostgreSQL memory backend initialized")
 
         elif cfg.memory_backend == "mongodb":
@@ -133,7 +148,7 @@ class MemoryManager:
                 pool_size=cfg.memory_mongodb_pool_size,
             )
             # Initialize the database connection pool
-            asyncio.run(store.initialize())
+            _run_sync(store.initialize())
             logger.info("MongoDB memory backend initialized")
 
         else:

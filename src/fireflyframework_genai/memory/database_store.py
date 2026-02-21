@@ -48,13 +48,36 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any
+
+_SAFE_IDENTIFIER = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+_sync_pool = ThreadPoolExecutor(max_workers=4)
 
 from fireflyframework_genai.exceptions import DatabaseConnectionError, DatabaseStoreError
 from fireflyframework_genai.memory.types import MemoryEntry
 
 logger = logging.getLogger(__name__)
+
+
+def _run_sync(coro: Any) -> Any:
+    """Run *coro* synchronously, safe even when an event loop is already running."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop is not None:
+        # Already inside an event loop -- offload to a background thread.
+        import concurrent.futures
+
+        future = _sync_pool.submit(asyncio.run, coro)
+        return future.result()
+    return asyncio.run(coro)
+
 
 # -- PostgreSQL Store -------------------------------------------------------
 
@@ -87,6 +110,8 @@ class PostgreSQLStore:
         timeout: float = 30.0,
         schema_name: str = "firefly_memory",
     ) -> None:
+        if not _SAFE_IDENTIFIER.match(schema_name):
+            raise ValueError(f"Invalid schema_name: {schema_name!r}. Must be a valid SQL identifier.")
         self._url = url
         self._pool_size = pool_size
         self._pool_min_size = pool_min_size
@@ -181,7 +206,7 @@ class PostgreSQLStore:
 
         This is the synchronous wrapper that runs the async version in a thread.
         """
-        asyncio.run(self.async_save(namespace, entry))
+        _run_sync(self.async_save(namespace, entry))
 
     async def async_save(self, namespace: str, entry: MemoryEntry) -> None:
         """Async version of :meth:`save`."""
@@ -218,7 +243,7 @@ class PostgreSQLStore:
 
     def load(self, namespace: str) -> list[MemoryEntry]:
         """Return all non-expired entries stored under *namespace*."""
-        return asyncio.run(self.async_load(namespace))
+        return _run_sync(self.async_load(namespace))
 
     async def async_load(self, namespace: str) -> list[MemoryEntry]:
         """Async version of :meth:`load`."""
@@ -244,7 +269,7 @@ class PostgreSQLStore:
 
     def load_by_key(self, namespace: str, key: str) -> MemoryEntry | None:
         """Return the entry matching *key*, or *None*."""
-        return asyncio.run(self.async_load_by_key(namespace, key))
+        return _run_sync(self.async_load_by_key(namespace, key))
 
     async def async_load_by_key(self, namespace: str, key: str) -> MemoryEntry | None:
         """Async version of :meth:`load_by_key`."""
@@ -276,7 +301,7 @@ class PostgreSQLStore:
 
     def delete(self, namespace: str, entry_id: str) -> None:
         """Remove a single entry by ID."""
-        asyncio.run(self.async_delete(namespace, entry_id))
+        _run_sync(self.async_delete(namespace, entry_id))
 
     async def async_delete(self, namespace: str, entry_id: str) -> None:
         """Async version of :meth:`delete`."""
@@ -298,7 +323,7 @@ class PostgreSQLStore:
 
     def clear(self, namespace: str) -> None:
         """Remove all entries in *namespace*."""
-        asyncio.run(self.async_clear(namespace))
+        _run_sync(self.async_clear(namespace))
 
     async def async_clear(self, namespace: str) -> None:
         """Async version of :meth:`clear`."""
@@ -455,7 +480,7 @@ class MongoDBStore:
 
     def save(self, namespace: str, entry: MemoryEntry) -> None:
         """Persist a single :class:`MemoryEntry` under *namespace*."""
-        asyncio.run(self.async_save(namespace, entry))
+        _run_sync(self.async_save(namespace, entry))
 
     async def async_save(self, namespace: str, entry: MemoryEntry) -> None:
         """Async version of :meth:`save`."""
@@ -477,7 +502,7 @@ class MongoDBStore:
 
     def load(self, namespace: str) -> list[MemoryEntry]:
         """Return all non-expired entries stored under *namespace*."""
-        return asyncio.run(self.async_load(namespace))
+        return _run_sync(self.async_load(namespace))
 
     async def async_load(self, namespace: str) -> list[MemoryEntry]:
         """Async version of :meth:`load`."""
@@ -503,7 +528,7 @@ class MongoDBStore:
 
     def load_by_key(self, namespace: str, key: str) -> MemoryEntry | None:
         """Return the entry matching *key*, or *None*."""
-        return asyncio.run(self.async_load_by_key(namespace, key))
+        return _run_sync(self.async_load_by_key(namespace, key))
 
     async def async_load_by_key(self, namespace: str, key: str) -> MemoryEntry | None:
         """Async version of :meth:`load_by_key`."""
@@ -533,7 +558,7 @@ class MongoDBStore:
 
     def delete(self, namespace: str, entry_id: str) -> None:
         """Remove a single entry by ID."""
-        asyncio.run(self.async_delete(namespace, entry_id))
+        _run_sync(self.async_delete(namespace, entry_id))
 
     async def async_delete(self, namespace: str, entry_id: str) -> None:
         """Async version of :meth:`delete`."""
@@ -547,7 +572,7 @@ class MongoDBStore:
 
     def clear(self, namespace: str) -> None:
         """Remove all entries in *namespace*."""
-        asyncio.run(self.async_clear(namespace))
+        _run_sync(self.async_clear(namespace))
 
     async def async_clear(self, namespace: str) -> None:
         """Async version of :meth:`clear`."""

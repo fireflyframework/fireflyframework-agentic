@@ -352,7 +352,7 @@ class CircuitBreakerMiddleware:
         else:
             self._breaker = None
 
-    async def before(self, context: Any) -> None:
+    async def before_run(self, context: Any) -> None:
         """Check circuit breaker before agent execution.
 
         Args:
@@ -372,7 +372,7 @@ class CircuitBreakerMiddleware:
         # Enter circuit breaker (will raise if open)
         await self._breaker.__aenter__()
 
-    async def after(self, context: Any, result: Any) -> Any:
+    async def after_run(self, context: Any, result: Any) -> Any:
         """Update circuit breaker after agent execution.
 
         Args:
@@ -389,6 +389,19 @@ class CircuitBreakerMiddleware:
         await self._breaker.__aexit__(None, None, None)
 
         return result
+
+    async def on_error(self, context: Any, error: Exception) -> None:
+        """Update circuit breaker on agent execution error.
+
+        Args:
+            context: Middleware context.
+            error: The exception that caused the failure.
+        """
+        if not self._enabled or self._breaker is None:
+            return
+
+        # Record failure in the circuit breaker
+        await self._breaker.__aexit__(type(error), error, None)
 
     def get_metrics(self) -> dict[str, Any]:
         """Get circuit breaker metrics.

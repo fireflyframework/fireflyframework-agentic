@@ -161,30 +161,38 @@ class ConversationMemory:
 
     def get_turns(self, conversation_id: str) -> list[ConversationTurn]:
         """Return all turns for a conversation (unfiltered)."""
-        return list(self._conversations.get(conversation_id, []))
+        with self._lock:
+            return list(self._conversations.get(conversation_id, []))
 
     def get_total_tokens(self, conversation_id: str) -> int:
         """Return the total estimated token count for a conversation."""
-        return sum(t.token_estimate for t in self._conversations.get(conversation_id, []))
+        with self._lock:
+            return sum(t.token_estimate for t in self._conversations.get(conversation_id, []))
 
     def clear(self, conversation_id: str) -> None:
         """Remove all turns for a conversation."""
-        self._conversations.pop(conversation_id, None)
+        with self._lock:
+            self._conversations.pop(conversation_id, None)
+            self._summaries.pop(conversation_id, None)
 
     def clear_all(self) -> None:
         """Remove all conversations."""
-        self._conversations.clear()
+        with self._lock:
+            self._conversations.clear()
+            self._summaries.clear()
 
     def new_conversation(self) -> str:
         """Create a new conversation and return its ID."""
-        cid = uuid.uuid4().hex
-        self._conversations[cid] = []
-        return cid
+        with self._lock:
+            cid = uuid.uuid4().hex
+            self._conversations[cid] = []
+            return cid
 
     @property
     def conversation_ids(self) -> list[str]:
         """Return all active conversation IDs."""
-        return list(self._conversations.keys())
+        with self._lock:
+            return list(self._conversations.keys())
 
     @property
     def max_tokens(self) -> int:

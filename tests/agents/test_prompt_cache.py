@@ -58,7 +58,7 @@ class TestPromptCacheMiddleware:
         context.model = "anthropic:claude-3-5-sonnet-20241022"
 
         # Should not raise or modify context
-        await middleware.before(context)
+        await middleware.before_run(context)
 
     async def test_before_hook_anthropic_caching(self):
         """Test Anthropic-specific caching configuration."""
@@ -71,7 +71,7 @@ class TestPromptCacheMiddleware:
         context.model = "anthropic:claude-3-5-sonnet-20241022"
         context.metadata = {}
 
-        await middleware.before(context)
+        await middleware.before_run(context)
 
         # Should configure caching metadata
         assert context.metadata["_prompt_cache_enabled"] is True
@@ -85,7 +85,7 @@ class TestPromptCacheMiddleware:
         context.model = "openai:gpt-4o"
 
         # Should not raise (OpenAI caching is automatic)
-        await middleware.before(context)
+        await middleware.before_run(context)
 
     async def test_before_hook_gemini_caching(self):
         """Test Gemini-specific caching configuration."""
@@ -95,7 +95,7 @@ class TestPromptCacheMiddleware:
         context.model = "gemini:gemini-1.5-pro"
         context.metadata = {}
 
-        await middleware.before(context)
+        await middleware.before_run(context)
 
         # Should configure Gemini caching
         assert context.metadata["_gemini_cache_enabled"] is True
@@ -112,7 +112,7 @@ class TestPromptCacheMiddleware:
         context.model = "bedrock:anthropic.claude-3-5-sonnet-latest"
         context.metadata = {}
 
-        await middleware.before(context)
+        await middleware.before_run(context)
 
         assert context.metadata["_prompt_cache_enabled"] is True
         assert context.metadata["_cache_min_tokens"] == 2048
@@ -125,7 +125,7 @@ class TestPromptCacheMiddleware:
         context.model = "azure:gpt-4o"
 
         # Should not raise (OpenAI caching is automatic)
-        await middleware.before(context)
+        await middleware.before_run(context)
 
     async def test_before_hook_unsupported_provider(self):
         """Test behavior with unsupported provider."""
@@ -135,7 +135,7 @@ class TestPromptCacheMiddleware:
         context.model = "unknown:model"
 
         # Should not raise, just log debug message
-        await middleware.before(context)
+        await middleware.before_run(context)
 
     async def test_before_hook_no_model(self):
         """Test behavior when model is not set."""
@@ -145,7 +145,7 @@ class TestPromptCacheMiddleware:
         context.model = ""
 
         # Should not raise
-        await middleware.before(context)
+        await middleware.before_run(context)
 
     async def test_after_hook_with_cache_usage(self):
         """Test after hook records cache usage metrics."""
@@ -160,7 +160,7 @@ class TestPromptCacheMiddleware:
         usage.cache_read_tokens = 0
         result.usage = Mock(return_value=usage)
 
-        returned_result = await middleware.after(context, result)
+        returned_result = await middleware.after_run(context, result)
 
         # Should return unchanged result
         assert returned_result == result
@@ -178,7 +178,7 @@ class TestPromptCacheMiddleware:
         usage.cache_read_tokens = 5000
         result.usage = Mock(return_value=usage)
 
-        returned_result = await middleware.after(context, result)
+        returned_result = await middleware.after_run(context, result)
 
         assert returned_result == result
 
@@ -190,7 +190,7 @@ class TestPromptCacheMiddleware:
         result = Mock(spec=[])  # No usage method
 
         # Should not raise
-        returned_result = await middleware.after(context, result)
+        returned_result = await middleware.after_run(context, result)
         assert returned_result == result
 
     async def test_after_hook_disabled(self):
@@ -200,7 +200,7 @@ class TestPromptCacheMiddleware:
         context = Mock()
         result = Mock()
 
-        returned_result = await middleware.after(context, result)
+        returned_result = await middleware.after_run(context, result)
 
         # Should return result unchanged
         assert returned_result == result
@@ -213,7 +213,7 @@ class TestPromptCacheMiddleware:
         context.model = "anthropic:claude-3-5-sonnet-20241022"
 
         # Should not configure caching
-        await middleware.before(context)
+        await middleware.before_run(context)
 
 
 class TestCacheStatistics:

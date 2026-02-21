@@ -147,4 +147,4 @@ class PipelineBuilder:
 
             if asyncio.iscoroutinefunction(step):
                 return CallableStep(step)
-        return step
+        raise TypeError(f"Cannot resolve {type(step).__name__} as a pipeline step. Must be StepExecutor, agent-like, or async callable.")

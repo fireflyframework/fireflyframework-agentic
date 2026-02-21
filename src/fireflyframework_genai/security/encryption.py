@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
 from typing import Any, Protocol, runtime_checkable
 
 from fireflyframework_genai.memory.types import MemoryEntry
@@ -132,21 +133,29 @@ class AESEncryptionProvider:
                 "Encryption support requires 'cryptography'. Install with: pip install fireflyframework-genai[security]"
             ) from exc
 
-        # Derive 32-byte key if needed
-        key_bytes = key.encode("utf-8") if isinstance(key, str) else key
+        # Store raw key bytes for per-call salt derivation
+        self._raw_key = key.encode("utf-8") if isinstance(key, str) else key
+        self._AESGCM = AESGCM
+        self._PBKDF2HMAC = PBKDF2HMAC
+        self._hashes = hashes
 
-        if len(key_bytes) != 32:
-            # Use PBKDF2 to derive a 32-byte key from the password
-            logger.debug("Deriving 32-byte key from provided key using PBKDF2")
-            kdf = PBKDF2HMAC(
-                algorithm=hashes.SHA256(),
-                length=32,
-                salt=b"firefly_genai_salt",  # Fixed salt (not ideal for high security)
-                iterations=100_000,
-            )
-            key_bytes = kdf.derive(key_bytes)
+        # If the key is exactly 32 bytes, use it directly (pre-derived)
+        if len(self._raw_key) == 32:
+            self._direct_key = self._raw_key
+        else:
+            self._direct_key = None
 
-        self._cipher = AESGCM(key_bytes)
+    def _derive_key(self, salt: bytes) -> bytes:
+        """Derive a 32-byte key from the raw key using PBKDF2 with the given salt."""
+        if self._direct_key is not None:
+            return self._direct_key
+        kdf = self._PBKDF2HMAC(
+            algorithm=self._hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=100_000,
+        )
+        return kdf.derive(self._raw_key)
 
     def encrypt(self, plaintext: str) -> str:
         """Encrypt plaintext using AES-256-GCM.
@@ -155,19 +164,22 @@ class AESEncryptionProvider:
             plaintext: String to encrypt.
 
         Returns:
-            Base64-encoded string containing: nonce + ciphertext + tag
+            Base64-encoded string containing: salt[16] + nonce[12] + ciphertext + tag
         """
-        import os
+        # Generate random 16-byte salt for PBKDF2 key derivation
+        salt = os.urandom(16)
+        key_bytes = self._derive_key(salt)
+        cipher = self._AESGCM(key_bytes)
 
         # Generate random 12-byte nonce (recommended for GCM)
         nonce = os.urandom(12)
 
         # Encrypt (returns ciphertext + 16-byte authentication tag)
         plaintext_bytes = plaintext.encode("utf-8")
-        ciphertext = self._cipher.encrypt(nonce, plaintext_bytes, None)
+        ciphertext = cipher.encrypt(nonce, plaintext_bytes, None)
 
-        # Combine nonce + ciphertext for storage
-        encrypted_data = nonce + ciphertext
+        # Combine salt + nonce + ciphertext for storage
+        encrypted_data = salt + nonce + ciphertext
 
         # Base64 encode for safe storage
         return base64.b64encode(encrypted_data).decode("ascii")
@@ -188,12 +200,17 @@ class AESEncryptionProvider:
             # Base64 decode
             encrypted_data = base64.b64decode(ciphertext.encode("ascii"))
 
-            # Split nonce and ciphertext
-            nonce = encrypted_data[:12]
-            ciphertext_bytes = encrypted_data[12:]
+            # Split salt, nonce, and ciphertext
+            salt = encrypted_data[:16]
+            nonce = encrypted_data[16:28]
+            ciphertext_bytes = encrypted_data[28:]
+
+            # Derive key from salt
+            key_bytes = self._derive_key(salt)
+            cipher = self._AESGCM(key_bytes)
 
             # Decrypt (automatically verifies authentication tag)
-            plaintext_bytes = self._cipher.decrypt(nonce, ciphertext_bytes, None)
+            plaintext_bytes = cipher.decrypt(nonce, ciphertext_bytes, None)
 
             return plaintext_bytes.decode("utf-8")
         except Exception as exc:
@@ -326,4 +343,7 @@ def create_encryption_provider_from_config() -> EncryptionProvider | None:
 
 
 # Module-level default instance
-default_encryption_provider: EncryptionProvider | None = create_encryption_provider_from_config()
+try:
+    default_encryption_provider: EncryptionProvider | None = create_encryption_provider_from_config()
+except Exception:  # noqa: BLE001
+    default_encryption_provider = None
