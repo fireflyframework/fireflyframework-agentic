@@ -39,6 +39,8 @@ class NodeType(StrEnum):
     MEMORY = "memory"
     VALIDATOR = "validator"
     CUSTOM_CODE = "custom_code"
+    INPUT = "input"
+    OUTPUT = "output"
 
 
 class GraphNode(BaseModel):

@@ -15,8 +15,8 @@ from fireflyframework_genai.studio.codegen.models import (
 
 
 class TestNodeType:
-    def test_has_exactly_ten_members(self) -> None:
-        assert len(NodeType) == 10
+    def test_has_exactly_twelve_members(self) -> None:
+        assert len(NodeType) == 12
 
     def test_expected_members(self) -> None:
         expected = {
@@ -30,6 +30,8 @@ class TestNodeType:
             "memory",
             "validator",
             "custom_code",
+            "input",
+            "output",
         }
         assert {m.value for m in NodeType} == expected
 
