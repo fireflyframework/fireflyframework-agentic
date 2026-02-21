@@ -371,7 +371,7 @@
 							</div>
 						{/if}
 
-						<FormField label="Input Schema (JSON)" type="textarea" bind:value={schemaJsonVal} placeholder='{"type": "object", "properties": {...}}' />
+						<FormField label="Input Schema (JSON)" type="textarea" bind:value={schemaJsonVal} placeholder={'{"type": "object", "properties": {…}}'} />
 
 					{:else if node.type === 'output'}
 						<FormField label="Name" type="text" bind:value={nameVal} placeholder="Output node name" />
@@ -391,7 +391,7 @@
 							</div>
 						{/if}
 
-						<FormField label="Response Schema (JSON)" type="textarea" bind:value={schemaJsonVal} placeholder='{"type": "object", "properties": {...}}' />
+						<FormField label="Response Schema (JSON)" type="textarea" bind:value={schemaJsonVal} placeholder={'{"type": "object", "properties": {…}}'} />
 
 					{:else if node.type === 'agent'}
 						<FormField label="Name" type="text" bind:value={nameVal} placeholder="Agent name" />
