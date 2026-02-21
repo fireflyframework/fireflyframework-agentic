@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Monitoring API endpoints for Firefly Studio.
+"""Monitoring API endpoints for Firefly Agentic Studio.
 
 Exposes the framework's usage tracking data so the Studio frontend can
 display cost, token, and latency metrics in the monitoring dashboard.

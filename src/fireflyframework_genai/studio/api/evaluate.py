@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Evaluation REST API endpoints for Firefly Studio.
+"""Evaluation REST API endpoints for Firefly Agentic Studio.
 
 Provides endpoints for uploading JSONL test datasets, listing datasets
 within a project, and running a pipeline against a dataset to measure

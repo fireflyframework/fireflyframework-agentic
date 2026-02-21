@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
-  "productName": "Firefly Studio",
+  "productName": "Firefly Agentic Studio",
   "version": "0.1.0",
   "identifier": "com.fireflyframework.studio",
   "build": {
@@ -9,7 +9,7 @@
   "app": {
     "windows": [
       {
-        "title": "Firefly Studio",
+        "title": "Firefly Agentic Studio",
         "width": 1280,
         "height": 800,
         "minWidth": 900,

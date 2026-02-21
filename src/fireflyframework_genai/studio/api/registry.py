@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Registry API endpoints for Firefly Studio.
+"""Registry API endpoints for Firefly Agentic Studio.
 
 Exposes the framework's global registries (agents, tools, reasoning patterns)
 so the Studio frontend can list available components in the node palette.

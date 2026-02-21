@@ -13,16 +13,18 @@
 	import { isRunning, isDebugging } from '$lib/stores/execution';
 	import { runtimeStatus } from '$lib/stores/runtime';
 	import { runPipeline, debugPipeline } from '$lib/execution/bridge';
-	import { getGraphSnapshot, nodes as nodesStore } from '$lib/stores/pipeline';
+	import { getGraphSnapshot, nodes as nodesStore, isDirty } from '$lib/stores/pipeline';
 	import { settingsModalOpen, architectSidebarOpen } from '$lib/stores/ui';
 	import { connectionState } from '$lib/stores/connection';
 	import { currentProject, projects, selectProject, initProjects } from '$lib/stores/project';
 	import { api } from '$lib/api/client';
 	import { get } from 'svelte/store';
+	import { onMount } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
 	import { addToast } from '$lib/stores/notifications';
 	import logo from '$lib/assets/favicon.svg';
 	import ShareModal from './ShareModal.svelte';
+	import Tooltip from '$lib/components/shared/Tooltip.svelte';
 
 	let { isHomePage = false }: { isHomePage?: boolean } = $props();
 
@@ -50,6 +52,15 @@
 		showRunDialog = false;
 		shareModalOpen = false;
 		confirmDeleteProject = null;
+	});
+
+	// Listen for keyboard-shortcut-triggered run requests (from AppShell)
+	onMount(() => {
+		function onRunRequest() {
+			handleRun();
+		}
+		window.addEventListener('firefly:run-pipeline', onRunRequest);
+		return () => window.removeEventListener('firefly:run-pipeline', onRunRequest);
 	});
 
 	function toggleProjectDropdown() {
@@ -113,6 +124,7 @@
 		try {
 			const graph = getGraphSnapshot();
 			await api.projects.savePipeline(proj.name, 'main', graph);
+			isDirty.set(false);
 			addToast('Pipeline saved', 'success');
 		} catch {
 			addToast('Failed to save pipeline', 'error');
@@ -143,9 +155,28 @@
 	let rtStatus = $derived($runtimeStatus);
 	let runtimeToggling = $state(false);
 
+	// Poll runtime status when project changes to sync UI with backend state
+	$effect(() => {
+		const proj = $currentProject;
+		if (proj && !isHomePage) {
+			api.runtime.status(proj.name).then((status) => {
+				runtimeStatus.set(status.status as typeof $runtimeStatus);
+			}).catch(() => {
+				runtimeStatus.set('stopped');
+			});
+		}
+	});
+
 	async function toggleRuntime() {
 		const proj = get(currentProject);
 		if (!proj || runtimeToggling) return;
+
+		const currentNodes = get(nodesStore);
+		if (currentNodes.length === 0) {
+			addToast('Add nodes to your pipeline before starting the runtime', 'error');
+			return;
+		}
+
 		runtimeToggling = true;
 		try {
 			if (rtStatus === 'running') {
@@ -159,9 +190,10 @@
 				runtimeStatus.set('running');
 				addToast('Runtime started', 'success');
 			}
-		} catch {
+		} catch (err: any) {
 			runtimeStatus.set('error');
-			addToast('Runtime toggle failed', 'error');
+			const msg = err?.message || 'Runtime toggle failed';
+			addToast(msg, 'error');
 		} finally {
 			runtimeToggling = false;
 		}
@@ -170,18 +202,21 @@
 
 <header class="top-bar">
 	<div class="top-bar-left">
-		<a href="/" class="brand-link" title="Home">
-			<img src={logo} alt="Firefly Agentic Studio" class="brand-logo" />
-			<span class="brand">Firefly Agentic Studio</span>
-		</a>
+		<Tooltip text="Home" description="Return to the home page">
+			<a href="/" class="brand-link">
+				<img src={logo} alt="Firefly Agentic Studio" class="brand-logo" />
+				<span class="brand">Firefly Agentic Studio</span>
+			</a>
+		</Tooltip>
 		{#if !isHomePage}
-			<span
-				class="conn-dot"
-				class:conn-ok={connState === 'connected'}
-				class:conn-fail={connState === 'disconnected'}
-				class:conn-check={connState === 'checking'}
-				title={connState === 'connected' ? 'Backend connected' : connState === 'disconnected' ? 'Backend disconnected' : 'Checking connection...'}
-			></span>
+			<Tooltip text={connState === 'connected' ? 'Connected' : connState === 'disconnected' ? 'Disconnected' : 'Checking...'} description={connState === 'connected' ? 'Backend server is running and reachable' : connState === 'disconnected' ? 'Cannot reach the backend server' : 'Verifying connection to backend...'}>
+				<span
+					class="conn-dot"
+					class:conn-ok={connState === 'connected'}
+					class:conn-fail={connState === 'disconnected'}
+					class:conn-check={connState === 'checking'}
+				></span>
+			</Tooltip>
 			<span class="separator">/</span>
 			<div class="project-container">
 				<button class="project-selector" onclick={toggleProjectDropdown}>
@@ -248,9 +283,12 @@
 					</div>
 				{/if}
 			</div>
-			<button class="btn-save" onclick={savePipeline} title="Save pipeline (Cmd+S)">
-				<Save size={14} />
-			</button>
+			<Tooltip text={$isDirty ? "Save Pipeline (unsaved changes)" : "Save Pipeline"} shortcut="Cmd+S" description="Save the current pipeline graph to this project">
+				<button class="btn-save" class:has-changes={$isDirty} onclick={savePipeline}>
+					<Save size={14} />
+					{#if $isDirty}<span class="dirty-dot"></span>{/if}
+				</button>
+			</Tooltip>
 		{/if}
 	</div>
 
@@ -258,54 +296,68 @@
 
 	<div class="top-bar-right">
 		{#if !isHomePage}
-			<button class="btn-run" class:btn-run-active={running} disabled={busy} onclick={handleRun} title="Run">
-				{#if running}
-					<span class="spin-icon"><Loader size={14} /></span>
-					<span>Running...</span>
-					<span class="pulse-dot"></span>
-				{:else}
-					<Play size={14} />
-					<span>Run</span>
-				{/if}
-			</button>
-			<button class="btn-icon" class:btn-debug-active={debugging} disabled={busy} onclick={handleDebug} title="Debug">
-				<Bug size={16} />
-				{#if debugging}
-					<span class="pulse-dot debug-dot"></span>
-				{/if}
-			</button>
-			<button
-				class="btn-runtime"
-				class:runtime-running={rtStatus === 'running'}
-				class:runtime-error={rtStatus === 'error'}
-				class:runtime-starting={rtStatus === 'starting'}
-				disabled={runtimeToggling}
-				onclick={toggleRuntime}
-				title={rtStatus === 'running' ? 'Stop runtime' : 'Start runtime'}
+			<Tooltip text="Run Pipeline" description="Execute the pipeline with an optional input prompt">
+				<button class="btn-run" class:btn-run-active={running} disabled={busy} onclick={handleRun}>
+					{#if running}
+						<span class="spin-icon"><Loader size={14} /></span>
+						<span>Running...</span>
+						<span class="pulse-dot"></span>
+					{:else}
+						<Play size={14} />
+						<span>Run</span>
+					{/if}
+				</button>
+			</Tooltip>
+			<Tooltip text="Debug" description="Run the pipeline in debug mode with step-by-step node execution">
+				<button class="btn-icon" class:btn-debug-active={debugging} disabled={busy} onclick={handleDebug}>
+					<Bug size={16} />
+					{#if debugging}
+						<span class="pulse-dot debug-dot"></span>
+					{/if}
+				</button>
+			</Tooltip>
+			<Tooltip
+				text={rtStatus === 'running' ? 'Stop Runtime' : rtStatus === 'starting' ? 'Starting...' : rtStatus === 'error' ? 'Runtime Error' : 'Start Runtime'}
+				description={rtStatus === 'running' ? 'Stop background processes (queue consumers, schedulers)' : rtStatus === 'starting' ? 'Runtime is initialising queue consumers and schedulers' : rtStatus === 'error' ? 'The runtime encountered an error — click to retry' : 'Start background processes for queue triggers, schedules, and live API serving'}
 			>
-				<span
-					class="runtime-dot"
-					class:rt-running={rtStatus === 'running'}
-					class:rt-stopped={rtStatus === 'stopped'}
-					class:rt-error={rtStatus === 'error'}
-					class:rt-starting={rtStatus === 'starting'}
-				></span>
-				<Power size={13} />
-			</button>
+				<button
+					class="btn-runtime"
+					class:runtime-running={rtStatus === 'running'}
+					class:runtime-error={rtStatus === 'error'}
+					class:runtime-starting={rtStatus === 'starting'}
+					disabled={runtimeToggling}
+					onclick={toggleRuntime}
+				>
+					<span
+						class="runtime-dot"
+						class:rt-running={rtStatus === 'running'}
+						class:rt-stopped={rtStatus === 'stopped'}
+						class:rt-error={rtStatus === 'error'}
+						class:rt-starting={rtStatus === 'starting'}
+					></span>
+					<Power size={13} />
+				</button>
+			</Tooltip>
 			<div class="divider"></div>
 		{/if}
 		{#if !isHomePage}
-			<button class="btn-icon" title="Share" onclick={() => shareModalOpen = true}>
-				<LinkIcon size={16} />
-			</button>
+			<Tooltip text="Share & Expose" description="Create a public tunnel URL to share your studio with others via Cloudflare">
+				<button class="btn-icon" onclick={() => shareModalOpen = true}>
+					<LinkIcon size={16} />
+				</button>
+			</Tooltip>
 		{/if}
-		<button class="btn-icon" title="Settings" onclick={() => settingsModalOpen.set(true)}>
-			<Settings size={16} />
-		</button>
-		{#if !isHomePage}
-			<button class="btn-icon" class:architect-active={$architectSidebarOpen} title="Architect (Cmd+/)" onclick={toggleArchitect}>
-				<PanelLeft size={16} />
+		<Tooltip text="Settings" description="Configure API keys, model defaults, and studio preferences">
+			<button class="btn-icon" onclick={() => settingsModalOpen.set(true)}>
+				<Settings size={16} />
 			</button>
+		</Tooltip>
+		{#if !isHomePage}
+			<Tooltip text="The Architect" shortcut="Cmd+/" description="Toggle the AI assistant sidebar — describe what you want to build and The Architect will design it">
+				<button class="btn-icon" class:architect-active={$architectSidebarOpen} onclick={toggleArchitect}>
+					<PanelLeft size={16} />
+				</button>
+			</Tooltip>
 		{/if}
 	</div>
 </header>
@@ -344,11 +396,14 @@
 		min-height: 48px;
 		display: flex;
 		align-items: center;
-		padding: 0 12px;
-		background: var(--color-bg-secondary);
-		border-bottom: 1px solid var(--color-border);
+		padding: 0 14px;
+		background: oklch(from var(--color-bg-secondary) calc(l + 0.01) c h / 85%);
+		backdrop-filter: blur(12px) saturate(1.2);
+		-webkit-backdrop-filter: blur(12px) saturate(1.2);
+		border-bottom: 1px solid oklch(from var(--color-border) l c h / 60%);
 		user-select: none;
 		gap: 8px;
+		z-index: 20;
 	}
 
 	.top-bar-left {
@@ -363,33 +418,34 @@
 		align-items: center;
 		gap: 8px;
 		text-decoration: none;
-		border-radius: 6px;
-		padding: 4px 6px;
-		margin: -4px -6px;
-		transition: background 0.15s;
+		border-radius: 8px;
+		padding: 5px 8px;
+		margin: -5px -8px;
+		transition: background 0.2s;
 	}
 
 	.brand-link:hover {
-		background: var(--color-bg-elevated);
+		background: rgba(255,255,255,0.04);
 	}
 
 	.brand-logo {
-		width: 24px;
-		height: 24px;
+		width: 22px;
+		height: 22px;
 		border-radius: 5px;
 	}
 
 	.brand {
 		font-family: var(--font-sans);
-		font-size: 14px;
+		font-size: 13px;
 		font-weight: 600;
-		color: var(--color-accent);
+		color: var(--color-text-primary);
 		letter-spacing: -0.01em;
+		opacity: 0.85;
 	}
 
 	.conn-dot {
-		width: 7px;
-		height: 7px;
+		width: 6px;
+		height: 6px;
 		border-radius: 50%;
 		background: var(--color-text-secondary);
 		flex-shrink: 0;
@@ -398,12 +454,12 @@
 
 	.conn-dot.conn-ok {
 		background: var(--color-success, #22c55e);
-		box-shadow: 0 0 6px oklch(from var(--color-success, #22c55e) l c h / 50%);
+		box-shadow: 0 0 5px oklch(from var(--color-success, #22c55e) l c h / 40%);
 	}
 
 	.conn-dot.conn-fail {
 		background: var(--color-error, #ef4444);
-		box-shadow: 0 0 6px oklch(from var(--color-error, #ef4444) l c h / 50%);
+		box-shadow: 0 0 5px oklch(from var(--color-error, #ef4444) l c h / 40%);
 	}
 
 	.conn-dot.conn-check {
@@ -417,8 +473,8 @@
 
 	.separator {
 		color: var(--color-text-secondary);
-		font-size: 14px;
-		opacity: 0.5;
+		font-size: 13px;
+		opacity: 0.3;
 	}
 
 	/* Project dropdown */
@@ -430,20 +486,20 @@
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		background: transparent;
-		border: 1px solid transparent;
+		background: rgba(255,255,255,0.03);
+		border: 1px solid rgba(255,255,255,0.06);
 		color: var(--color-text-primary);
 		font-family: var(--font-mono);
-		font-size: 13px;
-		padding: 4px 10px 4px 8px;
-		border-radius: 6px;
+		font-size: 12px;
+		padding: 5px 10px 5px 8px;
+		border-radius: 8px;
 		cursor: pointer;
-		transition: background 0.15s, border-color 0.15s;
+		transition: background 0.2s, border-color 0.2s;
 	}
 
 	.project-selector:hover {
-		background: var(--color-bg-elevated);
-		border-color: var(--color-border);
+		background: rgba(255,255,255,0.06);
+		border-color: rgba(255,255,255,0.10);
 	}
 
 	.project-dot {
@@ -452,6 +508,7 @@
 		border-radius: 50%;
 		background: var(--color-accent);
 		flex-shrink: 0;
+		box-shadow: 0 0 4px oklch(from var(--color-accent) l c h / 40%);
 	}
 
 	.project-name {
@@ -460,7 +517,7 @@
 
 	:global(.project-chevron) {
 		color: var(--color-text-secondary);
-		opacity: 0.6;
+		opacity: 0.5;
 		flex-shrink: 0;
 	}
 
@@ -717,19 +774,40 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 28px;
-		height: 28px;
+		width: 30px;
+		height: 30px;
 		background: transparent;
 		border: none;
 		color: var(--color-text-secondary);
-		border-radius: 6px;
+		border-radius: 7px;
 		cursor: pointer;
-		transition: background 0.15s, color 0.15s;
+		transition: background 0.2s, color 0.2s;
+		opacity: 0.7;
 	}
 
 	.btn-save:hover {
-		background: var(--color-bg-elevated);
+		background: rgba(255,255,255,0.06);
 		color: var(--color-text-primary);
+		opacity: 1;
+	}
+
+	.btn-save.has-changes {
+		color: var(--color-accent);
+		opacity: 1;
+	}
+
+	.btn-save {
+		position: relative;
+	}
+
+	.dirty-dot {
+		position: absolute;
+		top: 4px;
+		right: 4px;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--color-accent);
 	}
 
 	.top-bar-spacer {
@@ -745,7 +823,7 @@
 	.top-bar-right {
 		display: flex;
 		align-items: center;
-		gap: 4px;
+		gap: 3px;
 		flex-shrink: 0;
 	}
 
@@ -756,22 +834,27 @@
 		background: var(--color-accent);
 		color: white;
 		border: none;
-		padding: 5px 12px;
-		border-radius: 6px;
+		padding: 6px 14px;
+		border-radius: 8px;
 		font-family: var(--font-sans);
 		font-size: 12px;
 		font-weight: 600;
 		cursor: pointer;
-		transition: opacity 0.15s, background 0.3s ease;
+		transition: opacity 0.15s, background 0.3s ease, transform 0.1s;
 	}
 
 	.btn-run:hover:not(:disabled) {
-		opacity: 0.9;
+		opacity: 0.92;
+		transform: translateY(-0.5px);
+	}
+
+	.btn-run:active:not(:disabled) {
+		transform: scale(0.97);
 	}
 
 	.btn-run:disabled {
 		cursor: not-allowed;
-		opacity: 0.7;
+		opacity: 0.6;
 	}
 
 	.btn-run-active {
@@ -783,46 +866,46 @@
 		display: flex;
 		align-items: center;
 		gap: 5px;
-		background: transparent;
-		border: 1px solid var(--color-border);
+		background: rgba(255,255,255,0.03);
+		border: 1px solid rgba(255,255,255,0.06);
 		color: var(--color-text-secondary);
-		padding: 4px 10px;
-		border-radius: 6px;
+		padding: 5px 10px;
+		border-radius: 8px;
 		font-family: var(--font-sans);
 		font-size: 11px;
 		font-weight: 500;
 		cursor: pointer;
-		transition: background 0.15s, color 0.15s, border-color 0.15s;
+		transition: background 0.2s, color 0.2s, border-color 0.2s;
 	}
 
 	.btn-runtime:hover:not(:disabled) {
-		background: var(--color-bg-elevated);
+		background: rgba(255,255,255,0.06);
 		color: var(--color-text-primary);
 	}
 
 	.btn-runtime:disabled {
-		opacity: 0.5;
+		opacity: 0.4;
 		cursor: not-allowed;
 	}
 
 	.btn-runtime.runtime-running {
-		border-color: color-mix(in srgb, var(--color-success) 40%, transparent);
+		border-color: oklch(from var(--color-success) l c h / 30%);
 		color: var(--color-success);
 	}
 
 	.btn-runtime.runtime-error {
-		border-color: color-mix(in srgb, var(--color-error) 40%, transparent);
+		border-color: oklch(from var(--color-error) l c h / 30%);
 		color: var(--color-error);
 	}
 
 	.btn-runtime.runtime-starting {
-		border-color: color-mix(in srgb, #f59e0b 40%, transparent);
+		border-color: oklch(from #f59e0b l c h / 30%);
 		color: #f59e0b;
 	}
 
 	.runtime-dot {
-		width: 7px;
-		height: 7px;
+		width: 6px;
+		height: 6px;
 		border-radius: 50%;
 		flex-shrink: 0;
 		transition: background 0.3s;
@@ -830,16 +913,17 @@
 
 	.runtime-dot.rt-stopped {
 		background: var(--color-text-secondary);
+		opacity: 0.5;
 	}
 
 	.runtime-dot.rt-running {
 		background: var(--color-success);
-		box-shadow: 0 0 6px color-mix(in srgb, var(--color-success) 50%, transparent);
+		box-shadow: 0 0 5px oklch(from var(--color-success) l c h / 40%);
 	}
 
 	.runtime-dot.rt-error {
 		background: var(--color-error);
-		box-shadow: 0 0 6px color-mix(in srgb, var(--color-error) 50%, transparent);
+		box-shadow: 0 0 5px oklch(from var(--color-error) l c h / 40%);
 	}
 
 	.runtime-dot.rt-starting {
@@ -857,40 +941,44 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 32px;
-		height: 32px;
+		width: 30px;
+		height: 30px;
 		background: transparent;
 		border: none;
 		color: var(--color-text-secondary);
-		border-radius: 6px;
+		border-radius: 7px;
 		cursor: pointer;
-		transition: background 0.15s, color 0.15s;
+		transition: background 0.2s, color 0.2s;
+		opacity: 0.7;
 	}
 
 	.btn-icon:hover:not(:disabled) {
-		background: var(--color-bg-elevated);
+		background: rgba(255,255,255,0.06);
 		color: var(--color-text-primary);
+		opacity: 1;
 	}
 
 	.btn-icon:disabled {
 		cursor: not-allowed;
-		opacity: 0.5;
+		opacity: 0.35;
 	}
 
 	.btn-debug-active {
 		color: var(--color-warning);
+		opacity: 1;
 	}
 
 	.architect-active {
 		color: var(--color-accent);
 		background: oklch(from var(--color-accent) l c h / 10%);
+		opacity: 1;
 	}
 
 	.divider {
 		width: 1px;
-		height: 20px;
-		background: var(--color-border);
-		margin: 0 4px;
+		height: 18px;
+		background: rgba(255,255,255,0.08);
+		margin: 0 5px;
 	}
 
 	.pulse-dot {

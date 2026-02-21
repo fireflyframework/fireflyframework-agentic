@@ -29,42 +29,69 @@
 	class:exec-complete={execState === 'complete'}
 	class:exec-error={execState === 'error'}
 >
-	<div class="node-header">
-		<div class="icon-wrapper tool-icon">
-			<Wrench size={12} />
+	<!-- Header -->
+	<div class="tool-header">
+		<div class="header-row">
+			<span class="status-dot"
+				class:dot-idle={execState === 'idle'}
+				class:dot-running={execState === 'running'}
+				class:dot-error={execState === 'error'}
+				class:dot-complete={execState === 'complete' || showComplete}
+			></span>
+			<div class="tool-icon-wrap">
+				<Wrench size={13} />
+			</div>
+			<span class="tool-title">{data.label || 'Tool'}</span>
+			{#if showComplete}
+				<span class="state-icon" transition:scale={{ duration: 200, start: 0.6 }}>
+					<CheckCircle2 size={12} />
+				</span>
+			{/if}
+			{#if execState === 'error'}
+				<span class="state-icon state-error">
+					<AlertCircle size={12} />
+				</span>
+			{/if}
 		</div>
-		<span class="node-label">{data.label || 'Tool'}</span>
-		{#if showComplete}
-			<span class="state-icon state-complete" transition:scale={{ duration: 200, start: 0.6 }}>
-				<CheckCircle2 size={12} />
-			</span>
+	</div>
+
+	<!-- Body -->
+	<div class="tool-body">
+		<div class="pins-row">
+			<div class="pin pin-in"><span class="pin-dot"></span><span class="pin-label">Exec In</span></div>
+			<div class="pin pin-out"><span class="pin-label">Exec Out</span><span class="pin-dot"></span></div>
+		</div>
+
+		{#if data.tool_name}
+			<div class="prop-row"><span class="prop-key">tool</span><span class="prop-val">{data.tool_name}</span></div>
 		{/if}
-		{#if execState === 'error'}
-			<span class="state-icon state-error">
-				<AlertCircle size={12} />
-			</span>
+		{#if data.description}
+			<div class="tool-description">{String(data.description).slice(0, 60)}{String(data.description).length > 60 ? '\u2026' : ''}</div>
+		{/if}
+		{#if data.timeout}
+			<div class="prop-row"><span class="prop-key">timeout</span><span class="prop-val">{data.timeout}s</span></div>
 		{/if}
 	</div>
-	{#if data.description}
-		<div class="node-detail">{data.description}</div>
-	{/if}
+
 	<Handle type="target" position={Position.Left} />
 	<Handle type="source" position={Position.Right} />
 </div>
 
 <style>
 	.tool-node {
-		background: #1a1a26;
-		border: 1px solid rgba(139, 92, 246, 0.3);
+		width: 180px;
 		border-radius: 10px;
-		padding: 8px 12px;
-		min-width: 140px;
-		box-shadow: 0 4px 12px rgba(139, 92, 246, 0.05);
-		transition: border-color 0.3s ease, box-shadow 0.3s ease;
+		overflow: hidden;
+		box-shadow:
+			0 4px 20px rgba(139, 92, 246, 0.10),
+			0 0 0 1px rgba(139, 92, 246, 0.18);
+		transition: box-shadow 0.3s ease;
 		position: relative;
+		font-family: var(--font-sans, system-ui, sans-serif);
 	}
+
 	.tool-node.exec-running {
-		border-color: transparent;
+		box-shadow: none;
 	}
 	.tool-node.exec-running::after {
 		content: '';
@@ -82,62 +109,154 @@
 		-webkit-mask-composite: xor;
 		mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
 		mask-composite: exclude;
-		animation: spin-border 1.2s linear infinite;
+		animation: tool-spin 1.2s linear infinite;
 		pointer-events: none;
 	}
 	.tool-node.exec-complete {
-		border-color: var(--color-success);
-		box-shadow: 0 0 12px rgba(34, 197, 94, 0.3);
+		box-shadow: 0 0 20px rgba(34, 197, 94, 0.35), 0 0 0 1px rgba(34, 197, 94, 0.45);
 	}
 	.tool-node.exec-error {
-		border-color: var(--color-error);
-		box-shadow: 0 0 12px rgba(239, 68, 68, 0.3);
+		box-shadow: 0 0 20px rgba(239, 68, 68, 0.35), 0 0 0 1px rgba(239, 68, 68, 0.45);
 	}
-	@keyframes spin-border {
-		to {
-			transform: rotate(360deg);
-		}
+	@keyframes tool-spin {
+		to { transform: rotate(360deg); }
 	}
-	.node-header {
+
+	/* --- Header --- */
+	.tool-header {
+		background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+		padding: 7px 10px;
+	}
+
+	.tool-node.exec-running .tool-header {
+		background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);
+	}
+	.tool-node.exec-error .tool-header {
+		background: linear-gradient(135deg, #8b5cf6 0%, #9333ea 50%, #ef4444 100%);
+	}
+
+	.header-row {
 		display: flex;
 		align-items: center;
-		gap: 6px;
-		margin-bottom: 4px;
+		gap: 5px;
+		color: #fff;
 	}
-	.icon-wrapper {
-		width: 20px;
-		height: 20px;
-		border-radius: 5px;
+
+	.tool-icon-wrap {
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		width: 22px;
+		height: 22px;
+		background: rgba(255, 255, 255, 0.15);
+		border-radius: 5px;
+		flex-shrink: 0;
 	}
-	.tool-icon {
-		background: rgba(139, 92, 246, 0.2);
-		color: #8b5cf6;
-	}
-	.node-label {
+
+	.tool-title {
+		flex: 1;
 		font-size: 11px;
-		font-weight: 600;
-		color: #e8e8ed;
-	}
-	.node-detail {
-		font-size: 9px;
-		color: #8888a0;
-		font-family: 'JetBrains Mono', monospace;
+		font-weight: 700;
+		letter-spacing: 0.02em;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
+
+	/* Status dot */
+	.status-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		flex-shrink: 0;
+		transition: background 0.2s ease;
+	}
+	.dot-idle {
+		background: rgba(255, 255, 255, 0.3);
+	}
+	.dot-running {
+		background: #22c55e;
+		animation: pulse-dot 1s ease-in-out infinite;
+	}
+	.dot-error {
+		background: #ef4444;
+	}
+	.dot-complete {
+		background: #22c55e;
+	}
+	@keyframes pulse-dot {
+		0%, 100% { opacity: 1; transform: scale(1); }
+		50% { opacity: 0.5; transform: scale(0.75); }
+	}
+
 	.state-icon {
-		margin-left: auto;
 		display: flex;
 		align-items: center;
-	}
-	.state-complete {
-		color: var(--color-success);
+		color: #22c55e;
 	}
 	.state-error {
-		color: var(--color-error);
+		color: #ef4444;
+	}
+
+	/* --- Body --- */
+	.tool-body {
+		background: #1a1a26;
+		padding: 8px 0 6px;
+	}
+
+	.pins-row {
+		display: flex;
+		justify-content: space-between;
+		padding: 0 10px;
+		margin-bottom: 6px;
+	}
+	.pin {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 9px;
+		color: #8888a0;
+		transition: color 0.15s ease;
+	}
+	.pin:hover {
+		color: #b0b0c8;
+	}
+	.pin-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: #8b5cf6;
+		transition: transform 0.15s ease, box-shadow 0.15s ease;
+	}
+	.pin:hover .pin-dot {
+		transform: scale(1.4);
+		box-shadow: 0 0 6px rgba(139, 92, 246, 0.5);
+	}
+
+	.prop-row {
+		display: flex;
+		justify-content: space-between;
+		padding: 2px 10px;
+		font-size: 10px;
+	}
+	.prop-key {
+		color: #6a6a80;
+		font-family: 'JetBrains Mono', monospace;
+	}
+	.prop-val {
+		color: #a0a0b8;
+		font-family: 'JetBrains Mono', monospace;
+		text-overflow: ellipsis;
+		overflow: hidden;
+		white-space: nowrap;
+		max-width: 100px;
+		text-align: right;
+	}
+
+	.tool-description {
+		font-size: 10px;
+		color: #8888a0;
+		padding: 2px 10px 4px;
+		line-height: 1.35;
 	}
 </style>

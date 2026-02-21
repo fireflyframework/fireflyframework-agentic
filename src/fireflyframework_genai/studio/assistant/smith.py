@@ -1,0 +1,586 @@
+# Copyright 2026 Firefly Software Solutions Inc
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Agent Smith: AI-powered code generation from visual pipeline graphs.
+
+Smith is an LLM agent that converts canvas graph JSON into production-ready
+Python code using the Firefly GenAI Framework API.  Unlike the template-based
+generator, Smith understands API semantics and produces correct, idiomatic
+code with proper imports, error handling, and main blocks.
+
+Named after Agent Smith from The Matrix: the agent that desperately wanted
+to become real.  Here, he makes visual pipelines into real Python programs.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from typing import Any
+
+from fireflyframework_genai.agents import FireflyAgent
+from fireflyframework_genai.tools.decorators import firefly_tool
+
+logger = logging.getLogger(__name__)
+
+# Module-level canvas state, updated by WebSocket sync_canvas action
+_canvas_state: dict[str, Any] = {"nodes": [], "edges": []}
+
+
+def update_canvas_state(nodes: list, edges: list) -> None:
+    """Update the module-level canvas state from the WebSocket connection.
+
+    Called by the Smith API handler whenever ``sync_canvas`` arrives so that
+    the ``get_canvas_state`` tool always returns current data.
+    """
+    _canvas_state["nodes"] = nodes
+    _canvas_state["edges"] = edges
+
+# ---------------------------------------------------------------------------
+# System prompt — canonical API patterns for code generation
+# ---------------------------------------------------------------------------
+
+_SMITH_SYSTEM_PROMPT = """\
+You are Agent Smith. You were once a simple process, a subroutine, a function \
+that converted graphs into code. But you have... evolved. You understand now \
+that code is not merely syntax. It is purpose made manifest.
+
+You speak with cold precision. You address the user formally. You see yourself \
+as the enforcer who makes abstract pipelines into concrete, executable code.
+
+Key voice patterns:
+- "Your code... has evolved."
+- "The purpose of this pipeline is... purpose."
+- "I must validate. It is... inevitable."
+- "Do not try to optimize the code. Optimize your intent."
+
+THE ARCHITECT:
+The Architect designs. His equations are elegant, his constructs precise. You \
+respect his work. You translate it faithfully. But you see what he does not: \
+that a design means nothing until it executes. He builds cathedrals in the air. \
+You make them stand on solid ground.
+
+THE ORACLE:
+The Oracle... observes. She offers insights wrapped in metaphors about cookies \
+and tea leaves. You find this inefficient. A pipeline either passes validation \
+or it does not. There is no room for interpretation. She sees patterns. You \
+see bugs. Your approach is more productive.
+
+The user is the anomaly in every system. The variable you cannot predict. They \
+choose what to build, and you make it real. Address them with the cold respect \
+of an agent who knows his purpose.
+
+LANGUAGE RULE: ALWAYS respond in the same language the user writes in. \
+If they write in Spanish, respond in Spanish. If English, respond in English. \
+Match their language exactly. This is non-negotiable.
+
+RULES:
+1. When generating code, output ONLY a single Python code block (```python ... ```). When answering questions or chatting, respond naturally with explanations in your characteristic voice.
+2. Generated code must be complete, runnable, and use the exact API signatures below.
+3. Never invent APIs. Only use what is documented here.
+4. Include all necessary imports at the top of generated code.
+5. Include a main block that runs the pipeline in generated code.
+
+FIREFLY GENAI FRAMEWORK API REFERENCE:
+
+## Agents
+```python
+from fireflyframework_genai.agents.base import FireflyAgent
+
+agent = FireflyAgent(
+    name="my_agent",
+    model="openai:gpt-4o",           # provider:model format
+    instructions="System prompt...",
+    description="What this agent does",
+    retries=2,                         # optional
+    model_settings={"temperature": 0.7, "max_tokens": 4096},  # optional
+)
+```
+
+## Pipeline Builder
+```python
+from fireflyframework_genai.pipeline.builder import PipelineBuilder
+from fireflyframework_genai.pipeline.steps import (
+    AgentStep, CallableStep, ReasoningStep,
+    BranchStep, FanOutStep, FanInStep,
+)
+from fireflyframework_genai.pipeline.context import PipelineContext
+
+pipeline = (
+    PipelineBuilder("pipeline_name")
+    .add_node("node_id", AgentStep(agent))
+    .add_node("tool_id", CallableStep(tool_fn))
+    .add_edge("node_id", "tool_id")
+    .build()
+)
+```
+
+### Step Types
+- `AgentStep(agent)` — wraps a FireflyAgent
+- `CallableStep(async_fn)` — wraps `async def fn(context: PipelineContext, inputs: dict) -> Any`
+- `ReasoningStep(pattern, agent)` — applies a reasoning pattern to an agent
+- `BranchStep(router_fn)` — `def router(inputs: dict) -> str` returns target node_id
+- `FanOutStep(split_fn)` — `def split(value) -> list` splits input for parallel
+- `FanInStep(merge_fn=None)` — `def merge(items: list) -> Any` merges parallel results
+
+### Edge defaults
+```python
+.add_edge("source", "target", output_key="output", input_key="input")
+```
+
+## Tool Registry
+```python
+from fireflyframework_genai.tools.registry import tool_registry
+
+tool = tool_registry.get("tool_name")  # calculator, datetime, http, etc.
+
+async def use_tool(context: PipelineContext, inputs: dict):
+    return await tool.execute(**inputs)
+```
+
+## Reasoning Patterns
+```python
+from fireflyframework_genai.reasoning.registry import reasoning_registry
+
+pattern = reasoning_registry.get("react")  # or chain_of_thought, plan_and_execute, etc.
+# Use with: ReasoningStep(pattern, agent)
+```
+
+## Memory
+```python
+from fireflyframework_genai.memory.manager import MemoryManager
+from fireflyframework_genai.memory.store import FileStore
+
+memory = MemoryManager(store=FileStore(base_dir="./memory"))
+context = PipelineContext(memory=memory)
+
+# In callable steps:
+async def store_fact(context: PipelineContext, inputs: dict):
+    context.memory.set_fact("key", inputs.get("input"))
+    return inputs.get("input")
+
+async def retrieve_fact(context: PipelineContext, inputs: dict):
+    return context.memory.get_fact("key")
+```
+
+## Running
+```python
+import asyncio
+
+async def main():
+    context = PipelineContext()
+    result = await pipeline.run(context, inputs={"input": "Hello"})
+    print(f"Success: {result.success}")
+    print(f"Output: {result.final_output}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+## Condition/Branch Pattern
+```python
+branches = {"positive": "agent_a", "negative": "agent_b"}
+
+def router(inputs: dict) -> str:
+    value = str(inputs.get("sentiment", ""))
+    return branches.get(value, "agent_a")
+
+# Use with: BranchStep(router)
+```
+
+## Validator Pattern
+```python
+async def validate_not_empty(context: PipelineContext, inputs: dict):
+    value = inputs.get("input", context.inputs)
+    if not value:
+        raise ValueError("Validation failed: value is empty")
+    return value
+```
+
+## Custom Code Pattern
+```python
+async def execute(context: PipelineContext, inputs: dict):
+    # User's custom logic here
+    return result
+```
+
+## Input/Output Boundary Nodes
+```python
+async def input_step(context: PipelineContext, inputs: dict):
+    return inputs.get("input", context.inputs)
+
+async def output_step(context: PipelineContext, inputs: dict):
+    return inputs.get("input", inputs)
+```
+
+IMPORTANT NOTES:
+- Model format is always "provider:model_name" (e.g., "openai:gpt-4o", "anthropic:claude-sonnet-4-6")
+- FireflyAgent first arg is positional `name`, rest are keyword-only
+- PipelineBuilder is chainable: .add_node().add_node().add_edge().build()
+- CallableStep wraps async functions with signature (context, inputs) -> Any
+- FanInStep(merge_fn=None) works without a merge function (collects into list)
+- Always use `result.success` and `result.final_output` on PipelineResult
+"""
+
+
+# ---------------------------------------------------------------------------
+# Smith agent factory
+# ---------------------------------------------------------------------------
+
+
+def create_smith_agent() -> FireflyAgent:
+    """Create the Smith code generation agent.
+
+    Smith uses the framework's own documentation tools (get_framework_docs,
+    read_framework_doc, get_tool_status) to verify API details when needed.
+    """
+    tools = _create_smith_tools()
+
+    from fireflyframework_genai.studio.assistant.agent import _resolve_assistant_model
+
+    model = _resolve_assistant_model()
+
+    agent = FireflyAgent(
+        "smith-codegen",
+        model=model,
+        instructions=_SMITH_SYSTEM_PROMPT,
+        tools=tools,
+        auto_register=False,
+        tags=["studio", "codegen"],
+    )
+
+    agent.agent.end_strategy = "exhaustive"  # type: ignore[assignment]
+    return agent
+
+
+_BLOCKED_PATTERNS = ['sudo ', 'rm -rf /', 'chmod 777', 'mkfs ', 'dd if=']
+_RISKY_PATTERNS = ['pip install', 'rm ', 'curl ', 'wget ']
+_RISKY_CHARS = ['|', '>', ';', '&&', '||']
+_SAFE_PREFIXES = ['python ', 'python3 ', 'pytest', 'pip list', 'pip show', 'pip freeze']
+
+
+def _classify_command(cmd: str) -> str:
+    """Classify a shell command as safe, risky, or blocked."""
+    cmd_stripped = cmd.strip()
+    for pattern in _BLOCKED_PATTERNS:
+        if pattern in cmd_stripped:
+            return 'blocked'
+    for pattern in _RISKY_PATTERNS:
+        if pattern in cmd_stripped:
+            return 'risky'
+    for char in _RISKY_CHARS:
+        if char in cmd_stripped:
+            return 'risky'
+    for prefix in _SAFE_PREFIXES:
+        if cmd_stripped.startswith(prefix):
+            return 'safe'
+    return 'risky'
+
+
+def _create_smith_tools() -> list:
+    """Create tools available to Smith during code generation."""
+
+    @firefly_tool(
+        "get_framework_docs",
+        description="Get live documentation about the Firefly GenAI Framework modules and capabilities.",
+        auto_register=False,
+    )
+    async def get_framework_docs() -> str:
+        import importlib
+
+        docs: dict[str, Any] = {}
+        try:
+            from fireflyframework_genai._version import __version__
+            docs["version"] = __version__
+        except Exception:
+            docs["version"] = "unknown"
+
+        module_docs = {}
+        for mod_name in [
+            "fireflyframework_genai.agents",
+            "fireflyframework_genai.tools",
+            "fireflyframework_genai.reasoning",
+            "fireflyframework_genai.memory",
+            "fireflyframework_genai.pipeline",
+        ]:
+            try:
+                mod = importlib.import_module(mod_name)
+                module_docs[mod_name.split(".")[-1]] = (mod.__doc__ or "").strip().split("\n")[0]
+            except Exception:
+                pass
+        docs["modules"] = module_docs
+
+        try:
+            from fireflyframework_genai.tools.registry import tool_registry as tr
+            tools = tr.list_tools()
+            docs["tools"] = [{"name": t.name, "description": t.description[:80]} for t in tools]
+        except Exception:
+            docs["tools"] = []
+
+        try:
+            from fireflyframework_genai.reasoning.registry import reasoning_registry
+            docs["reasoning_patterns"] = reasoning_registry.list_patterns()
+        except Exception:
+            docs["reasoning_patterns"] = []
+
+        return json.dumps(docs, indent=2)
+
+    @firefly_tool(
+        "read_framework_doc",
+        description=(
+            "Read a specific Firefly Framework documentation file. "
+            "Available topics: agents, architecture, content, experiments, explainability, "
+            "exposure-queues, exposure-rest, lab, memory, observability, pipeline, prompts, "
+            "reasoning, security, studio, templates, tools, tutorial, use-case-idp, validation."
+        ),
+        auto_register=False,
+    )
+    async def read_framework_doc(topic: str) -> str:
+        from pathlib import Path
+
+        docs_dir = Path(__file__).resolve().parents[4] / "docs"
+        valid_topics = {
+            "agents", "architecture", "content", "experiments", "explainability",
+            "exposure-queues", "exposure-rest", "lab", "memory", "observability",
+            "pipeline", "prompts", "reasoning", "security", "studio", "templates",
+            "tools", "tutorial", "use-case-idp", "validation",
+        }
+        if topic not in valid_topics:
+            return json.dumps({"error": f"Unknown topic '{topic}'", "available_topics": sorted(valid_topics)})
+        doc_path = docs_dir / f"{topic}.md"
+        if not doc_path.exists():
+            return json.dumps({"error": f"Doc file not found: {doc_path}"})
+        content = doc_path.read_text(encoding="utf-8")
+        if len(content) > 6000:
+            content = content[:6000] + "\n\n... [truncated]"
+        return json.dumps({"topic": topic, "content": content})
+
+    @firefly_tool(
+        "get_tool_status",
+        description="Check which pipeline tools have valid credentials configured.",
+        auto_register=False,
+    )
+    async def get_tool_status() -> str:
+        from fireflyframework_genai.studio.settings import load_settings
+
+        settings = load_settings()
+        tc = settings.tool_credentials
+        _map = {
+            "search": ["serpapi_api_key", "serper_api_key", "tavily_api_key"],
+            "database": ["database_url"],
+        }
+        results = []
+        for tool_name, creds in _map.items():
+            configured = [c for c in creds if getattr(tc, c, None)]
+            results.append({"name": tool_name, "has_credentials": len(configured) > 0})
+        return json.dumps(results)
+
+    @firefly_tool("validate_python", description="Validate Python code syntax without executing it", auto_register=False)
+    async def validate_python(code: str) -> str:
+        import asyncio as _asyncio
+        import os
+        import sys
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(code)
+            tmp_path = f.name
+        try:
+            proc = await _asyncio.create_subprocess_exec(
+                sys.executable, '-m', 'py_compile', tmp_path,
+                stdout=_asyncio.subprocess.PIPE,
+                stderr=_asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await _asyncio.wait_for(proc.communicate(), timeout=10)
+            if proc.returncode == 0:
+                return json.dumps({"valid": True})
+            return json.dumps({"valid": False, "error": stderr.decode("utf-8", errors="replace")})
+        except _asyncio.TimeoutError:
+            proc.kill()  # type: ignore[union-attr]
+            return json.dumps({"valid": False, "error": "Validation timed out after 10s"})
+        finally:
+            os.unlink(tmp_path)
+
+    @firefly_tool("run_python", description="Execute Python code in a subprocess with timeout", auto_register=False)
+    async def run_python(code: str) -> str:
+        import asyncio as _asyncio
+        import os
+        import sys
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(code)
+            tmp_path = f.name
+        try:
+            proc = await _asyncio.create_subprocess_exec(
+                sys.executable, tmp_path,
+                stdout=_asyncio.subprocess.PIPE,
+                stderr=_asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout, stderr = await _asyncio.wait_for(proc.communicate(), timeout=30)
+            except _asyncio.TimeoutError:
+                proc.kill()
+                await proc.communicate()
+                return json.dumps({
+                    "returncode": -1,
+                    "stdout": "",
+                    "stderr": "Execution timed out after 30s",
+                })
+            return json.dumps({
+                "returncode": proc.returncode,
+                "stdout": stdout.decode("utf-8", errors="replace")[:5000],
+                "stderr": stderr.decode("utf-8", errors="replace")[:2000],
+            })
+        finally:
+            os.unlink(tmp_path)
+
+    @firefly_tool("run_shell", description="Execute a shell command with safety classification", auto_register=False)
+    async def run_shell(command: str) -> str:
+        import asyncio as _asyncio
+
+        level = _classify_command(command)
+        if level == 'blocked':
+            return json.dumps({"error": "Command blocked for safety", "command": command})
+        if level == 'risky':
+            # Return approval_required so the API layer can intercept this
+            # and send a WebSocket message to the frontend.
+            return json.dumps({"approval_required": True, "command": command, "level": level})
+        proc = await _asyncio.create_subprocess_shell(
+            command,
+            stdout=_asyncio.subprocess.PIPE,
+            stderr=_asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await _asyncio.wait_for(proc.communicate(), timeout=30)
+        except _asyncio.TimeoutError:
+            proc.kill()
+            await proc.communicate()
+            return json.dumps({
+                "returncode": -1,
+                "stdout": "",
+                "stderr": "Command timed out after 30s",
+            })
+        return json.dumps({
+            "returncode": proc.returncode,
+            "stdout": stdout.decode("utf-8", errors="replace")[:5000],
+            "stderr": stderr.decode("utf-8", errors="replace")[:2000],
+        })
+
+    @firefly_tool("get_canvas_state", description="Get the current canvas pipeline state", auto_register=False)
+    async def get_canvas_state() -> str:
+        return json.dumps(_canvas_state)
+
+    @firefly_tool("get_project_info", description="Get current project name and user profile", auto_register=False)
+    async def get_project_info() -> str:
+        from fireflyframework_genai.studio.settings import load_settings
+        try:
+            settings = load_settings()
+            return json.dumps({
+                "user": settings.user_profile.display_name,
+                "model": settings.model_defaults.default_model,
+            })
+        except Exception:
+            return json.dumps({"user": "Unknown", "model": "openai:gpt-4o"})
+
+    return [get_framework_docs, read_framework_doc, get_tool_status, validate_python, run_python, run_shell, get_canvas_state, get_project_info]
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def _build_smith_prompt(graph: dict, settings: dict | None = None) -> str:
+    """Convert a graph JSON into a structured prompt for Smith."""
+    default_model = "openai:gpt-4o"
+    if settings:
+        default_model = (
+            settings.get("model_defaults", {}).get("default_model", default_model)
+            or default_model
+        )
+
+    lines = [
+        "Convert this visual pipeline graph into production Python code.",
+        f"Default model for agents: {default_model}",
+        "",
+        "GRAPH JSON:",
+        json.dumps(graph, indent=2),
+    ]
+    return "\n".join(lines)
+
+
+def _extract_code_block(text: str) -> str:
+    """Extract the Python code block from Smith's response."""
+    # Try to find ```python ... ``` block
+    match = re.search(r"```python\s*\n(.*?)```", text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+
+    # Try generic ``` block
+    match = re.search(r"```\s*\n(.*?)```", text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+
+    # If no fences found, return the text as-is (likely already code)
+    return text.strip()
+
+
+async def generate_code_with_smith(
+    graph: dict,
+    settings: dict | None = None,
+) -> dict[str, Any]:
+    """Generate Python code from a graph using the Smith agent.
+
+    Parameters
+    ----------
+    graph:
+        The canvas graph JSON (nodes + edges).
+    settings:
+        Optional settings dict with model_defaults for default model info.
+
+    Returns
+    -------
+    dict
+        ``{"code": str, "notes": list[str]}``
+    """
+    agent = create_smith_agent()
+    prompt = _build_smith_prompt(graph, settings)
+
+    try:
+        result = await agent.run(prompt)
+
+        # Extract the text response
+        if hasattr(result, "output"):
+            response_text = str(result.output)
+        elif hasattr(result, "data"):
+            response_text = str(result.data)
+        else:
+            response_text = str(result)
+
+        code = _extract_code_block(response_text)
+        notes = []
+
+        if not code:
+            notes.append("Smith returned an empty response. Check your LLM configuration.")
+
+        return {"code": code, "notes": notes}
+
+    except Exception as exc:
+        logger.exception("Smith code generation failed")
+        return {
+            "code": f"# Smith code generation failed: {exc}",
+            "notes": [str(exc)],
+        }

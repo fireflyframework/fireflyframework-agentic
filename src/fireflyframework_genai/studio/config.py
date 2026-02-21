@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Configuration for Firefly Studio.
+"""Configuration for Firefly Agentic Studio.
 
 All configuration values can be overridden via environment variables prefixed
 with ``FIREFLY_STUDIO_``.  For example, setting ``FIREFLY_STUDIO_PORT``
@@ -50,6 +50,9 @@ class StudioConfig(BaseSettings):
 
     projects_dir: Path = Path.home() / ".firefly-studio" / "projects"
     """Directory where Studio persists project data."""
+
+    custom_tools_dir: Path = Path.home() / ".firefly-studio" / "custom_tools"
+    """Directory where Studio persists custom tool definitions."""
 
     log_level: str = "info"
     """Logging level for Studio."""

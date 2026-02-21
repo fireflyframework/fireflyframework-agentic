@@ -129,7 +129,7 @@ class TestAppFactory:
 
     def test_create_studio_app_has_correct_title(self):
         app = create_studio_app()
-        assert app.title == "Firefly Studio"
+        assert app.title == "Firefly Agentic Studio"
 
     def test_create_studio_app_has_package_version(self):
         app = create_studio_app()

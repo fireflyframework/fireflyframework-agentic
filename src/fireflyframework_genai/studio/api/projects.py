@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Project management REST API endpoints for Firefly Studio.
+"""Project management REST API endpoints for Firefly Agentic Studio.
 
 Provides CRUD operations for projects and pipeline persistence so the
 Studio frontend can manage user workspaces.
@@ -38,6 +38,13 @@ class CreateProjectRequest(BaseModel):
 
     name: str
     description: str = ""
+
+
+class UpdateProjectRequest(BaseModel):
+    """Body for updating project metadata (rename and/or description)."""
+
+    new_name: str | None = None
+    description: str | None = None
 
 
 class SavePipelineRequest(BaseModel):
@@ -90,6 +97,30 @@ def create_projects_router(manager: ProjectManager) -> APIRouter:
         d["path"] = str(d["path"])
         return d
 
+    @router.delete("")
+    async def delete_all_projects() -> dict[str, Any]:
+        count = manager.delete_all()
+        return {"status": "deleted", "count": count}
+
+    @router.patch("/{name}")
+    async def update_project(name: str, body: UpdateProjectRequest) -> dict[str, Any]:
+        effective_name = name
+        try:
+            if body.new_name:
+                info = manager.rename(name, body.new_name)
+                effective_name = body.new_name
+            if body.description is not None:
+                info = manager.update(effective_name, description=body.description)
+            if not body.new_name and body.description is None:
+                raise HTTPException(status_code=400, detail="Nothing to update")
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        d = asdict(info)
+        d["path"] = str(d["path"])
+        return d
+
     @router.delete("/{name}")
     async def delete_project(name: str) -> dict[str, str]:
         try:
@@ -108,6 +139,18 @@ def create_projects_router(manager: ProjectManager) -> APIRouter:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        # Create a version history entry for every save
+        try:
+            from fireflyframework_genai.studio.versioning import ProjectVersioning
+            project_dir = manager._safe_path(project_name)
+            versioning = ProjectVersioning(project_dir)
+            node_count = len(body.graph.get("nodes", []))
+            edge_count = len(body.graph.get("edges", []))
+            versioning.commit(f"Save pipeline ({node_count} nodes, {edge_count} edges)")
+        except Exception:
+            pass  # Versioning failure should not block saving
+
         return {"status": "saved"}
 
     @router.get("/{project_name}/pipelines/{pipeline_name}")
@@ -116,5 +159,47 @@ def create_projects_router(manager: ProjectManager) -> APIRouter:
             return manager.load_pipeline(project_name, pipeline_name)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return router
+
+
+def create_versioning_router(project_manager: ProjectManager) -> APIRouter:
+    router = APIRouter(prefix="/api/projects", tags=["versioning"])
+
+    @router.get("/{name}/history")
+    async def get_project_history(name: str):
+        from fireflyframework_genai.studio.versioning import ProjectVersioning
+        project_dir = project_manager._safe_path(name)
+        if not project_dir.exists():
+            raise HTTPException(status_code=404, detail=f"Project '{name}' not found")
+        versioning = ProjectVersioning(project_dir)
+        return versioning.get_history()
+
+    @router.post("/{name}/restore")
+    async def restore_project_version(name: str, body: dict):
+        from fireflyframework_genai.studio.versioning import ProjectVersioning
+        project_dir = project_manager._safe_path(name)
+        if not project_dir.exists():
+            raise HTTPException(status_code=404, detail=f"Project '{name}' not found")
+        commit_sha = body.get("commit_sha", "")
+        if not commit_sha:
+            raise HTTPException(status_code=400, detail="commit_sha is required")
+        versioning = ProjectVersioning(project_dir)
+        versioning.restore(commit_sha)
+        return {"status": "restored"}
+
+    @router.post("/{name}/bookmark")
+    async def bookmark_project_version(name: str, body: dict):
+        from fireflyframework_genai.studio.versioning import ProjectVersioning
+        project_dir = project_manager._safe_path(name)
+        if not project_dir.exists():
+            raise HTTPException(status_code=404, detail=f"Project '{name}' not found")
+        commit_sha = body.get("commit_sha", "")
+        label = body.get("label", "")
+        if not commit_sha or not label:
+            raise HTTPException(status_code=400, detail="commit_sha and label are required")
+        versioning = ProjectVersioning(project_dir)
+        versioning.bookmark(commit_sha, label)
+        return {"status": "bookmarked"}
 
     return router

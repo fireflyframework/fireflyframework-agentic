@@ -1,0 +1,1 @@
+import"../chunks/DsnmJJEf.js";import{i as t}from"../chunks/CiPkpaXo.js";import{p as a,o as n,j as r}from"../chunks/BESIXtBI.js";import{g as s}from"../chunks/gvU2Nsg7.js";import{b as p,a as m}from"../chunks/8I91iWf8.js";function g(e,o){a(o,!1),n(()=>{p.set("integrations"),m.set(!0),s("/construct")}),t(),r()}export{g as component};

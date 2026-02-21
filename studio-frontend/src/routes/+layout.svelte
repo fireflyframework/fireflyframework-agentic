@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import '../app.css';
 	import '@xyflow/svelte/dist/style.css';
 	import favicon from '$lib/assets/favicon.svg';
@@ -8,23 +8,31 @@
 	import { api } from '$lib/api/client';
 	import { firstStartWizardOpen } from '$lib/stores/ui';
 	import { loadSettings } from '$lib/stores/settings';
+	import { enableAutoSave } from '$lib/stores/pipeline';
+	import { initTheme } from '$lib/stores/theme';
+	import { connectExecution, disconnectExecution } from '$lib/execution/bridge';
 
 	let { children } = $props();
 
 	onMount(async () => {
-		initProjects();
+		initTheme();
+		await initProjects();
+		enableAutoSave();
+		connectExecution();
 
 		try {
 			const status = await api.settings.status();
 			if (status.first_start || !status.setup_complete) {
 				firstStartWizardOpen.set(true);
-			} else {
-				loadSettings();
 			}
+			// Always load settings — even if wizard shows, there may be env-based defaults
+			await loadSettings();
 		} catch {
 			// Settings endpoint unavailable — skip first-start check
 		}
 	});
+
+	onDestroy(() => disconnectExecution());
 </script>
 
 <svelte:head>

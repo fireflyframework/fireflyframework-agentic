@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Clock, Trash2, SkipBack, GitBranch, GitCompare, ChevronRight, ChevronDown } from 'lucide-svelte';
 	import { checkpoints } from '$lib/stores/execution';
+	import { addToast } from '$lib/stores/notifications';
 	import { api } from '$lib/api/client';
 	import type { Checkpoint } from '$lib/types/graph';
 	import { onMount } from 'svelte';
@@ -80,10 +81,17 @@
 		}
 	}
 
-	function handleRewind() {
-		// Visual rewind -- sets selected as active (placeholder for future execution replay)
-		if (selectedCheckpoint) {
-			selectedIndex = selectedCheckpoint.index;
+	async function handleRewind() {
+		if (!selectedCheckpoint || selectedIndex === null) return;
+		try {
+			await api.checkpoints.rewind(selectedIndex);
+			// Trim local checkpoints to match rewound state
+			checkpoints.update((cps) => cps.filter((cp) => cp.index <= selectedIndex!));
+			compareIndex = null;
+			diffResult = null;
+			addToast(`Rewound to checkpoint #${selectedIndex}`, 'info');
+		} catch {
+			addToast('Failed to rewind checkpoint', 'error');
 		}
 	}
 

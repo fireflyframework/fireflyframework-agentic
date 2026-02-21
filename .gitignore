@@ -133,6 +133,12 @@ studio-frontend/build/
 studio-frontend/.svelte-kit/
 studio-frontend/node_modules/
 
+# Studio desktop (Tauri) build artifacts
+studio-desktop/src-tauri/target/
+studio-desktop/src-tauri/gen/
+studio-desktop/build/
+studio-desktop/dist/
+
 # Distribution / packaging
 *.tar.gz
 *.zip

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""WebSocket endpoint for real-time pipeline execution in Firefly Studio.
+"""WebSocket endpoint for real-time pipeline execution in Firefly Agentic Studio.
 
 Provides a ``/ws/execution`` WebSocket route that accepts JSON messages,
 compiles a :class:`GraphModel` into a :class:`PipelineEngine`, runs it,
@@ -29,7 +29,8 @@ import time
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect  # type: ignore[import-not-found]
 
 from fireflyframework_genai.pipeline.context import PipelineContext
-from fireflyframework_genai.studio.codegen.models import GraphModel
+from fireflyframework_genai.studio.codegen.models import GraphModel, NodeType
+from fireflyframework_genai.studio.config import StudioConfig
 from fireflyframework_genai.studio.execution.compiler import CompilationError, compile_graph
 from fireflyframework_genai.studio.execution.runner import StudioEventHandler
 
@@ -98,7 +99,24 @@ async def _handle_execution(websocket: WebSocket, message: dict, *, debug: bool)
 
     # Prepare inputs
     inputs = message.get("inputs")
-    context = PipelineContext(inputs=inputs)
+    project_name = message.get("project")
+
+    # Wire MemoryManager when memory nodes are present
+    memory = None
+    has_memory = any(n.type == NodeType.MEMORY for n in graph.nodes)
+    if has_memory and project_name:
+        try:
+            from fireflyframework_genai.memory.manager import MemoryManager
+            from fireflyframework_genai.memory.store import FileStore
+
+            config = StudioConfig()
+            memory_dir = config.projects_dir / project_name / "memory"
+            memory_dir.mkdir(parents=True, exist_ok=True)
+            memory = MemoryManager(store=FileStore(base_dir=str(memory_dir)))
+        except Exception as exc:
+            logger.warning("Could not initialise MemoryManager: %s", exc)
+
+    context = PipelineContext(inputs=inputs, memory=memory)
 
     # Wire checkpoint manager for debug mode
     if debug:
@@ -124,10 +142,22 @@ async def _handle_execution(websocket: WebSocket, message: dict, *, debug: bool)
                     if checkpoint_mgr is not None:
                         node_id = event.get("node_id", "")
                         result = context.get_node_result(node_id)
-                        checkpoint_mgr.create(
+                        cp = checkpoint_mgr.create(
                             node_id=node_id,
                             state={"output": result.output if hasattr(result, "output") else result},
                             inputs=dict(context.results),
+                        )
+                        await websocket.send_json(
+                            {
+                                "type": "checkpoint_created",
+                                "index": cp.index,
+                                "node_id": cp.node_id,
+                                "state": cp.state,
+                                "inputs": cp.inputs,
+                                "timestamp": cp.timestamp,
+                                "branch_id": getattr(cp, "branch_id", None),
+                                "parent_index": getattr(cp, "parent_index", None),
+                            }
                         )
 
         # Drain any remaining events after completion

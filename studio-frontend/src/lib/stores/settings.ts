@@ -1,5 +1,5 @@
 import { writable, derived } from 'svelte/store';
-import type { StudioSettingsResponse, SaveSettingsPayload, ProviderCredentials, ModelDefaults } from '$lib/types/graph';
+import type { StudioSettingsResponse, SaveSettingsPayload, ProviderCredentials, ModelDefaults, UserProfile } from '$lib/types/graph';
 import { api } from '$lib/api/client';
 
 export const settingsData = writable<StudioSettingsResponse | null>(null);
@@ -38,12 +38,18 @@ export async function loadSettings(): Promise<void> {
 export async function saveSettings(
 	credentials?: Partial<ProviderCredentials> | null,
 	modelDefaults?: Partial<ModelDefaults> | null,
-	setupComplete?: boolean | null
+	setupComplete?: boolean | null,
+	userProfile?: Partial<UserProfile> | null,
+	toolCredentials?: Record<string, string | null> | null
 ): Promise<void> {
 	const payload: SaveSettingsPayload = {};
 	if (credentials !== undefined) payload.credentials = credentials;
 	if (modelDefaults !== undefined) payload.model_defaults = modelDefaults;
 	if (setupComplete !== undefined) payload.setup_complete = setupComplete;
+	if (userProfile !== undefined) payload.user_profile = userProfile;
+	if (toolCredentials !== undefined && toolCredentials !== null) {
+		(payload as Record<string, unknown>).tool_credentials = toolCredentials;
+	}
 
 	try {
 		const data = await api.settings.save(payload);

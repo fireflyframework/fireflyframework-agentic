@@ -1,0 +1,1 @@
+import"../chunks/DsnmJJEf.js";import{i as t}from"../chunks/CiPkpaXo.js";import{p as a,o as s,j as p}from"../chunks/BESIXtBI.js";import{g as r}from"../chunks/gvU2Nsg7.js";import{b as m,a as n}from"../chunks/8I91iWf8.js";function l(e,o){a(o,!1),s(()=>{m.set("files"),n.set(!0),r("/construct")}),t(),p()}export{l as component};

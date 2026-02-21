@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Firefly Studio -- visual agent IDE for the Firefly GenAI framework."""
+"""Firefly Agentic Studio -- visual agent IDE for the Firefly GenAI framework."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def __getattr__(name: str) -> object:
 
 
 def launch_studio() -> None:
-    """Launch the Firefly Studio server.
+    """Launch the Firefly Agentic Studio server.
 
     Convenience wrapper that delegates to the CLI entry point.
     """

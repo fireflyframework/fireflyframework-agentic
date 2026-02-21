@@ -183,6 +183,22 @@ class CheckpointManager:
 
         return {"added": added, "removed": removed, "changed": changed}
 
+    def rewind(self, to_index: int) -> None:
+        """Rewind the timeline to a given checkpoint.
+
+        Removes all checkpoints **after** *to_index*, keeping
+        the checkpoint at *to_index* as the last in the timeline.
+
+        Parameters:
+            to_index: Index to rewind to (inclusive).
+
+        Raises:
+            IndexError: If *to_index* is out of range.
+        """
+        if to_index < 0 or to_index >= len(self._checkpoints):
+            raise IndexError(f"Checkpoint index {to_index} out of range")
+        self._checkpoints = self._checkpoints[: to_index + 1]
+
     def clear(self) -> None:
         """Clear all checkpoints and reset the index counter."""
         self._checkpoints.clear()

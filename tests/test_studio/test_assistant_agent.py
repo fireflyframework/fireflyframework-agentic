@@ -30,7 +30,12 @@ from fireflyframework_genai.studio.assistant.agent import (
 
 class TestCreateStudioAssistant:
     def test_create_studio_assistant_returns_firefly_agent(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        monkeypatch.setattr(
+            "fireflyframework_genai.studio.assistant.agent._resolve_assistant_model",
+            lambda: "openai:gpt-4o",
+        )
         agent = create_studio_assistant()
         assert isinstance(agent, FireflyAgent)
         assert agent.name == "studio-assistant"
@@ -56,7 +61,7 @@ class TestCanvasTools:
         assert canvas.nodes[0].label == "My Agent"
 
         data = json.loads(result)
-        assert data["id"] == "node_1"
+        assert data["id"] == "agent_1"
         assert data["type"] == "agent"
 
     async def test_add_node_rejects_invalid_type(self, canvas, tools):
@@ -69,36 +74,36 @@ class TestCanvasTools:
         await tools["add_node"].execute(node_type="agent", label="A")
         await tools["add_node"].execute(node_type="tool", label="B")
 
-        result = await tools["connect_nodes"].execute(source_id="node_1", target_id="node_2")
+        result = await tools["connect_nodes"].execute(source_id="agent_1", target_id="tool_2")
         assert len(canvas.edges) == 1
-        assert canvas.edges[0].source == "node_1"
-        assert canvas.edges[0].target == "node_2"
+        assert canvas.edges[0].source == "agent_1"
+        assert canvas.edges[0].target == "tool_2"
 
         data = json.loads(result)
-        assert data["source"] == "node_1"
-        assert data["target"] == "node_2"
+        assert data["source"] == "agent_1"
+        assert data["target"] == "tool_2"
 
     async def test_connect_nodes_rejects_self_loop(self, canvas, tools):
         await tools["add_node"].execute(node_type="agent", label="A")
         with pytest.raises(Exception, match="Cannot connect a node to itself"):
-            await tools["connect_nodes"].execute(source_id="node_1", target_id="node_1")
+            await tools["connect_nodes"].execute(source_id="agent_1", target_id="agent_1")
 
     async def test_connect_nodes_rejects_missing_node(self, canvas, tools):
         await tools["add_node"].execute(node_type="agent", label="A")
         with pytest.raises(Exception, match="does not exist"):
-            await tools["connect_nodes"].execute(source_id="node_1", target_id="node_999")
+            await tools["connect_nodes"].execute(source_id="agent_1", target_id="node_999")
 
     # -- configure_node ------------------------------------------------------
 
     async def test_configure_node_updates_config(self, canvas, tools):
         await tools["add_node"].execute(node_type="agent", label="A")
-        result = await tools["configure_node"].execute(node_id="node_1", key="model", value="openai:gpt-4o")
+        result = await tools["configure_node"].execute(node_id="agent_1", key="model", value="openai:gpt-4o")
         assert canvas.nodes[0].config["model"] == "openai:gpt-4o"
         assert "model" in result
 
     async def test_configure_node_updates_label(self, canvas, tools):
         await tools["add_node"].execute(node_type="agent", label="A")
-        await tools["configure_node"].execute(node_id="node_1", key="label", value="Renamed")
+        await tools["configure_node"].execute(node_id="agent_1", key="label", value="Renamed")
         assert canvas.nodes[0].label == "Renamed"
 
     async def test_configure_node_rejects_missing_node(self, canvas, tools):
@@ -110,13 +115,13 @@ class TestCanvasTools:
     async def test_remove_node_removes_node_and_edges(self, canvas, tools):
         await tools["add_node"].execute(node_type="agent", label="A")
         await tools["add_node"].execute(node_type="tool", label="B")
-        await tools["connect_nodes"].execute(source_id="node_1", target_id="node_2")
+        await tools["connect_nodes"].execute(source_id="agent_1", target_id="tool_2")
         assert len(canvas.nodes) == 2
         assert len(canvas.edges) == 1
 
-        await tools["remove_node"].execute(node_id="node_1")
+        await tools["remove_node"].execute(node_id="agent_1")
         assert len(canvas.nodes) == 1
-        assert canvas.nodes[0].id == "node_2"
+        assert canvas.nodes[0].id == "tool_2"
         assert len(canvas.edges) == 0
 
     async def test_remove_node_rejects_missing_node(self, canvas, tools):
@@ -142,11 +147,11 @@ class TestCanvasTools:
         await tools["add_node"].execute(node_type="agent", label="A")
         await tools["add_node"].execute(node_type="tool", label="B")
         await tools["add_node"].execute(node_type="condition", label="C")
-        await tools["connect_nodes"].execute(source_id="node_1", target_id="node_2")
-        await tools["connect_nodes"].execute(source_id="node_2", target_id="node_3")
+        await tools["connect_nodes"].execute(source_id="agent_1", target_id="tool_2")
+        await tools["connect_nodes"].execute(source_id="tool_2", target_id="condition_3")
 
         result = await tools["list_edges"].execute()
         data = json.loads(result)
         assert len(data) == 2
         sources = {e["source"] for e in data}
-        assert sources == {"node_1", "node_2"}
+        assert sources == {"agent_1", "tool_2"}

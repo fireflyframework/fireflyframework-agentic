@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter  # type: ignore[import-not-found]
+from fastapi import APIRouter, HTTPException  # type: ignore[import-not-found]
 
 from fireflyframework_genai.studio.tunnel import TunnelManager
 
@@ -29,7 +29,7 @@ def create_tunnel_router(port: int = 8470) -> APIRouter:
 
     Endpoints
     ---------
-    ``GET  /api/tunnel/status`` -- current tunnel status.
+    ``GET  /api/tunnel/status`` -- current tunnel status + availability.
     ``POST /api/tunnel/start``  -- start a quick tunnel.
     ``POST /api/tunnel/stop``   -- stop the running tunnel.
     """
@@ -39,16 +39,22 @@ def create_tunnel_router(port: int = 8470) -> APIRouter:
 
     @router.get("/status")
     async def tunnel_status() -> dict[str, Any]:
-        return _tunnel.get_status()
+        status = _tunnel.get_status()
+        status["cloudflared_installed"] = _tunnel.is_available()
+        return status
 
     @router.post("/start")
     async def tunnel_start() -> dict[str, Any]:
         if not _tunnel.is_available():
-            return {
-                "error": "cloudflared not installed",
-                "install_url": "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/",
-            }
-        url = await _tunnel.start()
+            raise HTTPException(
+                status_code=422,
+                detail="cloudflared is not installed. Install it from: "
+                "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/",
+            )
+        try:
+            url = await _tunnel.start()
+        except RuntimeError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
         return {"url": url, "status": "active"}
 
     @router.post("/stop")

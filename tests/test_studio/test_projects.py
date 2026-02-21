@@ -140,6 +140,69 @@ class TestProjectManagerPipelines:
             manager.save_pipeline("nonexistent", "pipe", {"nodes": [], "edges": []})
 
 
+class TestProjectManagerRename:
+    def test_rename_success(self, manager: ProjectManager):
+        manager.create("old-name", description="desc")
+        info = manager.rename("old-name", "new-name")
+        assert info.name == "new-name"
+        assert info.description == "desc"
+        names = [p.name for p in manager.list_all()]
+        assert "old-name" not in names
+        assert "new-name" in names
+
+    def test_rename_updates_project_json(self, manager: ProjectManager, tmp_path: Path):
+        manager.create("original")
+        manager.rename("original", "renamed")
+        meta = json.loads((tmp_path / "renamed" / "project.json").read_text())
+        assert meta["name"] == "renamed"
+
+    def test_rename_conflict_raises(self, manager: ProjectManager):
+        manager.create("project-a")
+        manager.create("project-b")
+        with pytest.raises(ValueError, match="already exists"):
+            manager.rename("project-a", "project-b")
+
+    def test_rename_not_found_raises(self, manager: ProjectManager):
+        with pytest.raises(FileNotFoundError, match="not found"):
+            manager.rename("nonexistent", "new-name")
+
+    def test_rename_path_traversal_blocked(self, manager: ProjectManager):
+        manager.create("legit")
+        with pytest.raises(ValueError, match="Invalid path component"):
+            manager.rename("legit", "../../etc/evil")
+
+
+class TestProjectManagerUpdate:
+    def test_update_description(self, manager: ProjectManager):
+        manager.create("proj", description="old desc")
+        info = manager.update("proj", description="new desc")
+        assert info.description == "new desc"
+
+    def test_update_persists_to_disk(self, manager: ProjectManager, tmp_path: Path):
+        manager.create("proj")
+        manager.update("proj", description="persisted")
+        meta = json.loads((tmp_path / "proj" / "project.json").read_text())
+        assert meta["description"] == "persisted"
+
+    def test_update_not_found_raises(self, manager: ProjectManager):
+        with pytest.raises(FileNotFoundError, match="not found"):
+            manager.update("nonexistent", description="nope")
+
+
+class TestProjectManagerDeleteAll:
+    def test_delete_all_removes_all(self, manager: ProjectManager):
+        manager.create("a")
+        manager.create("b")
+        manager.create("c")
+        count = manager.delete_all()
+        assert count == 3
+        assert manager.list_all() == []
+
+    def test_delete_all_empty_returns_zero(self, manager: ProjectManager):
+        count = manager.delete_all()
+        assert count == 0
+
+
 class TestProjectManagerPathTraversal:
     def test_create_path_traversal_raises(self, manager: ProjectManager):
         with pytest.raises(ValueError, match="Invalid path component"):
@@ -244,3 +307,73 @@ class TestProjectsAPI:
             json={"graph": {"nodes": [], "edges": []}},
         )
         assert resp.status_code == 404
+
+
+class TestProjectsAPIRename:
+    async def test_rename_project(self, client: httpx.AsyncClient):
+        await client.post("/api/projects", json={"name": "old-name"})
+        resp = await client.patch(
+            "/api/projects/old-name",
+            json={"new_name": "new-name"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["name"] == "new-name"
+        listing = await client.get("/api/projects")
+        names = [p["name"] for p in listing.json()]
+        assert "new-name" in names
+        assert "old-name" not in names
+
+    async def test_rename_conflict_returns_409(self, client: httpx.AsyncClient):
+        await client.post("/api/projects", json={"name": "a"})
+        await client.post("/api/projects", json={"name": "b"})
+        resp = await client.patch(
+            "/api/projects/a",
+            json={"new_name": "b"},
+        )
+        assert resp.status_code == 409
+
+    async def test_rename_not_found_returns_404(self, client: httpx.AsyncClient):
+        resp = await client.patch(
+            "/api/projects/nonexistent",
+            json={"new_name": "new"},
+        )
+        assert resp.status_code == 404
+
+    async def test_update_description(self, client: httpx.AsyncClient):
+        await client.post("/api/projects", json={"name": "proj"})
+        resp = await client.patch(
+            "/api/projects/proj",
+            json={"description": "updated desc"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["description"] == "updated desc"
+
+    async def test_rename_and_update_description(self, client: httpx.AsyncClient):
+        await client.post("/api/projects", json={"name": "old"})
+        resp = await client.patch(
+            "/api/projects/old",
+            json={"new_name": "new", "description": "new desc"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["name"] == "new"
+        assert body["description"] == "new desc"
+
+
+class TestProjectsAPIDeleteAll:
+    async def test_delete_all(self, client: httpx.AsyncClient):
+        await client.post("/api/projects", json={"name": "a"})
+        await client.post("/api/projects", json={"name": "b"})
+        resp = await client.delete("/api/projects")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "deleted"
+        assert body["count"] == 2
+        listing = await client.get("/api/projects")
+        assert listing.json() == []
+
+    async def test_delete_all_empty(self, client: httpx.AsyncClient):
+        resp = await client.delete("/api/projects")
+        assert resp.status_code == 200
+        assert resp.json()["count"] == 0

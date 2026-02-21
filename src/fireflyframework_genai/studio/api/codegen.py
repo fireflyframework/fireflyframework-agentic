@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Code generation API endpoints for Firefly Studio.
+"""Code generation API endpoints for Firefly Agentic Studio.
 
 Provides a REST endpoint that converts the visual graph model (JSON from the
 frontend canvas) into executable Python code.
@@ -23,18 +23,15 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, HTTPException  # type: ignore[import-not-found]
-from pydantic import BaseModel, ValidationError
-
-from fireflyframework_genai.studio.codegen.generator import generate_python
-from fireflyframework_genai.studio.codegen.models import GraphModel
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 
-class ToCodeRequest(BaseModel):
-    """Request body for the ``POST /api/codegen/to-code`` endpoint."""
+class SmithCodegenRequest(BaseModel):
+    """Request body for the ``POST /api/codegen/smith`` endpoint."""
 
-    graph: dict  # raw graph dict that will be validated as GraphModel
+    graph: dict
 
 
 def create_codegen_router() -> APIRouter:
@@ -42,27 +39,38 @@ def create_codegen_router() -> APIRouter:
 
     Endpoints
     ---------
-    ``POST /api/codegen/to-code``
-        Accept a graph model (JSON) and return the generated Python code.
+    ``POST /api/codegen/smith``
+        Accept a graph model (JSON) and return AI-generated Python code
+        via the Smith agent.
 
         **Request body:**
         ``{"graph": {"nodes": [...], "edges": [...]}}``
 
         **Response:**
-        ``{"code": "...generated python code..."}``
+        ``{"code": "...generated python code...", "notes": [...]}``
     """
     router = APIRouter(prefix="/api/codegen", tags=["codegen"])
 
-    @router.post("/to-code")
-    async def to_code(req: ToCodeRequest) -> dict[str, str]:
-        """Convert a graph model to Python code."""
-        try:
-            graph = GraphModel.model_validate(req.graph)
-        except ValidationError as exc:
-            logger.warning("Invalid graph model: %s", exc)
-            raise HTTPException(status_code=422, detail=exc.errors()) from exc
+    @router.post("/smith")
+    async def smith_codegen(req: SmithCodegenRequest) -> dict:
+        """Generate Python code using the Smith AI agent."""
+        from fireflyframework_genai.studio.assistant.smith import generate_code_with_smith
+        from fireflyframework_genai.studio.settings import load_settings
 
-        code = generate_python(graph)
-        return {"code": code}
+        try:
+            settings = load_settings()
+            settings_dict = {
+                "model_defaults": {
+                    "default_model": settings.model_defaults.default_model,
+                }
+            }
+        except Exception:
+            settings_dict = None
+
+        try:
+            result = await generate_code_with_smith(req.graph, settings_dict)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return result
 
     return router

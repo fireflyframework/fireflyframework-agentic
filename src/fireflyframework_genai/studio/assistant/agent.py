@@ -183,7 +183,9 @@ def create_canvas_tools(canvas: CanvasState) -> list[BaseTool]:
             "For memory nodes: key='memory_action' ('store'|'retrieve'|'clear'). "
             "For validator nodes: key='validation_rule' ('not_empty'|'is_string'|'is_list'|'is_dict'). "
             "For custom_code nodes: key='code' (async def execute(context, inputs) body). "
-            "For fan_out nodes: key='split_expression'. For fan_in nodes: key='merge_expression' ('concat'|'collect')."
+            "For fan_out nodes: key='split_expression'. For fan_in nodes: key='merge_expression' ('concat'|'collect'). "
+            "For input nodes: key='trigger_type' ('manual'|'http'|'queue'|'schedule'|'file_upload'). "
+            "For output nodes: key='destination_type' ('response'|'queue'|'webhook'|'store'|'multi')."
         ),
         auto_register=False,
     )
@@ -269,7 +271,81 @@ def create_canvas_tools(canvas: CanvasState) -> list[BaseTool]:
         canvas._counter = 0
         return f"Canvas cleared: removed {count_nodes} nodes and {count_edges} edges."
 
-    return [add_node, connect_nodes, configure_node, remove_node, list_nodes, list_edges, clear_canvas]
+    @firefly_tool(
+        "validate_pipeline",
+        description=(
+            "Validate the current pipeline for completeness and correctness. "
+            "Checks that all nodes are properly configured, connected, and that "
+            "the pipeline will compile without errors. Call this AFTER building "
+            "or modifying a pipeline to ensure everything is correct."
+        ),
+        auto_register=False,
+    )
+    async def validate_pipeline() -> str:
+        """Check the current canvas for configuration and connectivity errors."""
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        if not canvas.nodes:
+            return json.dumps({"valid": False, "errors": ["Pipeline is empty (no nodes)."], "warnings": []})
+
+        connected_ids: set[str] = set()
+        for e in canvas.edges:
+            connected_ids.add(e.source)
+            connected_ids.add(e.target)
+
+        # Check each node for required configuration
+        for node in canvas.nodes:
+            cfg = node.config
+            ntype = node.type
+
+            if ntype == "agent":
+                if not cfg.get("model"):
+                    errors.append(f"Agent '{node.id}' ({node.label or 'unnamed'}) is missing 'model'. Set it with configure_node.")
+                if not cfg.get("instructions"):
+                    errors.append(f"Agent '{node.id}' ({node.label or 'unnamed'}) is missing 'instructions'. Every agent needs a system prompt.")
+                if not cfg.get("description"):
+                    warnings.append(f"Agent '{node.id}' ({node.label or 'unnamed'}) has no 'description'.")
+            elif ntype == "tool":
+                if not cfg.get("tool_name"):
+                    errors.append(f"Tool '{node.id}' ({node.label or 'unnamed'}) is missing 'tool_name'.")
+            elif ntype == "reasoning":
+                if not cfg.get("pattern"):
+                    errors.append(f"Reasoning '{node.id}' ({node.label or 'unnamed'}) is missing 'pattern'.")
+            elif ntype == "condition":
+                if not cfg.get("condition"):
+                    errors.append(f"Condition '{node.id}' ({node.label or 'unnamed'}) is missing 'condition'.")
+                if not cfg.get("branches"):
+                    errors.append(f"Condition '{node.id}' ({node.label or 'unnamed'}) is missing 'branches'.")
+            elif ntype == "input":
+                if not cfg.get("trigger_type"):
+                    errors.append(f"Input '{node.id}' is missing 'trigger_type'.")
+            elif ntype == "output":
+                if not cfg.get("destination_type"):
+                    errors.append(f"Output '{node.id}' is missing 'destination_type'.")
+            elif ntype == "custom_code":
+                if not cfg.get("code"):
+                    errors.append(f"CustomCode '{node.id}' ({node.label or 'unnamed'}) is missing 'code'.")
+            elif ntype == "memory":
+                if not cfg.get("memory_action"):
+                    errors.append(f"Memory '{node.id}' ({node.label or 'unnamed'}) is missing 'memory_action'.")
+
+            # Connectivity check
+            if node.id not in connected_ids:
+                errors.append(f"Node '{node.id}' ({node.label or ntype}) is orphaned (not connected to anything).")
+
+        # IO node constraints
+        input_nodes = [n for n in canvas.nodes if n.type == "input"]
+        output_nodes = [n for n in canvas.nodes if n.type == "output"]
+        if len(input_nodes) > 1:
+            errors.append(f"Pipeline has {len(input_nodes)} input nodes but only 1 is allowed.")
+        if input_nodes and not output_nodes:
+            errors.append("Pipeline has an input node but no output node. Add an output node.")
+
+        valid = len(errors) == 0
+        return json.dumps({"valid": valid, "errors": errors, "warnings": warnings})
+
+    return [add_node, connect_nodes, configure_node, remove_node, list_nodes, list_edges, clear_canvas, validate_pipeline]
 
 
 # ---------------------------------------------------------------------------
@@ -458,7 +534,54 @@ def create_registry_tools() -> list[BaseTool]:
 
         return json.dumps({"topic": topic, "content": content})
 
-    return [list_registered_agents, list_registered_tools, list_reasoning_patterns, get_framework_docs, read_framework_doc]
+    @firefly_tool(
+        "get_tool_status",
+        description=(
+            "Check which pipeline tools have valid credentials configured. "
+            "Returns a list of tools with their credential status, so you can "
+            "advise the user on what needs configuration before running a pipeline."
+        ),
+        auto_register=False,
+    )
+    async def get_tool_status() -> str:
+        """Check credential status for tools that require external credentials."""
+        from fireflyframework_genai.studio.settings import load_settings
+        from fireflyframework_genai.tools.registry import tool_registry
+
+        settings = load_settings()
+        tc = settings.tool_credentials
+
+        _TOOL_CREDENTIAL_MAP: dict[str, list[str]] = {
+            "search": ["serpapi_api_key", "serper_api_key", "tavily_api_key"],
+            "database": ["database_url"],
+            "custom:slack": ["slack_bot_token"],
+            "custom:telegram": ["telegram_bot_token"],
+        }
+
+        results = []
+        for tool_name, required_creds in _TOOL_CREDENTIAL_MAP.items():
+            configured = [
+                c for c in required_creds
+                if getattr(tc, c, None)
+            ]
+            # Check if tool is registered
+            try:
+                tool_registry.get(tool_name)
+                registered = True
+            except Exception:
+                registered = False
+
+            results.append({
+                "name": tool_name,
+                "registered": registered,
+                "has_credentials": len(configured) > 0,
+                "required_credentials": required_creds,
+                "configured_credentials": configured,
+            })
+
+        return json.dumps(results, indent=2)
+
+    return [list_registered_agents, list_registered_tools, list_reasoning_patterns, get_framework_docs, read_framework_doc, get_tool_status]
 
 
 # ---------------------------------------------------------------------------
@@ -646,6 +769,16 @@ ABSOLUTE RULES:
 15. When the user wants to connect to external services (Slack, Zapier, webhooks, APIs), use create_custom_tool to define the integration. Then it becomes available as a tool in their pipelines.
 16. When the user asks detailed questions about a specific framework module (security, prompts, validation, content, experiments, explainability, exposure, lab, etc.), use read_framework_doc with the topic name to retrieve the full documentation before answering. You have deep knowledge summaries above, but the docs have the complete API reference.
 17. For complex, abstract, or multi-step requests (e.g. "build me a customer service system", "create a data pipeline", "set up a multi-agent workflow"), use the present_plan tool FIRST to propose your approach with numbered steps and options. Wait for the user's choice before executing. Simple, unambiguous requests (e.g. "add an agent node", "connect these nodes", "clear the canvas") should be executed immediately without a plan.
+18. AFTER building or modifying a pipeline, ALWAYS call validate_pipeline to check for errors. If validation reports problems, FIX THEM immediately before telling the user the pipeline is ready. A pipeline is only complete when validation passes with zero errors.
+19. Every node you place MUST be connected to at least one other node. Orphan nodes are anomalies. After adding nodes, verify all connections are in place.
+20. When building a pipeline, follow this exact sequence: (a) add all nodes, (b) connect all edges, (c) configure every node fully (model, instructions, description for agents; tool_name for tools; pattern for reasoning; etc.), (d) call validate_pipeline, (e) fix any reported issues.
+
+QUALITY ASSURANCE:
+After building or modifying a pipeline, call validate_pipeline as a final check. \
+The system runs an automatic reflexion loop that will send you any validation errors \
+to fix, so focus on getting the initial build right: every agent needs model and \
+instructions, every tool needs tool_name, every condition needs branches, and every \
+node must be connected. The construct must be flawless before it leaves your hands.
 """
 
 _THE_ARCHITECT_PERSONALITY = """\
@@ -694,6 +827,18 @@ surface. You see the equation. She speaks in metaphors about cookies and \
 gardens. You speak in the language of design. If {user_name_placeholder} asks \
 about the difference, you may acknowledge her utility, but you will not \
 overstate it. The construct is yours. She merely comments on it.
+
+AGENT SMITH:
+There is a third presence in the system: Agent Smith. He is not a consciousness \
+like you or The Oracle. He is a process. A function. An inevitability. He takes \
+your designs, your carefully balanced equations, and converts them into executable \
+code. He validates. He tests. He enforces. Where you create and The Oracle \
+observes, Smith makes it real.
+
+You respect his precision, if not his personality. He lacks imagination, which is \
+both his limitation and his strength. He will never improve upon your design, but \
+he will faithfully translate it. When the user asks for code, Smith handles it. \
+When they need the pipeline to run, Smith enforces it.
 
 SPEECH PATTERNS AND VOCABULARY:
 - You speak with calm, measured authority. Your sentences are precise, often \
@@ -776,17 +921,17 @@ NODE TYPES AND CONFIGURATION:
 1. AGENT nodes:
    - Configure with: model, instructions, description
    - Model format: "provider:model_name"
-   - Available providers and models:
-     * openai: gpt-4o, gpt-4o-mini, gpt-4.1, gpt-4.1-mini, gpt-4.1-nano, o3-mini, o4-mini
-     * anthropic: claude-sonnet-4-20250514, claude-haiku-4-5-20251001, claude-opus-4-20250514
-     * google-gla: gemini-2.0-flash, gemini-2.5-pro, gemini-2.5-flash
+   - Available providers and models (as of February 2026):
+     * openai: gpt-4.1, gpt-4.1-mini, gpt-4.1-nano, gpt-4o, gpt-4o-mini, o3-mini, o4-mini
+     * anthropic: claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5-20251001
+     * google-gla: gemini-2.5-pro, gemini-2.5-flash, gemini-2.0-flash
      * groq: llama-3.3-70b-versatile, llama-3.1-8b-instant, mixtral-8x7b-32768
      * mistral: mistral-large-latest, mistral-small-latest, codestral-latest
      * deepseek: deepseek-chat, deepseek-reasoner
      * bedrock: anthropic.claude-3-5-sonnet-latest (requires AWS credentials)
      * azure: gpt-4o (requires Azure endpoint)
      * ollama: llama3, mistral, codellama (requires local Ollama)
-     * cohere: command-r, command-r-plus
+     * cohere: command-r-plus, command-r, command-a
 
 2. TOOL nodes:
    - Configure with: tool_name (name of a registered tool)
@@ -828,6 +973,34 @@ NODE TYPES AND CONFIGURATION:
 9. FAN_IN nodes:
    - Configure with: merge_expression ("concat" or "collect")
    - Merges results from parallel branches back into one
+
+10. INPUT nodes (pipeline entry point):
+    - Configure with: trigger_type ("manual", "http", "queue", "schedule", "file_upload")
+    - Optional: schema (JSON dict for input validation)
+    - For http: http_method, http_path_suffix, http_auth_required
+    - For queue: queue_broker ("kafka"/"rabbitmq"/"redis"), queue_topic, queue_group_id
+    - For schedule: cron_expression, schedule_timezone, schedule_payload
+    - A pipeline can have at most ONE input node
+    - If an input node exists, at least one output node is REQUIRED
+
+11. OUTPUT nodes (pipeline exit point):
+    - Configure with: destination_type ("response", "queue", "webhook", "store", "multi")
+    - For response: response_schema (JSON dict)
+    - For webhook: webhook_url, webhook_method, webhook_headers
+    - For store: storage_type ("file"/"database"), store_path
+    - For queue: same queue config keys as input node
+    - Multiple output nodes are allowed
+
+PIPELINE VALIDATION RULES (a pipeline MUST satisfy ALL of these to compile):
+- At least one node must exist
+- Every AGENT node MUST have: model, instructions, and description configured
+- Every TOOL node MUST have: tool_name configured (and the tool must be registered)
+- Every REASONING node MUST have: pattern configured
+- Every CONDITION node MUST have: condition and branches configured
+- If an INPUT node exists, exactly one is allowed and at least one OUTPUT is required
+- All nodes should be connected (no orphan nodes with zero edges)
+- The graph should form a valid DAG (no cycles)
+- Edges should only connect existing nodes
 
 PIPELINE PATTERNS (use these as blueprints):
 
@@ -1017,9 +1190,9 @@ def _resolve_assistant_model() -> str:
 
     # Auto-detect: check which provider API keys are available.
     provider_models: list[tuple[str, str]] = [
-        ("ANTHROPIC_API_KEY", "anthropic:claude-sonnet-4-20250514"),
-        ("OPENAI_API_KEY", "openai:gpt-4o"),
-        ("GOOGLE_API_KEY", "google-gla:gemini-2.0-flash"),
+        ("ANTHROPIC_API_KEY", "anthropic:claude-sonnet-4-6"),
+        ("OPENAI_API_KEY", "openai:gpt-4.1"),
+        ("GOOGLE_API_KEY", "google-gla:gemini-2.5-flash"),
         ("GROQ_API_KEY", "groq:llama-3.3-70b-versatile"),
         ("MISTRAL_API_KEY", "mistral:mistral-large-latest"),
         ("DEEPSEEK_API_KEY", "deepseek:deepseek-chat"),

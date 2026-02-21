@@ -195,6 +195,11 @@ def create_studio_app(
 
     app.include_router(create_oracle_router())
 
+    # -- Smith WebSocket (code generation) ---------------------------------
+    from fireflyframework_genai.studio.api.smith import create_smith_router
+
+    app.include_router(create_smith_router())
+
     # -- GraphQL endpoint --------------------------------------------------
     from fireflyframework_genai.studio.api.graphql_api import create_graphql_router
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""File-based project manager for Firefly Studio.
+"""File-based project manager for Firefly Agentic Studio.
 
 Each project is a directory under *base_dir* containing a ``project.json``
 metadata file and a ``pipelines/`` subdirectory that holds saved pipeline
@@ -74,6 +74,8 @@ class ProjectManager:
 
         project_dir.mkdir(parents=True)
         (project_dir / "pipelines").mkdir()
+        (project_dir / "custom_tools").mkdir()
+        (project_dir / "memory").mkdir()
 
         created_at = datetime.now(UTC).isoformat()
         meta = {
@@ -119,6 +121,70 @@ class ProjectManager:
         if not project_dir.exists():
             raise FileNotFoundError(f"Project '{name}' not found")
         shutil.rmtree(project_dir)
+
+    def rename(self, old_name: str, new_name: str) -> ProjectInfo:
+        """Rename a project directory and update its metadata.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the source project does not exist.
+        ValueError
+            If a project with *new_name* already exists or path is invalid.
+        """
+        old_dir = self._safe_path(old_name)
+        new_dir = self._safe_path(new_name)
+        if not old_dir.exists():
+            raise FileNotFoundError(f"Project '{old_name}' not found")
+        if new_dir.exists():
+            raise ValueError(f"Project '{new_name}' already exists")
+
+        old_dir.rename(new_dir)
+
+        # Update name inside project.json
+        meta_path = new_dir / "project.json"
+        meta = json.loads(meta_path.read_text())
+        meta["name"] = new_name
+        meta_path.write_text(json.dumps(meta, indent=2))
+
+        return ProjectInfo(
+            name=new_name,
+            description=meta.get("description", ""),
+            created_at=meta.get("created_at", ""),
+            path=new_dir,
+        )
+
+    def update(self, name: str, *, description: str | None = None) -> ProjectInfo:
+        """Update project metadata fields.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the project does not exist.
+        """
+        project_dir = self._safe_path(name)
+        meta_path = project_dir / "project.json"
+        if not meta_path.is_file():
+            raise FileNotFoundError(f"Project '{name}' not found")
+
+        meta = json.loads(meta_path.read_text())
+        if description is not None:
+            meta["description"] = description
+        meta_path.write_text(json.dumps(meta, indent=2))
+
+        return ProjectInfo(
+            name=meta["name"],
+            description=meta.get("description", ""),
+            created_at=meta.get("created_at", ""),
+            path=project_dir,
+        )
+
+    def delete_all(self) -> int:
+        """Delete all projects and return the count of deleted projects."""
+        all_projects = self.list_all()
+        for p in all_projects:
+            self.delete(p.name)
+        return len(all_projects)
 
     # -- Pipeline persistence ----------------------------------------------
 

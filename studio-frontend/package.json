@@ -25,6 +25,7 @@
 	"dependencies": {
 		"@tailwindcss/vite": "^4.2.0",
 		"@xyflow/svelte": "^1.5.1",
+		"highlight.js": "^11.11.1",
 		"lucide-svelte": "^0.575.0",
 		"marked": "^17.0.3",
 		"tailwindcss": "^4.2.0"

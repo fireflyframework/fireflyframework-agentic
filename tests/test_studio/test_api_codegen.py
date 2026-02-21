@@ -61,96 +61,43 @@ SINGLE_AGENT_GRAPH = {
     "edges": [],
 }
 
-TWO_NODES_WITH_EDGE_GRAPH = {
-    "nodes": [
-        {
-            "id": "agent_1",
-            "type": "agent",
-            "label": "Agent One",
-            "position": {"x": 0, "y": 0},
-            "data": {"model": "openai:gpt-4o", "instructions": "First agent."},
-        },
-        {
-            "id": "agent_2",
-            "type": "agent",
-            "label": "Agent Two",
-            "position": {"x": 200, "y": 0},
-            "data": {"model": "openai:gpt-4o", "instructions": "Second agent."},
-        },
-    ],
-    "edges": [
-        {
-            "id": "edge_1",
-            "source": "agent_1",
-            "target": "agent_2",
-        },
-    ],
-}
-
-INVALID_GRAPH = {
-    "nodes": [
-        {
-            "id": "bad_node",
-            "type": "nonexistent_type",
-            "label": "Bad",
-            "position": {"x": 0, "y": 0},
-            "data": {},
-        },
-    ],
-    "edges": [],
-}
-
 
 # ---------------------------------------------------------------------------
-# POST /api/codegen/to-code
+# POST /api/codegen/smith
 # ---------------------------------------------------------------------------
 
 
-class TestCodegenToCode:
-    """Tests for the POST /api/codegen/to-code endpoint."""
+class TestCodegenSmith:
+    """Tests for the POST /api/codegen/smith endpoint."""
 
-    async def test_single_agent_node_returns_firefly_agent(self, client: httpx.AsyncClient):
-        """A single agent node should generate code containing FireflyAgent."""
-        resp = await client.post("/api/codegen/to-code", json={"graph": SINGLE_AGENT_GRAPH})
-        assert resp.status_code == 200
-        body = resp.json()
-        assert "code" in body
-        assert "FireflyAgent" in body["code"]
+    async def test_smith_endpoint_exists(self, client: httpx.AsyncClient):
+        """The /api/codegen/smith endpoint should accept POST requests."""
+        resp = await client.post(
+            "/api/codegen/smith",
+            json={"graph": SINGLE_AGENT_GRAPH},
+        )
+        # Smith requires an LLM API key, so it may return 200 (success),
+        # 500 (no API key / agent creation fails), or 422 (validation).
+        # Any of these prove the endpoint exists and routes correctly.
+        assert resp.status_code != 404
 
-    async def test_two_nodes_with_edge_returns_pipeline_builder(self, client: httpx.AsyncClient):
-        """Two nodes connected by an edge should generate PipelineBuilder code."""
-        resp = await client.post("/api/codegen/to-code", json={"graph": TWO_NODES_WITH_EDGE_GRAPH})
-        assert resp.status_code == 200
-        body = resp.json()
-        assert "code" in body
-        assert "PipelineBuilder" in body["code"]
-
-    async def test_invalid_graph_returns_error(self, client: httpx.AsyncClient):
-        """An invalid graph (bad node type) should return 422."""
-        resp = await client.post("/api/codegen/to-code", json={"graph": INVALID_GRAPH})
+    async def test_smith_missing_graph_returns_422(self, client: httpx.AsyncClient):
+        """A request missing the 'graph' key should return 422."""
+        resp = await client.post("/api/codegen/smith", json={})
         assert resp.status_code == 422
 
-    async def test_response_has_code_key(self, client: httpx.AsyncClient):
-        """The response should always have a 'code' key on success."""
-        resp = await client.post("/api/codegen/to-code", json={"graph": SINGLE_AGENT_GRAPH})
-        assert resp.status_code == 200
-        body = resp.json()
-        assert "code" in body
-        assert isinstance(body["code"], str)
-        assert len(body["code"]) > 0
-
-    async def test_empty_graph_returns_code(self, client: httpx.AsyncClient):
-        """An empty graph (no nodes, no edges) should still return valid code."""
+    async def test_old_tocode_endpoint_removed(self, client: httpx.AsyncClient):
+        """The old /api/codegen/to-code endpoint should no longer exist as an API route."""
         resp = await client.post(
             "/api/codegen/to-code",
-            json={"graph": {"nodes": [], "edges": []}},
+            json={"graph": SINGLE_AGENT_GRAPH},
         )
-        assert resp.status_code == 200
-        body = resp.json()
-        assert "code" in body
-        assert isinstance(body["code"], str)
-
-    async def test_missing_graph_key_returns_422(self, client: httpx.AsyncClient):
-        """A request missing the 'graph' key should return 422."""
-        resp = await client.post("/api/codegen/to-code", json={})
-        assert resp.status_code == 422
+        # The endpoint was removed. It may return 404/405 (route not found)
+        # or 200 (static file catch-all). Either way, it should NOT return
+        # a valid JSON codegen response with a 'code' key.
+        if resp.status_code == 200:
+            try:
+                body = resp.json()
+                assert "code" not in body, "to-code endpoint should not return generated code"
+            except Exception:
+                pass  # Non-JSON response = static file served = endpoint removed

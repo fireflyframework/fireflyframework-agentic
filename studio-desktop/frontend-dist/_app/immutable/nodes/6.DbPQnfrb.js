@@ -1,0 +1,1 @@
+import"../chunks/DsnmJJEf.js";import{i as t}from"../chunks/FsCUQR17.js";import{p as a,o as p,b as r}from"../chunks/BNectIeB.js";import{g as s}from"../chunks/DaZstLas.js";import{b as e,a as m}from"../chunks/CKy8R5Mg.js";function g(n,o){a(o,!1),p(()=>{e.set("experiments"),m.set(!0),s("/construct")}),t(),r()}export{g as component};

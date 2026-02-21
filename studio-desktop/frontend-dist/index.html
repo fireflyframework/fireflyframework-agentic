@@ -1,169 +1,35 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Firefly Studio</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<link href="/_app/immutable/entry/start.DMvoP-ld.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/gvU2Nsg7.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BESIXtBI.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BxupTnou.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/CJh9TUc0.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DsnmJJEf.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DaAgYj3T.js" rel="modulepreload">
+		
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">
+			<script>
+				{
+					__sveltekit_1om7kwq = {
+						base: ""
+					};
 
-        body {
-            background: #0a0a0f;
-            color: #e0e0e0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            overflow: hidden;
-        }
+					const element = document.currentScript.parentElement;
 
-        .loading {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 24px;
-        }
-
-        .logo {
-            width: 64px;
-            height: 64px;
-        }
-
-        .logo svg {
-            width: 100%;
-            height: 100%;
-        }
-
-        .title {
-            font-size: 18px;
-            font-weight: 600;
-            letter-spacing: -0.01em;
-        }
-
-        .subtitle {
-            font-size: 13px;
-            color: #888;
-            margin-top: -12px;
-            transition: color 0.3s;
-        }
-
-        .subtitle.error {
-            color: #e05050;
-        }
-
-        .subtitle.success {
-            color: #50c878;
-        }
-
-        .spinner {
-            width: 24px;
-            height: 24px;
-            border: 2px solid rgba(246, 128, 0, 0.2);
-            border-top-color: #F68000;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-
-        .spinner.error {
-            border-color: rgba(224, 80, 80, 0.2);
-            border-top-color: #e05050;
-            animation: none;
-        }
-
-        .spinner.success {
-            border-color: #50c878;
-            border-top-color: #50c878;
-            animation: none;
-        }
-
-        .details {
-            font-size: 11px;
-            color: #555;
-            margin-top: -12px;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-    </style>
-</head>
-<body>
-    <div class="loading">
-        <div class="logo">
-            <svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="100" cy="100" r="100" fill="url(#loading_grad)"/>
-                <path fill-rule="evenodd" clip-rule="evenodd" d="M100 27C96.9983 27.0001 94.0805 27.9929 91.6991 29.8243C89.3177 31.6558 87.6058 34.2235 86.8289 37.1294C86.052 40.0353 86.2535 43.1169 87.4021 45.8963C88.5507 48.6758 90.5823 50.9977 93.1818 52.502V61.1667H72.7273C50.9091 61.1667 45.4545 79.3912 45.4545 88.5V136.333C45.4545 140.891 48.1818 150 59.0909 150H65.9091V122.667C65.9091 120.854 66.6274 119.116 67.9061 117.835C69.1847 116.553 70.919 115.833 72.7273 115.833H127.273C129.081 115.833 130.815 116.553 132.094 117.835C133.373 119.116 134.091 120.854 134.091 122.667V150H140.909C151.818 150 154.545 140.891 154.545 136.333V88.5C154.545 66.6333 136.361 61.1667 127.273 61.1667H106.818V52.502C109.418 50.9977 111.449 48.6758 112.598 45.8963C113.747 43.1169 113.948 40.0353 113.171 37.1294C112.394 34.2235 110.682 31.6558 108.301 29.8243C105.92 27.9929 103.002 27.0001 100 27ZM120.455 150V129.5H106.818V150H120.455ZM93.1818 150V129.5H79.5455V150H93.1818ZM161.364 129.5V95.3333C165.911 95.3333 175 98.0667 175 109V115.833C175 120.391 172.273 129.5 161.364 129.5ZM38.6364 95.3333V129.5C27.7273 129.5 25 120.391 25 115.833V109C25 98.0667 34.0886 95.3333 38.6364 95.3333ZM79.5455 88.5C77.7372 88.5 76.0029 89.2199 74.7243 90.5014C73.4456 91.7829 72.7273 93.521 72.7273 95.3333C72.7273 97.1456 73.4456 98.8837 74.7243 100.165C76.0029 101.447 77.7372 102.167 79.5455 102.167H79.5523C81.3606 102.167 83.0948 101.447 84.3735 100.165C85.6521 98.8837 86.3705 97.1456 86.3705 95.3333C86.3705 93.521 85.6521 91.7829 84.3735 90.5014C83.0948 89.2199 81.3606 88.5 79.5523 88.5H79.5455ZM113.636 95.3333C113.636 93.521 114.355 91.7829 115.633 90.5014C116.912 89.2199 118.646 88.5 120.455 88.5H120.461C122.27 88.5 124.004 89.2199 125.283 90.5014C126.561 91.7829 127.28 93.521 127.28 95.3333C127.28 97.1456 126.561 98.8837 125.283 100.165C124.004 101.447 122.27 102.167 120.461 102.167H120.455C118.646 102.167 116.912 101.447 115.633 100.165C114.355 98.8837 113.636 97.1456 113.636 95.3333Z" fill="white"/>
-                <defs>
-                    <linearGradient id="loading_grad" x1="200" y1="100" x2="0" y2="100" gradientUnits="userSpaceOnUse">
-                        <stop stop-color="#F68000"/>
-                        <stop offset="1" stop-color="#FFF9C1"/>
-                    </linearGradient>
-                </defs>
-            </svg>
-        </div>
-        <span class="title">Firefly Studio</span>
-        <span id="status" class="subtitle">Starting server...</span>
-        <div id="spinner" class="spinner"></div>
-        <span id="details" class="details"></span>
-    </div>
-    <script>
-        // Poll health endpoint to show startup progress.
-        // Tauri navigates the webview once health passes, but this
-        // gives users visual feedback and error info in the meantime.
-        (function () {
-            var statusEl = document.getElementById('status');
-            var spinnerEl = document.getElementById('spinner');
-            var detailsEl = document.getElementById('details');
-            var attempt = 0;
-            var startTime = Date.now();
-            var maxAttempts = 60; // 30 seconds at 500ms interval
-            var done = false;
-
-            function elapsed() {
-                return ((Date.now() - startTime) / 1000).toFixed(0);
-            }
-
-            function poll() {
-                if (done) return;
-                attempt++;
-
-                // Try common ports — Tauri picks a random port so we
-                // scan window.location if already redirected, otherwise
-                // this is just a visual aid (Tauri handles actual navigation)
-                var port = window.location.port || '8000';
-                var url = 'http://127.0.0.1:' + port + '/api/health';
-
-                fetch(url, { signal: AbortSignal.timeout(2000) })
-                    .then(function (r) {
-                        if (r.ok) {
-                            done = true;
-                            statusEl.textContent = 'Connected!';
-                            statusEl.className = 'subtitle success';
-                            spinnerEl.className = 'spinner success';
-                            detailsEl.textContent = '';
-                            return;
-                        }
-                        throw new Error('Status ' + r.status);
-                    })
-                    .catch(function () {
-                        if (done) return;
-                        if (attempt >= maxAttempts) {
-                            statusEl.textContent = 'Server failed to start';
-                            statusEl.className = 'subtitle error';
-                            spinnerEl.className = 'spinner error';
-                            detailsEl.textContent = 'Timed out after ' + elapsed() + 's. Try restarting the app.';
-                            return;
-                        }
-                        statusEl.textContent = 'Starting server... (' + elapsed() + 's)';
-                        detailsEl.textContent = 'Attempt ' + attempt;
-                        setTimeout(poll, 500);
-                    });
-            }
-
-            // Start polling after a brief delay to let the sidecar spawn
-            setTimeout(poll, 1000);
-        })();
-    </script>
-</body>
+					Promise.all([
+						import("/_app/immutable/entry/start.DMvoP-ld.js"),
+						import("/_app/immutable/entry/app.BxupTnou.js")
+					]).then(([kit, app]) => {
+						kit.start(app, element);
+					});
+				}
+			</script>
+		</div>
+	</body>
 </html>

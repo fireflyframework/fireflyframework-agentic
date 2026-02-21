@@ -48,38 +48,50 @@ export const api = {
 				body: JSON.stringify({ name, description })
 			}),
 		delete: (name: string) =>
-			request<{ status: string }>(`/projects/${name}`, { method: 'DELETE' }),
+			request<{ status: string }>(`/projects/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+		rename: (name: string, newName: string) =>
+			request<ProjectInfo>(`/projects/${encodeURIComponent(name)}`, {
+				method: 'PATCH',
+				body: JSON.stringify({ new_name: newName })
+			}),
+		updateDescription: (name: string, description: string) =>
+			request<ProjectInfo>(`/projects/${encodeURIComponent(name)}`, {
+				method: 'PATCH',
+				body: JSON.stringify({ description })
+			}),
+		deleteAll: () =>
+			request<{ status: string; count: number }>('/projects', { method: 'DELETE' }),
 		savePipeline: (project: string, pipeline: string, graph: object) =>
-			request<{ status: string }>(`/projects/${project}/pipelines/${pipeline}`, {
+			request<{ status: string }>(`/projects/${encodeURIComponent(project)}/pipelines/${encodeURIComponent(pipeline)}`, {
 				method: 'POST',
 				body: JSON.stringify({ graph })
 			}),
 		loadPipeline: (project: string, pipeline: string) =>
-			request<object>(`/projects/${project}/pipelines/${pipeline}`),
+			request<object>(`/projects/${encodeURIComponent(project)}/pipelines/${encodeURIComponent(pipeline)}`),
 		getHistory: (project: string) =>
-			request<Array<{ sha: string; message: string; timestamp: string; bookmarked: boolean }>>(`/projects/${project}/history`),
+			request<Array<{ sha: string; message: string; timestamp: string; bookmarked: boolean }>>(`/projects/${encodeURIComponent(project)}/history`),
 		restoreVersion: (project: string, commitSha: string) =>
-			request<{ status: string }>(`/projects/${project}/restore`, {
+			request<{ status: string }>(`/projects/${encodeURIComponent(project)}/restore`, {
 				method: 'POST',
 				body: JSON.stringify({ commit_sha: commitSha })
 			}),
 		bookmarkVersion: (project: string, commitSha: string, label: string) =>
-			request<{ status: string }>(`/projects/${project}/bookmark`, {
+			request<{ status: string }>(`/projects/${encodeURIComponent(project)}/bookmark`, {
 				method: 'POST',
 				body: JSON.stringify({ commit_sha: commitSha, label })
 			})
 	},
 
 	files: {
-		list: (project: string) => request<FileEntry[]>(`/projects/${project}/files`),
-		read: (project: string, path: string) => request<FileContent>(`/projects/${project}/files/${path}`)
+		list: (project: string) => request<FileEntry[]>(`/projects/${encodeURIComponent(project)}/files`),
+		read: (project: string, path: string) => request<FileContent>(`/projects/${encodeURIComponent(project)}/files/${path}`)
 	},
 
 	evaluate: {
 		uploadDataset: (project: string, file: File) => {
 			const formData = new FormData();
 			formData.append('file', file);
-			return fetch(`${BASE_URL}/projects/${project}/datasets/upload`, {
+			return fetch(`${BASE_URL}/projects/${encodeURIComponent(project)}/datasets/upload`, {
 				method: 'POST',
 				body: formData
 			}).then(async (resp) => {
@@ -91,7 +103,7 @@ export const api = {
 			});
 		},
 		listDatasets: (project: string) =>
-			request<DatasetInfo[]>(`/projects/${project}/datasets`),
+			request<DatasetInfo[]>(`/projects/${encodeURIComponent(project)}/datasets`),
 		run: (project: string, dataset: string, graph: object) =>
 			request<EvalRunResult>('/evaluate/run', {
 				method: 'POST',
@@ -100,19 +112,19 @@ export const api = {
 	},
 
 	experiments: {
-		list: (project: string) => request<Experiment[]>(`/projects/${project}/experiments`),
+		list: (project: string) => request<Experiment[]>(`/projects/${encodeURIComponent(project)}/experiments`),
 		create: (project: string, name: string, variants: Array<{ name: string; pipeline: string; traffic: number }>) =>
-			request<Experiment>(`/projects/${project}/experiments`, {
+			request<Experiment>(`/projects/${encodeURIComponent(project)}/experiments`, {
 				method: 'POST',
 				body: JSON.stringify({ name, variants })
 			}),
 		get: (project: string, expId: string) =>
-			request<Experiment>(`/projects/${project}/experiments/${expId}`),
+			request<Experiment>(`/projects/${encodeURIComponent(project)}/experiments/${expId}`),
 		delete: (project: string, expId: string) =>
-			request<{ status: string }>(`/projects/${project}/experiments/${expId}`, { method: 'DELETE' }),
+			request<{ status: string }>(`/projects/${encodeURIComponent(project)}/experiments/${expId}`, { method: 'DELETE' }),
 		runVariant: (project: string, expId: string, variantName: string, graph: object, input?: string) =>
 			request<{ experiment_id: string; variant_name: string; success: boolean; output: string }>(
-				`/projects/${project}/experiments/${expId}/run`,
+				`/projects/${encodeURIComponent(project)}/experiments/${expId}/run`,
 				{
 					method: 'POST',
 					body: JSON.stringify({ variant_name: variantName, graph, input: input ?? '' })
@@ -121,8 +133,8 @@ export const api = {
 	},
 
 	codegen: {
-		toCode: (graph: object) =>
-			request<{ code: string }>('/codegen/to-code', {
+		smith: (graph: object) =>
+			request<{ code: string; notes: string[] }>('/codegen/smith', {
 				method: 'POST',
 				body: JSON.stringify({ graph })
 			})
@@ -160,14 +172,26 @@ export const api = {
 				method: 'POST',
 				body: JSON.stringify(payload)
 			}),
-		status: () => request<SettingsStatus>('/settings/status')
+		status: () => request<SettingsStatus>('/settings/status'),
+		services: {
+			list: () => request<Array<{ id: string; service_type: string; label: string; host: string; port: number | null; username: string; database: string; ssl_enabled: boolean }>>('/settings/services'),
+			add: (service: Record<string, unknown>) =>
+				request<{ status: string; id: string }>('/settings/services', {
+					method: 'POST',
+					body: JSON.stringify(service)
+				}),
+			delete: (id: string) =>
+				request<{ status: string }>(`/settings/services/${id}`, { method: 'DELETE' }),
+			test: (id: string) =>
+				request<{ status: string; message: string }>(`/settings/services/${id}/test`, { method: 'POST' })
+		}
 	},
 
 	assistant: {
 		getHistory: (project: string) =>
-			request<Array<{ role: string; content: string; timestamp: string; toolCalls?: unknown[] }>>(`/assistant/${project}/history`),
+			request<Array<{ role: string; content: string; timestamp: string; toolCalls?: unknown[] }>>(`/assistant/${encodeURIComponent(project)}/history`),
 		saveHistory: (project: string, messages: Array<{ role: string; content: string; timestamp: string; toolCalls?: unknown[] }>) =>
-			request<{ status: string }>(`/assistant/${project}/history`, {
+			request<{ status: string }>(`/assistant/${encodeURIComponent(project)}/history`, {
 				method: 'POST',
 				body: JSON.stringify({ messages })
 			}),
@@ -180,11 +204,11 @@ export const api = {
 
 	oracle: {
 		getInsights: (project: string) =>
-			request<Array<{ id: string; title: string; description: string; severity: string; action_instruction: string | null; timestamp: string; status: string }>>(`/oracle/${project}/insights`),
+			request<Array<{ id: string; title: string; description: string; severity: string; action_instruction: string | null; timestamp: string; status: string }>>(`/oracle/${encodeURIComponent(project)}/insights`),
 		approveInsight: (project: string, insightId: string) =>
-			request<{ status: string; action_instruction: string | null }>(`/oracle/${project}/insights/${insightId}/approve`, { method: 'POST' }),
+			request<{ status: string; action_instruction: string | null }>(`/oracle/${encodeURIComponent(project)}/insights/${insightId}/approve`, { method: 'POST' }),
 		skipInsight: (project: string, insightId: string) =>
-			request<{ status: string }>(`/oracle/${project}/insights/${insightId}/skip`, { method: 'POST' }),
+			request<{ status: string }>(`/oracle/${encodeURIComponent(project)}/insights/${insightId}/skip`, { method: 'POST' }),
 	},
 
 	tunnel: {
@@ -194,10 +218,10 @@ export const api = {
 	},
 
 	runtime: {
-		start: (project: string) => request<{ status: string }>(`/projects/${project}/runtime/start`, { method: 'POST' }),
-		stop: (project: string) => request<{ status: string }>(`/projects/${project}/runtime/stop`, { method: 'POST' }),
-		status: (project: string) => request<{ project: string; status: string; trigger_type: string | null; consumers: number; scheduler_active: boolean }>(`/projects/${project}/runtime/status`),
-		executions: (project: string) => request<{ executions: Array<{ execution_id: string; status: string; duration_ms: number | null }> }>(`/projects/${project}/runtime/executions`),
+		start: (project: string) => request<{ status: string }>(`/projects/${encodeURIComponent(project)}/runtime/start`, { method: 'POST' }),
+		stop: (project: string) => request<{ status: string }>(`/projects/${encodeURIComponent(project)}/runtime/stop`, { method: 'POST' }),
+		status: (project: string) => request<{ project: string; status: string; trigger_type: string | null; consumers: number; scheduler_active: boolean }>(`/projects/${encodeURIComponent(project)}/runtime/status`),
+		executions: (project: string) => request<{ executions: Array<{ execution_id: string; status: string; duration_ms: number | null }> }>(`/projects/${encodeURIComponent(project)}/runtime/executions`),
 	},
 
 	customTools: {

@@ -83,20 +83,44 @@ class TunnelManager:
         }
 
     async def _wait_for_url(self, timeout: int = 30) -> str:
-        """Read process output until the tunnel URL appears."""
+        """Read process output until the tunnel URL appears.
+
+        Uses a dedicated reader thread to avoid blocking-readline race
+        conditions with Go binaries that buffer pipe output.
+        """
+        import threading
+
         url_pattern = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
+        result: str | None = None
+        error: str | None = None
+        done = asyncio.Event()
+        loop = asyncio.get_running_loop()
 
-        loop = asyncio.get_event_loop()
-        for _ in range(timeout * 10):
-            if self._process is None or self._process.poll() is not None:
-                raise RuntimeError("cloudflared exited unexpectedly")
+        def _reader() -> None:
+            nonlocal result, error
+            assert self._process is not None and self._process.stdout is not None
+            try:
+                for line in self._process.stdout:
+                    logger.debug("cloudflared: %s", line.rstrip())
+                    match = url_pattern.search(line)
+                    if match:
+                        result = match.group(0)
+                        loop.call_soon_threadsafe(done.set)
+                        return
+                # stdout closed without finding URL
+                error = "cloudflared exited without providing a tunnel URL"
+            except Exception as exc:
+                error = str(exc)
+            loop.call_soon_threadsafe(done.set)
 
-            line = await loop.run_in_executor(None, self._process.stdout.readline)
-            if line:
-                match = url_pattern.search(line)
-                if match:
-                    return match.group(0)
+        thread = threading.Thread(target=_reader, daemon=True)
+        thread.start()
 
-            await asyncio.sleep(0.1)
+        try:
+            await asyncio.wait_for(done.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            raise TimeoutError("Timed out waiting for tunnel URL")
 
-        raise TimeoutError("Timed out waiting for tunnel URL")
+        if result:
+            return result
+        raise RuntimeError(error or "cloudflared exited unexpectedly")

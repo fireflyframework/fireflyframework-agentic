@@ -1,0 +1,1 @@
+import"../chunks/DsnmJJEf.js";import{i as t}from"../chunks/CiPkpaXo.js";import{p as a,o as r,j as m}from"../chunks/BESIXtBI.js";import{g as n}from"../chunks/gvU2Nsg7.js";import{b as p,a as s}from"../chunks/8I91iWf8.js";function g(e,o){a(o,!1),r(()=>{p.set("monitor"),s.set(!0),n("/construct")}),t(),m()}export{g as component};

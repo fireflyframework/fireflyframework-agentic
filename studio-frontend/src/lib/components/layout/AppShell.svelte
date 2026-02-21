@@ -1,16 +1,45 @@
 <script lang="ts">
 	import { get } from 'svelte/store';
+	import { page } from '$app/stores';
 	import TopBar from './TopBar.svelte';
-	import Sidebar from './Sidebar.svelte';
 	import CommandPalette from './CommandPalette.svelte';
 	import ShortcutsModal from './ShortcutsModal.svelte';
 	import SettingsModal from './SettingsModal.svelte';
 	import FirstStartWizard from './FirstStartWizard.svelte';
-	import { commandPaletteOpen, bottomPanelOpen, bottomPanelTab, shortcutsModalOpen, settingsModalOpen } from '$lib/stores/ui';
-	import { nodes, edges, selectedNodeId, getGraphSnapshot } from '$lib/stores/pipeline';
-	import { runPipeline, debugPipeline } from '$lib/execution/bridge';
+	import ToastContainer from './ToastContainer.svelte';
+	import ArchitectSidebar from '$lib/components/panels/ArchitectSidebar.svelte';
+	import { commandPaletteOpen, architectSidebarOpen, shortcutsModalOpen, settingsModalOpen } from '$lib/stores/ui';
+	import { nodes, edges, selectedNodeId, getGraphSnapshot, isDirty } from '$lib/stores/pipeline';
+	import { debugPipeline } from '$lib/execution/bridge';
+	import { startHealthPolling, stopHealthPolling } from '$lib/stores/connection';
+	import { currentProject } from '$lib/stores/project';
+	import { api } from '$lib/api/client';
+	import { addToast } from '$lib/stores/notifications';
+	import { onMount } from 'svelte';
+	import { themeMode, cycleTheme } from '$lib/stores/theme';
+	import { Sun, Moon, Monitor } from 'lucide-svelte';
 
 	let { children } = $props();
+
+	const isHomePage = $derived($page.url.pathname === '/' || $page.url.pathname === '/index.html');
+
+	onMount(() => {
+		startHealthPolling();
+
+		// Global error handler: catch unhandled promise rejections to prevent UI freeze
+		function handleUnhandledRejection(e: PromiseRejectionEvent) {
+			e.preventDefault();
+			const msg = e.reason instanceof Error ? e.reason.message : String(e.reason);
+			addToast(`Unhandled error: ${msg}`, 'error');
+			console.error('[AppShell] Unhandled rejection:', e.reason);
+		}
+		window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+		return () => {
+			stopHealthPolling();
+			window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+		};
+	});
 
 	/**
 	 * Returns true when the active element is a text-input field
@@ -27,7 +56,22 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
+		// Only handle keyboard shortcuts in construct view
+		if (isHomePage) return;
+
 		const meta = e.metaKey || e.ctrlKey;
+
+		// Cmd/Ctrl + S  —  save pipeline
+		if (e.key === 's' && meta) {
+			e.preventDefault();
+			const proj = get(currentProject);
+			if (proj) {
+				api.projects.savePipeline(proj.name, 'main', getGraphSnapshot())
+					.then(() => { isDirty.set(false); addToast('Pipeline saved', 'success'); })
+					.catch(() => addToast('Failed to save pipeline', 'error'));
+			}
+			return;
+		}
 
 		// Cmd/Ctrl + ,  —  open settings
 		if (e.key === ',' && meta) {
@@ -43,10 +87,10 @@
 			return;
 		}
 
-		// Cmd/Ctrl + Enter  —  run pipeline
+		// Cmd/Ctrl + Enter  —  run pipeline (delegates to TopBar's run dialog)
 		if (e.key === 'Enter' && meta) {
 			e.preventDefault();
-			runPipeline(getGraphSnapshot());
+			window.dispatchEvent(new CustomEvent('firefly:run-pipeline'));
 			return;
 		}
 
@@ -57,19 +101,10 @@
 			return;
 		}
 
-		// Cmd/Ctrl + /  —  toggle AI assistant (bottom panel chat tab)
+		// Cmd/Ctrl + /  —  toggle AI assistant sidebar
 		if (e.key === '/' && meta) {
 			e.preventDefault();
-			const isOpen = get(bottomPanelOpen);
-			const currentTab = get(bottomPanelTab);
-			if (isOpen && currentTab === 'chat') {
-				// If already showing chat, close the panel
-				bottomPanelOpen.set(false);
-			} else {
-				// Open panel and switch to chat
-				bottomPanelOpen.set(true);
-				bottomPanelTab.set('chat');
-			}
+			architectSidebarOpen.update((v) => !v);
 			return;
 		}
 
@@ -125,19 +160,40 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div class="app-shell">
-	<TopBar />
-	<div class="app-body">
-		<Sidebar />
-		<main class="app-content">
+	<TopBar {isHomePage} />
+	{#if isHomePage}
+		<main class="app-content home-content">
 			{@render children()}
 		</main>
-	</div>
+	{:else}
+		<div class="app-body">
+			<ArchitectSidebar />
+			<main class="app-content">
+				{@render children()}
+			</main>
+		</div>
+	{/if}
+	<footer class="app-footer">
+		<span>Made with</span>
+		<span class="heart">&#10084;</span>
+		<span>by Firefly Software Solutions</span>
+		<button class="theme-toggle" onclick={cycleTheme} title={`Theme: ${$themeMode}`}>
+			{#if $themeMode === 'dark'}
+				<Moon size={14} />
+			{:else if $themeMode === 'light'}
+				<Sun size={14} />
+			{:else}
+				<Monitor size={14} />
+			{/if}
+		</button>
+	</footer>
 </div>
 
 <CommandPalette />
 <ShortcutsModal />
 <SettingsModal />
 <FirstStartWizard />
+<ToastContainer />
 
 <style>
 	.app-shell {
@@ -150,6 +206,12 @@
 		color: var(--color-text-primary);
 	}
 
+	.home-content {
+		flex: 1;
+		min-height: 0;
+		overflow: auto;
+	}
+
 	.app-body {
 		display: flex;
 		flex: 1;
@@ -160,5 +222,55 @@
 		flex: 1;
 		min-width: 0;
 		overflow: auto;
+	}
+
+	.app-footer {
+		height: 34px;
+		min-height: 34px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 4px;
+		font-family: var(--font-sans);
+		font-size: 11px;
+		color: var(--color-text-secondary);
+		background: var(--color-bg-secondary);
+		border-top: 1px solid var(--color-border);
+		opacity: 0.7;
+		user-select: none;
+	}
+
+	.theme-toggle {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		border-radius: 6px;
+		border: 1px solid var(--color-border);
+		background: var(--color-bg-elevated);
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		transition: all 0.2s;
+		margin-left: 8px;
+	}
+
+	.theme-toggle:hover {
+		color: var(--color-text-primary);
+		border-color: var(--color-accent);
+	}
+
+	.heart {
+		color: #ef4444;
+		display: inline-block;
+		animation: heartbeat 1.2s ease-in-out infinite;
+	}
+
+	@keyframes heartbeat {
+		0%, 100% { transform: scale(1); }
+		15% { transform: scale(1.25); }
+		30% { transform: scale(1); }
+		45% { transform: scale(1.15); }
+		60% { transform: scale(1); }
 	}
 </style>

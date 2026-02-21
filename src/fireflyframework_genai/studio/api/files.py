@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""File browsing REST API endpoints for Firefly Studio.
+"""File browsing REST API endpoints for Firefly Agentic Studio.
 
 Provides read-only access to project files so the Studio frontend can
 display a file explorer with content preview.

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Experiments REST API endpoints for Firefly Studio.
+"""Experiments REST API endpoints for Firefly Agentic Studio.
 
 Provides CRUD operations for A/B experiment definitions and a manual
 ``run-variant`` action.  Advanced features such as automatic traffic

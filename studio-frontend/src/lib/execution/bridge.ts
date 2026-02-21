@@ -1,7 +1,11 @@
 import { StudioWebSocket } from '$lib/api/websocket';
-import { isRunning, isDebugging, activeNodes, pushExecutionEvent } from '$lib/stores/execution';
+import { isRunning, isDebugging, activeNodes, checkpoints, pushExecutionEvent } from '$lib/stores/execution';
 import { setNodeState, clearNodeStates } from '$lib/stores/pipeline';
-import type { ExecutionEvent } from '$lib/types/graph';
+import { addToast } from '$lib/stores/notifications';
+import { requestAnalysis as requestOracleAnalysis } from '$lib/stores/oracle';
+import { currentProject } from '$lib/stores/project';
+import { get } from 'svelte/store';
+import type { ExecutionEvent, Checkpoint } from '$lib/types/graph';
 
 let ws: StudioWebSocket | null = null;
 const unsubscribers: Array<() => void> = [];
@@ -59,11 +63,47 @@ export function connectExecution(): void {
 	);
 
 	unsubscribers.push(
+		ws.on('node_skip', (event: ExecutionEvent) => {
+			if (event.node_id) {
+				activeNodes.update((set) => {
+					const next = new Set(set);
+					next.delete(event.node_id!);
+					return next;
+				});
+				setNodeState(event.node_id, 'skipped');
+			}
+			pushExecutionEvent(event);
+		})
+	);
+
+	unsubscribers.push(
+		ws.on('debug_enabled', (event: ExecutionEvent) => {
+			pushExecutionEvent(event);
+			addToast('Debug mode active', 'info');
+		})
+	);
+
+	unsubscribers.push(
+		ws.on('error', (event: ExecutionEvent) => {
+			pushExecutionEvent(event);
+			addToast(event.message || event.error || 'An error occurred', 'error');
+		})
+	);
+
+	unsubscribers.push(
 		ws.on('pipeline_complete', (event: ExecutionEvent) => {
 			activeNodes.set(new Set());
 			isRunning.set(false);
 			isDebugging.set(false);
 			pushExecutionEvent(event);
+			// Trigger Oracle analysis for post-execution insights
+			requestOracleAnalysis();
+		})
+	);
+
+	unsubscribers.push(
+		ws.on('checkpoint_created', (data: Checkpoint) => {
+			checkpoints.update((cps) => [...cps, data]);
 		})
 	);
 
@@ -89,6 +129,12 @@ export function connectExecution(): void {
 			activeNodes.set(new Set());
 			isRunning.set(false);
 			isDebugging.set(false);
+			addToast('Execution connection lost. Attempting to reconnect...', 'warning');
+		})
+	);
+	unsubscribers.push(
+		ws.on('_reconnect_failed', () => {
+			addToast('Could not reconnect to execution server. Please refresh the page.', 'error', 0);
 		})
 	);
 }
@@ -107,13 +153,14 @@ export function disconnectExecution(): void {
  * Send a "run" action with the current graph to the backend.
  */
 export function runPipeline(graph: object, inputs?: string): boolean {
-	if (!ws) {
-		console.warn('[bridge] Cannot run pipeline: execution WebSocket not connected');
+	if (!ws || !ws.connected) {
+		addToast('Cannot run pipeline: not connected to execution server', 'error');
 		return false;
 	}
 	clearNodeStates();
 	isRunning.set(true);
-	ws.send({ action: 'run', graph, inputs: inputs ?? null });
+	const project = get(currentProject)?.name ?? '';
+	ws.send({ action: 'run', graph, inputs: inputs ?? null, project });
 	return true;
 }
 
@@ -121,12 +168,13 @@ export function runPipeline(graph: object, inputs?: string): boolean {
  * Send a "debug" action with the current graph to the backend.
  */
 export function debugPipeline(graph: object, inputs?: string): boolean {
-	if (!ws) {
-		console.warn('[bridge] Cannot debug pipeline: execution WebSocket not connected');
+	if (!ws || !ws.connected) {
+		addToast('Cannot debug pipeline: not connected to execution server', 'error');
 		return false;
 	}
 	clearNodeStates();
 	isDebugging.set(true);
-	ws.send({ action: 'debug', graph, inputs: inputs ?? null });
+	const project = get(currentProject)?.name ?? '';
+	ws.send({ action: 'debug', graph, inputs: inputs ?? null, project });
 	return true;
 }

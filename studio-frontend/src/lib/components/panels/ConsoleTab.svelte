@@ -39,6 +39,7 @@
 				return 'badge-info';
 			case 'node_complete':
 			case 'pipeline_complete':
+			case 'pipeline_result':
 				return 'badge-success';
 			case 'node_error':
 				return 'badge-error';
@@ -61,6 +62,8 @@
 				return 'SKIP';
 			case 'pipeline_complete':
 				return 'COMPLETE';
+			case 'pipeline_result':
+				return 'RESULT';
 			default:
 				return type;
 		}
@@ -97,7 +100,7 @@
 			{#each $executionEvents as event, i (i)}
 				{@const extra = extraInfo(event)}
 				<div class="log-line">
-					<span class="log-timestamp">{formatTimestamp(event.timestamp)}</span>
+					<span class="log-timestamp">{formatTimestamp(event.timestamp ?? '')}</span>
 					<span class="log-badge {badgeClass(event.type)}">{badgeLabel(event.type)}</span>
 					{#if event.node_id}
 						<span class="log-node">{event.node_id}</span>

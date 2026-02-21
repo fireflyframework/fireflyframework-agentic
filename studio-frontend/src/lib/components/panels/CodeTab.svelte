@@ -1,557 +1,312 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
-	import { Copy, RefreshCw, Check } from 'lucide-svelte';
+	import { smithCode, smithMessages, smithIsThinking, chatWithSmith, executeCode, generateCode, pendingCommand, approveCommand, connectSmith, disconnectSmith, syncCanvasToSmith } from '$lib/stores/smith';
+	import ThinkingIndicator from '$lib/components/shared/ThinkingIndicator.svelte';
+	import ChatMessage from '$lib/components/shared/ChatMessage.svelte';
+	import ToolCallDisplay from '$lib/components/shared/ToolCallDisplay.svelte';
+	import CommandApprovalModal from '$lib/components/shared/CommandApprovalModal.svelte';
+	import { Copy, Play, RefreshCw, Send, Loader } from 'lucide-svelte';
 	import { nodes, edges } from '$lib/stores/pipeline';
-	import { api } from '$lib/api/client';
 	import { get } from 'svelte/store';
+	import { onMount, onDestroy } from 'svelte';
 
-	let code = $state('');
-	let loading = $state(false);
-	let error = $state('');
+	let chatInput = $state('');
+	let messagesContainer: HTMLDivElement;
 	let copied = $state(false);
-	let autoSync = $state(true);
-	let debouncing = $state(false);
-	let copyTimer: ReturnType<typeof setTimeout> | null = null;
-	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-	let previousGraphKey = $state('');
 
-	/**
-	 * Serialize graph for change detection.
-	 * Excludes volatile fields like position and _executionState.
-	 */
-	function serializeGraphForComparison(): string {
-		const currentNodes = get(nodes);
-		const currentEdges = get(edges);
-		const stableNodes = currentNodes.map((n) => ({
-			id: n.id,
-			type: n.type,
-			label: (n.data?.label as string) ?? '',
-			model: (n.data?.model as string) ?? '',
-			instructions: (n.data?.instructions as string) ?? ''
-		}));
-		const stableEdges = currentEdges.map((e) => ({
-			id: e.id,
-			source: e.source,
-			target: e.target
-		}));
-		return JSON.stringify({ nodes: stableNodes, edges: stableEdges });
-	}
-
-	/**
-	 * Serialize graph for the API call (full data).
-	 */
-	function serializeGraph() {
-		const currentNodes = get(nodes);
-		const currentEdges = get(edges);
-		const serializedNodes = currentNodes.map((n) => ({
-			id: n.id,
-			type: n.type,
-			label: (n.data?.label as string) ?? '',
-			position: n.position,
-			data: n.data
-		}));
-		const serializedEdges = currentEdges.map((e) => ({
-			id: e.id,
-			source: e.source,
-			target: e.target
-		}));
-		return { nodes: serializedNodes, edges: serializedEdges };
-	}
-
-	async function generateCode() {
-		loading = true;
-		error = '';
-		debouncing = false;
-		try {
-			const graph = serializeGraph();
-			const result = await api.codegen.toCode(graph);
-			code = result.code;
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Code generation failed';
-			code = '';
-		} finally {
-			loading = false;
-		}
-	}
-
-	async function copyToClipboard() {
-		if (!code) return;
-		try {
-			await navigator.clipboard.writeText(code);
-			copied = true;
-			if (copyTimer) clearTimeout(copyTimer);
-			copyTimer = setTimeout(() => {
-				copied = false;
-				copyTimer = null;
-			}, 2000);
-		} catch {
-			// Clipboard API not available
-		}
-	}
-
-	function toggleAutoSync() {
-		autoSync = !autoSync;
-		if (!autoSync) {
-			clearDebounce();
-		}
-	}
-
-	function clearDebounce() {
-		if (debounceTimer) {
-			clearTimeout(debounceTimer);
-			debounceTimer = null;
-		}
-		debouncing = false;
-	}
-
-	// ── HTML escaping for XSS prevention ──
-
-	function escapeHtml(text: string): string {
-		return text
-			.replace(/&/g, '&amp;')
-			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;');
-	}
-
-	// ── Python syntax highlighting ──
-
-	function highlightPython(source: string): string {
-		const escaped = escapeHtml(source);
-
-		const result: string[] = [];
-		let pos = 0;
-
-		// Combined regex for single-pass tokenization on HTML-escaped text.
-		// escapeHtml only produces &amp; &lt; &gt; — quotes remain literal " and '.
-		// Group order determines token priority (earlier groups win).
-		const combinedRe = new RegExp(
-			[
-				// 1: Triple double-quoted strings
-				'("""[\\s\\S]*?""")',
-				// 2: Triple single-quoted strings
-				"('''[\\s\\S]*?''')",
-				// 3: Comments (# to end of line)
-				'(#[^\\n]*)',
-				// 4: Double-quoted strings
-				'("(?:[^"\\\\\\n]|\\\\.)*")',
-				// 5: Single-quoted strings
-				"('(?:[^'\\\\\\n]|\\\\.)*')",
-				// 6,7,8: def + whitespace + function name
-				'\\b(def)(\\s+)(\\w+)',
-				// 9,10,11: class + whitespace + class name
-				'\\b(class)(\\s+)(\\w+)',
-				// 12: Decorators
-				'(@\\w+(?:\\.\\w+)*)',
-				// 13: Keywords
-				'\\b(from|import|return|if|else|elif|for|while|try|except|finally|with|as|async|await|yield|raise|pass|break|continue|and|or|not|in|is|None|True|False)\\b',
-				// 14: Built-in functions (followed by open paren)
-				'\\b(print|len|range|type|str|int|float|list|dict|set|tuple|isinstance|super)(?=\\s*\\()',
-				// 15: Numbers
-				'\\b(\\d+\\.?\\d*(?:e[+-]?\\d+)?)\\b',
-			].join('|'),
-			'g'
-		);
-
-		let m: RegExpExecArray | null;
-		combinedRe.lastIndex = 0;
-
-		while ((m = combinedRe.exec(escaped)) !== null) {
-			// Push text before this match
-			if (m.index > pos) {
-				result.push(escaped.slice(pos, m.index));
-			}
-
-			if (m[1] !== undefined) {
-				// Triple double-quoted string
-				result.push(`<span class="hl-string">${m[1]}</span>`);
-			} else if (m[2] !== undefined) {
-				// Triple single-quoted string
-				result.push(`<span class="hl-string">${m[2]}</span>`);
-			} else if (m[3] !== undefined) {
-				// Comment
-				result.push(`<span class="hl-comment">${m[3]}</span>`);
-			} else if (m[4] !== undefined) {
-				// Double-quoted string
-				result.push(`<span class="hl-string">${m[4]}</span>`);
-			} else if (m[5] !== undefined) {
-				// Single-quoted string
-				result.push(`<span class="hl-string">${m[5]}</span>`);
-			} else if (m[6] !== undefined) {
-				// def keyword + space + function name
-				result.push(`<span class="hl-keyword">${m[6]}</span>${m[7]}<span class="hl-funcname">${m[8]}</span>`);
-			} else if (m[9] !== undefined) {
-				// class keyword + space + class name
-				result.push(`<span class="hl-keyword">${m[9]}</span>${m[10]}<span class="hl-funcname">${m[11]}</span>`);
-			} else if (m[12] !== undefined) {
-				// Decorator
-				result.push(`<span class="hl-decorator">${m[12]}</span>`);
-			} else if (m[13] !== undefined) {
-				// Keyword
-				result.push(`<span class="hl-keyword">${m[13]}</span>`);
-			} else if (m[14] !== undefined) {
-				// Built-in function
-				result.push(`<span class="hl-builtin">${m[14]}</span>`);
-			} else if (m[15] !== undefined) {
-				// Number
-				result.push(`<span class="hl-number">${m[15]}</span>`);
-			} else {
-				result.push(m[0]);
-			}
-
-			pos = m.index + m[0].length;
-		}
-
-		// Push remaining text
-		if (pos < escaped.length) {
-			result.push(escaped.slice(pos));
-		}
-
-		return result.join('');
-	}
-
-	// ── Derived highlighted code ──
-
-	let highlightedCode = $derived(code ? highlightPython(code) : '');
-
-	let codeLines = $derived(
-		highlightedCode ? highlightedCode.split('\n') : []
-	);
-
-	// ── Reactive auto-regeneration via store subscriptions ──
-
-	let unsubNodes: (() => void) | null = null;
-	let unsubEdges: (() => void) | null = null;
-
-	function onGraphChange() {
-		if (!autoSync) return;
-
-		const currentKey = serializeGraphForComparison();
-		if (currentKey === previousGraphKey) return;
-		previousGraphKey = currentKey;
-
-		const currentNodes = get(nodes);
-		if (currentNodes.length === 0) return;
-		if (loading) return;
-
-		clearDebounce();
-		debouncing = true;
-		debounceTimer = setTimeout(() => {
-			debouncing = false;
-			debounceTimer = null;
-			generateCode();
-		}, 800);
-	}
-
-	// Generate code on mount if there are nodes in the graph
 	onMount(() => {
-		previousGraphKey = serializeGraphForComparison();
-
-		if (get(nodes).length > 0) {
-			generateCode();
-		}
-
-		// Subscribe to store changes for auto-regeneration
-		unsubNodes = nodes.subscribe(() => {
-			onGraphChange();
-		});
-		unsubEdges = edges.subscribe(() => {
-			onGraphChange();
-		});
+		connectSmith();
 	});
 
 	onDestroy(() => {
-		if (copyTimer) clearTimeout(copyTimer);
-		clearDebounce();
-		if (unsubNodes) unsubNodes();
-		if (unsubEdges) unsubEdges();
+		disconnectSmith();
+	});
+
+	function handleCopy() {
+		const code = get(smithCode);
+		if (code) {
+			navigator.clipboard.writeText(code);
+			copied = true;
+			setTimeout(() => copied = false, 2000);
+		}
+	}
+
+	function handleRefresh() {
+		const graph = {
+			nodes: get(nodes).map((n: any) => ({ id: n.id, type: n.type, data: n.data, position: n.position })),
+			edges: get(edges).map((e: any) => ({ id: e.id, source: e.source, target: e.target }))
+		};
+		generateCode(graph);
+	}
+
+	function handleRun() {
+		const code = get(smithCode);
+		if (code) {
+			executeCode(code);
+		}
+	}
+
+	function handleSend() {
+		const msg = chatInput.trim();
+		if (!msg) return;
+		chatInput = '';
+		chatWithSmith(msg);
+	}
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter' && !e.shiftKey) {
+			e.preventDefault();
+			handleSend();
+		}
+	}
+
+	// Auto-scroll messages
+	$effect(() => {
+		$smithMessages;
+		$smithIsThinking;
+		if (messagesContainer) {
+			requestAnimationFrame(() => {
+				messagesContainer.scrollTop = messagesContainer.scrollHeight;
+			});
+		}
 	});
 </script>
 
-<div class="code-tab">
-	<div class="code-toolbar">
-		<span class="toolbar-label">
-			Generated Python
-			{#if debouncing}
-				<span class="auto-sync-indicator">Auto-syncing...</span>
-			{/if}
-		</span>
+<div class="smith-container">
+	<!-- Toolbar -->
+	<div class="smith-toolbar">
+		<span class="smith-label">Smith</span>
 		<div class="toolbar-actions">
-			<button
-				class="auto-toggle"
-				class:active={autoSync}
-				onclick={toggleAutoSync}
-				title={autoSync ? 'Disable auto-sync' : 'Enable auto-sync'}
-			>
-				<span class="auto-toggle-label">Auto</span>
-				<span class="auto-toggle-track">
-					<span class="auto-toggle-thumb"></span>
-				</span>
-			</button>
-			<button class="toolbar-btn" onclick={copyToClipboard} title="Copy to clipboard" disabled={!code}>
+			<button class="toolbar-btn" onclick={handleCopy} title="Copy code">
+				<Copy size={14} />
 				{#if copied}
-					<Check size={13} />
-				{:else}
-					<Copy size={13} />
+					<span class="copied-text">Copied!</span>
 				{/if}
 			</button>
-			<button class="toolbar-btn" class:spinning={loading} onclick={generateCode} title="Regenerate code" disabled={loading}>
-				<RefreshCw size={13} />
+			<button class="toolbar-btn" onclick={handleRun} title="Run code">
+				<Play size={14} />
+			</button>
+			<button class="toolbar-btn" onclick={handleRefresh} title="Regenerate from pipeline">
+				<RefreshCw size={14} />
 			</button>
 		</div>
 	</div>
 
-	<div class="code-content">
-		{#if loading}
-			<div class="code-state spinning-indicator">
-				<span>Generating code...</span>
+	<!-- Code area -->
+	<div class="code-area">
+		{#if $smithIsThinking && !$smithCode}
+			<div class="code-generating">
+				<Loader size={20} class="smith-spinner" />
+				<span>Smith is generating code...</span>
 			</div>
-		{:else if error}
-			<div class="code-state code-error">
-				<span>{error}</span>
-			</div>
-		{:else if code}
-			<div class="code-block-wrapper">
-				<table class="code-table" role="presentation">
-					<tbody>
-						{#each codeLines as line, i}
-							<tr class="code-line">
-								<td class="line-number">{i + 1}</td>
-								<!-- SAFETY: line is HTML-escaped by escapeHtml() before highlightPython() adds trusted <span> tags -->
-								<td class="line-content">{@html line}</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
+		{:else if $smithCode}
+			<pre class="code-display"><code>{$smithCode}</code></pre>
 		{:else}
-			<div class="code-state">
-				<span>Add nodes to your pipeline to generate code.</span>
-			</div>
+			<pre class="code-display"><code>{'// Generate code from your pipeline...\n// Click Refresh or ask Smith to generate.'}</code></pre>
 		{/if}
+	</div>
+
+	<!-- Chat area -->
+	<div class="chat-area">
+		<div class="messages" bind:this={messagesContainer}>
+			{#each $smithMessages as msg}
+				<ChatMessage
+					role={msg.role}
+					content={msg.content}
+					agentName="Smith"
+					accentColor="#22c55e"
+				/>
+				{#if msg.toolCalls}
+					{#each msg.toolCalls as tc}
+						<ToolCallDisplay
+							toolName={tc.name}
+							args={tc.args}
+							result={tc.result}
+							accentColor="#22c55e"
+						/>
+					{/each}
+				{/if}
+			{/each}
+			{#if $smithIsThinking}
+				<ThinkingIndicator
+					accentColor="#22c55e"
+					messages={['Compiling...', 'It is... inevitable.', 'Analyzing the construct...', 'Making it real...']}
+				/>
+			{/if}
+		</div>
+		<div class="input-bar">
+			<input
+				type="text"
+				placeholder="Ask Smith..."
+				bind:value={chatInput}
+				onkeydown={handleKeydown}
+			/>
+			<button class="send-btn" onclick={handleSend} disabled={!chatInput.trim()}>
+				<Send size={14} />
+			</button>
+		</div>
 	</div>
 </div>
 
+{#if $pendingCommand}
+	{@const cmdId = $pendingCommand.commandId}
+	<CommandApprovalModal
+		command={$pendingCommand.command}
+		level={$pendingCommand.level}
+		onApprove={() => approveCommand(cmdId, true)}
+		onDeny={() => approveCommand(cmdId, false)}
+	/>
+{/if}
+
 <style>
-	.code-tab {
+	.smith-container {
 		display: flex;
 		flex-direction: column;
 		height: 100%;
-		overflow: hidden;
+		background: linear-gradient(180deg, rgba(34, 197, 94, 0.01) 0%, var(--color-bg-primary) 100%);
 	}
 
-	.code-toolbar {
+	.smith-toolbar {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		padding: 6px 12px;
-		border-bottom: 1px solid var(--color-border, #2a2a3a);
+		border-bottom: 1px solid var(--color-border);
+		background: var(--color-bg-secondary);
 		flex-shrink: 0;
 	}
 
-	.toolbar-label {
-		font-size: 11px;
-		color: var(--color-text-secondary, #8888a0);
-		font-weight: 500;
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
-
-	.auto-sync-indicator {
-		font-size: 10px;
-		color: var(--color-info, #3b82f6);
-		font-weight: 400;
-		animation: pulse-opacity 1.2s ease-in-out infinite;
-	}
-
-	@keyframes pulse-opacity {
-		0%, 100% { opacity: 0.6; }
-		50% { opacity: 1; }
+	.smith-label {
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		color: #22c55e;
 	}
 
 	.toolbar-actions {
 		display: flex;
 		gap: 4px;
-		align-items: center;
 	}
 
 	.toolbar-btn {
 		display: flex;
 		align-items: center;
-		justify-content: center;
-		width: 26px;
-		height: 26px;
-		border: none;
-		background: transparent;
-		border-radius: 4px;
-		color: var(--color-text-secondary, #8888a0);
+		gap: 4px;
+		padding: 4px 8px;
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		background: var(--color-bg-elevated);
+		color: var(--color-text-secondary);
 		cursor: pointer;
-		transition: background 0.15s ease, color 0.15s ease;
+		font-size: 0.75rem;
+		transition: all 0.15s;
+	}
+	.toolbar-btn:hover {
+		color: var(--color-text-primary);
+		border-color: var(--color-accent);
 	}
 
-	.toolbar-btn:hover:not(:disabled) {
-		background: rgba(255, 255, 255, 0.05);
-		color: var(--color-text-primary, #e8e8ed);
+	.copied-text {
+		color: #22c55e;
+		font-size: 0.7rem;
 	}
 
-	.toolbar-btn:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
+	.code-area {
+		flex: 3;
+		overflow: auto;
+		border-bottom: 1px solid var(--color-border);
+		min-height: 0;
 	}
 
-	/* ── Auto-sync toggle ── */
+	.code-display {
+		margin: 0;
+		padding: 12px 16px;
+		font-size: 0.8rem;
+		line-height: 1.6;
+		color: var(--color-text-primary);
+		background: var(--color-code-bg);
+		white-space: pre-wrap;
+		word-break: break-word;
+		min-height: 100%;
+	}
 
-	.auto-toggle {
+	.code-display code {
+		font-family: 'JetBrains Mono', 'Fira Code', monospace;
+	}
+
+	.code-generating {
 		display: flex;
 		align-items: center;
-		gap: 5px;
-		padding: 2px 6px;
-		border: none;
-		background: transparent;
-		border-radius: 4px;
-		cursor: pointer;
-		transition: background 0.15s ease;
+		justify-content: center;
+		gap: 10px;
+		height: 100%;
+		color: var(--color-text-muted);
+		font-size: 0.85rem;
 	}
 
-	.auto-toggle:hover {
-		background: rgba(255, 255, 255, 0.05);
+	:global(.smith-spinner) {
+		animation: smith-spin 1s linear infinite;
 	}
 
-	.auto-toggle-label {
-		font-size: 10px;
-		font-weight: 500;
-		color: var(--color-text-secondary, #8888a0);
-		transition: color 0.15s ease;
+	@keyframes smith-spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 
-	.auto-toggle.active .auto-toggle-label {
-		color: var(--color-text-primary, #e8e8ed);
-	}
-
-	.auto-toggle-track {
-		position: relative;
-		width: 22px;
-		height: 12px;
-		background: rgba(255, 255, 255, 0.1);
-		border-radius: 6px;
-		transition: background 0.2s ease;
-	}
-
-	.auto-toggle.active .auto-toggle-track {
-		background: var(--color-accent, #ff6b35);
-	}
-
-	.auto-toggle-thumb {
-		position: absolute;
-		top: 2px;
-		left: 2px;
-		width: 8px;
-		height: 8px;
-		background: var(--color-text-secondary, #8888a0);
-		border-radius: 50%;
-		transition: transform 0.2s ease, background 0.2s ease;
-	}
-
-	.auto-toggle.active .auto-toggle-thumb {
-		transform: translateX(10px);
-		background: #fff;
-	}
-
-	/* ── Code content ── */
-
-	.code-content {
-		flex: 1;
-		overflow-y: auto;
-		font-family: var(--font-mono, 'JetBrains Mono', ui-monospace, monospace);
-		font-size: 12px;
-		line-height: 1.6;
-	}
-
-	.code-state {
+	.chat-area {
+		flex: 2;
 		display: flex;
 		flex-direction: column;
+		min-height: 0;
+	}
+
+	.messages {
+		flex: 1;
+		overflow-y: auto;
+		padding: 12px;
+		min-height: 0;
+	}
+
+	.input-bar {
+		display: flex;
+		gap: 8px;
+		padding: 8px 12px;
+		border-top: 1px solid var(--color-border);
+		background: var(--color-bg-secondary);
+		flex-shrink: 0;
+	}
+
+	.input-bar input {
+		flex: 1;
+		padding: 8px 12px;
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		background: var(--color-bg-elevated);
+		color: var(--color-text-primary);
+		font-size: 0.85rem;
+		outline: none;
+	}
+	.input-bar input:focus {
+		border-color: #22c55e;
+	}
+	.input-bar input::placeholder {
+		color: var(--color-text-muted);
+	}
+
+	.send-btn {
+		display: flex;
 		align-items: center;
 		justify-content: center;
-		height: 100%;
-		gap: 8px;
-		color: var(--color-text-secondary, #8888a0);
-		font-size: 12px;
+		width: 36px;
+		height: 36px;
+		border: none;
+		border-radius: 8px;
+		background: #22c55e;
+		color: #fff;
+		cursor: pointer;
+		transition: background 0.15s;
 	}
-
-	.code-error {
-		color: var(--color-error, #ef4444);
-	}
-
-	.code-block-wrapper {
-		padding: 12px 0;
-	}
-
-	.code-table {
-		border-collapse: collapse;
-		width: 100%;
-	}
-
-	.code-line {
-		line-height: 1.6;
-	}
-
-	.line-number {
-		user-select: none;
-		text-align: right;
-		padding: 0 12px 0 12px;
-		color: rgba(136, 136, 160, 0.4);
-		font-size: 11px;
-		min-width: 36px;
-		vertical-align: top;
-		white-space: nowrap;
-	}
-
-	.line-content {
-		white-space: pre;
-		color: var(--color-text-primary, #e8e8ed);
-		tab-size: 4;
-		padding-right: 12px;
-	}
-
-	/* ── Syntax highlighting colors (One Dark theme) ── */
-
-	.code-content :global(.hl-keyword) {
-		color: #c678dd;
-	}
-
-	.code-content :global(.hl-string) {
-		color: #98c379;
-	}
-
-	.code-content :global(.hl-comment) {
-		color: #5c6370;
-		font-style: italic;
-	}
-
-	.code-content :global(.hl-number) {
-		color: #d19a66;
-	}
-
-	.code-content :global(.hl-decorator) {
-		color: #e5c07b;
-	}
-
-	.code-content :global(.hl-funcname) {
-		color: #61afef;
-	}
-
-	.code-content :global(.hl-builtin) {
-		color: #56b6c2;
-	}
-
-	/* ── Animations ── */
-
-	.spinning :global(svg) {
-		animation: spin 1s linear infinite;
-	}
-
-	@keyframes spin {
-		from { transform: rotate(0deg); }
-		to { transform: rotate(360deg); }
-	}
+	.send-btn:hover { background: #16a34a; }
+	.send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>

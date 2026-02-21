@@ -32,7 +32,13 @@ from fireflyframework_genai.studio.server import create_studio_app
 def app(monkeypatch):
     # The studio assistant agent requires an LLM API key at construction
     # time.  Provide a dummy key so that agent creation succeeds in tests.
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "fireflyframework_genai.studio.assistant.agent._resolve_assistant_model",
+        lambda: "openai:gpt-4o",
+    )
     return create_studio_app()
 
 
@@ -75,26 +81,16 @@ class TestAssistantWebSocket:
             assert response["type"] == "history_cleared"
 
     def test_assistant_ws_chat_streams_tokens(self, app, monkeypatch):
-        """Test the chat action with a mock agent that simulates streaming."""
+        """Test the chat action with a mock agent that returns a response."""
 
-        # Create a mock stream that yields tokens
-        mock_stream = MagicMock()
-        mock_stream.new_messages.return_value = []
+        # Mock result object returned by agent.run()
+        mock_result = MagicMock()
+        mock_result.output = "Hello world"
+        mock_result.new_messages.return_value = []
 
-        async def fake_stream_tokens():
-            for token in ["Hello", " ", "world"]:
-                yield token
-
-        mock_stream.stream_tokens = fake_stream_tokens
-
-        # Async context manager that yields the mock stream
-        mock_ctx = MagicMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_stream)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
-
-        # Mock agent whose run_stream returns the mock context manager
+        # Mock agent whose run returns the mock result
         mock_agent = MagicMock()
-        mock_agent.run_stream = AsyncMock(return_value=mock_ctx)
+        mock_agent.run = AsyncMock(return_value=mock_result)
 
         # Patch create_studio_assistant in the module where it's imported
         monkeypatch.setattr(
@@ -117,7 +113,7 @@ class TestAssistantWebSocket:
                 elif resp["type"] == "error":
                     pytest.fail(f"Unexpected error: {resp['message']}")
 
-            assert tokens == ["Hello", " ", "world"]
+            assert tokens == ["Hello world"]
 
     def test_assistant_ws_chat_fallback_on_stream_error(self, app, monkeypatch):
         """Test that chat falls back to non-streaming when run_stream fails."""

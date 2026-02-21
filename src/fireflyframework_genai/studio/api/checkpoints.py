@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Checkpoint API endpoints for Firefly Studio.
+"""Checkpoint API endpoints for Firefly Agentic Studio.
 
 Exposes the :class:`CheckpointManager` over REST so the frontend can
 list, inspect, fork, and diff execution checkpoints for the timeline
@@ -83,6 +83,16 @@ def create_checkpoints_router(manager: CheckpointManager) -> APIRouter:
                 detail=f"Checkpoint {body.from_index} not found",
             ) from exc
         return asdict(cp)
+
+    @router.post("/{index}/rewind")
+    async def rewind_checkpoint(index: int) -> dict[str, Any]:
+        try:
+            cp = manager.get(index)
+        except IndexError as exc:
+            raise HTTPException(status_code=404, detail=f"Checkpoint {index} not found") from exc
+        # Trim all checkpoints after this one
+        manager.rewind(index)
+        return {"status": "rewound", "index": index, "node_id": cp.node_id}
 
     @router.post("/diff")
     async def diff_checkpoints(body: DiffRequest) -> dict[str, Any]:

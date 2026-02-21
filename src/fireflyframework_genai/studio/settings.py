@@ -26,10 +26,11 @@ import json
 import logging
 import os
 import stat
+import uuid
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, Field, SecretStr
 
 logger = logging.getLogger(__name__)
 
@@ -84,11 +85,65 @@ class ModelDefaults(BaseModel):
     retries: int = 3
 
 
+class UserProfile(BaseModel):
+    """User identity and preferences for personalised assistant interaction."""
+
+    name: str = ""
+    role: str = ""
+    context: str = ""
+    assistant_name: str = "The Architect"
+
+
+class ToolCredentials(BaseModel):
+    """API keys and config for built-in tools that need external services."""
+
+    serpapi_api_key: SecretStr | None = None
+    serper_api_key: SecretStr | None = None
+    tavily_api_key: SecretStr | None = None
+    database_url: SecretStr | None = None
+    redis_url: SecretStr | None = None
+    slack_bot_token: SecretStr | None = None
+    telegram_bot_token: SecretStr | None = None
+
+
+# Mapping from tool credential field names to env vars.
+_TOOL_CREDENTIAL_ENV_MAP: dict[str, str] = {
+    "serpapi_api_key": "SERPAPI_API_KEY",
+    "serper_api_key": "SERPER_API_KEY",
+    "tavily_api_key": "TAVILY_API_KEY",
+    "database_url": "DATABASE_URL",
+    "redis_url": "REDIS_URL",
+    "slack_bot_token": "SLACK_BOT_TOKEN",
+    "telegram_bot_token": "TELEGRAM_BOT_TOKEN",
+}
+
+
+class ServiceCredential(BaseModel):
+    """A dynamic service credential entry for databases, APIs, queues, etc."""
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    service_type: str  # e.g. "postgresql", "redis", "serpapi", "slack"
+    label: str = ""
+    host: str = ""
+    port: int | None = None
+    username: str = ""
+    password: SecretStr | None = None
+    database: str = ""
+    ssl_enabled: bool = False
+    connection_url: SecretStr | None = None
+    api_key: SecretStr | None = None
+    token: SecretStr | None = None
+    extra: dict[str, str] = Field(default_factory=dict)
+
+
 class StudioSettings(BaseModel):
     """Top-level settings persisted to disk."""
 
     credentials: ProviderCredentials = ProviderCredentials()
     model_defaults: ModelDefaults = ModelDefaults()
+    user_profile: UserProfile = UserProfile()
+    tool_credentials: ToolCredentials = ToolCredentials()
+    service_credentials: list[ServiceCredential] = Field(default_factory=list)
     setup_complete: bool = False
 
 
@@ -135,6 +190,12 @@ def apply_settings_to_env(settings: StudioSettings) -> None:
         if value is not None and env_var not in os.environ:
             os.environ[env_var] = value.get_secret_value()
 
+    # Also inject tool credentials
+    for field_name, env_var in _TOOL_CREDENTIAL_ENV_MAP.items():
+        value = getattr(settings.tool_credentials, field_name, None)
+        if value is not None and env_var not in os.environ:
+            os.environ[env_var] = value.get_secret_value()
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -148,8 +209,28 @@ def _settings_to_dict(settings: StudioSettings) -> dict[str, Any]:
         val: SecretStr | None = getattr(settings.credentials, field_name)
         creds[field_name] = val.get_secret_value() if val is not None else None
 
+    tool_creds: dict[str, str | None] = {}
+    for field_name in ToolCredentials.model_fields:
+        val = getattr(settings.tool_credentials, field_name)
+        tool_creds[field_name] = val.get_secret_value() if val is not None else None
+
+    # Serialize service credentials, unwrapping SecretStr fields.
+    svc_list: list[dict[str, Any]] = []
+    for sc in settings.service_credentials:
+        entry = sc.model_dump()
+        for secret_field in ("password", "connection_url", "api_key", "token"):
+            val = getattr(sc, secret_field, None)
+            if val is not None:
+                entry[secret_field] = val.get_secret_value()
+            else:
+                entry[secret_field] = None
+        svc_list.append(entry)
+
     return {
         "credentials": creds,
         "model_defaults": settings.model_defaults.model_dump(),
+        "user_profile": settings.user_profile.model_dump(),
+        "tool_credentials": tool_creds,
+        "service_credentials": svc_list,
         "setup_complete": settings.setup_complete,
     }
