@@ -44,6 +44,7 @@ from fireflyframework_genai.pipeline.steps import (
     ReasoningStep,
 )
 from fireflyframework_genai.studio.codegen.models import GraphModel, GraphNode, NodeType
+from fireflyframework_genai.studio.execution.io_nodes import InputNodeConfig, OutputNodeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,20 @@ def compile_graph(
     """
     if not graph.nodes:
         raise CompilationError("Graph has no nodes")
+
+    # Validate IO node constraints when present
+    input_nodes = [n for n in graph.nodes if n.type == NodeType.INPUT]
+    output_nodes = [n for n in graph.nodes if n.type == NodeType.OUTPUT]
+
+    if input_nodes:
+        if len(input_nodes) > 1:
+            raise CompilationError(
+                "Pipeline must have exactly one Input node, found {}.".format(len(input_nodes))
+            )
+        if not output_nodes:
+            raise CompilationError(
+                "Pipeline with an Input node must have at least one Output node."
+            )
 
     name = graph.metadata.get("name", "studio-pipeline")
     builder = PipelineBuilder(name=name)
@@ -350,6 +365,38 @@ def _compile_custom_code(node: GraphNode) -> CallableStep:
     return CallableStep(_run_custom)
 
 
+def _compile_input(node: GraphNode) -> CallableStep:
+    """Compile an Input boundary node.
+
+    The Input node is a pass-through: it receives pipeline inputs and
+    forwards them to downstream nodes.  Validation against the schema
+    (if configured) happens at the API boundary, not here.
+    """
+    config = InputNodeConfig(**node.data)
+    _ = config  # validation happens at construction time
+
+    async def _input_step(context: PipelineContext, inputs: dict[str, Any]) -> Any:
+        return inputs.get("input", context.inputs)
+
+    return CallableStep(_input_step)
+
+
+def _compile_output(node: GraphNode) -> CallableStep:
+    """Compile an Output boundary node.
+
+    The Output node collects the final result.  Destination routing
+    (queue publish, webhook POST, etc.) is handled by the ProjectRuntime
+    after pipeline execution completes, not within the step itself.
+    """
+    config = OutputNodeConfig(**node.data)
+
+    async def _output_step(context: PipelineContext, inputs: dict[str, Any]) -> Any:
+        context.metadata["_output_config"] = config.model_dump()
+        return inputs.get("input", inputs)
+
+    return CallableStep(_output_step)
+
+
 # ---------------------------------------------------------------------------
 # Dispatch table
 # ---------------------------------------------------------------------------
@@ -365,4 +412,6 @@ _NODE_COMPILERS: dict[NodeType, Any] = {
     NodeType.MEMORY: _compile_memory,
     NodeType.VALIDATOR: _compile_validator,
     NodeType.CUSTOM_CODE: _compile_custom_code,
+    NodeType.INPUT: _compile_input,
+    NodeType.OUTPUT: _compile_output,
 }
