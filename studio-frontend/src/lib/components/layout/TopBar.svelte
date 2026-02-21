@@ -9,7 +9,9 @@
 	import ChevronDown from 'lucide-svelte/icons/chevron-down';
 	import Trash2 from 'lucide-svelte/icons/trash-2';
 	import LinkIcon from 'lucide-svelte/icons/link';
+	import Power from 'lucide-svelte/icons/power';
 	import { isRunning, isDebugging } from '$lib/stores/execution';
+	import { runtimeStatus } from '$lib/stores/runtime';
 	import { runPipeline, debugPipeline } from '$lib/execution/bridge';
 	import { getGraphSnapshot, nodes as nodesStore } from '$lib/stores/pipeline';
 	import { settingsModalOpen, architectSidebarOpen } from '$lib/stores/ui';
@@ -136,6 +138,34 @@
 	function toggleArchitect() {
 		architectSidebarOpen.update((v) => !v);
 	}
+
+	// Runtime controls
+	let rtStatus = $derived($runtimeStatus);
+	let runtimeToggling = $state(false);
+
+	async function toggleRuntime() {
+		const proj = get(currentProject);
+		if (!proj || runtimeToggling) return;
+		runtimeToggling = true;
+		try {
+			if (rtStatus === 'running') {
+				runtimeStatus.set('stopped');
+				await api.runtime.stop(proj.name);
+				runtimeStatus.set('stopped');
+				addToast('Runtime stopped', 'success');
+			} else {
+				runtimeStatus.set('starting');
+				await api.runtime.start(proj.name);
+				runtimeStatus.set('running');
+				addToast('Runtime started', 'success');
+			}
+		} catch {
+			runtimeStatus.set('error');
+			addToast('Runtime toggle failed', 'error');
+		} finally {
+			runtimeToggling = false;
+		}
+	}
 </script>
 
 <header class="top-bar">
@@ -243,6 +273,24 @@
 				{#if debugging}
 					<span class="pulse-dot debug-dot"></span>
 				{/if}
+			</button>
+			<button
+				class="btn-runtime"
+				class:runtime-running={rtStatus === 'running'}
+				class:runtime-error={rtStatus === 'error'}
+				class:runtime-starting={rtStatus === 'starting'}
+				disabled={runtimeToggling}
+				onclick={toggleRuntime}
+				title={rtStatus === 'running' ? 'Stop runtime' : 'Start runtime'}
+			>
+				<span
+					class="runtime-dot"
+					class:rt-running={rtStatus === 'running'}
+					class:rt-stopped={rtStatus === 'stopped'}
+					class:rt-error={rtStatus === 'error'}
+					class:rt-starting={rtStatus === 'starting'}
+				></span>
+				<Power size={13} />
 			</button>
 			<div class="divider"></div>
 		{/if}
@@ -728,6 +776,80 @@
 
 	.btn-run-active {
 		background: var(--color-success);
+	}
+
+	/* Runtime toggle button */
+	.btn-runtime {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		background: transparent;
+		border: 1px solid var(--color-border);
+		color: var(--color-text-secondary);
+		padding: 4px 10px;
+		border-radius: 6px;
+		font-family: var(--font-sans);
+		font-size: 11px;
+		font-weight: 500;
+		cursor: pointer;
+		transition: background 0.15s, color 0.15s, border-color 0.15s;
+	}
+
+	.btn-runtime:hover:not(:disabled) {
+		background: var(--color-bg-elevated);
+		color: var(--color-text-primary);
+	}
+
+	.btn-runtime:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.btn-runtime.runtime-running {
+		border-color: color-mix(in srgb, var(--color-success) 40%, transparent);
+		color: var(--color-success);
+	}
+
+	.btn-runtime.runtime-error {
+		border-color: color-mix(in srgb, var(--color-error) 40%, transparent);
+		color: var(--color-error);
+	}
+
+	.btn-runtime.runtime-starting {
+		border-color: color-mix(in srgb, #f59e0b 40%, transparent);
+		color: #f59e0b;
+	}
+
+	.runtime-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		flex-shrink: 0;
+		transition: background 0.3s;
+	}
+
+	.runtime-dot.rt-stopped {
+		background: var(--color-text-secondary);
+	}
+
+	.runtime-dot.rt-running {
+		background: var(--color-success);
+		box-shadow: 0 0 6px color-mix(in srgb, var(--color-success) 50%, transparent);
+	}
+
+	.runtime-dot.rt-error {
+		background: var(--color-error);
+		box-shadow: 0 0 6px color-mix(in srgb, var(--color-error) 50%, transparent);
+	}
+
+	.runtime-dot.rt-starting {
+		background: #f59e0b;
+		animation: runtime-pulse 1s ease-in-out infinite;
+	}
+
+	@keyframes runtime-pulse {
+		0%, 100% { opacity: 0.4; }
+		50% { opacity: 1; }
 	}
 
 	.btn-icon {
