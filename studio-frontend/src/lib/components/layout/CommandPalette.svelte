@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { commandPaletteOpen, bottomPanelOpen, bottomPanelTab, rightPanelOpen, settingsModalOpen } from '$lib/stores/ui';
+	import { commandPaletteOpen, bottomPanelOpen, bottomPanelTab, rightPanelOpen, settingsModalOpen, architectSidebarOpen } from '$lib/stores/ui';
 	import { addNode, getGraphSnapshot } from '$lib/stores/pipeline';
 	import { runPipeline, debugPipeline } from '$lib/execution/bridge';
 	import type { Component } from 'svelte';
@@ -23,6 +23,8 @@
 	import Code from 'lucide-svelte/icons/code';
 	import GitFork from 'lucide-svelte/icons/git-fork';
 	import GitMerge from 'lucide-svelte/icons/git-merge';
+	import Antenna from 'lucide-svelte/icons/antenna';
+	import Download from 'lucide-svelte/icons/download';
 
 	// Action icons
 	import Play from 'lucide-svelte/icons/play';
@@ -47,7 +49,7 @@
 
 	const commands: Command[] = [
 		// Navigation
-		{ id: 'nav-build', label: 'Go to Build', category: 'Navigation', icon: Blocks, action: () => goto('/build') },
+		{ id: 'nav-construct', label: 'Go to Construct', category: 'Navigation', icon: Blocks, action: () => goto('/construct') },
 		{ id: 'nav-evaluate', label: 'Go to Evaluate', category: 'Navigation', icon: FlaskConical, action: () => goto('/evaluate') },
 		{ id: 'nav-experiments', label: 'Go to Experiments', category: 'Navigation', icon: GitBranch, action: () => goto('/experiments') },
 		{ id: 'nav-deploy', label: 'Go to Deploy', category: 'Navigation', icon: Rocket, action: () => goto('/deploy') },
@@ -55,6 +57,8 @@
 		{ id: 'nav-files', label: 'Go to Files', category: 'Navigation', icon: FolderOpen, action: () => goto('/files') },
 
 		// Add Node
+		{ id: 'node-input', label: 'Add Input Node', category: 'Add Node', icon: Antenna, action: () => addNode('input', 'Input') },
+		{ id: 'node-output', label: 'Add Output Node', category: 'Add Node', icon: Download, action: () => addNode('output', 'Output') },
 		{ id: 'node-agent', label: 'Add Agent Node', category: 'Add Node', icon: Bot, action: () => addNode('agent', 'Agent') },
 		{ id: 'node-tool', label: 'Add Tool Node', category: 'Add Node', icon: Wrench, action: () => addNode('tool', 'Tool') },
 		{ id: 'node-reasoning', label: 'Add Reasoning Node', category: 'Add Node', icon: Brain, action: () => addNode('reasoning', 'Reasoning') },
@@ -78,7 +82,7 @@
 		{ id: 'view-tab-console', label: 'Switch to Console Tab', category: 'View', icon: Terminal, action: () => { bottomPanelOpen.set(true); bottomPanelTab.set('console'); } },
 		{ id: 'view-tab-code', label: 'Switch to Code Tab', category: 'View', icon: CodeXml, action: () => { bottomPanelOpen.set(true); bottomPanelTab.set('code'); } },
 		{ id: 'view-tab-timeline', label: 'Switch to Timeline Tab', category: 'View', icon: Clock, action: () => { bottomPanelOpen.set(true); bottomPanelTab.set('timeline'); } },
-		{ id: 'view-tab-chat', label: 'Switch to Chat Tab', category: 'View', icon: MessageSquare, action: () => { bottomPanelOpen.set(true); bottomPanelTab.set('chat'); } },
+		{ id: 'view-tab-chat', label: 'Toggle AI Assistant Sidebar', category: 'View', icon: MessageSquare, action: () => { architectSidebarOpen.update((v) => !v); } },
 	];
 
 	let query = $state('');

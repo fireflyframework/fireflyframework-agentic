@@ -8,19 +8,41 @@
 	} from '@xyflow/svelte';
 	import { nodes, edges, selectedNodeId } from '$lib/stores/pipeline';
 	import Workflow from 'lucide-svelte/icons/workflow';
+	import Boxes from 'lucide-svelte/icons/boxes';
+	import Bot from 'lucide-svelte/icons/bot';
+	import Wrench from 'lucide-svelte/icons/wrench';
+	import Cable from 'lucide-svelte/icons/cable';
 	import AgentNode from './nodes/AgentNode.svelte';
 	import ToolNode from './nodes/ToolNode.svelte';
 	import ReasoningNode from './nodes/ReasoningNode.svelte';
 	import ConditionNode from './nodes/ConditionNode.svelte';
+	import MemoryNode from './nodes/MemoryNode.svelte';
+	import ValidatorNode from './nodes/ValidatorNode.svelte';
+	import CustomCodeNode from './nodes/CustomCodeNode.svelte';
+	import FanOutNode from './nodes/FanOutNode.svelte';
+	import FanInNode from './nodes/FanInNode.svelte';
+	import InputNode from './nodes/InputNode.svelte';
+	import OutputNode from './nodes/OutputNode.svelte';
 
 	const nodeTypes = {
+		input: InputNode,
+		output: OutputNode,
 		agent: AgentNode,
 		tool: ToolNode,
 		reasoning: ReasoningNode,
-		condition: ConditionNode
+		condition: ConditionNode,
+		memory: MemoryNode,
+		validator: ValidatorNode,
+		custom_code: CustomCodeNode,
+		fan_out: FanOutNode,
+		fan_in: FanInNode
 	};
 
 	let isEmpty = $derived($nodes.length === 0);
+	let totalNodes = $derived($nodes.length);
+	let agentCount = $derived($nodes.filter((n) => n.type === 'agent').length);
+	let toolCount = $derived($nodes.filter((n) => n.type === 'tool').length);
+	let connectionCount = $derived($edges.length);
 </script>
 
 <div class="canvas-wrapper">
@@ -30,21 +52,53 @@
 		bind:edges={$edges}
 		fitView
 		colorMode="dark"
-		defaultEdgeOptions={{ animated: true }}
+		defaultEdgeOptions={{
+			type: 'smoothstep',
+			animated: true,
+			style: 'stroke: #cbd5e1; stroke-width: 2.5px;'
+		}}
 		onnodeclick={({ node }) => selectedNodeId.set(node.id)}
 		onpaneclick={() => selectedNodeId.set(null)}
 	>
 		<Controls position="bottom-left" />
 		<MiniMap position="bottom-right" />
-		<Background variant={BackgroundVariant.Dots} gap={20} size={1} />
+		<Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#2a2a3a" />
 	</SvelteFlow>
+
+	{#if !isEmpty}
+		<div class="stats-bar">
+			<div class="stat-item">
+				<Boxes size={12} />
+				<span class="stat-label">Nodes</span>
+				<span class="stat-value">{totalNodes}</span>
+			</div>
+			<div class="stat-divider"></div>
+			<div class="stat-item">
+				<Bot size={12} />
+				<span class="stat-label">Agents</span>
+				<span class="stat-value">{agentCount}</span>
+			</div>
+			<div class="stat-divider"></div>
+			<div class="stat-item">
+				<Wrench size={12} />
+				<span class="stat-label">Tools</span>
+				<span class="stat-value">{toolCount}</span>
+			</div>
+			<div class="stat-divider"></div>
+			<div class="stat-item">
+				<Cable size={12} />
+				<span class="stat-label">Links</span>
+				<span class="stat-value">{connectionCount}</span>
+			</div>
+		</div>
+	{/if}
 
 	{#if isEmpty}
 		<div class="empty-overlay">
 			<div class="empty-container">
 				<Workflow size={40} />
 				<h2 class="empty-headline">Start building your pipeline</h2>
-				<p class="empty-hint">Drag components from the left panel, or press Cmd+K to search</p>
+				<p class="empty-hint">Click components in the left panel to add them, or press Cmd+K to search</p>
 			</div>
 		</div>
 	{/if}
@@ -55,6 +109,55 @@
 		width: 100%;
 		height: 100%;
 		position: relative;
+	}
+
+	.stats-bar {
+		position: absolute;
+		top: 12px;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 5;
+		display: flex;
+		align-items: center;
+		gap: 0;
+		background: rgba(18, 18, 28, 0.82);
+		backdrop-filter: blur(12px);
+		-webkit-backdrop-filter: blur(12px);
+		border: 1px solid rgba(255, 255, 255, 0.06);
+		border-radius: 20px;
+		padding: 5px 14px;
+		box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+		pointer-events: none;
+		user-select: none;
+	}
+
+	.stat-item {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		padding: 0 8px;
+		color: rgba(160, 160, 184, 0.8);
+		font-size: 11px;
+		font-family: var(--font-sans, system-ui, sans-serif);
+		white-space: nowrap;
+	}
+
+	.stat-label {
+		color: rgba(136, 136, 160, 0.6);
+		font-weight: 500;
+	}
+
+	.stat-value {
+		color: rgba(232, 232, 237, 0.9);
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.stat-divider {
+		width: 1px;
+		height: 14px;
+		background: rgba(255, 255, 255, 0.08);
+		flex-shrink: 0;
 	}
 
 	.empty-overlay {

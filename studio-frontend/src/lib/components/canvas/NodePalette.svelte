@@ -8,7 +8,9 @@
 		Code,
 		CircleDot,
 		GitFork,
-		GitMerge
+		GitMerge,
+		Antenna,
+		Download
 	} from 'lucide-svelte';
 	import { addNode } from '$lib/stores/pipeline';
 	import type { Component } from 'svelte';
@@ -21,15 +23,17 @@
 	}
 
 	const palette: PaletteItem[] = [
+		{ type: 'input', label: 'Input', icon: Antenna, color: '#10b981' },
+		{ type: 'output', label: 'Output', icon: Download, color: '#3b82f6' },
 		{ type: 'agent', label: 'Agent', icon: Bot, color: '#6366f1' },
 		{ type: 'tool', label: 'Tool', icon: Wrench, color: '#8b5cf6' },
 		{ type: 'reasoning', label: 'Reasoning', icon: Brain, color: '#ec4899' },
-		{ type: 'condition', label: 'Condition', icon: CircleDot, color: '#8888a0' },
+		{ type: 'condition', label: 'Condition', icon: CircleDot, color: '#f59e0b' },
 		{ type: 'memory', label: 'Memory', icon: Database, color: '#06b6d4' },
 		{ type: 'validator', label: 'Validator', icon: Shield, color: '#f59e0b' },
 		{ type: 'custom_code', label: 'Code', icon: Code, color: '#3b82f6' },
-		{ type: 'fan_out', label: 'Fan Out', icon: GitFork, color: '#8888a0' },
-		{ type: 'fan_in', label: 'Fan In', icon: GitMerge, color: '#8888a0' }
+		{ type: 'fan_out', label: 'Fan Out', icon: GitFork, color: '#64748b' },
+		{ type: 'fan_in', label: 'Fan In', icon: GitMerge, color: '#64748b' }
 	];
 
 	function iconBg(hex: string): string {
