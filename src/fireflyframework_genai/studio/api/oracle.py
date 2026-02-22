@@ -319,9 +319,9 @@ def create_oracle_router() -> APIRouter:
                         # Send response in chunks for frontend streaming effect
                         import asyncio
 
-                        _CHUNK_SIZE = 12
-                        for i in range(0, len(full_text), _CHUNK_SIZE):
-                            chunk = full_text[i : i + _CHUNK_SIZE]
+                        _chunk_size = 12
+                        for i in range(0, len(full_text), _chunk_size):
+                            chunk = full_text[i : i + _chunk_size]
                             await websocket.send_json(
                                 {"type": "oracle_token", "content": chunk}
                             )

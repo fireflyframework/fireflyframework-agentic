@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
-from fireflyframework_genai.studio.codegen.generator import generate_python, _get_default_model
+from fireflyframework_genai.studio.codegen.generator import _get_default_model, generate_python
 from fireflyframework_genai.studio.codegen.models import GraphModel, GraphNode, NodeType
 
 

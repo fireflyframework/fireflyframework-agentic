@@ -334,11 +334,11 @@ def create_oracle_tools(get_canvas_state: Any) -> list[BaseTool]:
         for n in nodes:
             data = n.get("data", n.get("config", {}))
             ntype = n.get("type", "")
-            if ntype == "agent" and data.get("model"):
-                configured += 1
-            elif ntype == "tool" and data.get("tool_name"):
-                configured += 1
-            elif ntype not in ("agent", "tool"):
+            if (
+                (ntype == "agent" and data.get("model"))
+                or (ntype == "tool" and data.get("tool_name"))
+                or ntype not in ("agent", "tool")
+            ):
                 configured += 1
 
         return json.dumps({

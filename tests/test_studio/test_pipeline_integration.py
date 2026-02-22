@@ -23,8 +23,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from fireflyframework_genai.agents.registry import agent_registry
 from fireflyframework_genai.pipeline.context import PipelineContext
 from fireflyframework_genai.pipeline.engine import PipelineEngine
@@ -43,10 +41,7 @@ from fireflyframework_genai.studio.codegen.models import (
     GraphNode,
     NodeType,
 )
-from fireflyframework_genai.studio.execution.compiler import (
-    CompilationError,
-    compile_graph,
-)
+from fireflyframework_genai.studio.execution.compiler import compile_graph
 from fireflyframework_genai.tools.registry import tool_registry
 
 # ---------------------------------------------------------------------------
