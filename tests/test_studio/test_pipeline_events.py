@@ -23,10 +23,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
-from fireflyframework_genai.agents.registry import agent_registry
-from fireflyframework_genai.pipeline.engine import PipelineEngine
 from fireflyframework_genai.studio.codegen.models import (
     GraphEdge,
     GraphModel,
@@ -217,7 +213,7 @@ class TestErrorEventOnNodeFailure:
         graph = _make_graph([node])
 
         engine = compile_graph(graph, event_handler=handler)
-        result = await engine.run(inputs="")
+        await engine.run(inputs="")
 
         events = handler.drain_events()
         error_events = [e for e in events if e["type"] == "node_error"]

@@ -79,7 +79,7 @@ def compile_graph(
     if input_nodes:
         if len(input_nodes) > 1:
             raise CompilationError(
-                "Pipeline must have exactly one Input node, found {}.".format(len(input_nodes))
+                f"Pipeline must have exactly one Input node, found {len(input_nodes)}."
             )
         if not output_nodes:
             raise CompilationError(

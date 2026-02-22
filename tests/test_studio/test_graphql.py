@@ -23,11 +23,10 @@ strawberry = pytest.importorskip("strawberry", reason="strawberry-graphql not in
 pytest.importorskip("fastapi", reason="fastapi not installed")
 pytest.importorskip("httpx", reason="httpx not installed")
 
-import httpx
+import httpx  # noqa: E402
 
-from fireflyframework_genai.studio.config import StudioConfig
-from fireflyframework_genai.studio.server import create_studio_app
-
+from fireflyframework_genai.studio.config import StudioConfig  # noqa: E402
+from fireflyframework_genai.studio.server import create_studio_app  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -229,9 +228,10 @@ class TestGraphQLFallback:
 
         reload(gql_mod)
 
-        from fireflyframework_genai.studio.projects import ProjectManager
-        from pathlib import Path
         import tempfile
+        from pathlib import Path
+
+        from fireflyframework_genai.studio.projects import ProjectManager
 
         with tempfile.TemporaryDirectory() as td:
             pm = ProjectManager(Path(td))

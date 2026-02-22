@@ -110,29 +110,29 @@ def create_canvas_tools(canvas: CanvasState) -> list[BaseTool]:
         if node_type not in _VALID_NODE_TYPES:
             raise ValueError(f"Invalid node_type '{node_type}'. Must be one of: {', '.join(sorted(_VALID_NODE_TYPES))}")
 
-        H_GAP = 300
-        V_GAP = 150
-        START_X = 250
-        START_Y = 250
+        h_gap = 300
+        v_gap = 150
+        start_x = 250
+        start_y = 250
 
         if x == 0.0 and y == 0.0:
             if not canvas.nodes:
-                x, y = START_X, START_Y
+                x, y = start_x, start_y
             else:
                 occupied = {
                     (int(n.position.get("x", 0)), int(n.position.get("y", 0)))
                     for n in canvas.nodes
                 }
                 rightmost = max(canvas.nodes, key=lambda n: n.position.get("x", 0))
-                x = rightmost.position.get("x", 0) + H_GAP
-                y = rightmost.position.get("y", START_Y)
+                x = rightmost.position.get("x", 0) + h_gap
+                y = rightmost.position.get("y", start_y)
 
                 # Avoid vertical collision: offset downward if position is taken
                 while any(
                     abs(ox - x) < 100 and abs(oy - y) < 80
                     for ox, oy in occupied
                 ):
-                    y += V_GAP
+                    y += v_gap
 
         node = CanvasNode(
             id=canvas.next_id(node_type),
@@ -376,10 +376,10 @@ def create_canvas_tools(canvas: CanvasState) -> list[BaseTool]:
         if not canvas.nodes:
             return "Canvas is empty."
 
-        H_GAP = 300
-        V_GAP = 150
-        START_X = 250
-        START_Y = 250
+        h_gap = 300
+        v_gap = 150
+        start_x = 250
+        start_y = 250
 
         node_ids = {n.id for n in canvas.nodes}
 
@@ -412,16 +412,16 @@ def create_canvas_tools(canvas: CanvasState) -> list[BaseTool]:
         if remaining:
             layers.append(sorted(remaining))
 
-        # Assign positions: x = layer index * H_GAP, y centered in layer
+        # Assign positions: x = layer index * h_gap, y centered in layer
         node_map = {n.id: n for n in canvas.nodes}
         for layer_idx, layer in enumerate(layers):
-            x = START_X + layer_idx * H_GAP
-            total_height = (len(layer) - 1) * V_GAP
-            start_y = START_Y - total_height / 2
+            x = start_x + layer_idx * h_gap
+            total_height = (len(layer) - 1) * v_gap
+            layer_y = start_y - total_height / 2
             for pos_idx, nid in enumerate(layer):
                 node = node_map.get(nid)
                 if node:
-                    node.position = {"x": float(x), "y": float(start_y + pos_idx * V_GAP)}
+                    node.position = {"x": float(x), "y": float(layer_y + pos_idx * v_gap)}
 
         return json.dumps({
             "status": "layout_complete",
@@ -635,7 +635,7 @@ def create_registry_tools() -> list[BaseTool]:
         settings = load_settings()
         tc = settings.tool_credentials
 
-        _TOOL_CREDENTIAL_MAP: dict[str, list[str]] = {
+        _tool_credential_map: dict[str, list[str]] = {
             "search": ["serpapi_api_key", "serper_api_key", "tavily_api_key"],
             "database": ["database_url"],
             "custom:slack": ["slack_bot_token"],
@@ -643,7 +643,7 @@ def create_registry_tools() -> list[BaseTool]:
         }
 
         results = []
-        for tool_name, required_creds in _TOOL_CREDENTIAL_MAP.items():
+        for tool_name, required_creds in _tool_credential_map.items():
             configured = [
                 c for c in required_creds
                 if getattr(tc, c, None)

@@ -262,8 +262,8 @@ def create_settings_router(settings_path: Path | None = None) -> APIRouter:
 
         # Preserve existing secret values when the incoming value is the
         # mask placeholder ("***") sent by list_services.
-        _MASK = "***"
-        _SECRET_FIELDS = ("password", "connection_url", "api_key", "token")
+        _mask = "***"
+        _secret_fields = ("password", "connection_url", "api_key", "token")
         incoming_id = req.get("id")
         if incoming_id:
             old_sc = next(
@@ -271,8 +271,8 @@ def create_settings_router(settings_path: Path | None = None) -> APIRouter:
                 None,
             )
             if old_sc is not None:
-                for field in _SECRET_FIELDS:
-                    if req.get(field) == _MASK:
+                for field in _secret_fields:
+                    if req.get(field) == _mask:
                         existing_val = getattr(old_sc, field, None)
                         if existing_val is not None:
                             req[field] = (

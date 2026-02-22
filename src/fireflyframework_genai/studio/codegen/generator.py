@@ -571,11 +571,7 @@ def _step_expression(node: GraphNode) -> str:
         return f"CallableStep({name}_validate)"
     elif node.type == NodeType.CUSTOM_CODE:
         return f"CallableStep({name}_execute)"
-    elif node.type == NodeType.INPUT:
-        return f"CallableStep({name}_step)"
-    elif node.type == NodeType.OUTPUT:
-        return f"CallableStep({name}_step)"
-    elif node.type == NodeType.PIPELINE_STEP:
+    elif node.type in (NodeType.INPUT, NodeType.OUTPUT, NodeType.PIPELINE_STEP):
         return f"CallableStep({name}_step)"
     else:
         return f"# Unknown node type: {node.type}"

@@ -27,7 +27,6 @@ import httpx
 from fireflyframework_genai.studio.config import StudioConfig
 from fireflyframework_genai.studio.server import create_studio_app
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
