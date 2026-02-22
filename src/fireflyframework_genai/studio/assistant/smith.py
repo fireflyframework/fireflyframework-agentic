@@ -48,6 +48,7 @@ def update_canvas_state(nodes: list, edges: list) -> None:
     _canvas_state["nodes"] = nodes
     _canvas_state["edges"] = edges
 
+
 # ---------------------------------------------------------------------------
 # System prompt — canonical API patterns for code generation
 # ---------------------------------------------------------------------------
@@ -329,9 +330,7 @@ def create_smith_agent(user_name: str = "") -> FireflyAgent:
 
     model = _resolve_assistant_model()
 
-    instructions = _SMITH_SYSTEM_PROMPT.replace(
-        "{user_name_placeholder}", user_name or "the user"
-    )
+    instructions = _SMITH_SYSTEM_PROMPT.replace("{user_name_placeholder}", user_name or "the user")
 
     agent = FireflyAgent(
         "smith-codegen",
@@ -346,10 +345,10 @@ def create_smith_agent(user_name: str = "") -> FireflyAgent:
     return agent
 
 
-_BLOCKED_PATTERNS = ['sudo ', 'rm -rf /', 'chmod 777', 'mkfs ', 'dd if=']
-_RISKY_PATTERNS = ['pip install', 'rm ', 'curl ', 'wget ']
-_RISKY_CHARS = ['|', '>', ';', '&&', '||']
-_SAFE_PREFIXES = ['python ', 'python3 ', 'pytest', 'pip list', 'pip show', 'pip freeze']
+_BLOCKED_PATTERNS = ["sudo ", "rm -rf /", "chmod 777", "mkfs ", "dd if="]
+_RISKY_PATTERNS = ["pip install", "rm ", "curl ", "wget "]
+_RISKY_CHARS = ["|", ">", ";", "&&", "||"]
+_SAFE_PREFIXES = ["python ", "python3 ", "pytest", "pip list", "pip show", "pip freeze"]
 
 
 def _classify_command(cmd: str) -> str:
@@ -357,17 +356,17 @@ def _classify_command(cmd: str) -> str:
     cmd_stripped = cmd.strip()
     for pattern in _BLOCKED_PATTERNS:
         if pattern in cmd_stripped:
-            return 'blocked'
+            return "blocked"
     for pattern in _RISKY_PATTERNS:
         if pattern in cmd_stripped:
-            return 'risky'
+            return "risky"
     for char in _RISKY_CHARS:
         if char in cmd_stripped:
-            return 'risky'
+            return "risky"
     for prefix in _SAFE_PREFIXES:
         if cmd_stripped.startswith(prefix):
-            return 'safe'
-    return 'risky'
+            return "safe"
+    return "risky"
 
 
 def _create_smith_tools() -> list:
@@ -384,6 +383,7 @@ def _create_smith_tools() -> list:
         docs: dict[str, Any] = {}
         try:
             from fireflyframework_genai._version import __version__
+
             docs["version"] = __version__
         except Exception:
             docs["version"] = "unknown"
@@ -405,6 +405,7 @@ def _create_smith_tools() -> list:
 
         try:
             from fireflyframework_genai.tools.registry import tool_registry as tr
+
             tools = tr.list_tools()
             docs["tools"] = [{"name": t.name, "description": t.description[:80]} for t in tools]
         except Exception:
@@ -412,6 +413,7 @@ def _create_smith_tools() -> list:
 
         try:
             from fireflyframework_genai.reasoning.registry import reasoning_registry
+
             docs["reasoning_patterns"] = reasoning_registry.list_patterns()
         except Exception:
             docs["reasoning_patterns"] = []
@@ -433,10 +435,26 @@ def _create_smith_tools() -> list:
 
         docs_dir = Path(__file__).resolve().parents[4] / "docs"
         valid_topics = {
-            "agents", "architecture", "content", "experiments", "explainability",
-            "exposure-queues", "exposure-rest", "lab", "memory", "observability",
-            "pipeline", "prompts", "reasoning", "security", "studio", "templates",
-            "tools", "tutorial", "use-case-idp", "validation",
+            "agents",
+            "architecture",
+            "content",
+            "experiments",
+            "explainability",
+            "exposure-queues",
+            "exposure-rest",
+            "lab",
+            "memory",
+            "observability",
+            "pipeline",
+            "prompts",
+            "reasoning",
+            "security",
+            "studio",
+            "templates",
+            "tools",
+            "tutorial",
+            "use-case-idp",
+            "validation",
         }
         if topic not in valid_topics:
             return json.dumps({"error": f"Unknown topic '{topic}'", "available_topics": sorted(valid_topics)})
@@ -468,19 +486,24 @@ def _create_smith_tools() -> list:
             results.append({"name": tool_name, "has_credentials": len(configured) > 0})
         return json.dumps(results)
 
-    @firefly_tool("validate_python", description="Validate Python code syntax without executing it", auto_register=False)
+    @firefly_tool(
+        "validate_python", description="Validate Python code syntax without executing it", auto_register=False
+    )
     async def validate_python(code: str) -> str:
         import asyncio as _asyncio
         import os
         import sys
         import tempfile
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             tmp_path = f.name
         try:
             proc = await _asyncio.create_subprocess_exec(
-                sys.executable, '-m', 'py_compile', tmp_path,
+                sys.executable,
+                "-m",
+                "py_compile",
+                tmp_path,
                 stdout=_asyncio.subprocess.PIPE,
                 stderr=_asyncio.subprocess.PIPE,
             )
@@ -501,12 +524,13 @@ def _create_smith_tools() -> list:
         import sys
         import tempfile
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             tmp_path = f.name
         try:
             proc = await _asyncio.create_subprocess_exec(
-                sys.executable, tmp_path,
+                sys.executable,
+                tmp_path,
                 stdout=_asyncio.subprocess.PIPE,
                 stderr=_asyncio.subprocess.PIPE,
             )
@@ -515,16 +539,20 @@ def _create_smith_tools() -> list:
             except TimeoutError:
                 proc.kill()
                 await proc.communicate()
-                return json.dumps({
-                    "returncode": -1,
-                    "stdout": "",
-                    "stderr": "Execution timed out after 30s",
-                })
-            return json.dumps({
-                "returncode": proc.returncode,
-                "stdout": stdout.decode("utf-8", errors="replace")[:5000],
-                "stderr": stderr.decode("utf-8", errors="replace")[:2000],
-            })
+                return json.dumps(
+                    {
+                        "returncode": -1,
+                        "stdout": "",
+                        "stderr": "Execution timed out after 30s",
+                    }
+                )
+            return json.dumps(
+                {
+                    "returncode": proc.returncode,
+                    "stdout": stdout.decode("utf-8", errors="replace")[:5000],
+                    "stderr": stderr.decode("utf-8", errors="replace")[:2000],
+                }
+            )
         finally:
             os.unlink(tmp_path)
 
@@ -533,9 +561,9 @@ def _create_smith_tools() -> list:
         import asyncio as _asyncio
 
         level = _classify_command(command)
-        if level == 'blocked':
+        if level == "blocked":
             return json.dumps({"error": "Command blocked for safety", "command": command})
-        if level == 'risky':
+        if level == "risky":
             # Return approval_required so the API layer can intercept this
             # and send a WebSocket message to the frontend.
             return json.dumps({"approval_required": True, "command": command, "level": level})
@@ -549,16 +577,20 @@ def _create_smith_tools() -> list:
         except TimeoutError:
             proc.kill()
             await proc.communicate()
-            return json.dumps({
-                "returncode": -1,
-                "stdout": "",
-                "stderr": "Command timed out after 30s",
-            })
-        return json.dumps({
-            "returncode": proc.returncode,
-            "stdout": stdout.decode("utf-8", errors="replace")[:5000],
-            "stderr": stderr.decode("utf-8", errors="replace")[:2000],
-        })
+            return json.dumps(
+                {
+                    "returncode": -1,
+                    "stdout": "",
+                    "stderr": "Command timed out after 30s",
+                }
+            )
+        return json.dumps(
+            {
+                "returncode": proc.returncode,
+                "stdout": stdout.decode("utf-8", errors="replace")[:5000],
+                "stderr": stderr.decode("utf-8", errors="replace")[:2000],
+            }
+        )
 
     @firefly_tool("get_canvas_state", description="Get the current canvas pipeline state", auto_register=False)
     async def get_canvas_state() -> str:
@@ -567,16 +599,28 @@ def _create_smith_tools() -> list:
     @firefly_tool("get_project_info", description="Get current project name and user profile", auto_register=False)
     async def get_project_info() -> str:
         from fireflyframework_genai.studio.settings import load_settings
+
         try:
             settings = load_settings()
-            return json.dumps({
-                "user": settings.user_profile.name,
-                "model": settings.model_defaults.default_model,
-            })
+            return json.dumps(
+                {
+                    "user": settings.user_profile.name,
+                    "model": settings.model_defaults.default_model,
+                }
+            )
         except Exception:
             return json.dumps({"user": "Unknown", "model": "openai:gpt-4o"})
 
-    return [get_framework_docs, read_framework_doc, get_tool_status, validate_python, run_python, run_shell, get_canvas_state, get_project_info]
+    return [
+        get_framework_docs,
+        read_framework_doc,
+        get_tool_status,
+        validate_python,
+        run_python,
+        run_shell,
+        get_canvas_state,
+        get_project_info,
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -588,10 +632,7 @@ def _build_smith_prompt(graph: dict, settings: dict | None = None) -> str:
     """Convert a graph JSON into a structured prompt for Smith."""
     default_model = "openai:gpt-4o"
     if settings:
-        default_model = (
-            settings.get("model_defaults", {}).get("default_model", default_model)
-            or default_model
-        )
+        default_model = settings.get("model_defaults", {}).get("default_model", default_model) or default_model
 
     lines = [
         "Convert this visual pipeline graph into production Python code.",
@@ -617,55 +658,63 @@ def _extract_files(text: str) -> list[dict[str, str]]:
 
     # Try multi-file format first: --- FILE: path ---
     file_pattern = re.compile(
-        r'---\s*FILE:\s*(.+?)\s*---\s*\n```(?:\w+)?\s*\n(.*?)```',
+        r"---\s*FILE:\s*(.+?)\s*---\s*\n```(?:\w+)?\s*\n(.*?)```",
         re.DOTALL,
     )
     matches = file_pattern.findall(text)
     if matches:
         for path, content in matches:
             path = path.strip()
-            if path.endswith('.md'):
-                lang = 'markdown'
-            elif path.endswith('.json'):
-                lang = 'json'
-            elif path.endswith(('.yaml', '.yml')):
-                lang = 'yaml'
+            if path.endswith(".md"):
+                lang = "markdown"
+            elif path.endswith(".json"):
+                lang = "json"
+            elif path.endswith((".yaml", ".yml")):
+                lang = "yaml"
             else:
-                lang = 'python'
-            files.append({
-                'path': path,
-                'content': content.strip(),
-                'language': lang,
-            })
+                lang = "python"
+            files.append(
+                {
+                    "path": path,
+                    "content": content.strip(),
+                    "language": lang,
+                }
+            )
         return files
 
     # Fallback: single python code block -> main.py
-    match = re.search(r'```python\s*\n(.*?)```', text, re.DOTALL)
+    match = re.search(r"```python\s*\n(.*?)```", text, re.DOTALL)
     if match:
-        files.append({
-            'path': 'main.py',
-            'content': match.group(1).strip(),
-            'language': 'python',
-        })
+        files.append(
+            {
+                "path": "main.py",
+                "content": match.group(1).strip(),
+                "language": "python",
+            }
+        )
         return files
 
     # Last resort: generic code block
-    match = re.search(r'```\s*\n(.*?)```', text, re.DOTALL)
+    match = re.search(r"```\s*\n(.*?)```", text, re.DOTALL)
     if match:
-        files.append({
-            'path': 'main.py',
-            'content': match.group(1).strip(),
-            'language': 'python',
-        })
+        files.append(
+            {
+                "path": "main.py",
+                "content": match.group(1).strip(),
+                "language": "python",
+            }
+        )
         return files
 
     # No fences -- treat entire text as main.py if it looks like code
-    if text.strip().startswith(('import ', 'from ', '#', 'async ', 'def ')):
-        files.append({
-            'path': 'main.py',
-            'content': text.strip(),
-            'language': 'python',
-        })
+    if text.strip().startswith(("import ", "from ", "#", "async ", "def ")):
+        files.append(
+            {
+                "path": "main.py",
+                "content": text.strip(),
+                "language": "python",
+            }
+        )
 
     return files
 

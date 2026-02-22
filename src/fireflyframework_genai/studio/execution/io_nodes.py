@@ -76,9 +76,7 @@ class InputNodeConfig(BaseModel):
     @classmethod
     def _validate_trigger_type(cls, v: str) -> str:
         if v not in _VALID_TRIGGER_TYPES:
-            raise ValueError(
-                f"Invalid trigger_type '{v}'. Must be one of: {', '.join(sorted(_VALID_TRIGGER_TYPES))}"
-            )
+            raise ValueError(f"Invalid trigger_type '{v}'. Must be one of: {', '.join(sorted(_VALID_TRIGGER_TYPES))}")
         return v
 
 

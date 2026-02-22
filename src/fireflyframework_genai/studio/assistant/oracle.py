@@ -164,12 +164,14 @@ def create_oracle_tools(get_canvas_state: Any) -> list[BaseTool]:
         for oid in orphans:
             node = next((n for n in nodes if n["id"] == oid), None)
             if node and len(nodes) > 1:
-                issues.append({
-                    "severity": "warning",
-                    "title": f"Disconnected node: {node.get('data', {}).get('label', oid)}",
-                    "description": f"Node '{node.get('data', {}).get('label', oid)}' has no connections. It won't participate in the pipeline flow.",
-                    "action": f"Connect node '{oid}' to the pipeline, or remove it if it's not needed.",
-                })
+                issues.append(
+                    {
+                        "severity": "warning",
+                        "title": f"Disconnected node: {node.get('data', {}).get('label', oid)}",
+                        "description": f"Node '{node.get('data', {}).get('label', oid)}' has no connections. It won't participate in the pipeline flow.",
+                        "action": f"Connect node '{oid}' to the pipeline, or remove it if it's not needed.",
+                    }
+                )
 
         # Check agent nodes for missing model/instructions
         for node in nodes:
@@ -179,37 +181,45 @@ def create_oracle_tools(get_canvas_state: Any) -> list[BaseTool]:
 
             if ntype == "agent":
                 if not data.get("model"):
-                    issues.append({
-                        "severity": "critical",
-                        "title": f"Agent '{label}' has no model",
-                        "description": "An agent without a model cannot execute. It needs a model like 'openai:gpt-4o'.",
-                        "action": f"Configure node '{node['id']}' with key='model' value='openai:gpt-4o' (or your preferred model).",
-                    })
+                    issues.append(
+                        {
+                            "severity": "critical",
+                            "title": f"Agent '{label}' has no model",
+                            "description": "An agent without a model cannot execute. It needs a model like 'openai:gpt-4o'.",
+                            "action": f"Configure node '{node['id']}' with key='model' value='openai:gpt-4o' (or your preferred model).",
+                        }
+                    )
                 if not data.get("instructions"):
-                    issues.append({
-                        "severity": "suggestion",
-                        "title": f"Agent '{label}' has no instructions",
-                        "description": "Without instructions, the agent has no guidance on how to behave. Consider adding a system prompt.",
-                        "action": f"Configure node '{node['id']}' with key='instructions' and a clear system prompt.",
-                    })
+                    issues.append(
+                        {
+                            "severity": "suggestion",
+                            "title": f"Agent '{label}' has no instructions",
+                            "description": "Without instructions, the agent has no guidance on how to behave. Consider adding a system prompt.",
+                            "action": f"Configure node '{node['id']}' with key='instructions' and a clear system prompt.",
+                        }
+                    )
 
             elif ntype == "tool":
                 if not data.get("tool_name"):
-                    issues.append({
-                        "severity": "critical",
-                        "title": f"Tool '{label}' has no tool_name",
-                        "description": "A tool node must specify which registered tool to use.",
-                        "action": f"Configure node '{node['id']}' with key='tool_name' and a valid tool name.",
-                    })
+                    issues.append(
+                        {
+                            "severity": "critical",
+                            "title": f"Tool '{label}' has no tool_name",
+                            "description": "A tool node must specify which registered tool to use.",
+                            "action": f"Configure node '{node['id']}' with key='tool_name' and a valid tool name.",
+                        }
+                    )
 
             elif ntype == "condition":
                 if not data.get("branches"):
-                    issues.append({
-                        "severity": "critical",
-                        "title": f"Condition '{label}' has no branches",
-                        "description": "A condition node needs branches to route flow.",
-                        "action": f"Configure node '{node['id']}' with key='branches' as a JSON dict.",
-                    })
+                    issues.append(
+                        {
+                            "severity": "critical",
+                            "title": f"Condition '{label}' has no branches",
+                            "description": "A condition node needs branches to route flow.",
+                            "action": f"Configure node '{node['id']}' with key='branches' as a JSON dict.",
+                        }
+                    )
 
         return json.dumps({"issues": issues, "node_count": len(nodes), "edge_count": len(edges)})
 
@@ -251,14 +261,16 @@ def create_oracle_tools(get_canvas_state: Any) -> list[BaseTool]:
             if not data.get("branches"):
                 missing.append("branches")
 
-        return json.dumps({
-            "node_id": node_id,
-            "type": ntype,
-            "label": data.get("label", node.get("id", "")),
-            "missing_required": missing,
-            "recommendations": recommendations,
-            "is_complete": len(missing) == 0,
-        })
+        return json.dumps(
+            {
+                "node_id": node_id,
+                "type": ntype,
+                "label": data.get("label", node.get("id", "")),
+                "missing_required": missing,
+                "recommendations": recommendations,
+                "is_complete": len(missing) == 0,
+            }
+        )
 
     @firefly_tool(
         "check_connectivity",
@@ -285,14 +297,16 @@ def create_oracle_tools(get_canvas_state: Any) -> list[BaseTool]:
         # Entry points (no incoming edges)
         entry_points = [nid for nid in node_ids if nid not in targets and nid in sources]
 
-        return json.dumps({
-            "connected": len(orphans) == 0,
-            "orphans": orphans,
-            "dead_ends": dead_ends,
-            "entry_points": entry_points,
-            "total_nodes": len(nodes),
-            "total_edges": len(edges),
-        })
+        return json.dumps(
+            {
+                "connected": len(orphans) == 0,
+                "orphans": orphans,
+                "dead_ends": dead_ends,
+                "entry_points": entry_points,
+                "total_nodes": len(nodes),
+                "total_edges": len(edges),
+            }
+        )
 
     @firefly_tool(
         "suggest_improvement",
@@ -306,13 +320,15 @@ def create_oracle_tools(get_canvas_state: Any) -> list[BaseTool]:
         action_instruction: str = "",
     ) -> str:
         """Create a structured suggestion for the user."""
-        return json.dumps({
-            "type": "suggestion",
-            "title": title,
-            "description": description,
-            "severity": severity,
-            "action_instruction": action_instruction,
-        })
+        return json.dumps(
+            {
+                "type": "suggestion",
+                "title": title,
+                "description": description,
+                "severity": severity,
+                "action_instruction": action_instruction,
+            }
+        )
 
     @firefly_tool(
         "get_pipeline_stats",
@@ -341,13 +357,15 @@ def create_oracle_tools(get_canvas_state: Any) -> list[BaseTool]:
             ):
                 configured += 1
 
-        return json.dumps({
-            "total_nodes": len(nodes),
-            "total_edges": len(edges),
-            "by_type": type_counts,
-            "configured_nodes": configured,
-            "configuration_coverage": f"{configured}/{len(nodes)}" if nodes else "0/0",
-        })
+        return json.dumps(
+            {
+                "total_nodes": len(nodes),
+                "total_edges": len(edges),
+                "by_type": type_counts,
+                "configured_nodes": configured,
+                "configuration_coverage": f"{configured}/{len(nodes)}" if nodes else "0/0",
+            }
+        )
 
     @firefly_tool(
         "review_agent_setup",
@@ -379,20 +397,29 @@ def create_oracle_tools(get_canvas_state: Any) -> list[BaseTool]:
                 if target_node and target_node.get("type") == "tool":
                     connected_tools.append(target_node.get("data", {}).get("label", target_id))
 
-            reviews.append({
-                "node_id": agent["id"],
-                "label": label,
-                "has_model": bool(data.get("model")),
-                "model": data.get("model", ""),
-                "has_instructions": bool(data.get("instructions")),
-                "has_description": bool(data.get("description")),
-                "connected_tools": connected_tools,
-                "multimodal_enabled": bool((data.get("multimodal") or {}).get("vision_enabled")),
-            })
+            reviews.append(
+                {
+                    "node_id": agent["id"],
+                    "label": label,
+                    "has_model": bool(data.get("model")),
+                    "model": data.get("model", ""),
+                    "has_instructions": bool(data.get("instructions")),
+                    "has_description": bool(data.get("description")),
+                    "connected_tools": connected_tools,
+                    "multimodal_enabled": bool((data.get("multimodal") or {}).get("vision_enabled")),
+                }
+            )
 
         return json.dumps({"agent_count": len(agents), "reviews": reviews})
 
-    return [analyze_pipeline, analyze_node_config, check_connectivity, suggest_improvement, get_pipeline_stats, review_agent_setup]
+    return [
+        analyze_pipeline,
+        analyze_node_config,
+        check_connectivity,
+        suggest_improvement,
+        get_pipeline_stats,
+        review_agent_setup,
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -404,9 +431,7 @@ def _build_oracle_instructions(user_name: str) -> str:
     """Build Oracle instructions personalised with the user's name."""
     from fireflyframework_genai.studio.assistant.agent import _FRAMEWORK_KNOWLEDGE
 
-    personality = _THE_ORACLE_PERSONALITY.replace(
-        "{user_name_placeholder}", user_name or "friend"
-    )
+    personality = _THE_ORACLE_PERSONALITY.replace("{user_name_placeholder}", user_name or "friend")
     return (
         personality
         + "\n\n"

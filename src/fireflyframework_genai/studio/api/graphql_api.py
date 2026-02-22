@@ -59,9 +59,7 @@ def create_graphql_router(project_manager: ProjectManager) -> Any:
         import strawberry
         from strawberry.fastapi import GraphQLRouter
     except ImportError:
-        logger.warning(
-            "strawberry-graphql is not installed; GraphQL endpoint disabled"
-        )
+        logger.warning("strawberry-graphql is not installed; GraphQL endpoint disabled")
         from fastapi import APIRouter  # type: ignore[import-not-found]
 
         router = APIRouter()
@@ -211,9 +209,7 @@ def create_graphql_router(project_manager: ProjectManager) -> Any:
                 )
             except Exception as exc:
                 duration_ms = round((time.monotonic() - start_time) * 1000, 2)
-                logger.exception(
-                    "GraphQL run_pipeline failed for project '%s'", project
-                )
+                logger.exception("GraphQL run_pipeline failed for project '%s'", project)
                 return ExecutionResult(
                     execution_id=execution_id,
                     status="error",

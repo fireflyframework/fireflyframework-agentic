@@ -50,11 +50,14 @@ class ProjectVersioning:
         return sha
 
     def get_history(self, limit: int = 50) -> list[dict]:
-        result = self._run([
-            "git", "log",
-            f"--max-count={limit}",
-            "--format=%H|%s|%aI",
-        ])
+        result = self._run(
+            [
+                "git",
+                "log",
+                f"--max-count={limit}",
+                "--format=%H|%s|%aI",
+            ]
+        )
         if result.returncode != 0:
             return []
 
@@ -67,12 +70,14 @@ class ProjectVersioning:
                 continue
             parts = line.split("|", 2)
             if len(parts) >= 3:
-                history.append({
-                    "sha": parts[0],
-                    "message": parts[1],
-                    "timestamp": parts[2],
-                    "bookmarked": parts[0] in bookmarks,
-                })
+                history.append(
+                    {
+                        "sha": parts[0],
+                        "message": parts[1],
+                        "timestamp": parts[2],
+                        "bookmarked": parts[0] in bookmarks,
+                    }
+                )
         return history
 
     def restore(self, commit_sha: str) -> None:

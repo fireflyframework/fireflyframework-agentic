@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """Tests for the GraphQL API endpoint."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -68,9 +69,7 @@ class TestGraphQLQueries:
     async def test_graphql_projects_query_after_create(self, client: httpx.AsyncClient):
         """Creating a project via REST and querying via GraphQL returns it."""
         # Create a project via the REST API
-        create_resp = await client.post(
-            "/api/projects", json={"name": "gql-test", "description": "GraphQL test"}
-        )
+        create_resp = await client.post("/api/projects", json={"name": "gql-test", "description": "GraphQL test"})
         assert create_resp.status_code == 200
 
         resp = await client.post(
@@ -86,15 +85,11 @@ class TestGraphQLQueries:
 
     async def test_graphql_project_by_name(self, client: httpx.AsyncClient):
         """Querying a single project by name returns it."""
-        await client.post(
-            "/api/projects", json={"name": "single-test", "description": "Single"}
-        )
+        await client.post("/api/projects", json={"name": "single-test", "description": "Single"})
 
         resp = await client.post(
             "/api/graphql",
-            json={
-                "query": '{ project(name: "single-test") { name description } }'
-            },
+            json={"query": '{ project(name: "single-test") { name description } }'},
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -104,9 +99,7 @@ class TestGraphQLQueries:
         """Querying a non-existent project returns null."""
         resp = await client.post(
             "/api/graphql",
-            json={
-                "query": '{ project(name: "nonexistent") { name } }'
-            },
+            json={"query": '{ project(name: "nonexistent") { name } }'},
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -116,9 +109,7 @@ class TestGraphQLQueries:
         """Runtime status for a project with no active runtime is 'stopped'."""
         resp = await client.post(
             "/api/graphql",
-            json={
-                "query": '{ runtimeStatus(project: "any-project") { project status consumers schedulerActive } }'
-            },
+            json={"query": '{ runtimeStatus(project: "any-project") { project status consumers schedulerActive } }'},
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -152,9 +143,7 @@ class TestGraphQLIntrospection:
         """The Query type exposes expected field names."""
         resp = await client.post(
             "/api/graphql",
-            json={
-                "query": '{ __type(name: "Query") { fields { name } } }'
-            },
+            json={"query": '{ __type(name: "Query") { fields { name } } }'},
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -174,9 +163,7 @@ class TestGraphQLMutations:
         """Running a pipeline for a non-existent project returns error status."""
         resp = await client.post(
             "/api/graphql",
-            json={
-                "query": 'mutation { runPipeline(project: "nope", input: "hello") { executionId status result } }'
-            },
+            json={"query": 'mutation { runPipeline(project: "nope", input: "hello") { executionId status result } }'},
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -186,9 +173,7 @@ class TestGraphQLMutations:
 
     async def test_run_pipeline_no_pipeline_saved(self, client: httpx.AsyncClient):
         """Running a pipeline when no pipeline JSON exists returns error."""
-        await client.post(
-            "/api/projects", json={"name": "empty-proj"}
-        )
+        await client.post("/api/projects", json={"name": "empty-proj"})
         resp = await client.post(
             "/api/graphql",
             json={

@@ -11,10 +11,14 @@ from fireflyframework_genai.studio.codegen.models import GraphModel, GraphNode, 
 class TestDynamicDefaultModel:
     def test_get_default_model_reads_settings(self, tmp_path):
         settings_file = tmp_path / "settings.json"
-        settings_file.write_text(json.dumps({
-            "model_defaults": {"default_model": "anthropic:claude-sonnet-4-20250514"},
-            "setup_complete": True,
-        }))
+        settings_file.write_text(
+            json.dumps(
+                {
+                    "model_defaults": {"default_model": "anthropic:claude-sonnet-4-20250514"},
+                    "setup_complete": True,
+                }
+            )
+        )
         model = _get_default_model(settings_path=settings_file)
         assert model == "anthropic:claude-sonnet-4-20250514"
 
@@ -24,12 +28,18 @@ class TestDynamicDefaultModel:
 
     def test_codegen_uses_settings_model(self, tmp_path):
         settings_file = tmp_path / "settings.json"
-        settings_file.write_text(json.dumps({
-            "model_defaults": {"default_model": "google-gla:gemini-2.5-flash"},
-        }))
+        settings_file.write_text(
+            json.dumps(
+                {
+                    "model_defaults": {"default_model": "google-gla:gemini-2.5-flash"},
+                }
+            )
+        )
 
         node = GraphNode(
-            id="agent_1", type=NodeType.AGENT, label="Agent",
+            id="agent_1",
+            type=NodeType.AGENT,
+            label="Agent",
             position={"x": 0, "y": 0},
             data={"instructions": "Help the user."},  # No model specified
         )
@@ -41,12 +51,17 @@ class TestDynamicDefaultModel:
 class TestArchitectDefaultModel:
     def test_architect_instructions_include_default_model(self, tmp_path):
         settings_file = tmp_path / "settings.json"
-        settings_file.write_text(json.dumps({
-            "model_defaults": {"default_model": "anthropic:claude-sonnet-4-20250514"},
-            "user_profile": {"name": "TestUser"},
-            "setup_complete": True,
-        }))
+        settings_file.write_text(
+            json.dumps(
+                {
+                    "model_defaults": {"default_model": "anthropic:claude-sonnet-4-20250514"},
+                    "user_profile": {"name": "TestUser"},
+                    "setup_complete": True,
+                }
+            )
+        )
 
         from fireflyframework_genai.studio.assistant.agent import _build_instructions
+
         instructions = _build_instructions(settings_path=settings_file)
         assert "anthropic:claude-sonnet-4-20250514" in instructions

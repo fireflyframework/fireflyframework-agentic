@@ -39,10 +39,15 @@ logger = logging.getLogger(__name__)
 # Generous limit for complex multi-tool pipelines (each tool call = 1 request).
 _DEFAULT_REQUEST_LIMIT = 200
 
-_CANVAS_TOOL_NAMES = frozenset({
-    "add_node", "connect_nodes", "configure_node",
-    "remove_node", "clear_canvas",
-})
+_CANVAS_TOOL_NAMES = frozenset(
+    {
+        "add_node",
+        "connect_nodes",
+        "configure_node",
+        "remove_node",
+        "clear_canvas",
+    }
+)
 
 
 def _canvas_to_dict(canvas: Any) -> dict[str, Any]:
@@ -116,11 +121,13 @@ def _extract_tool_calls(result: Any) -> list[dict[str, Any]]:
             for part in parts:
                 part_kind = getattr(part, "part_kind", "")
                 if part_kind == "tool-call":
-                    tool_calls.append({
-                        "tool": getattr(part, "tool_name", "unknown"),
-                        "args": _normalize_args(getattr(part, "args", {})),
-                        "result": None,
-                    })
+                    tool_calls.append(
+                        {
+                            "tool": getattr(part, "tool_name", "unknown"),
+                            "args": _normalize_args(getattr(part, "args", {})),
+                            "result": None,
+                        }
+                    )
                 elif part_kind == "tool-return":
                     content = getattr(part, "content", "")
                     tool_name = getattr(part, "tool_name", "")
@@ -171,9 +178,7 @@ def _process_attachments(attachments: list[dict[str, Any]]) -> str:
             except Exception:
                 parts.append(f"[Attached CSV: {name} ({size} bytes) — could not decode]")
         elif category == "image":
-            parts.append(
-                f"[Attached image: {name} ({size} bytes, type: {att.get('type', 'unknown')})]"
-            )
+            parts.append(f"[Attached image: {name} ({size} bytes, type: {att.get('type', 'unknown')})]")
         elif category == "pdf":
             parts.append(
                 f"[Attached PDF: {name} ({size} bytes) — "
@@ -240,18 +245,22 @@ async def _handle_chat_streaming(
 
     logger.info(
         "Streaming complete (%d chars, %d tool calls, canvas: %d nodes, %d edges)",
-        len(full_text), len(tool_calls),
-        len(canvas.nodes), len(canvas.edges),
+        len(full_text),
+        len(tool_calls),
+        len(canvas.nodes),
+        len(canvas.edges),
     )
 
     # Send tool call details so the UI shows what happened
     for tc in tool_calls:
-        await websocket.send_json({
-            "type": "tool_call",
-            "tool": tc["tool"],
-            "args": tc["args"],
-            "result": tc["result"],
-        })
+        await websocket.send_json(
+            {
+                "type": "tool_call",
+                "tool": tc["tool"],
+                "args": tc["args"],
+                "result": tc["result"],
+            }
+        )
 
     # Check if present_plan was called
     plan_call = next(
@@ -260,25 +269,30 @@ async def _handle_chat_streaming(
     )
     if plan_call and plan_call["args"]:
         args = plan_call["args"]
-        await websocket.send_json({
-            "type": "plan",
-            "summary": args.get("summary", ""),
-            "steps": args.get("steps", "[]"),
-            "options": args.get("options", "[]"),
-            "question": args.get("question", ""),
-        })
+        await websocket.send_json(
+            {
+                "type": "plan",
+                "summary": args.get("summary", ""),
+                "steps": args.get("steps", "[]"),
+                "options": args.get("options", "[]"),
+                "question": args.get("question", ""),
+            }
+        )
 
-    await websocket.send_json({
-        "type": "response_complete",
-        "full_text": full_text,
-    })
+    await websocket.send_json(
+        {
+            "type": "response_complete",
+            "full_text": full_text,
+        }
+    )
 
     # Canvas sync after tool use
     used_canvas_tools = any(tc["tool"] in _CANVAS_TOOL_NAMES for tc in tool_calls)
     if used_canvas_tools:
         logger.info(
             "Canvas tools used, sending sync (%d nodes, %d edges)",
-            len(canvas.nodes), len(canvas.edges),
+            len(canvas.nodes),
+            len(canvas.edges),
         )
         await _send_canvas_sync(websocket, canvas)
 
@@ -314,17 +328,21 @@ async def _handle_chat_blocking(
 
     logger.info(
         "Blocking complete (%d chars, %d tool calls, canvas: %d nodes, %d edges)",
-        len(full_text), len(tool_calls),
-        len(canvas.nodes), len(canvas.edges),
+        len(full_text),
+        len(tool_calls),
+        len(canvas.nodes),
+        len(canvas.edges),
     )
 
     for tc in tool_calls:
-        await websocket.send_json({
-            "type": "tool_call",
-            "tool": tc["tool"],
-            "args": tc["args"],
-            "result": tc["result"],
-        })
+        await websocket.send_json(
+            {
+                "type": "tool_call",
+                "tool": tc["tool"],
+                "args": tc["args"],
+                "result": tc["result"],
+            }
+        )
 
     plan_call = next(
         (tc for tc in tool_calls if tc["tool"] == "present_plan"),
@@ -332,27 +350,32 @@ async def _handle_chat_blocking(
     )
     if plan_call and plan_call["args"]:
         args = plan_call["args"]
-        await websocket.send_json({
-            "type": "plan",
-            "summary": args.get("summary", ""),
-            "steps": args.get("steps", "[]"),
-            "options": args.get("options", "[]"),
-            "question": args.get("question", ""),
-        })
+        await websocket.send_json(
+            {
+                "type": "plan",
+                "summary": args.get("summary", ""),
+                "steps": args.get("steps", "[]"),
+                "options": args.get("options", "[]"),
+                "question": args.get("question", ""),
+            }
+        )
 
     if full_text:
         await websocket.send_json({"type": "token", "content": full_text})
 
-    await websocket.send_json({
-        "type": "response_complete",
-        "full_text": full_text,
-    })
+    await websocket.send_json(
+        {
+            "type": "response_complete",
+            "full_text": full_text,
+        }
+    )
 
     used_canvas_tools = any(tc["tool"] in _CANVAS_TOOL_NAMES for tc in tool_calls)
     if used_canvas_tools:
         logger.info(
             "Canvas tools used, sending sync (%d nodes, %d edges)",
-            len(canvas.nodes), len(canvas.edges),
+            len(canvas.nodes),
+            len(canvas.edges),
         )
         await _send_canvas_sync(websocket, canvas)
 
@@ -390,16 +413,20 @@ async def _run_reflexion_validation(
 
         logger.info(
             "Reflexion round %d: %d errors, %d warnings",
-            round_num, len(errors), len(warnings),
+            round_num,
+            len(errors),
+            len(warnings),
         )
 
         # Notify the user that auto-correction is running
-        await websocket.send_json({
-            "type": "tool_call",
-            "tool": "reflexion_validation",
-            "args": {"round": round_num, "errors": len(errors)},
-            "result": f"Found {len(errors)} errors. Auto-correcting...",
-        })
+        await websocket.send_json(
+            {
+                "type": "tool_call",
+                "tool": "reflexion_validation",
+                "args": {"round": round_num, "errors": len(errors)},
+                "result": f"Found {len(errors)} errors. Auto-correcting...",
+            }
+        )
 
         # Ask the Architect to fix the issues via its canvas tools
         fix_prompt = (
@@ -408,9 +435,7 @@ async def _run_reflexion_validation(
             + "\n".join(f"  - {e}" for e in errors)
         )
         if warnings:
-            fix_prompt += "\n\nWarnings (non-blocking):\n" + "\n".join(
-                f"  - {w}" for w in warnings
-            )
+            fix_prompt += "\n\nWarnings (non-blocking):\n" + "\n".join(f"  - {w}" for w in warnings)
         fix_prompt += (
             "\n\nFix ALL errors using configure_node, connect_nodes, or add_node as needed. "
             "Do NOT explain. Just fix the issues with tool calls."
@@ -429,12 +454,14 @@ async def _run_reflexion_validation(
 
             # Send tool calls to frontend
             for tc in fix_tool_calls:
-                await websocket.send_json({
-                    "type": "tool_call",
-                    "tool": tc["tool"],
-                    "args": tc["args"],
-                    "result": tc["result"],
-                })
+                await websocket.send_json(
+                    {
+                        "type": "tool_call",
+                        "tool": tc["tool"],
+                        "args": tc["args"],
+                        "result": tc["result"],
+                    }
+                )
 
             # Sync canvas if tools were used
             used_canvas = any(tc["tool"] in _CANVAS_TOOL_NAMES for tc in fix_tool_calls)
@@ -456,13 +483,15 @@ async def _run_reflexion_validation(
     final = _validate_canvas(canvas)
     if not final["valid"]:
         remaining = final.get("errors", [])
-        await websocket.send_json({
-            "type": "token",
-            "content": (
-                f"\n\n[Reflexion completed with {len(remaining)} remaining issue(s). "
-                "Please review and address manually.]"
-            ),
-        })
+        await websocket.send_json(
+            {
+                "type": "token",
+                "content": (
+                    f"\n\n[Reflexion completed with {len(remaining)} remaining issue(s). "
+                    "Please review and address manually.]"
+                ),
+            }
+        )
 
 
 def _validate_canvas(canvas: Any) -> dict[str, Any]:
@@ -557,7 +586,9 @@ async def _handle_chat(
 
         logger.info(
             "Running assistant (canvas: %d nodes, %d edges, attachments: %d)",
-            len(canvas.nodes), len(canvas.edges), len(attachments or []),
+            len(canvas.nodes),
+            len(canvas.edges),
+            len(attachments or []),
         )
 
         # Use blocking run() for reliable multi-turn tool execution.
@@ -565,8 +596,11 @@ async def _handle_chat(
         # loop (tool calls → re-prompt → more tool calls → final text),
         # which run_stream() does not handle correctly.
         tool_calls = await _handle_chat_blocking(
-            websocket, agent, effective_message,
-            message_history, canvas,
+            websocket,
+            agent,
+            effective_message,
+            message_history,
+            canvas,
         )
 
         # Reflexion triggers only on substantial builds:
@@ -578,11 +612,15 @@ async def _handle_chat(
         if (called_validate or canvas_tool_count >= 3) and canvas.nodes:
             logger.info(
                 "Reflexion triggered (validate_called=%s, canvas_tools=%d)",
-                called_validate, canvas_tool_count,
+                called_validate,
+                canvas_tool_count,
             )
             try:
                 await _run_reflexion_validation(
-                    websocket, agent, message_history, canvas,
+                    websocket,
+                    agent,
+                    message_history,
+                    canvas,
                 )
             except Exception as val_exc:
                 logger.warning("Reflexion validation failed: %s", val_exc)
@@ -598,17 +636,16 @@ async def _handle_chat(
                 "pipeline you are asking me to build."
             )
         elif "rate" in err_str.lower() and ("limit" in err_str.lower() or "429" in err_str):
-            user_msg = (
-                "The LLM provider is rate-limiting requests. "
-                "Please wait a moment and try again."
-            )
+            user_msg = "The LLM provider is rate-limiting requests. Please wait a moment and try again."
         else:
             user_msg = f"Assistant error: {exc}"
 
-        await websocket.send_json({
-            "type": "error",
-            "message": user_msg,
-        })
+        await websocket.send_json(
+            {
+                "type": "error",
+                "message": user_msg,
+            }
+        )
 
 
 def _build_project_context(canvas: Any = None, project_name: str = "") -> str:
@@ -657,10 +694,7 @@ def _build_project_context(canvas: Any = None, project_name: str = "") -> str:
             for t in tools:
                 status = "registered"
                 summaries.append(f"  - {t.name} (type={t.tool_type}, {status})")
-            parts.append(
-                "[CONTEXT] Custom tools / integrations installed:\n"
-                + "\n".join(summaries)
-            )
+            parts.append("[CONTEXT] Custom tools / integrations installed:\n" + "\n".join(summaries))
         else:
             parts.append("[CONTEXT] No custom tools or integrations installed yet.")
     except Exception:
@@ -683,9 +717,7 @@ def _build_project_context(canvas: Any = None, project_name: str = "") -> str:
 
         settings = load_settings()
         if settings.model_defaults.default_model:
-            parts.append(
-                f"[CONTEXT] Default model: {settings.model_defaults.default_model}."
-            )
+            parts.append(f"[CONTEXT] Default model: {settings.model_defaults.default_model}.")
     except Exception:
         pass
 
@@ -704,14 +736,9 @@ def _build_project_context(canvas: Any = None, project_name: str = "") -> str:
                         {"id": n.id, "type": n.type, "data": {"label": n.label or "", "config": n.config or {}}}
                         for n in canvas.nodes
                     ],
-                    "edges": [
-                        {"source": e.source, "target": e.target}
-                        for e in canvas.edges
-                    ],
+                    "edges": [{"source": e.source, "target": e.target} for e in canvas.edges],
                 }
-            shared = build_shared_context(
-                project_name, canvas_dict, exclude_agent="architect"
-            )
+            shared = build_shared_context(project_name, canvas_dict, exclude_agent="architect")
             if shared:
                 parts.append(shared)
         except Exception:
@@ -722,6 +749,7 @@ def _build_project_context(canvas: Any = None, project_name: str = "") -> str:
 
 class InferProjectNameRequest(BaseModel):
     message: str
+
 
 class SaveHistoryRequest(BaseModel):
     messages: list[dict]
@@ -743,25 +771,30 @@ def create_assistant_router() -> APIRouter:
     @router.get("/api/assistant/{project}/history")
     async def get_chat_history(project: str):
         from fireflyframework_genai.studio.assistant.history import load_chat_history
+
         return load_chat_history(project)
 
     @router.post("/api/assistant/{project}/history")
     async def save_chat_history_endpoint(project: str, body: SaveHistoryRequest):
         from fireflyframework_genai.studio.assistant.history import save_chat_history
+
         save_chat_history(project, body.messages)
         return {"status": "saved"}
 
     @router.delete("/api/assistant/{project}/history")
     async def delete_chat_history(project: str):
         from fireflyframework_genai.studio.assistant.history import clear_chat_history
+
         clear_chat_history(project)
         return {"status": "cleared"}
 
     @router.post("/api/assistant/infer-project-name")
     async def infer_project_name(body: InferProjectNameRequest):
         import time
+
         try:
             from pydantic_ai import Agent
+
             agent = Agent(
                 "openai:gpt-4.1-mini",
                 system_prompt=(
@@ -814,6 +847,7 @@ def create_assistant_router() -> APIRouter:
         if project:
             try:
                 from fireflyframework_genai.studio.assistant.history import load_chat_history
+
                 saved_history = load_chat_history(project)
                 if saved_history:
                     logger.info("Loaded %d saved messages for project '%s'", len(saved_history), project)
@@ -857,8 +891,11 @@ def create_assistant_router() -> APIRouter:
                         user_message = f"{project_context}\n\n{user_message}"
 
                     await _handle_chat(
-                        websocket, agent, user_message,
-                        message_history, canvas,
+                        websocket,
+                        agent,
+                        user_message,
+                        message_history,
+                        canvas,
                         attachments=chat_attachments or None,
                     )
 
@@ -866,9 +903,19 @@ def create_assistant_router() -> APIRouter:
                     if project:
                         try:
                             from fireflyframework_genai.studio.assistant.history import save_chat_history
-                            save_chat_history(project, [
-                                {"role": "user", "content": user_message, "timestamp": __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat()},
-                            ])
+
+                            save_chat_history(
+                                project,
+                                [
+                                    {
+                                        "role": "user",
+                                        "content": user_message,
+                                        "timestamp": __import__("datetime")
+                                        .datetime.now(__import__("datetime").UTC)
+                                        .isoformat(),
+                                    },
+                                ],
+                            )
                         except Exception:
                             pass
 
@@ -886,29 +933,35 @@ def create_assistant_router() -> APIRouter:
                     for n in sync_nodes:
                         data = n.get("data", {})
                         config = {k: v for k, v in data.items() if k not in ("label", "_executionState")}
-                        canvas.nodes.append(CanvasNode(
-                            id=n.get("id", ""),
-                            type=n.get("type", "pipeline_step"),
-                            label=data.get("label", n.get("id", "")),
-                            position=n.get("position", {"x": 0, "y": 0}),
-                            config=config,
-                        ))
+                        canvas.nodes.append(
+                            CanvasNode(
+                                id=n.get("id", ""),
+                                type=n.get("type", "pipeline_step"),
+                                label=data.get("label", n.get("id", "")),
+                                position=n.get("position", {"x": 0, "y": 0}),
+                                config=config,
+                            )
+                        )
                         # Track highest numeric suffix for counter
                         m = re.search(r"(\d+)$", n.get("id", ""))
                         if m:
                             max_id = max(max_id, int(m.group(1)))
                     for e in sync_edges:
-                        canvas.edges.append(CanvasEdge(
-                            id=e.get("id", ""),
-                            source=e.get("source", ""),
-                            target=e.get("target", ""),
-                            source_handle=e.get("sourceHandle"),
-                            target_handle=e.get("targetHandle"),
-                        ))
+                        canvas.edges.append(
+                            CanvasEdge(
+                                id=e.get("id", ""),
+                                source=e.get("source", ""),
+                                target=e.get("target", ""),
+                                source_handle=e.get("sourceHandle"),
+                                target_handle=e.get("targetHandle"),
+                            )
+                        )
                     canvas._counter = max_id
                     logger.info(
                         "Canvas synced from frontend: %d nodes, %d edges (counter=%d)",
-                        len(canvas.nodes), len(canvas.edges), max_id,
+                        len(canvas.nodes),
+                        len(canvas.edges),
+                        max_id,
                     )
 
                 else:

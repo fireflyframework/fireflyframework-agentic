@@ -78,13 +78,9 @@ def compile_graph(
 
     if input_nodes:
         if len(input_nodes) > 1:
-            raise CompilationError(
-                f"Pipeline must have exactly one Input node, found {len(input_nodes)}."
-            )
+            raise CompilationError(f"Pipeline must have exactly one Input node, found {len(input_nodes)}.")
         if not output_nodes:
-            raise CompilationError(
-                "Pipeline with an Input node must have at least one Output node."
-            )
+            raise CompilationError("Pipeline with an Input node must have at least one Output node.")
 
     name = graph.metadata.get("name", "studio-pipeline")
     builder = PipelineBuilder(name=name)

@@ -16,13 +16,27 @@ from fireflyframework_genai.studio.runtime import ProjectRuntime
 def _simple_graph() -> GraphModel:
     return GraphModel(
         nodes=[
-            GraphNode(id="input_1", type=NodeType.INPUT, label="Input",
-                      position={"x": 0, "y": 200}, data={"trigger_type": "manual"}),
-            GraphNode(id="agent_1", type=NodeType.AGENT, label="Agent",
-                      position={"x": 300, "y": 200},
-                      data={"model": "openai:gpt-4o", "instructions": "Echo input."}),
-            GraphNode(id="output_1", type=NodeType.OUTPUT, label="Output",
-                      position={"x": 600, "y": 200}, data={"destination_type": "response"}),
+            GraphNode(
+                id="input_1",
+                type=NodeType.INPUT,
+                label="Input",
+                position={"x": 0, "y": 200},
+                data={"trigger_type": "manual"},
+            ),
+            GraphNode(
+                id="agent_1",
+                type=NodeType.AGENT,
+                label="Agent",
+                position={"x": 300, "y": 200},
+                data={"model": "openai:gpt-4o", "instructions": "Echo input."},
+            ),
+            GraphNode(
+                id="output_1",
+                type=NodeType.OUTPUT,
+                label="Output",
+                position={"x": 600, "y": 200},
+                data={"destination_type": "response"},
+            ),
         ],
         edges=[
             GraphEdge(id="e1", source="input_1", target="agent_1"),

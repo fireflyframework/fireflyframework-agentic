@@ -93,9 +93,7 @@ class CustomToolManager:
     """
 
     def __init__(self, base_dir: Path | None = None) -> None:
-        self._base_dir = (
-            base_dir or Path.home() / ".firefly-studio" / "custom_tools"
-        ).resolve()
+        self._base_dir = (base_dir or Path.home() / ".firefly-studio" / "custom_tools").resolve()
         self._base_dir.mkdir(parents=True, exist_ok=True)
 
     def _safe_path(self, name: str) -> Path:
@@ -152,9 +150,7 @@ class CustomToolManager:
 
     # -- Runtime tool creation ----------------------------------------------
 
-    def create_runtime_tool(
-        self, definition: CustomToolDefinition
-    ) -> _DecoratedTool:
+    def create_runtime_tool(self, definition: CustomToolDefinition) -> _DecoratedTool:
         """Convert a definition into a live BaseTool instance."""
         tool_name = f"custom:{definition.name}"
 
@@ -178,13 +174,9 @@ class CustomToolManager:
         """Load an async ``run`` function from a Python file on disk."""
         module_path = Path(definition.module_path).resolve()
         if not module_path.is_file():
-            raise FileNotFoundError(
-                f"Python module not found: {definition.module_path}"
-            )
+            raise FileNotFoundError(f"Python module not found: {definition.module_path}")
 
-        spec = importlib.util.spec_from_file_location(
-            f"custom_tool_{definition.name}", module_path
-        )
+        spec = importlib.util.spec_from_file_location(f"custom_tool_{definition.name}", module_path)
         if spec is None or spec.loader is None:
             raise ImportError(f"Cannot load module from {module_path}")
 
@@ -193,9 +185,7 @@ class CustomToolManager:
 
         run_fn = getattr(module, "run", None)
         if run_fn is None:
-            raise AttributeError(
-                f"Module {module_path} must define an async 'run' function"
-            )
+            raise AttributeError(f"Module {module_path} must define an async 'run' function")
         return run_fn
 
     def _make_webhook_handler(self, definition: CustomToolDefinition):

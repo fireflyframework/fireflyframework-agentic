@@ -39,11 +39,21 @@ logger = logging.getLogger(__name__)
 # Canvas data models
 # ---------------------------------------------------------------------------
 
-_VALID_NODE_TYPES = frozenset({
-    "agent", "tool", "reasoning", "condition",
-    "memory", "validator", "custom_code", "fan_out", "fan_in",
-    "input", "output",
-})
+_VALID_NODE_TYPES = frozenset(
+    {
+        "agent",
+        "tool",
+        "reasoning",
+        "condition",
+        "memory",
+        "validator",
+        "custom_code",
+        "fan_out",
+        "fan_in",
+        "input",
+        "output",
+    }
+)
 
 
 class CanvasNode(BaseModel):
@@ -119,19 +129,13 @@ def create_canvas_tools(canvas: CanvasState) -> list[BaseTool]:
             if not canvas.nodes:
                 x, y = start_x, start_y
             else:
-                occupied = {
-                    (int(n.position.get("x", 0)), int(n.position.get("y", 0)))
-                    for n in canvas.nodes
-                }
+                occupied = {(int(n.position.get("x", 0)), int(n.position.get("y", 0))) for n in canvas.nodes}
                 rightmost = max(canvas.nodes, key=lambda n: n.position.get("x", 0))
                 x = rightmost.position.get("x", 0) + h_gap
                 y = rightmost.position.get("y", start_y)
 
                 # Avoid vertical collision: offset downward if position is taken
-                while any(
-                    abs(ox - x) < 100 and abs(oy - y) < 80
-                    for ox, oy in occupied
-                ):
+                while any(abs(ox - x) < 100 and abs(oy - y) < 80 for ox, oy in occupied):
                     y += v_gap
 
         node = CanvasNode(
@@ -317,9 +321,13 @@ def create_canvas_tools(canvas: CanvasState) -> list[BaseTool]:
 
             if ntype == "agent":
                 if not cfg.get("model"):
-                    errors.append(f"Agent '{node.id}' ({node.label or 'unnamed'}) is missing 'model'. Set it with configure_node.")
+                    errors.append(
+                        f"Agent '{node.id}' ({node.label or 'unnamed'}) is missing 'model'. Set it with configure_node."
+                    )
                 if not cfg.get("instructions"):
-                    errors.append(f"Agent '{node.id}' ({node.label or 'unnamed'}) is missing 'instructions'. Every agent needs a system prompt.")
+                    errors.append(
+                        f"Agent '{node.id}' ({node.label or 'unnamed'}) is missing 'instructions'. Every agent needs a system prompt."
+                    )
                 if not cfg.get("description"):
                     warnings.append(f"Agent '{node.id}' ({node.label or 'unnamed'}) has no 'description'.")
             elif ntype == "tool":
@@ -423,18 +431,31 @@ def create_canvas_tools(canvas: CanvasState) -> list[BaseTool]:
                 if node:
                     node.position = {"x": float(x), "y": float(layer_y + pos_idx * v_gap)}
 
-        return json.dumps({
-            "status": "layout_complete",
-            "layers": len(layers),
-            "nodes_arranged": sum(len(layer) for layer in layers),
-        })
+        return json.dumps(
+            {
+                "status": "layout_complete",
+                "layers": len(layers),
+                "nodes_arranged": sum(len(layer) for layer in layers),
+            }
+        )
 
-    return [add_node, connect_nodes, configure_node, remove_node, list_nodes, list_edges, clear_canvas, validate_pipeline, auto_layout]
+    return [
+        add_node,
+        connect_nodes,
+        configure_node,
+        remove_node,
+        list_nodes,
+        list_edges,
+        clear_canvas,
+        validate_pipeline,
+        auto_layout,
+    ]
 
 
 # ---------------------------------------------------------------------------
 # Registry query tools
 # ---------------------------------------------------------------------------
+
 
 def create_registry_tools() -> list[BaseTool]:
     """Create tools that query the framework registries at runtime."""
@@ -447,6 +468,7 @@ def create_registry_tools() -> list[BaseTool]:
     async def list_registered_agents() -> str:
         """Query the agent registry for all available agents."""
         from fireflyframework_genai.agents.registry import agent_registry
+
         agents = agent_registry.list_agents()
         return json.dumps(
             [{"name": a.name, "version": a.version, "description": a.description, "tags": a.tags} for a in agents]
@@ -460,9 +482,13 @@ def create_registry_tools() -> list[BaseTool]:
     async def list_registered_tools() -> str:
         """Query the tool registry for all available tools."""
         from fireflyframework_genai.tools.registry import tool_registry
+
         tools = tool_registry.list_tools()
         return json.dumps(
-            [{"name": t.name, "description": t.description, "tags": t.tags, "parameter_count": t.parameter_count} for t in tools]
+            [
+                {"name": t.name, "description": t.description, "tags": t.tags, "parameter_count": t.parameter_count}
+                for t in tools
+            ]
         )
 
     @firefly_tool(
@@ -473,6 +499,7 @@ def create_registry_tools() -> list[BaseTool]:
     async def list_reasoning_patterns() -> str:
         """Query the reasoning pattern registry."""
         from fireflyframework_genai.reasoning.registry import reasoning_registry
+
         patterns = reasoning_registry.list_patterns()
         return json.dumps(patterns)
 
@@ -496,6 +523,7 @@ def create_registry_tools() -> list[BaseTool]:
         # Framework version
         try:
             from fireflyframework_genai._version import __version__
+
             docs["version"] = __version__
         except Exception:
             docs["version"] = "unknown"
@@ -529,26 +557,25 @@ def create_registry_tools() -> list[BaseTool]:
         # Agent templates
         try:
             from fireflyframework_genai.agents import agent_registry
+
             agents = agent_registry.list_agents()
-            docs["agent_templates"] = [
-                {"name": a.name, "description": a.description} for a in agents
-            ]
+            docs["agent_templates"] = [{"name": a.name, "description": a.description} for a in agents]
         except Exception:
             docs["agent_templates"] = []
 
         # Registered tools (including custom)
         try:
             from fireflyframework_genai.tools.registry import tool_registry as tr
+
             tools = tr.list_tools()
-            docs["tools"] = [
-                {"name": t.name, "description": t.description[:100]} for t in tools
-            ]
+            docs["tools"] = [{"name": t.name, "description": t.description[:100]} for t in tools]
         except Exception:
             docs["tools"] = []
 
         # Reasoning patterns
         try:
             from fireflyframework_genai.reasoning.registry import reasoning_registry
+
             docs["reasoning_patterns"] = reasoning_registry.list_patterns()
         except Exception:
             docs["reasoning_patterns"] = []
@@ -557,7 +584,8 @@ def create_registry_tools() -> list[BaseTool]:
         try:
             mod = importlib.import_module("fireflyframework_genai.memory")
             classes = [
-                name for name, obj in inspect.getmembers(mod, inspect.isclass)
+                name
+                for name, obj in inspect.getmembers(mod, inspect.isclass)
                 if "Memory" in name or "memory" in name.lower()
             ]
             docs["memory_classes"] = classes
@@ -568,8 +596,7 @@ def create_registry_tools() -> list[BaseTool]:
         try:
             mod = importlib.import_module("fireflyframework_genai.pipeline")
             classes = [
-                name for name, obj in inspect.getmembers(mod, inspect.isclass)
-                if "Node" in name or "Pipeline" in name
+                name for name, obj in inspect.getmembers(mod, inspect.isclass) if "Node" in name or "Pipeline" in name
             ]
             docs["pipeline_classes"] = classes
         except Exception:
@@ -595,17 +622,35 @@ def create_registry_tools() -> list[BaseTool]:
         docs_dir = Path(__file__).resolve().parents[4] / "docs"
 
         valid_topics = {
-            "agents", "architecture", "content", "experiments", "explainability",
-            "exposure-queues", "exposure-rest", "lab", "memory", "observability",
-            "pipeline", "prompts", "reasoning", "security", "studio", "templates",
-            "tools", "tutorial", "use-case-idp", "validation",
+            "agents",
+            "architecture",
+            "content",
+            "experiments",
+            "explainability",
+            "exposure-queues",
+            "exposure-rest",
+            "lab",
+            "memory",
+            "observability",
+            "pipeline",
+            "prompts",
+            "reasoning",
+            "security",
+            "studio",
+            "templates",
+            "tools",
+            "tutorial",
+            "use-case-idp",
+            "validation",
         }
 
         if topic not in valid_topics:
-            return json.dumps({
-                "error": f"Unknown topic '{topic}'",
-                "available_topics": sorted(valid_topics),
-            })
+            return json.dumps(
+                {
+                    "error": f"Unknown topic '{topic}'",
+                    "available_topics": sorted(valid_topics),
+                }
+            )
 
         doc_path = docs_dir / f"{topic}.md"
         if not doc_path.exists():
@@ -644,10 +689,7 @@ def create_registry_tools() -> list[BaseTool]:
 
         results = []
         for tool_name, required_creds in _tool_credential_map.items():
-            configured = [
-                c for c in required_creds
-                if getattr(tc, c, None)
-            ]
+            configured = [c for c in required_creds if getattr(tc, c, None)]
             # Check if tool is registered
             try:
                 tool_registry.get(tool_name)
@@ -655,17 +697,26 @@ def create_registry_tools() -> list[BaseTool]:
             except Exception:
                 registered = False
 
-            results.append({
-                "name": tool_name,
-                "registered": registered,
-                "has_credentials": len(configured) > 0,
-                "required_credentials": required_creds,
-                "configured_credentials": configured,
-            })
+            results.append(
+                {
+                    "name": tool_name,
+                    "registered": registered,
+                    "has_credentials": len(configured) > 0,
+                    "required_credentials": required_creds,
+                    "configured_credentials": configured,
+                }
+            )
 
         return json.dumps(results, indent=2)
 
-    return [list_registered_agents, list_registered_tools, list_reasoning_patterns, get_framework_docs, read_framework_doc, get_tool_status]
+    return [
+        list_registered_agents,
+        list_registered_tools,
+        list_reasoning_patterns,
+        get_framework_docs,
+        read_framework_doc,
+        get_tool_status,
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -811,13 +862,15 @@ def create_planning_tool() -> list[BaseTool]:
         # WebSocket layer in assistant.py. This tool's return value will be
         # replaced by the user's actual response before the agent continues.
         # For now, return a placeholder that signals the plan was presented.
-        return json.dumps({
-            "status": "plan_presented",
-            "summary": summary,
-            "steps": steps,
-            "options": options,
-            "question": question,
-        })
+        return json.dumps(
+            {
+                "status": "plan_presented",
+                "summary": summary,
+                "steps": steps,
+                "options": options,
+                "question": question,
+            }
+        )
 
     return [present_plan]
 

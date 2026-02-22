@@ -51,9 +51,11 @@ class ProjectRuntime:
             await self._start_scheduler()
 
         self.status = "running"
-        logger.info("ProjectRuntime '%s' started (trigger=%s)",
-                     self.project_name,
-                     self._input_config.trigger_type if self._input_config else "none")
+        logger.info(
+            "ProjectRuntime '%s' started (trigger=%s)",
+            self.project_name,
+            self._input_config.trigger_type if self._input_config else "none",
+        )
 
     async def stop(self) -> None:
         """Gracefully stop all background processes."""
@@ -103,6 +105,7 @@ class ProjectRuntime:
 
         if qc.broker == "kafka":
             from fireflyframework_genai.exposure.queues.kafka import KafkaAgentConsumer
+
             consumer = KafkaAgentConsumer(
                 agent_name,
                 topic=qc.topic_or_queue,
@@ -111,6 +114,7 @@ class ProjectRuntime:
             )
         elif qc.broker == "rabbitmq":
             from fireflyframework_genai.exposure.queues.rabbitmq import RabbitMQAgentConsumer
+
             consumer = RabbitMQAgentConsumer(
                 agent_name,
                 queue_name=qc.topic_or_queue,
@@ -118,6 +122,7 @@ class ProjectRuntime:
             )
         elif qc.broker == "redis":
             from fireflyframework_genai.exposure.queues.redis import RedisAgentConsumer
+
             consumer = RedisAgentConsumer(
                 agent_name,
                 channel=qc.topic_or_queue,

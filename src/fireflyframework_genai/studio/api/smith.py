@@ -93,28 +93,33 @@ def create_smith_router() -> APIRouter:
     @router.get("/api/smith/{project}/history")
     async def get_smith_history(project: str):
         from fireflyframework_genai.studio.assistant.history import load_smith_history
+
         return load_smith_history(project)
 
     @router.post("/api/smith/{project}/history")
     async def save_smith_history_endpoint(project: str, body: _SaveHistoryBody):
         from fireflyframework_genai.studio.assistant.history import save_smith_history
+
         save_smith_history(project, body.messages)
         return {"status": "saved"}
 
     @router.delete("/api/smith/{project}/history")
     async def delete_smith_history(project: str):
         from fireflyframework_genai.studio.assistant.history import clear_smith_history
+
         clear_smith_history(project)
         return {"status": "cleared"}
 
     @router.get("/api/smith/{project}/files")
     async def get_smith_files(project: str):
         from fireflyframework_genai.studio.assistant.history import load_smith_files
+
         return load_smith_files(project)
 
     @router.post("/api/smith/{project}/files")
     async def save_smith_files_endpoint(project: str, body: _SaveFilesBody):
         from fireflyframework_genai.studio.assistant.history import save_smith_files
+
         save_smith_files(project, body.files)
         return {"status": "saved"}
 
@@ -123,9 +128,7 @@ def create_smith_router() -> APIRouter:
     # ------------------------------------------------------------------
 
     @router.websocket("/ws/smith")
-    async def smith_ws(
-        websocket: WebSocket, project: str = Query(default="")
-    ) -> None:
+    async def smith_ws(websocket: WebSocket, project: str = Query(default="")) -> None:
         await websocket.accept()
         logger.info("Smith WebSocket connected (project=%s)", project)
 
@@ -144,44 +147,43 @@ def create_smith_router() -> APIRouter:
                 try:
                     data = json.loads(raw)
                 except json.JSONDecodeError:
-                    await websocket.send_json(
-                        {"type": "error", "message": "Invalid JSON"}
-                    )
+                    await websocket.send_json({"type": "error", "message": "Invalid JSON"})
                     continue
 
                 action = data.get("action", "")
 
                 if action == "generate":
                     await _handle_generate(
-                        websocket, data, canvas_state, message_history,
+                        websocket,
+                        data,
+                        canvas_state,
+                        message_history,
                         project,
                     )
                 elif action == "chat":
                     await _handle_chat(
-                        websocket, data, canvas_state, message_history,
-                        pending_commands, project,
+                        websocket,
+                        data,
+                        canvas_state,
+                        message_history,
+                        pending_commands,
+                        project,
                     )
                 elif action == "sync_canvas":
                     await _handle_sync_canvas(websocket, data, canvas_state)
                 elif action == "execute":
                     await _handle_execute(websocket, data)
                 elif action == "approve_command":
-                    await _handle_approve_command(
-                        websocket, data, pending_commands
-                    )
+                    await _handle_approve_command(websocket, data, pending_commands)
                 else:
-                    await websocket.send_json(
-                        {"type": "error", "message": f"Unknown action: {action}"}
-                    )
+                    await websocket.send_json({"type": "error", "message": f"Unknown action: {action}"})
 
         except WebSocketDisconnect:
             logger.info("Smith WebSocket disconnected")
         except Exception as exc:
             logger.exception("Smith WebSocket error")
             with contextlib.suppress(Exception):
-                await websocket.send_json(
-                    {"type": "error", "message": str(exc)}
-                )
+                await websocket.send_json({"type": "error", "message": str(exc)})
 
     return router
 
@@ -221,9 +223,7 @@ async def _handle_generate(
         graph = data.get("graph", canvas_state)
 
         # Notify the frontend that generation has started
-        await websocket.send_json(
-            {"type": "smith_token", "content": "Generating code from pipeline...\n"}
-        )
+        await websocket.send_json({"type": "smith_token", "content": "Generating code from pipeline...\n"})
 
         # Pass user name so Smith can personalise responses
         user_name = ""
@@ -237,14 +237,14 @@ async def _handle_generate(
                 build_shared_context,
             )
 
-            shared_context = build_shared_context(
-                project, canvas_state, exclude_agent="smith"
-            )
+            shared_context = build_shared_context(project, canvas_state, exclude_agent="smith")
         except Exception:
             pass
 
         result = await generate_code_with_smith(
-            graph, settings_dict, user_name=user_name,
+            graph,
+            settings_dict,
+            user_name=user_name,
             shared_context=shared_context,
         )
 
@@ -281,9 +281,7 @@ async def _handle_generate(
 
     except Exception as exc:
         logger.error("Smith generation failed: %s", exc, exc_info=True)
-        await websocket.send_json(
-            {"type": "error", "message": f"Code generation failed: {exc}"}
-        )
+        await websocket.send_json({"type": "error", "message": f"Code generation failed: {exc}"})
 
 
 async def _handle_chat(
@@ -302,9 +300,7 @@ async def _handle_chat(
     """
     user_msg = data.get("message", "").strip()
     if not user_msg:
-        await websocket.send_json(
-            {"type": "error", "message": "Empty message"}
-        )
+        await websocket.send_json({"type": "error", "message": "Empty message"})
         return
 
     try:
@@ -329,18 +325,13 @@ async def _handle_chat(
                 build_shared_context,
             )
 
-            shared = build_shared_context(
-                project, canvas_state, exclude_agent="smith"
-            )
+            shared = build_shared_context(project, canvas_state, exclude_agent="smith")
             if shared:
                 context_parts.append(shared)
         except Exception:
             pass
         if canvas_state.get("nodes"):
-            context_parts.append(
-                "[CURRENT PIPELINE STATE]\n"
-                + json.dumps(canvas_state, indent=2)
-            )
+            context_parts.append("[CURRENT PIPELINE STATE]\n" + json.dumps(canvas_state, indent=2))
         context_parts.append(user_msg)
         effective_message = "\n\n".join(context_parts)
 
@@ -379,13 +370,9 @@ async def _handle_chat(
             _chunk_size = 80
             for i in range(0, len(chat_text), _chunk_size):
                 chunk = chat_text[i : i + _chunk_size]
-                await websocket.send_json(
-                    {"type": "smith_token", "content": chunk}
-                )
+                await websocket.send_json({"type": "smith_token", "content": chunk})
 
-            combined_code = "\n\n".join(
-                f"# --- {f['path']} ---\n{f['content']}" for f in extracted_files
-            )
+            combined_code = "\n\n".join(f"# --- {f['path']} ---\n{f['content']}" for f in extracted_files)
 
             await websocket.send_json(
                 {
@@ -399,9 +386,7 @@ async def _handle_chat(
             _chunk_size = 80
             for i in range(0, len(full_text), _chunk_size):
                 chunk = full_text[i : i + _chunk_size]
-                await websocket.send_json(
-                    {"type": "smith_token", "content": chunk}
-                )
+                await websocket.send_json({"type": "smith_token", "content": chunk})
 
             await websocket.send_json(
                 {
@@ -423,15 +408,11 @@ async def _handle_chat(
             )
 
         # Check for pending approvals in tool return parts
-        await _check_pending_approvals(
-            websocket, result, pending_commands
-        )
+        await _check_pending_approvals(websocket, result, pending_commands)
 
     except Exception as exc:
         logger.error("Smith chat failed: %s", exc, exc_info=True)
-        await websocket.send_json(
-            {"type": "error", "message": f"Smith chat error: {exc}"}
-        )
+        await websocket.send_json({"type": "error", "message": f"Smith chat error: {exc}"})
 
 
 async def _handle_sync_canvas(
@@ -465,9 +446,7 @@ async def _handle_execute(
     """
     code = data.get("code", "").strip()
     if not code:
-        await websocket.send_json(
-            {"type": "error", "message": "No code to execute"}
-        )
+        await websocket.send_json({"type": "error", "message": "No code to execute"})
         return
 
     tmp_file: Path | None = None
@@ -491,9 +470,7 @@ async def _handle_execute(
         )
 
         try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout
-            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except TimeoutError:
             proc.kill()
             await proc.communicate()
@@ -518,9 +495,7 @@ async def _handle_execute(
 
     except Exception as exc:
         logger.error("Smith execution failed: %s", exc, exc_info=True)
-        await websocket.send_json(
-            {"type": "error", "message": f"Execution failed: {exc}"}
-        )
+        await websocket.send_json({"type": "error", "message": f"Execution failed: {exc}"})
     finally:
         # Clean up temp file
         if tmp_file is not None:
@@ -543,9 +518,7 @@ async def _handle_approve_command(
     approved = data.get("approved", False)
 
     if not command_id:
-        await websocket.send_json(
-            {"type": "error", "message": "Missing command_id"}
-        )
+        await websocket.send_json({"type": "error", "message": "Missing command_id"})
         return
 
     command = pending_commands.pop(command_id, None)
@@ -589,9 +562,7 @@ async def _handle_approve_command(
         )
         timeout = command.get("timeout", 30)
         try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout
-            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except TimeoutError:
             proc.kill()
             await proc.communicate()
@@ -617,9 +588,7 @@ async def _handle_approve_command(
         )
     except Exception as exc:
         logger.error("Approved command execution failed: %s", exc, exc_info=True)
-        await websocket.send_json(
-            {"type": "error", "message": f"Command execution failed: {exc}"}
-        )
+        await websocket.send_json({"type": "error", "message": f"Command execution failed: {exc}"})
 
 
 # ---------------------------------------------------------------------------
@@ -634,13 +603,24 @@ _CODE_BLOCK_RE = re.compile(
 
 # Map language tags to file extensions
 _LANG_TO_EXT: dict[str, str] = {
-    "python": ".py", "py": ".py",
-    "javascript": ".js", "js": ".js",
-    "typescript": ".ts", "ts": ".ts",
-    "json": ".json", "yaml": ".yaml", "yml": ".yaml",
-    "bash": ".sh", "sh": ".sh", "shell": ".sh",
-    "sql": ".sql", "html": ".html", "css": ".css",
-    "xml": ".xml", "toml": ".toml", "ini": ".ini",
+    "python": ".py",
+    "py": ".py",
+    "javascript": ".js",
+    "js": ".js",
+    "typescript": ".ts",
+    "ts": ".ts",
+    "json": ".json",
+    "yaml": ".yaml",
+    "yml": ".yaml",
+    "bash": ".sh",
+    "sh": ".sh",
+    "shell": ".sh",
+    "sql": ".sql",
+    "html": ".html",
+    "css": ".css",
+    "xml": ".xml",
+    "toml": ".toml",
+    "ini": ".ini",
 }
 
 # Minimum total code length to be considered "substantial" (skip tiny snippets)
@@ -672,11 +652,13 @@ def _extract_code_blocks(text: str) -> list[dict[str, Any]]:
         count = counters.get(lang, 0) + 1
         counters[lang] = count
         name = f"smith_code_{count}{ext}" if count > 1 else f"smith_code{ext}"
-        files.append({
-            "path": name,
-            "content": content.strip(),
-            "language": lang,
-        })
+        files.append(
+            {
+                "path": name,
+                "content": content.strip(),
+                "language": lang,
+            }
+        )
     return files
 
 
@@ -782,9 +764,7 @@ def _extract_tool_calls(result: Any) -> list[dict[str, Any]]:
                     tool_name = getattr(part, "tool_name", "")
                     for tc in tool_calls:
                         if tc["tool"] == tool_name and tc["result"] is None:
-                            tc["result"] = (
-                                str(content)[:500] if content else ""
-                            )
+                            tc["result"] = str(content)[:500] if content else ""
                             break
     except Exception as exc:
         logger.warning("Could not extract tool calls: %s", exc)
