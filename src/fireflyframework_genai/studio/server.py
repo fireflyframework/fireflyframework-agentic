@@ -133,10 +133,12 @@ def create_studio_app(
 
     # -- Per-project runtime & execution API -------------------------------
     from fireflyframework_genai.studio.api.project_api import create_project_api_router
+
     app.include_router(create_project_api_router(project_manager))
 
     # -- Version history endpoints -------------------------------------------
     from fireflyframework_genai.studio.api.projects import create_versioning_router
+
     app.include_router(create_versioning_router(project_manager))
 
     # -- Custom tools endpoints --------------------------------------------

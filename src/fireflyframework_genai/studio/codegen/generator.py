@@ -147,9 +147,7 @@ def _emit_imports(type_set: set[NodeType], has_edges: bool) -> list[str]:
             step_types.append("CallableStep")
 
         if step_types:
-            imports.append(
-                f"from fireflyframework_genai.pipeline.steps import {', '.join(sorted(step_types))}"
-            )
+            imports.append(f"from fireflyframework_genai.pipeline.steps import {', '.join(sorted(step_types))}")
 
         imports.append("from fireflyframework_genai.pipeline.context import PipelineContext")
 
@@ -184,12 +182,12 @@ def _emit_agent_node(node: GraphNode, default_model: str) -> str:
     instructions = node.data.get("instructions", "")
     description = node.data.get("description", "")
 
-    parts = [f'{name} = FireflyAgent(']
+    parts = [f"{name} = FireflyAgent("]
     parts.append(f'    name="{node.id}",')
     parts.append(f'    model="{model}",')
-    parts.append(f'    instructions={_format_string_literal(instructions)},')
+    parts.append(f"    instructions={_format_string_literal(instructions)},")
     if description:
-        parts.append(f'    description={_format_string_literal(description)},')
+        parts.append(f"    description={_format_string_literal(description)},")
     parts.append(")")
     return "\n".join(parts)
 
@@ -202,13 +200,13 @@ def _emit_tool_node(node: GraphNode, _default_model: str) -> str:
         return f"# TOOL node {node.id!r} is missing 'tool_name' configuration"
 
     lines = [
-        f'# Tool node: {node.label or node.id}',
+        f"# Tool node: {node.label or node.id}",
         f'{name}_tool = tool_registry.get("{tool_name}")',
-        '',
-        '',
-        f'async def {name}_execute(context: PipelineContext, inputs: dict) -> dict:',
+        "",
+        "",
+        f"async def {name}_execute(context: PipelineContext, inputs: dict) -> dict:",
         f'    """Execute tool: {tool_name}."""',
-        f'    return await {name}_tool.execute(**inputs)',
+        f"    return await {name}_tool.execute(**inputs)",
     ]
     return "\n".join(lines)
 
@@ -223,15 +221,14 @@ def _emit_reasoning_node(node: GraphNode, _default_model: str) -> str:
         return f"# REASONING node {node.id!r} is missing 'pattern_name' configuration"
 
     lines = [
-        f'# Reasoning node: {node.label or node.id}',
+        f"# Reasoning node: {node.label or node.id}",
         f'{name}_pattern = reasoning_registry.get("{pattern_name}")',
     ]
     if agent_name:
         lines.append(f'{name}_agent = agent_registry.get("{agent_name}")')
     else:
-        lines.append(f'# Note: REASONING node {node.id!r} has no agent_name; '
-                      f'you may need to assign an agent here')
-        lines.append(f'{name}_agent = None  # TODO: assign an agent')
+        lines.append(f"# Note: REASONING node {node.id!r} has no agent_name; you may need to assign an agent here")
+        lines.append(f"{name}_agent = None  # TODO: assign an agent")
 
     return "\n".join(lines)
 
@@ -248,15 +245,15 @@ def _emit_condition_node(node: GraphNode, _default_model: str) -> str:
     branches_repr = repr(branches)
 
     lines = [
-        f'# Condition node: {node.label or node.id}',
-        f'{name}_branches = {branches_repr}',
-        f'{name}_default = next(iter({name}_branches.values()))',
-        '',
-        '',
-        f'def {name}_router(inputs: dict) -> str:',
+        f"# Condition node: {node.label or node.id}",
+        f"{name}_branches = {branches_repr}",
+        f"{name}_default = next(iter({name}_branches.values()))",
+        "",
+        "",
+        f"def {name}_router(inputs: dict) -> str:",
         f'    """Route based on key {condition_key!r}."""',
         f'    value = str(inputs.get("{condition_key}", ""))',
-        f'    return {name}_branches.get(value, {name}_default)',
+        f"    return {name}_branches.get(value, {name}_default)",
     ]
     return "\n".join(lines)
 
@@ -267,23 +264,27 @@ def _emit_fan_out_node(node: GraphNode, _default_model: str) -> str:
     field = node.data.get("split_expression", "")
 
     lines = [
-        f'# Fan-Out node: {node.label or node.id}',
-        '',
-        '',
-        f'def {name}_split(value):',
+        f"# Fan-Out node: {node.label or node.id}",
+        "",
+        "",
+        f"def {name}_split(value):",
         '    """Split input for parallel processing."""',
     ]
     if field:
-        lines.extend([
-            '    if isinstance(value, dict):',
-            f'        extracted = value.get("{field}", value)',
-            '        return list(extracted) if isinstance(extracted, list) else [extracted]',
-            '    return list(value) if isinstance(value, list) else [value]',
-        ])
+        lines.extend(
+            [
+                "    if isinstance(value, dict):",
+                f'        extracted = value.get("{field}", value)',
+                "        return list(extracted) if isinstance(extracted, list) else [extracted]",
+                "    return list(value) if isinstance(value, list) else [value]",
+            ]
+        )
     else:
-        lines.extend([
-            '    return list(value) if isinstance(value, list) else [value]',
-        ])
+        lines.extend(
+            [
+                "    return list(value) if isinstance(value, list) else [value]",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -293,24 +294,26 @@ def _emit_fan_in_node(node: GraphNode, _default_model: str) -> str:
     merge_expr = node.data.get("merge_expression", "collect")
 
     lines = [
-        f'# Fan-In node: {node.label or node.id}',
-        '',
-        '',
-        f'def {name}_merge(items: list):',
+        f"# Fan-In node: {node.label or node.id}",
+        "",
+        "",
+        f"def {name}_merge(items: list):",
         f'    """Merge parallel outputs ({merge_expr})."""',
     ]
     if merge_expr == "concat":
-        lines.extend([
-            '    result = []',
-            '    for item in items:',
-            '        if isinstance(item, list):',
-            '            result.extend(item)',
-            '        else:',
-            '            result.append(item)',
-            '    return result',
-        ])
+        lines.extend(
+            [
+                "    result = []",
+                "    for item in items:",
+                "        if isinstance(item, list):",
+                "            result.extend(item)",
+                "        else:",
+                "            result.append(item)",
+                "    return result",
+            ]
+        )
     else:
-        lines.append('    return items')
+        lines.append("    return items")
     return "\n".join(lines)
 
 
@@ -320,32 +323,38 @@ def _emit_memory_node(node: GraphNode, _default_model: str) -> str:
     action = node.data.get("memory_action", "retrieve")
 
     lines = [
-        f'# Memory node: {node.label or node.id} (action: {action})',
-        '',
-        '',
-        f'async def {name}_execute(context: PipelineContext, inputs: dict):',
+        f"# Memory node: {node.label or node.id} (action: {action})",
+        "",
+        "",
+        f"async def {name}_execute(context: PipelineContext, inputs: dict):",
         f'    """Memory operation: {action}."""',
-        '    memory = context.memory',
-        '    if memory is None:',
+        "    memory = context.memory",
+        "    if memory is None:",
         '        return inputs.get("input")',
         '    key = inputs.get("key", "default")',
     ]
 
     if action == "store":
-        lines.extend([
-            '    value = inputs.get("input", inputs.get("value"))',
-            '    memory.set_fact(key, value)',
-            '    return value',
-        ])
+        lines.extend(
+            [
+                '    value = inputs.get("input", inputs.get("value"))',
+                "    memory.set_fact(key, value)",
+                "    return value",
+            ]
+        )
     elif action == "clear":
-        lines.extend([
-            '    memory.working.delete(key)',
-            '    return None',
-        ])
+        lines.extend(
+            [
+                "    memory.working.delete(key)",
+                "    return None",
+            ]
+        )
     else:  # retrieve
-        lines.extend([
-            '    return memory.get_fact(key)',
-        ])
+        lines.extend(
+            [
+                "    return memory.get_fact(key)",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -355,41 +364,51 @@ def _emit_validator_node(node: GraphNode, _default_model: str) -> str:
     rule = node.data.get("validation_rule", "not_empty")
 
     lines = [
-        f'# Validator node: {node.label or node.id} (rule: {rule})',
-        '',
-        '',
-        f'async def {name}_validate(context: PipelineContext, inputs: dict):',
+        f"# Validator node: {node.label or node.id} (rule: {rule})",
+        "",
+        "",
+        f"async def {name}_validate(context: PipelineContext, inputs: dict):",
         f'    """Validate input: {rule}."""',
         '    value = inputs.get("input", context.inputs)',
     ]
 
     if rule == "not_empty":
-        lines.extend([
-            '    if not value:',
-            '        raise ValueError("Validation failed: value is empty")',
-        ])
+        lines.extend(
+            [
+                "    if not value:",
+                '        raise ValueError("Validation failed: value is empty")',
+            ]
+        )
     elif rule == "is_string":
-        lines.extend([
-            '    if not isinstance(value, str):',
-            '        raise TypeError(f"Expected string, got {type(value).__name__}")',
-        ])
+        lines.extend(
+            [
+                "    if not isinstance(value, str):",
+                '        raise TypeError(f"Expected string, got {type(value).__name__}")',
+            ]
+        )
     elif rule == "is_list":
-        lines.extend([
-            '    if not isinstance(value, list):',
-            '        raise TypeError(f"Expected list, got {type(value).__name__}")',
-        ])
+        lines.extend(
+            [
+                "    if not isinstance(value, list):",
+                '        raise TypeError(f"Expected list, got {type(value).__name__}")',
+            ]
+        )
     elif rule == "is_dict":
-        lines.extend([
-            '    if not isinstance(value, dict):',
-            '        raise TypeError(f"Expected dict, got {type(value).__name__}")',
-        ])
+        lines.extend(
+            [
+                "    if not isinstance(value, dict):",
+                '        raise TypeError(f"Expected dict, got {type(value).__name__}")',
+            ]
+        )
     elif rule:
-        lines.extend([
-            f'    if isinstance(value, dict) and "{rule}" not in value:',
-            f'        raise KeyError("Missing required key: {rule}")',
-        ])
+        lines.extend(
+            [
+                f'    if isinstance(value, dict) and "{rule}" not in value:',
+                f'        raise KeyError("Missing required key: {rule}")',
+            ]
+        )
 
-    lines.append('    return value')
+    lines.append("    return value")
     return "\n".join(lines)
 
 
@@ -402,17 +421,19 @@ def _emit_custom_code_node(node: GraphNode, _default_model: str) -> str:
         return f"# CUSTOM_CODE node {node.id!r} has no code defined"
 
     lines = [
-        f'# Custom Code node: {node.label or node.id}',
-        '# The code below must define: async def execute(context, inputs) -> Any',
+        f"# Custom Code node: {node.label or node.id}",
+        "# The code below must define: async def execute(context, inputs) -> Any",
     ]
     # Indent user code inside a namespace to avoid collisions
     for code_line in code.splitlines():
         lines.append(code_line)
 
-    lines.extend([
-        '',
-        f'{name}_execute = execute  # bind to node variable',
-    ])
+    lines.extend(
+        [
+            "",
+            f"{name}_execute = execute  # bind to node variable",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -422,10 +443,10 @@ def _emit_input_node(node: GraphNode, _default_model: str) -> str:
     trigger_type = node.data.get("trigger_type", "manual")
 
     lines = [
-        f'# Input node: {node.label or node.id} (trigger: {trigger_type})',
-        '',
-        '',
-        f'async def {name}_step(context: PipelineContext, inputs: dict):',
+        f"# Input node: {node.label or node.id} (trigger: {trigger_type})",
+        "",
+        "",
+        f"async def {name}_step(context: PipelineContext, inputs: dict):",
         f'    """Pipeline entry point ({trigger_type} trigger)."""',
         '    return inputs.get("input", context.inputs)',
     ]
@@ -436,23 +457,23 @@ def _emit_input_node(node: GraphNode, _default_model: str) -> str:
         if http:
             method = http.get("method", "POST")
             path = http.get("path_suffix", "")
-            lines.insert(1, f'# HTTP config: {method} {path}')
+            lines.insert(1, f"# HTTP config: {method} {path}")
     elif trigger_type == "queue":
         q = node.data.get("queue_config", {})
         if q:
             broker = q.get("broker", "")
             topic = q.get("topic_or_queue", "")
-            lines.insert(1, f'# Queue config: {broker} / {topic}')
+            lines.insert(1, f"# Queue config: {broker} / {topic}")
     elif trigger_type == "schedule":
         sched = node.data.get("schedule_config", {})
         if sched:
             cron = sched.get("cron_expression", "")
-            lines.insert(1, f'# Schedule config: {cron}')
+            lines.insert(1, f"# Schedule config: {cron}")
     elif trigger_type == "file_upload":
         fc = node.data.get("file_config", {})
         if fc:
             types = fc.get("accepted_types", ["*/*"])
-            lines.insert(1, f'# File upload config: accepts {types}')
+            lines.insert(1, f"# File upload config: accepts {types}")
 
     return "\n".join(lines)
 
@@ -463,10 +484,10 @@ def _emit_output_node(node: GraphNode, _default_model: str) -> str:
     dest_type = node.data.get("destination_type", "response")
 
     lines = [
-        f'# Output node: {node.label or node.id} (destination: {dest_type})',
-        '',
-        '',
-        f'async def {name}_step(context: PipelineContext, inputs: dict):',
+        f"# Output node: {node.label or node.id} (destination: {dest_type})",
+        "",
+        "",
+        f"async def {name}_step(context: PipelineContext, inputs: dict):",
         f'    """Pipeline exit point ({dest_type} destination)."""',
         f'    context.metadata["_output_config"] = {repr(node.data)}',
         '    return inputs.get("input", inputs)',
@@ -476,13 +497,13 @@ def _emit_output_node(node: GraphNode, _default_model: str) -> str:
         wh = node.data.get("webhook_config", {})
         if wh:
             url = wh.get("url", "")
-            lines.insert(1, f'# Webhook config: {url}')
+            lines.insert(1, f"# Webhook config: {url}")
     elif dest_type == "store":
         sc = node.data.get("store_config", {})
         if sc:
             storage = sc.get("storage_type", "file")
             path = sc.get("path_or_table", "")
-            lines.insert(1, f'# Store config: {storage} / {path}')
+            lines.insert(1, f"# Store config: {storage} / {path}")
 
     return "\n".join(lines)
 
@@ -491,9 +512,9 @@ def _emit_pipeline_step_node(node: GraphNode, _default_model: str) -> str:
     """Emit a generic pipeline step (pass-through)."""
     name = _safe_var(node.id)
     return (
-        f'# Pipeline step: {node.label or node.id}\n'
-        f'\n\n'
-        f'async def {name}_step(context: PipelineContext, inputs: dict):\n'
+        f"# Pipeline step: {node.label or node.id}\n"
+        f"\n\n"
+        f"async def {name}_step(context: PipelineContext, inputs: dict):\n"
         f'    """Pass-through step."""\n'
         f'    return inputs.get("input", context.inputs)'
     )
@@ -584,28 +605,30 @@ def _emit_main_block(graph: GraphModel) -> str:
 
     lines = [
         'if __name__ == "__main__":',
-        '',
-        '    async def main():',
-        '        from fireflyframework_genai.pipeline.context import PipelineContext',
+        "",
+        "    async def main():",
+        "        from fireflyframework_genai.pipeline.context import PipelineContext",
     ]
 
     has_memory = any(n.type == NodeType.MEMORY for n in graph.nodes)
     if has_memory:
         lines.append('        memory = MemoryManager(store=FileStore(base_dir="./memory"))')
-        lines.append('        context = PipelineContext(memory=memory)')
+        lines.append("        context = PipelineContext(memory=memory)")
     else:
-        lines.append('        context = PipelineContext()')
+        lines.append("        context = PipelineContext()")
 
     if input_nodes:
         trigger = input_nodes[0].data.get("trigger_type", "manual")
-        lines.append(f'        # Trigger type: {trigger}')
+        lines.append(f"        # Trigger type: {trigger}")
 
-    lines.extend([
-        '        result = await pipeline.run(context, inputs={"input": "Hello, pipeline!"})',
-        '        print("Pipeline result:", result)',
-        '',
-        '    asyncio.run(main())',
-    ])
+    lines.extend(
+        [
+            '        result = await pipeline.run(context, inputs={"input": "Hello, pipeline!"})',
+            '        print("Pipeline result:", result)',
+            "",
+            "    asyncio.run(main())",
+        ]
+    )
     return "\n".join(lines)
 
 

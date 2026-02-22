@@ -97,17 +97,20 @@ def create_oracle_router() -> APIRouter:
     @router.get("/api/oracle/{project}/chat-history")
     async def get_oracle_chat_history(project: str):
         from fireflyframework_genai.studio.assistant.history import load_oracle_history
+
         return load_oracle_history(project)
 
     @router.post("/api/oracle/{project}/chat-history")
     async def save_oracle_chat_history(project: str, body: _SaveChatHistoryBody):
         from fireflyframework_genai.studio.assistant.history import save_oracle_history
+
         save_oracle_history(project, body.messages)
         return {"status": "saved"}
 
     @router.delete("/api/oracle/{project}/chat-history")
     async def delete_oracle_chat_history(project: str):
         from fireflyframework_genai.studio.assistant.history import clear_oracle_history
+
         clear_oracle_history(project)
         return {"status": "cleared"}
 
@@ -116,9 +119,7 @@ def create_oracle_router() -> APIRouter:
     # ------------------------------------------------------------------
 
     @router.websocket("/ws/oracle")
-    async def oracle_ws(
-        websocket: WebSocket, project: str = Query(default="")
-    ) -> None:
+    async def oracle_ws(websocket: WebSocket, project: str = Query(default="")) -> None:
         await websocket.accept()
         logger.info("Oracle WebSocket connected (project=%s)", project)
 
@@ -140,9 +141,7 @@ def create_oracle_router() -> APIRouter:
             oracle = create_oracle_agent(_get_canvas, user_name=user_name)
         except Exception as exc:
             logger.error("Failed to create Oracle agent: %s", exc)
-            await websocket.send_json(
-                {"type": "error", "message": f"Oracle unavailable: {exc}"}
-            )
+            await websocket.send_json({"type": "error", "message": f"Oracle unavailable: {exc}"})
             await websocket.close()
             return
 
@@ -154,9 +153,7 @@ def create_oracle_router() -> APIRouter:
                 try:
                     message = json.loads(raw)
                 except json.JSONDecodeError:
-                    await websocket.send_json(
-                        {"type": "error", "message": "Invalid JSON"}
-                    )
+                    await websocket.send_json({"type": "error", "message": "Invalid JSON"})
                     continue
 
                 action = message.get("action")
@@ -172,8 +169,7 @@ def create_oracle_router() -> APIRouter:
                     try:
                         context_block = _build_shared_context_for_oracle(project, canvas_state)
                         result = await oracle.run(
-                            context_block
-                            + "Analyze the current pipeline thoroughly. "
+                            context_block + "Analyze the current pipeline thoroughly. "
                             "Use analyze_pipeline, check_connectivity, and review_agent_setup "
                             "to gather data. Then use suggest_improvement for each issue or "
                             "recommendation you find. Consider the project purpose and "
@@ -197,16 +193,12 @@ def create_oracle_router() -> APIRouter:
                                 title=insight_data.get("title", "Insight"),
                                 description=insight_data.get("description", ""),
                                 severity=insight_data.get("severity", "suggestion"),
-                                action_instruction=insight_data.get(
-                                    "action_instruction"
-                                ),
+                                action_instruction=insight_data.get("action_instruction"),
                             )
                             if project:
                                 add_insight(project, insight)
 
-                            await websocket.send_json(
-                                {"type": "insight", **asdict(insight)}
-                            )
+                            await websocket.send_json({"type": "insight", **asdict(insight)})
 
                         # Also send any text output
                         text_output = ""
@@ -223,24 +215,19 @@ def create_oracle_router() -> APIRouter:
 
                     except Exception as exc:
                         logger.error("Oracle analysis failed: %s", exc, exc_info=True)
-                        await websocket.send_json(
-                            {"type": "error", "message": f"Analysis failed: {exc}"}
-                        )
+                        await websocket.send_json({"type": "error", "message": f"Analysis failed: {exc}"})
 
                 elif action == "analyze_node":
                     # Single node analysis
                     node_id = message.get("node_id", "")
                     if not node_id:
-                        await websocket.send_json(
-                            {"type": "error", "message": "Missing node_id"}
-                        )
+                        await websocket.send_json({"type": "error", "message": "Missing node_id"})
                         continue
 
                     try:
                         context_block = _build_shared_context_for_oracle(project, canvas_state)
                         result = await oracle.run(
-                            context_block
-                            + f"Analyze node '{node_id}' specifically. "
+                            context_block + f"Analyze node '{node_id}' specifically. "
                             f"Use analyze_node_config to check its configuration, "
                             f"then suggest improvements if needed.",
                             message_history=message_history,
@@ -260,16 +247,12 @@ def create_oracle_router() -> APIRouter:
                                 title=insight_data.get("title", "Insight"),
                                 description=insight_data.get("description", ""),
                                 severity=insight_data.get("severity", "suggestion"),
-                                action_instruction=insight_data.get(
-                                    "action_instruction"
-                                ),
+                                action_instruction=insight_data.get("action_instruction"),
                             )
                             if project:
                                 add_insight(project, insight)
 
-                            await websocket.send_json(
-                                {"type": "insight", **asdict(insight)}
-                            )
+                            await websocket.send_json({"type": "insight", **asdict(insight)})
 
                         text_output = ""
                         if hasattr(result, "output"):
@@ -284,20 +267,14 @@ def create_oracle_router() -> APIRouter:
                         )
 
                     except Exception as exc:
-                        logger.error(
-                            "Oracle node analysis failed: %s", exc, exc_info=True
-                        )
-                        await websocket.send_json(
-                            {"type": "error", "message": f"Analysis failed: {exc}"}
-                        )
+                        logger.error("Oracle node analysis failed: %s", exc, exc_info=True)
+                        await websocket.send_json({"type": "error", "message": f"Analysis failed: {exc}"})
 
                 elif action == "chat":
                     # Free-form conversational chat with The Oracle
                     user_msg = message.get("message", "").strip()
                     if not user_msg:
-                        await websocket.send_json(
-                            {"type": "error", "message": "Empty message"}
-                        )
+                        await websocket.send_json({"type": "error", "message": "Empty message"})
                         continue
 
                     try:
@@ -322,9 +299,7 @@ def create_oracle_router() -> APIRouter:
                         _chunk_size = 12
                         for i in range(0, len(full_text), _chunk_size):
                             chunk = full_text[i : i + _chunk_size]
-                            await websocket.send_json(
-                                {"type": "oracle_token", "content": chunk}
-                            )
+                            await websocket.send_json({"type": "oracle_token", "content": chunk})
                             await asyncio.sleep(0.01)
 
                         # Extract any insights produced during chat
@@ -339,15 +314,11 @@ def create_oracle_router() -> APIRouter:
                                 title=insight_data.get("title", "Insight"),
                                 description=insight_data.get("description", ""),
                                 severity=insight_data.get("severity", "suggestion"),
-                                action_instruction=insight_data.get(
-                                    "action_instruction"
-                                ),
+                                action_instruction=insight_data.get("action_instruction"),
                             )
                             if project:
                                 add_insight(project, insight)
-                            await websocket.send_json(
-                                {"type": "insight", **asdict(insight)}
-                            )
+                            await websocket.send_json({"type": "insight", **asdict(insight)})
 
                         await websocket.send_json(
                             {
@@ -357,17 +328,11 @@ def create_oracle_router() -> APIRouter:
                         )
 
                     except Exception as exc:
-                        logger.error(
-                            "Oracle chat failed: %s", exc, exc_info=True
-                        )
-                        await websocket.send_json(
-                            {"type": "error", "message": f"Oracle chat error: {exc}"}
-                        )
+                        logger.error("Oracle chat failed: %s", exc, exc_info=True)
+                        await websocket.send_json({"type": "error", "message": f"Oracle chat error: {exc}"})
 
                 else:
-                    await websocket.send_json(
-                        {"type": "error", "message": f"Unknown action: {action}"}
-                    )
+                    await websocket.send_json({"type": "error", "message": f"Unknown action: {action}"})
 
         except WebSocketDisconnect:
             logger.info("Oracle WebSocket disconnected")
@@ -408,9 +373,7 @@ def _extract_oracle_insights(result: Any) -> list[dict[str, Any]]:
     return insights
 
 
-def _build_shared_context_for_oracle(
-    project: str, canvas_state: dict[str, Any]
-) -> str:
+def _build_shared_context_for_oracle(project: str, canvas_state: dict[str, Any]) -> str:
     """Build cross-agent context for the Oracle using the shared builder.
 
     Replaces the old frontend-supplied context approach — context is now

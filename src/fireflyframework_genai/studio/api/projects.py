@@ -143,6 +143,7 @@ def create_projects_router(manager: ProjectManager) -> APIRouter:
         # Create a version history entry for every save
         try:
             from fireflyframework_genai.studio.versioning import ProjectVersioning
+
             project_dir = manager._safe_path(project_name)
             versioning = ProjectVersioning(project_dir)
             node_count = len(body.graph.get("nodes", []))
@@ -169,6 +170,7 @@ def create_versioning_router(project_manager: ProjectManager) -> APIRouter:
     @router.get("/{name}/history")
     async def get_project_history(name: str):
         from fireflyframework_genai.studio.versioning import ProjectVersioning
+
         project_dir = project_manager._safe_path(name)
         if not project_dir.exists():
             raise HTTPException(status_code=404, detail=f"Project '{name}' not found")
@@ -178,6 +180,7 @@ def create_versioning_router(project_manager: ProjectManager) -> APIRouter:
     @router.post("/{name}/restore")
     async def restore_project_version(name: str, body: dict):
         from fireflyframework_genai.studio.versioning import ProjectVersioning
+
         project_dir = project_manager._safe_path(name)
         if not project_dir.exists():
             raise HTTPException(status_code=404, detail=f"Project '{name}' not found")
@@ -191,6 +194,7 @@ def create_versioning_router(project_manager: ProjectManager) -> APIRouter:
     @router.post("/{name}/bookmark")
     async def bookmark_project_version(name: str, body: dict):
         from fireflyframework_genai.studio.versioning import ProjectVersioning
+
         project_dir = project_manager._safe_path(name)
         if not project_dir.exists():
             raise HTTPException(status_code=404, detail=f"Project '{name}' not found")

@@ -53,9 +53,7 @@ def _make_node(
     label: str = "test-node",
     data: dict | None = None,
 ) -> GraphNode:
-    return GraphNode(
-        id=node_id, type=node_type, label=label, position=_POS, data=data or {}
-    )
+    return GraphNode(id=node_id, type=node_type, label=label, position=_POS, data=data or {})
 
 
 def _mock_agent(name: str = "mock-agent") -> MagicMock:

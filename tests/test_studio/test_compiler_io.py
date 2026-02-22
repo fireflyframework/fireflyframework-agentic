@@ -63,8 +63,13 @@ class TestInputOutputCompilation:
         graph = GraphModel(
             nodes=[
                 _input_node(),
-                GraphNode(id="input_2", type=NodeType.INPUT, label="Input 2",
-                          position={"x": 0, "y": 400}, data={"trigger_type": "http"}),
+                GraphNode(
+                    id="input_2",
+                    type=NodeType.INPUT,
+                    label="Input 2",
+                    position={"x": 0, "y": 400},
+                    data={"trigger_type": "http"},
+                ),
                 _step_node(),
                 _output_node(),
             ],
@@ -103,11 +108,16 @@ class TestInputOutputCompilation:
     def test_pipeline_without_io_nodes_still_works(self):
         """Backward compatibility: pipelines without IO nodes should still compile."""
         graph = GraphModel(
-            nodes=[_step_node("s1"), GraphNode(
-                id="s2", type=NodeType.PIPELINE_STEP, label="Step 2",
-                position={"x": 300, "y": 200},
-                data={},
-            )],
+            nodes=[
+                _step_node("s1"),
+                GraphNode(
+                    id="s2",
+                    type=NodeType.PIPELINE_STEP,
+                    label="Step 2",
+                    position={"x": 300, "y": 200},
+                    data={},
+                ),
+            ],
             edges=[GraphEdge(id="e1", source="s1", target="s2")],
         )
         engine = compile_graph(graph)

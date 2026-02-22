@@ -58,6 +58,7 @@ def _store_execution(record: dict[str, Any]) -> None:
         oldest_key = next(iter(_executions))
         del _executions[oldest_key]
 
+
 # ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
@@ -183,13 +184,15 @@ def create_project_api_router(project_manager: ProjectManager) -> APIRouter:
         graph_model = _load_graph_model(project_manager, name)
 
         execution_id = str(uuid.uuid4())
-        _store_execution({
-            "execution_id": execution_id,
-            "project": name,
-            "status": "running",
-            "result": None,
-            "duration_ms": None,
-        })
+        _store_execution(
+            {
+                "execution_id": execution_id,
+                "project": name,
+                "status": "running",
+                "result": None,
+                "duration_ms": None,
+            }
+        )
 
         async def _run_in_background() -> None:
             start_time = time.monotonic()
@@ -197,18 +200,22 @@ def create_project_api_router(project_manager: ProjectManager) -> APIRouter:
                 engine = compile_graph(graph_model)
                 result = await engine.run(inputs=body.input)
                 duration_ms = round((time.monotonic() - start_time) * 1000, 2)
-                _executions[execution_id].update({
-                    "status": "completed",
-                    "result": result,
-                    "duration_ms": duration_ms,
-                })
+                _executions[execution_id].update(
+                    {
+                        "status": "completed",
+                        "result": result,
+                        "duration_ms": duration_ms,
+                    }
+                )
             except Exception as exc:
                 duration_ms = round((time.monotonic() - start_time) * 1000, 2)
-                _executions[execution_id].update({
-                    "status": "failed",
-                    "result": str(exc),
-                    "duration_ms": duration_ms,
-                })
+                _executions[execution_id].update(
+                    {
+                        "status": "failed",
+                        "result": str(exc),
+                        "duration_ms": duration_ms,
+                    }
+                )
                 logger.exception("Async pipeline execution failed for project '%s'", name)
 
         asyncio.create_task(_run_in_background())
@@ -270,13 +277,15 @@ def create_project_api_router(project_manager: ProjectManager) -> APIRouter:
 
         duration_ms = round((time.monotonic() - start_time) * 1000, 2)
 
-        _store_execution({
-            "execution_id": execution_id,
-            "project": name,
-            "status": "completed",
-            "result": result,
-            "duration_ms": duration_ms,
-        })
+        _store_execution(
+            {
+                "execution_id": execution_id,
+                "project": name,
+                "status": "completed",
+                "result": result,
+                "duration_ms": duration_ms,
+            }
+        )
 
         return {
             "result": result,

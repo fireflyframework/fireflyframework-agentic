@@ -244,11 +244,7 @@ def create_settings_router(settings_path: Path | None = None) -> APIRouter:
             for field in ("password", "connection_url", "api_key", "token"):
                 val = getattr(sc, field, None)
                 if val is not None:
-                    secret_val = (
-                        val.get_secret_value()
-                        if hasattr(val, "get_secret_value")
-                        else str(val)
-                    )
+                    secret_val = val.get_secret_value() if hasattr(val, "get_secret_value") else str(val)
                     entry[field] = "***" if secret_val else ""
                 else:
                     entry[field] = None
@@ -295,13 +291,9 @@ def create_settings_router(settings_path: Path | None = None) -> APIRouter:
         """Delete a service credential by ID."""
         settings = load_settings(path)
         before = len(settings.service_credentials)
-        settings.service_credentials = [
-            s for s in settings.service_credentials if s.id != service_id
-        ]
+        settings.service_credentials = [s for s in settings.service_credentials if s.id != service_id]
         if len(settings.service_credentials) == before:
-            raise HTTPException(
-                status_code=404, detail=f"Service '{service_id}' not found"
-            )
+            raise HTTPException(status_code=404, detail=f"Service '{service_id}' not found")
         save_settings(settings, path)
         return {"status": "deleted", "id": service_id}
 
@@ -309,13 +301,9 @@ def create_settings_router(settings_path: Path | None = None) -> APIRouter:
     async def test_service(service_id: str) -> dict:
         """Test connectivity for a service credential."""
         settings = load_settings(path)
-        sc = next(
-            (s for s in settings.service_credentials if s.id == service_id), None
-        )
+        sc = next((s for s in settings.service_credentials if s.id == service_id), None)
         if not sc:
-            raise HTTPException(
-                status_code=404, detail=f"Service '{service_id}' not found"
-            )
+            raise HTTPException(status_code=404, detail=f"Service '{service_id}' not found")
 
         # Basic connectivity test based on service type
         try:
@@ -338,14 +326,10 @@ def create_settings_router(settings_path: Path | None = None) -> APIRouter:
                 return {"status": "error", "message": "No token set"}
 
             # Database/queue services - check host is set
-            if sc.host or (
-                sc.connection_url and sc.connection_url.get_secret_value()
-            ):
+            if sc.host or (sc.connection_url and sc.connection_url.get_secret_value()):
                 return {
                     "status": "ok",
-                    "message": (
-                        f"Connection details configured for {sc.service_type}"
-                    ),
+                    "message": (f"Connection details configured for {sc.service_type}"),
                 }
             return {
                 "status": "error",

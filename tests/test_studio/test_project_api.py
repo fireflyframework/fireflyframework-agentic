@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """Tests for per-project auto-generated API endpoints."""
+
 from __future__ import annotations
 
 from pathlib import Path

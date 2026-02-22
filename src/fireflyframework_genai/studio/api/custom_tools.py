@@ -348,9 +348,7 @@ def create_custom_tools_router(manager: CustomToolManager) -> APIRouter:
     @router.post("/catalog/{connector_id}/install")
     async def install_connector(connector_id: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
         """Install a pre-built connector as a custom tool."""
-        connector = next(
-            (c for c in _CONNECTOR_CATALOG if c["id"] == connector_id), None
-        )
+        connector = next((c for c in _CONNECTOR_CATALOG if c["id"] == connector_id), None)
         if connector is None:
             raise HTTPException(status_code=404, detail=f"Connector '{connector_id}' not found")
 
@@ -359,6 +357,7 @@ def create_custom_tools_router(manager: CustomToolManager) -> APIRouter:
         # Resolve credential placeholders from settings
         if connector.get("requires_credential"):
             from fireflyframework_genai.studio.settings import load_settings
+
             settings = load_settings()
             cred_field = connector["requires_credential"]
             cred_val = getattr(settings.tool_credentials, cred_field, None)
@@ -383,6 +382,7 @@ def create_custom_tools_router(manager: CustomToolManager) -> APIRouter:
         try:
             tool = manager.create_runtime_tool(definition)
             from fireflyframework_genai.tools.registry import tool_registry
+
             tool_registry.register(tool)
         except Exception:
             pass
@@ -394,9 +394,7 @@ def create_custom_tools_router(manager: CustomToolManager) -> APIRouter:
         """Verify a connector's credentials by making a test API call."""
         import httpx
 
-        connector = next(
-            (c for c in _CONNECTOR_CATALOG if c["id"] == connector_id), None
-        )
+        connector = next((c for c in _CONNECTOR_CATALOG if c["id"] == connector_id), None)
         if connector is None:
             raise HTTPException(status_code=404, detail=f"Connector '{connector_id}' not found")
 
@@ -408,14 +406,21 @@ def create_custom_tools_router(manager: CustomToolManager) -> APIRouter:
         token = ""
         if connector.get("requires_credential"):
             from fireflyframework_genai.studio.settings import load_settings
+
             settings = load_settings()
             cred_field = connector["requires_credential"]
             cred_val = getattr(settings.tool_credentials, cred_field, None)
             if cred_val is None:
-                return {"status": "error", "message": f"Missing credential: {cred_field}. Configure it in Tool Credentials."}
+                return {
+                    "status": "error",
+                    "message": f"Missing credential: {cred_field}. Configure it in Tool Credentials.",
+                }
             token = cred_val.get_secret_value()
             if not token:
-                return {"status": "error", "message": f"Credential '{cred_field}' is empty. Configure it in Tool Credentials."}
+                return {
+                    "status": "error",
+                    "message": f"Credential '{cred_field}' is empty. Configure it in Tool Credentials.",
+                }
 
         # For webhook-based connectors (Discord, Teams), check the installed tool URL
         if verify_method == "head":
@@ -481,6 +486,7 @@ def create_custom_tools_router(manager: CustomToolManager) -> APIRouter:
         # Include inline Python code if this is a Python tool
         if tool.tool_type == "python" and tool.module_path:
             from pathlib import Path
+
             py_path = Path(tool.module_path)
             if py_path.is_file():
                 try:
