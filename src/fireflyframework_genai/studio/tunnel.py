@@ -118,8 +118,8 @@ class TunnelManager:
 
         try:
             await asyncio.wait_for(done.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
-            raise TimeoutError("Timed out waiting for tunnel URL")
+        except TimeoutError:
+            raise TimeoutError("Timed out waiting for tunnel URL") from None
 
         if result:
             return result

@@ -42,12 +42,16 @@ def build_shared_context(
 
     # 1. Project metadata
     try:
-        from fireflyframework_genai.studio.projects import get_project
+        from fireflyframework_genai.studio.config import StudioConfig
+        from fireflyframework_genai.studio.projects import ProjectManager
 
-        project = get_project(project_name)
+        pm = ProjectManager(StudioConfig().projects_dir)
+        project = next((p for p in pm.list_all() if p.name == project_name), None)
         if project:
-            desc = getattr(project, "description", "") or "No description"
+            desc = project.description or "No description"
             parts.append(f"[PROJECT] {project.name}: {desc}")
+        elif project_name:
+            parts.append(f"[PROJECT] {project_name}")
     except Exception:
         if project_name:
             parts.append(f"[PROJECT] {project_name}")

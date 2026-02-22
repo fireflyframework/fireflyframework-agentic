@@ -26,12 +26,12 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from fastapi import APIRouter  # type: ignore[import-not-found]
 
-logger = logging.getLogger(__name__)
-
 from fireflyframework_genai.agents.registry import agent_registry
 from fireflyframework_genai.exposure.rest.schemas import AgentRequest, AgentResponse
 from fireflyframework_genai.exposure.rest.streaming import sse_stream, sse_stream_incremental
 from fireflyframework_genai.memory.manager import MemoryManager
+
+logger = logging.getLogger(__name__)
 
 # Server-side memory manager for REST conversations
 _rest_memory = MemoryManager(working_scope_id="rest")
@@ -83,7 +83,7 @@ def create_agent_router() -> APIRouter:
             result = await agent.run(prompt, deps=request.deps, conversation_id=conv_id)
             output = result.output if hasattr(result, "output") else str(result)
             return AgentResponse(agent_name=name, output=output)
-        except Exception as exc:
+        except Exception:
             logger.exception("Agent '%s' run failed", name)
             return AgentResponse(agent_name=name, output=None, success=False, error="Internal server error")
 

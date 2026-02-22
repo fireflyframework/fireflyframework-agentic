@@ -33,7 +33,6 @@ from fireflyframework_genai.studio.custom_tools import (
     ToolParameter,
 )
 
-
 # ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
@@ -584,7 +583,7 @@ def create_custom_tools_router(manager: CustomToolManager) -> APIRouter:
                 "response_time": elapsed,
                 "result": str(result)[:1000],
             }
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return {"status": "timeout", "tool_name": f"custom:{name}", "error": "Request timed out after 15s"}
         except Exception as exc:
             return {"status": "error", "tool_name": f"custom:{name}", "error": str(exc)}

@@ -91,7 +91,7 @@ class MemoryManager:
 
         from fireflyframework_genai.config import get_config
 
-        def _run_sync(coro: object) -> object:
+        def _run_sync(coro: Any) -> Any:
             """Run *coro* synchronously, safe even when an event loop is already running."""
             try:
                 loop = asyncio.get_running_loop()
