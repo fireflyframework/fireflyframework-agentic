@@ -73,7 +73,7 @@ def create_websocket_router() -> APIRouter:
         # Use a per-connection memory scope to avoid cross-talk between
         # concurrent WebSocket sessions sharing the same agent.
         conn_id = uuid.uuid4().hex[:8]
-        conn_memory = _ws_memory.fork(working_scope_id=f"ws:{conn_id}")
+        _ws_memory.fork(working_scope_id=f"ws:{conn_id}")
 
         try:
             while True:

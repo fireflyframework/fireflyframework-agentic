@@ -39,12 +39,14 @@ def create_tunnel_router(port: int = 8470) -> APIRouter:
 
     @router.get("/status")
     async def tunnel_status() -> dict[str, Any]:
+        assert _tunnel is not None
         status = _tunnel.get_status()
         status["cloudflared_installed"] = _tunnel.is_available()
         return status
 
     @router.post("/start")
     async def tunnel_start() -> dict[str, Any]:
+        assert _tunnel is not None
         if not _tunnel.is_available():
             raise HTTPException(
                 status_code=422,
@@ -59,6 +61,7 @@ def create_tunnel_router(port: int = 8470) -> APIRouter:
 
     @router.post("/stop")
     async def tunnel_stop() -> dict[str, Any]:
+        assert _tunnel is not None
         await _tunnel.stop()
         return {"status": "stopped"}
 

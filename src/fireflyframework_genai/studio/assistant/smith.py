@@ -488,7 +488,7 @@ def _create_smith_tools() -> list:
             if proc.returncode == 0:
                 return json.dumps({"valid": True})
             return json.dumps({"valid": False, "error": stderr.decode("utf-8", errors="replace")})
-        except _asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()  # type: ignore[union-attr]
             return json.dumps({"valid": False, "error": "Validation timed out after 10s"})
         finally:
@@ -512,7 +512,7 @@ def _create_smith_tools() -> list:
             )
             try:
                 stdout, stderr = await _asyncio.wait_for(proc.communicate(), timeout=30)
-            except _asyncio.TimeoutError:
+            except TimeoutError:
                 proc.kill()
                 await proc.communicate()
                 return json.dumps({
@@ -546,7 +546,7 @@ def _create_smith_tools() -> list:
         )
         try:
             stdout, stderr = await _asyncio.wait_for(proc.communicate(), timeout=30)
-        except _asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             await proc.communicate()
             return json.dumps({
@@ -570,7 +570,7 @@ def _create_smith_tools() -> list:
         try:
             settings = load_settings()
             return json.dumps({
-                "user": settings.user_profile.display_name,
+                "user": settings.user_profile.name,
                 "model": settings.model_defaults.default_model,
             })
         except Exception:

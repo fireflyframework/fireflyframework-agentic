@@ -99,24 +99,29 @@ class ProjectRuntime:
         qc = self._input_config.queue_config
         logger.info("Starting %s consumer for topic '%s'", qc.broker, qc.topic_or_queue)
 
+        agent_name = f"studio-{self.project_name}"
+
         if qc.broker == "kafka":
             from fireflyframework_genai.exposure.queues.kafka import KafkaAgentConsumer
             consumer = KafkaAgentConsumer(
+                agent_name,
                 topic=qc.topic_or_queue,
-                group_id=qc.group_id or f"studio-{self.project_name}",
+                group_id=qc.group_id or agent_name,
                 bootstrap_servers=qc.connection_url or "localhost:9092",
             )
         elif qc.broker == "rabbitmq":
             from fireflyframework_genai.exposure.queues.rabbitmq import RabbitMQAgentConsumer
             consumer = RabbitMQAgentConsumer(
+                agent_name,
                 queue_name=qc.topic_or_queue,
-                connection_url=qc.connection_url or "amqp://localhost",
+                url=qc.connection_url or "amqp://localhost",
             )
         elif qc.broker == "redis":
             from fireflyframework_genai.exposure.queues.redis import RedisAgentConsumer
             consumer = RedisAgentConsumer(
+                agent_name,
                 channel=qc.topic_or_queue,
-                redis_url=qc.connection_url or "redis://localhost",
+                url=qc.connection_url or "redis://localhost",
             )
         else:
             logger.warning("Unknown broker: %s", qc.broker)
@@ -135,8 +140,8 @@ class ProjectRuntime:
         logger.info("Starting scheduler: %s (%s)", sc.cron_expression, sc.timezone)
 
         try:
-            from apscheduler import AsyncScheduler
-            from apscheduler.triggers.cron import CronTrigger
+            from apscheduler import AsyncScheduler  # type: ignore[import-not-found]
+            from apscheduler.triggers.cron import CronTrigger  # type: ignore[import-not-found]
 
             scheduler = AsyncScheduler()
             trigger = CronTrigger.from_crontab(sc.cron_expression, timezone=sc.timezone)

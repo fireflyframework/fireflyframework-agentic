@@ -148,7 +148,7 @@ def create_project_api_router(project_manager: ProjectManager) -> APIRouter:
 
         try:
             engine = compile_graph(graph_model)
-            result = await engine.run(body.input)
+            result = await engine.run(inputs=body.input)
         except Exception as exc:
             logger.exception("Pipeline execution failed for project '%s'", name)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -195,7 +195,7 @@ def create_project_api_router(project_manager: ProjectManager) -> APIRouter:
             start_time = time.monotonic()
             try:
                 engine = compile_graph(graph_model)
-                result = await engine.run(body.input)
+                result = await engine.run(inputs=body.input)
                 duration_ms = round((time.monotonic() - start_time) * 1000, 2)
                 _executions[execution_id].update({
                     "status": "completed",
@@ -263,7 +263,7 @@ def create_project_api_router(project_manager: ProjectManager) -> APIRouter:
 
         try:
             engine = compile_graph(graph_model)
-            result = await engine.run(inputs)
+            result = await engine.run(inputs=inputs)
         except Exception as exc:
             logger.exception("File upload pipeline execution failed for project '%s'", name)
             raise HTTPException(status_code=500, detail=str(exc)) from exc

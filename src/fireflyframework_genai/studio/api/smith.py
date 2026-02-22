@@ -41,6 +41,7 @@ Actions
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import re
@@ -177,12 +178,10 @@ def create_smith_router() -> APIRouter:
             logger.info("Smith WebSocket disconnected")
         except Exception as exc:
             logger.exception("Smith WebSocket error")
-            try:
+            with contextlib.suppress(Exception):
                 await websocket.send_json(
                     {"type": "error", "message": str(exc)}
                 )
-            except Exception:
-                pass
 
     return router
 
@@ -228,10 +227,8 @@ async def _handle_generate(
 
         # Pass user name so Smith can personalise responses
         user_name = ""
-        try:
+        with contextlib.suppress(Exception):
             user_name = settings.user_profile.name or ""
-        except Exception:
-            pass
 
         # Build shared cross-agent context for generation
         shared_context = ""
@@ -314,7 +311,6 @@ async def _handle_chat(
         from fireflyframework_genai.studio.assistant.smith import (
             create_smith_agent,
         )
-
         from fireflyframework_genai.studio.settings import load_settings as _load_settings
 
         _user_name = ""
@@ -356,10 +352,7 @@ async def _handle_chat(
             message_history=message_history,
         )
 
-        if hasattr(result, "output"):
-            full_text = str(result.output) if result.output else ""
-        else:
-            full_text = str(result)
+        full_text = (str(result.output) if result.output else "") if hasattr(result, "output") else str(result)
 
         if hasattr(result, "new_messages"):
             message_history.extend(result.new_messages())
@@ -383,9 +376,9 @@ async def _handle_chat(
 
             # Send narrative as chat tokens (or a brief note if empty)
             chat_text = narrative or "Code generated — see the Code tab."
-            _CHUNK_SIZE = 80
-            for i in range(0, len(chat_text), _CHUNK_SIZE):
-                chunk = chat_text[i : i + _CHUNK_SIZE]
+            _chunk_size = 80
+            for i in range(0, len(chat_text), _chunk_size):
+                chunk = chat_text[i : i + _chunk_size]
                 await websocket.send_json(
                     {"type": "smith_token", "content": chunk}
                 )
@@ -403,9 +396,9 @@ async def _handle_chat(
             )
         else:
             # No code blocks — send as regular chat
-            _CHUNK_SIZE = 80
-            for i in range(0, len(full_text), _CHUNK_SIZE):
-                chunk = full_text[i : i + _CHUNK_SIZE]
+            _chunk_size = 80
+            for i in range(0, len(full_text), _chunk_size):
+                chunk = full_text[i : i + _chunk_size]
                 await websocket.send_json(
                     {"type": "smith_token", "content": chunk}
                 )
@@ -501,7 +494,7 @@ async def _handle_execute(
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(), timeout=timeout
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             await proc.communicate()
             await websocket.send_json(
@@ -531,10 +524,8 @@ async def _handle_execute(
     finally:
         # Clean up temp file
         if tmp_file is not None:
-            try:
+            with contextlib.suppress(Exception):
                 tmp_file.unlink(missing_ok=True)
-            except Exception:
-                pass
 
 
 async def _handle_approve_command(
@@ -601,7 +592,7 @@ async def _handle_approve_command(
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(), timeout=timeout
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             await proc.communicate()
             await websocket.send_json(

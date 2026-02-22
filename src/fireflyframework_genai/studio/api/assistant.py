@@ -30,7 +30,7 @@ import logging
 import re
 from typing import Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query  # type: ignore[import-not-found]
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect  # type: ignore[import-not-found]
 from pydantic import BaseModel  # type: ignore[import-not-found]
 from pydantic_ai.usage import UsageLimits  # type: ignore[import-not-found]
 
@@ -305,10 +305,7 @@ async def _handle_chat_blocking(
         usage_limits=UsageLimits(request_limit=_DEFAULT_REQUEST_LIMIT),
     )
 
-    if hasattr(result, "output"):
-        full_text = str(result.output) if result.output else ""
-    else:
-        full_text = str(result)
+    full_text = (str(result.output) if result.output else "") if hasattr(result, "output") else str(result)
 
     tool_calls = _extract_tool_calls(result)
 
@@ -638,9 +635,11 @@ def _build_project_context(canvas: Any = None, project_name: str = "") -> str:
 
     # Current project
     try:
-        from fireflyframework_genai.studio.projects import list_projects
+        from fireflyframework_genai.studio.config import StudioConfig
+        from fireflyframework_genai.studio.projects import ProjectManager
 
-        projects = list_projects()
+        pm = ProjectManager(StudioConfig().projects_dir)
+        projects = pm.list_all()
         if projects:
             names = [p.name for p in projects]
             parts.append(f"[CONTEXT] Active projects: {', '.join(names)}.")

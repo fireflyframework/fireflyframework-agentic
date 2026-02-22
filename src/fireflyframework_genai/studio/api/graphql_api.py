@@ -201,7 +201,7 @@ def create_graphql_router(project_manager: ProjectManager) -> Any:
             start_time = time.monotonic()
             try:
                 engine = compile_graph(graph_model)
-                result = await engine.run(input)
+                result = await engine.run(inputs=input)
                 duration_ms = round((time.monotonic() - start_time) * 1000, 2)
                 return ExecutionResult(
                     execution_id=execution_id,

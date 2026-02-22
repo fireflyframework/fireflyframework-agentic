@@ -29,7 +29,6 @@ from fireflyframework_genai.agents.builtin_middleware import (
     RetryMiddleware,
     ValidationMiddleware,
 )
-from fireflyframework_genai.agents.prompt_cache import CacheStatistics, PromptCacheMiddleware
 from fireflyframework_genai.agents.cache import ResultCache
 from fireflyframework_genai.agents.context import AgentContext
 from fireflyframework_genai.agents.decorators import firefly_agent
@@ -48,6 +47,7 @@ from fireflyframework_genai.agents.middleware import (
     MiddlewareChain,
     MiddlewareContext,
 )
+from fireflyframework_genai.agents.prompt_cache import CacheStatistics, PromptCacheMiddleware
 from fireflyframework_genai.agents.registry import AgentInfo, AgentRegistry, agent_registry
 from fireflyframework_genai.agents.templates import (
     create_classifier_agent,
