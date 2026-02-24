@@ -102,7 +102,7 @@ graph TD
         PIPE["Pipeline / DAG Engine<br/><small>DAG · DAGNode · DAGEdge<br/>PipelineEngine · PipelineBuilder<br/>AgentStep · ReasoningStep · CallableStep<br/>FanOutStep · FanInStep<br/>EmbeddingStep · RetrievalStep</small>"]
     end
 
-    subgraph Embeddings &amp; Vector Stores
+    subgraph Embeddings / Vector Stores
         EMB["Embeddings<br/><small>EmbeddingProtocol · BaseEmbedder<br/>OpenAI · Azure · Cohere · Google<br/>Mistral · Voyage · Bedrock · Ollama<br/>EmbedderRegistry · similarity</small>"]
         VS["Vector Stores<br/><small>VectorStoreProtocol · BaseVectorStore<br/>InMemory · ChromaDB · Pinecone · Qdrant<br/>VectorStoreRegistry · search_text</small>"]
     end
