@@ -4,7 +4,7 @@
 [![CI](https://github.com/fireflyframework/fireflyframework-genai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fireflyframework/fireflyframework-genai/actions/workflows/ci.yml)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1074%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-1383%20passing-brightgreen.svg)]()
 [![Ruff](https://img.shields.io/badge/linting-ruff-orange.svg)](https://docs.astral.sh/ruff/)
 
 Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
@@ -63,11 +63,12 @@ You write your business logic; the framework provides the architecture.
 ## Key Principles
 
 1. **Protocol-driven contracts** — Every extension point is defined as a
-   `@runtime_checkable` `Protocol` or abstract base class. The framework ships eleven
+   `@runtime_checkable` `Protocol` or abstract base class. The framework ships thirteen
    protocols (`AgentLike`, `ToolProtocol`, `GuardProtocol`, `ReasoningPattern`,
    `DelegationStrategy`, `StepExecutor`, `CompressionStrategy`, `MemoryStore`,
-   `ValidationRule`, `Chunker`, `QueueConsumer` / `QueueProducer`) so you can swap or
-   extend any component without modifying framework internals.
+   `ValidationRule`, `Chunker`, `EmbeddingProtocol`, `VectorStoreProtocol`,
+   `QueueConsumer` / `QueueProducer`) so you can swap or extend any component
+   without modifying framework internals.
 
 2. **Convention over configuration** — Sensible defaults everywhere.
    `FireflyGenAIConfig` is a Pydantic Settings singleton that reads from environment
@@ -81,9 +82,10 @@ You write your business logic; the framework provides the architecture.
    dependency graph acyclic and each module independently testable.
 
 4. **Optional dependencies** — Heavy libraries (`fastapi`, `aiokafka`, `aio-pika`,
-   `redis`) are declared as pip extras (`[rest]`, `[studio]`, `[kafka]`, `[rabbitmq]`,
-   `[redis]`, `[all]`). The core framework imports them lazily inside factory
-   functions so that you install only what your deployment requires.
+   `redis`, `chromadb`, `pinecone`, `openai`) are declared as pip extras (`[rest]`,
+   `[studio]`, `[kafka]`, `[rabbitmq]`, `[redis]`, `[openai-embeddings]`,
+   `[vectorstores-chroma]`, `[all]`). The core framework imports them lazily inside
+   factory functions so that you install only what your deployment requires.
 
 ---
 
@@ -97,7 +99,12 @@ graph TD
     end
 
     subgraph Orchestration Layer
-        PIPE["Pipeline / DAG Engine<br/><small>DAG · DAGNode · DAGEdge<br/>PipelineEngine · PipelineBuilder<br/>AgentStep · ReasoningStep · CallableStep<br/>FanOutStep · FanInStep</small>"]
+        PIPE["Pipeline / DAG Engine<br/><small>DAG · DAGNode · DAGEdge<br/>PipelineEngine · PipelineBuilder<br/>AgentStep · ReasoningStep · CallableStep<br/>FanOutStep · FanInStep<br/>EmbeddingStep · RetrievalStep</small>"]
+    end
+
+    subgraph Embeddings &amp; Vector Stores
+        EMB["Embeddings<br/><small>EmbeddingProtocol · BaseEmbedder<br/>OpenAI · Azure · Cohere · Google<br/>Mistral · Voyage · Bedrock · Ollama<br/>EmbedderRegistry · similarity</small>"]
+        VS["Vector Stores<br/><small>VectorStoreProtocol · BaseVectorStore<br/>InMemory · ChromaDB · Pinecone · Qdrant<br/>VectorStoreRegistry · search_text</small>"]
     end
 
     subgraph Experimentation Layer
@@ -132,6 +139,11 @@ graph TD
     PIPE --> AGT
     PIPE --> REASON
     PIPE --> VAL
+    PIPE --> EMB
+    PIPE --> VS
+    VS --> EMB
+    EMB --> CFG
+    VS --> CFG
     EXP --> AGT
     LAB --> EXP
     REASON --> AGT
@@ -209,6 +221,18 @@ classDiagram
         <<Protocol>>
         +publish(message)
     }
+    class EmbeddingProtocol {
+        <<Protocol>>
+        +embed(texts) EmbeddingResult
+        +embed_one(text) list~float~
+    }
+    class VectorStoreProtocol {
+        <<Protocol>>
+        +upsert(documents, namespace)
+        +search(query_embedding, top_k) list~SearchResult~
+        +search_text(query, top_k) list~SearchResult~
+        +delete(ids, namespace)
+    }
 
     AgentLike <|.. FireflyAgent
     AgentLike <|.. pydantic_ai.Agent
@@ -246,6 +270,8 @@ classDiagram
     QueueProducer <|.. KafkaAgentProducer
     QueueProducer <|.. RabbitMQAgentProducer
     QueueProducer <|.. RedisAgentProducer
+    EmbeddingProtocol <|.. BaseEmbedder
+    VectorStoreProtocol <|.. BaseVectorStore
 ```
 
 ---
@@ -352,6 +378,24 @@ classDiagram
   `RedisAgentProducer`) publish results back. `QueueRouter` provides
   pattern-based message routing across agents.
 
+- **Embeddings** — `EmbeddingProtocol` (duck-typed) and `BaseEmbedder`
+  (inheritance with auto-batching) provide provider-agnostic text embedding.
+  Eight providers ship out of the box: **OpenAI**, **Azure OpenAI**, **Cohere**,
+  **Google**, **Mistral**, **Voyage AI**, **AWS Bedrock**, and **Ollama** (local).
+  `EmbedderRegistry` manages named instances. Built-in similarity utilities
+  (`cosine_similarity`, `euclidean_distance`, `dot_product`) compare vectors
+  without external dependencies. Configuration via `embedding_batch_size`,
+  `embedding_max_retries`, and `default_embedding_model`.
+
+- **Vector Stores** — `VectorStoreProtocol` and `BaseVectorStore` provide
+  pluggable storage and retrieval with four backends: **InMemoryVectorStore**
+  (zero-dependency, brute-force cosine), **ChromaDB**, **Pinecone**, and **Qdrant**.
+  Auto-embedding upserts documents without pre-computed vectors. `search_text`
+  embeds a query string and searches in one call. Namespace scoping isolates
+  document collections. `VectorStoreRegistry` manages named instances.
+  `EmbeddingStep` and `RetrievalStep` integrate directly into DAG pipelines
+  for RAG workflows.
+
 - **Studio** — `firefly studio` launches a browser-based visual IDE for
   building agent pipelines. Drag and connect Agent, Tool, Reasoning, and
   Condition nodes on an interactive canvas. The Code tab generates Python
@@ -388,7 +432,11 @@ classDiagram
 - `[redis]` — [redis-py](https://redis-py.readthedocs.io/) `>=5.2.0`
 - `[costs]` — [genai-prices](https://pypi.org/project/genai-prices/) for up-to-date LLM pricing data
 - `[queues]` — All queue backends (Kafka + RabbitMQ + Redis)
-- `[all]` — Everything (REST + all queues + costs + security + HTTP)
+- `[openai-embeddings]` — [openai](https://github.com/openai/openai-python) `>=1.0.0` for OpenAI/Azure embeddings
+- `[vectorstores-chroma]` — [chromadb](https://www.trychroma.com/) `>=0.5.0`
+- `[vectorstores-pinecone]` — [pinecone](https://www.pinecone.io/) `>=5.0.0`
+- `[vectorstores-qdrant]` — [qdrant-client](https://qdrant.tech/) `>=1.12.0`
+- `[all]` — Everything (REST + queues + embeddings + vector stores + costs + security + HTTP)
 
 **LLM provider keys** (at least one):
 
@@ -454,6 +502,17 @@ uv sync --all-extras # or: pip install -e ".[all]"
 | `security` | PyJWT, cryptography | RBAC, encryption, JWT auth |
 | `http` | httpx | HTTP connection pooling for tools |
 | `costs` | genai-prices | Up-to-date LLM pricing data |
+| `openai-embeddings` | openai | OpenAI / Azure text embeddings |
+| `cohere-embeddings` | cohere | Cohere text embeddings |
+| `google-embeddings` | google-generativeai | Google text embeddings |
+| `mistral-embeddings` | mistralai | Mistral text embeddings |
+| `voyage-embeddings` | voyageai | Voyage AI text embeddings |
+| `azure-embeddings` | openai | Azure OpenAI text embeddings |
+| `bedrock-embeddings` | boto3 | AWS Bedrock text embeddings |
+| `ollama-embeddings` | httpx | Ollama local text embeddings |
+| `vectorstores-chroma` | chromadb | ChromaDB vector store backend |
+| `vectorstores-pinecone` | pinecone | Pinecone vector store backend |
+| `vectorstores-qdrant` | qdrant-client | Qdrant vector store backend |
 | `all` | Everything above | Full deployment with all integrations |
 
 ### Verify Installation
@@ -587,7 +646,27 @@ pipeline = (
 result = await pipeline.run(inputs="Process this document")
 ```
 
-### 8. Expose via REST
+### 8. Embed and Search (RAG)
+
+```python
+from fireflyframework_genai.embeddings.providers import OpenAIEmbedder
+from fireflyframework_genai.vectorstores import InMemoryVectorStore, VectorDocument
+
+embedder = OpenAIEmbedder(model="text-embedding-3-small")
+store = InMemoryVectorStore(embedder=embedder)
+
+# Upsert documents (auto-embedded)
+await store.upsert([
+    VectorDocument(id="1", text="Python is great for AI"),
+    VectorDocument(id="2", text="Rust is fast and safe"),
+])
+
+# Search by text
+results = await store.search_text("machine learning languages", top_k=1)
+print(results[0].document.text)  # Python is great for AI
+```
+
+### 9. Expose via REST
 
 ```python
 from fireflyframework_genai.exposure.rest import create_genai_app
@@ -596,7 +675,7 @@ app = create_genai_app(title="My GenAI Service")
 # uvicorn myapp:app --reload
 ```
 
-### 9. Expose via Queues (Consumer)
+### 10. Expose via Queues (Consumer)
 
 ```python
 from fireflyframework_genai.exposure.queues.kafka import KafkaAgentConsumer
@@ -605,7 +684,7 @@ consumer = KafkaAgentConsumer("assistant", topic="requests", bootstrap_servers="
 await consumer.start()
 ```
 
-### 10. Publish via Queues (Producer)
+### 11. Publish via Queues (Producer)
 
 ```python
 from fireflyframework_genai.exposure.queues.kafka import KafkaAgentProducer
@@ -724,6 +803,8 @@ Detailed guides for each module:
 - [Content](docs/content.md) — Chunking, compression, batch processing
 - [Memory](docs/memory.md) — Conversation history, working memory, storage backends
 - [Validation](docs/validation.md) — Rules, QoS guards, output reviewer
+- [Embeddings](docs/embeddings.md) — 8 providers, auto-batching, similarity, registry
+- [Vector Stores](docs/vectorstores.md) — 4 backends, auto-embedding, search_text, namespaces
 - [Pipeline](docs/pipeline.md) — DAG orchestrator, parallel execution, retries
 - [Observability](docs/observability.md) — Tracing, metrics, events
 - [Explainability](docs/explainability.md) — Decision recording, audit trails, reports
@@ -743,7 +824,7 @@ uv sync --all-extras
 ```
 
 ```bash
-uv run pytest # Run 367+ tests
+uv run pytest # Run 1383+ tests
 uv run ruff check src/ tests/ # Lint
 uv run pyright src/ # Type check
 ```
