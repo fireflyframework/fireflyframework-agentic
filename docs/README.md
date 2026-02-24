@@ -49,6 +49,13 @@ below it, keeping the dependency graph acyclic and each module independently tes
 | **[Content](content.md)** | `TextChunker`, `DocumentSplitter`, `ImageTiler`, `BatchProcessor`, compression |
 | **[Memory](memory.md)** | `ConversationMemory`, `WorkingMemory`, `MemoryManager`, storage backends |
 
+### Embeddings & Vector Stores
+
+| | |
+|---|---|
+| **[Embeddings](embeddings.md)** | `BaseEmbedder`, 8 providers (OpenAI, Azure, Cohere, Google, Mistral, Voyage, Bedrock, Ollama), auto-batching, similarity utilities, `EmbedderRegistry` |
+| **[Vector Stores](vectorstores.md)** | `BaseVectorStore`, 4 backends (In-Memory, ChromaDB, Pinecone, Qdrant), auto-embedding, `search_text`, namespaces, `VectorStoreRegistry` |
+
 ### Intelligence Layer
 
 | | |

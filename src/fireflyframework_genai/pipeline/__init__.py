@@ -29,9 +29,11 @@ from fireflyframework_genai.pipeline.steps import (
     BatchLLMStep,
     BranchStep,
     CallableStep,
+    EmbeddingStep,
     FanInStep,
     FanOutStep,
     ReasoningStep,
+    RetrievalStep,
     StepExecutor,
 )
 
@@ -43,6 +45,7 @@ __all__ = [
     "DAG",
     "DAGEdge",
     "DAGNode",
+    "EmbeddingStep",
     "ExecutionTraceEntry",
     "FailureStrategy",
     "FanInStep",
@@ -54,5 +57,6 @@ __all__ = [
     "PipelineEventHandler",
     "PipelineResult",
     "ReasoningStep",
+    "RetrievalStep",
     "StepExecutor",
 ]

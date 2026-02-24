@@ -29,6 +29,7 @@ Quick start::
 
 from fireflyframework_genai._version import __version__
 from fireflyframework_genai.config import FireflyGenAIConfig, get_config, reset_config
+from fireflyframework_genai.embeddings import BaseEmbedder, EmbedderRegistry, EmbeddingProtocol
 from fireflyframework_genai.exceptions import (
     AgentError,
     AgentNotFoundError,
@@ -39,6 +40,8 @@ from fireflyframework_genai.exceptions import (
     DatabaseConnectionError,
     DatabaseStoreError,
     DelegationError,
+    EmbeddingError,
+    EmbeddingProviderError,
     ExperimentError,
     ExplainabilityError,
     ExposureError,
@@ -63,6 +66,8 @@ from fireflyframework_genai.exceptions import (
     ToolGuardError,
     ToolNotFoundError,
     ToolTimeoutError,
+    VectorStoreConnectionError,
+    VectorStoreError,
 )
 from fireflyframework_genai.logging import configure_logging, enable_debug
 from fireflyframework_genai.plugin import PluginDiscovery
@@ -84,6 +89,7 @@ from fireflyframework_genai.types import (
     UserPrompt,
     VideoUrl,
 )
+from fireflyframework_genai.vectorstores import BaseVectorStore, InMemoryVectorStore, VectorStoreProtocol
 
 __all__ = [
     "__version__",
@@ -122,6 +128,10 @@ __all__ = [
     "RateLimitError",
     "DatabaseStoreError",
     "DatabaseConnectionError",
+    "EmbeddingError",
+    "EmbeddingProviderError",
+    "VectorStoreError",
+    "VectorStoreConnectionError",
     "MemoryError",
     "AgentDepsT",
     "AgentLike",
@@ -139,6 +149,12 @@ __all__ = [
     "DocumentUrl",
     "VideoUrl",
     "BinaryContent",
+    "BaseEmbedder",
+    "EmbedderRegistry",
+    "EmbeddingProtocol",
+    "BaseVectorStore",
+    "InMemoryVectorStore",
+    "VectorStoreProtocol",
     "PluginDiscovery",
     "configure_logging",
     "enable_debug",

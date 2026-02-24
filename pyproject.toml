@@ -76,8 +76,44 @@ studio = [
 costs = [
     "genai-prices>=0.0.1",
 ]
+embeddings = [
+    "numpy>=1.26.0",
+]
+openai-embeddings = [
+    "openai>=1.0.0",
+]
+cohere-embeddings = [
+    "cohere>=5.0.0",
+]
+google-embeddings = [
+    "google-generativeai>=0.8.0",
+]
+mistral-embeddings = [
+    "mistralai>=1.0.0",
+]
+voyage-embeddings = [
+    "voyageai>=0.3.0",
+]
+azure-embeddings = [
+    "openai>=1.0.0",
+]
+bedrock-embeddings = [
+    "boto3>=1.35.0",
+]
+ollama-embeddings = [
+    "httpx>=0.28.0",
+]
+vectorstores-chroma = [
+    "chromadb>=0.5.0",
+]
+vectorstores-pinecone = [
+    "pinecone>=5.0.0",
+]
+vectorstores-qdrant = [
+    "qdrant-client>=1.12.0",
+]
 all = [
-    "fireflyframework-genai[rest,queues,postgres,mongodb,security,http,studio,costs]",
+    "fireflyframework-genai[rest,queues,postgres,mongodb,security,http,studio,costs,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant]",
 ]
 dev = [
     "pytest>=8.3.0",

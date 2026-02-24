@@ -220,6 +220,23 @@ class FireflyGenAIConfig(BaseSettings):
     http_pool_timeout: float = 30.0
     """HTTP request timeout in seconds."""
 
+    # -- Embeddings -------------------------------------------------------
+    default_embedding_model: str = "openai:text-embedding-3-small"
+    """Default embedding model identifier (provider:model format)."""
+
+    embedding_batch_size: int = 100
+    """Maximum number of texts per embedding API call."""
+
+    embedding_max_retries: int = 3
+    """Maximum retries for embedding API calls."""
+
+    # -- Vector Stores ----------------------------------------------------
+    default_vector_store: str = "memory"
+    """Default vector store backend: ``"memory"``, ``"chroma"``, ``"pinecone"``, or ``"qdrant"``."""
+
+    vector_store_namespace: str = "default"
+    """Default namespace for vector store operations."""
+
     @model_validator(mode="after")
     def _validate_cross_fields(self) -> FireflyGenAIConfig:
         """Validate cross-field constraints."""

@@ -61,3 +61,16 @@ class TestConfigAuthAndUsageFields:
         assert cfg.auth_api_keys == ["key1"]
         assert cfg.auth_bearer_tokens == ["tok1"]
         assert cfg.usage_tracker_max_records == 500
+
+
+class TestEmbeddingConfig:
+    def test_embedding_defaults(self) -> None:
+        cfg = FireflyGenAIConfig()
+        assert cfg.default_embedding_model == "openai:text-embedding-3-small"
+        assert cfg.embedding_batch_size == 100
+        assert cfg.embedding_max_retries == 3
+
+    def test_vector_store_defaults(self) -> None:
+        cfg = FireflyGenAIConfig()
+        assert cfg.default_vector_store == "memory"
+        assert cfg.vector_store_namespace == "default"

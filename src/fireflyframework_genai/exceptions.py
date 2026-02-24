@@ -194,3 +194,25 @@ class BudgetExceededError(QuotaError):
 
 class RateLimitError(QuotaError):
     """Raised when a rate limit is exceeded."""
+
+
+# -- Embeddings --------------------------------------------------------
+
+
+class EmbeddingError(FireflyGenAIError):
+    """Raised for errors during embedding generation."""
+
+
+class EmbeddingProviderError(EmbeddingError):
+    """Raised when an embedding provider API call fails."""
+
+
+# -- Vector Stores -----------------------------------------------------
+
+
+class VectorStoreError(FireflyGenAIError):
+    """Raised for errors during vector store operations."""
+
+
+class VectorStoreConnectionError(VectorStoreError):
+    """Raised when a vector store backend connection fails."""

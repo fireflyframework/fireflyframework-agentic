@@ -23,8 +23,10 @@ import logging
 from collections.abc import Callable, Coroutine
 from typing import Any, Protocol, runtime_checkable
 
+from fireflyframework_genai.embeddings.base import EmbeddingProtocol
 from fireflyframework_genai.pipeline.context import PipelineContext
 from fireflyframework_genai.types import AgentLike
+from fireflyframework_genai.vectorstores.base import VectorStoreProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -351,3 +353,63 @@ class BatchLLMStep:
         """
         result = await self._agent.run(prompt, **self._kwargs)
         return result.output if hasattr(result, "output") else str(result)
+
+
+class EmbeddingStep:
+    """Embeds text(s) from upstream input using an embedding provider.
+
+    Accepts a single string or a list of strings from the input dict.
+
+    Parameters:
+        embedder: An embedding provider (satisfies :class:`EmbeddingProtocol`).
+        input_key: Which key in *inputs* contains the text(s) to embed.
+    """
+
+    def __init__(
+        self,
+        embedder: EmbeddingProtocol,
+        *,
+        input_key: str = "input",
+    ) -> None:
+        self._embedder = embedder
+        self._input_key = input_key
+
+    async def execute(self, context: PipelineContext, inputs: dict[str, Any]) -> Any:
+        text_input = inputs.get(self._input_key, context.inputs)
+        if isinstance(text_input, str):
+            text_input = [text_input]
+        return await self._embedder.embed(text_input)
+
+
+class RetrievalStep:
+    """Searches a vector store using upstream text as query.
+
+    Embeds the query text (requires an embedder) and returns search results.
+
+    Parameters:
+        store: A vector store backend.
+        embedder: An embedding provider for query embedding.
+        top_k: Number of results to return.
+        input_key: Which key in *inputs* contains the query text.
+    """
+
+    def __init__(
+        self,
+        store: VectorStoreProtocol,
+        *,
+        embedder: EmbeddingProtocol | None = None,
+        top_k: int = 5,
+        input_key: str = "input",
+    ) -> None:
+        self._store = store
+        self._embedder = embedder
+        self._top_k = top_k
+        self._input_key = input_key
+
+    async def execute(self, context: PipelineContext, inputs: dict[str, Any]) -> Any:
+        query = inputs.get(self._input_key, context.inputs)
+        if self._embedder is not None:
+            query_embedding = await self._embedder.embed_one(str(query))
+            return await self._store.search(query_embedding, top_k=self._top_k)
+        # If no embedder, assume input is already an embedding
+        return await self._store.search(query, top_k=self._top_k)
