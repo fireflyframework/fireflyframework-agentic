@@ -116,7 +116,6 @@ logs/
 
 # UV
 .uv/
-uv.lock
 
 # Vibe coding
 .vibe/

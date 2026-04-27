@@ -138,7 +138,8 @@ class KafkaAgentProducer:
         """Publish *message* to the configured Kafka topic."""
         if self._producer is None:
             await self.start()
-        await self._producer.send_and_wait(
+        producer: Any = self._producer
+        await producer.send_and_wait(
             self._topic,
             value=message.body.encode("utf-8"),
             headers=[(k, v.encode("utf-8")) for k, v in message.headers.items()] or None,

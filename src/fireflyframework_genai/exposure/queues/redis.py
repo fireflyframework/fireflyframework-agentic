@@ -147,7 +147,8 @@ class RedisAgentProducer:
         """Publish *message* to the configured Redis channel."""
         if self._client is None:
             await self.start()
-        await self._client.publish(self._channel, message.body.encode("utf-8"))
+        client: Any = self._client
+        await client.publish(self._channel, message.body.encode("utf-8"))
 
     async def stop(self) -> None:
         """Close the Redis connection."""
