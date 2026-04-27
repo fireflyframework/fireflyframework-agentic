@@ -15,6 +15,8 @@ for submitting changes.
 - Python 3.13 or later
 - [UV](https://docs.astral.sh/uv/) for dependency and virtual-environment management
 - Git
+- Node.js 20+ and npm — only required if you intend to run or modify Firefly Studio
+  from source (the published wheel ships with a pre-built frontend)
 
 ### Setup
 
@@ -26,6 +28,24 @@ uv sync --all-extras
 
 This installs all runtime and development dependencies, including optional extras
 for REST, Kafka, RabbitMQ, and Redis.
+
+### Building the Studio Frontend (source installs only)
+
+The Studio frontend is a SvelteKit SPA that lives in `studio-frontend/` and is
+served by FastAPI from `src/fireflyframework_genai/studio/static/`. The published
+wheel includes a pre-built bundle, but a fresh `git clone` does **not** — running
+`firefly studio` against an unbuilt source tree returns `{"detail":"Not Found"}`
+on every page.
+
+Build the frontend once after cloning (and again after pulling frontend changes):
+
+```bash
+uv run python scripts/build_studio.py
+```
+
+The script runs `npm install` (if needed), `npm run build`, and copies the output
+into the package's `static/` directory. After it completes, `firefly studio` will
+serve the UI normally.
 
 ### Running Tests
 
