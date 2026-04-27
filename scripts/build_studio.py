@@ -21,7 +21,7 @@ Usage::
 
 This script:
 1. Runs ``npm run build`` in ``studio-frontend/``
-2. Copies the build output to ``src/fireflyframework_genai/studio/static/``
+2. Copies the build output to ``src/fireflyframework_agentic/studio/static/``
 3. The server then serves these files via FastAPI's StaticFiles mount.
 """
 
@@ -36,7 +36,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = REPO_ROOT / "studio-frontend"
 BUILD_DIR = FRONTEND_DIR / "build"
-STATIC_DIR = REPO_ROOT / "src" / "fireflyframework_genai" / "studio" / "static"
+STATIC_DIR = REPO_ROOT / "src" / "fireflyframework_agentic" / "studio" / "static"
 
 
 def main() -> None:

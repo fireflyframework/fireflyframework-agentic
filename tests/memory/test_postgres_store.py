@@ -25,8 +25,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from fireflyframework_genai.exceptions import DatabaseConnectionError, DatabaseStoreError
-from fireflyframework_genai.memory.types import MemoryEntry, MemoryScope
+from fireflyframework_agentic.exceptions import DatabaseConnectionError, DatabaseStoreError
+from fireflyframework_agentic.memory.types import MemoryEntry, MemoryScope
 
 
 @pytest.fixture
@@ -63,7 +63,7 @@ class TestPostgreSQLStore:
 
     async def test_import_error_without_asyncpg(self):
         """Test that helpful error is raised when asyncpg is not installed."""
-        from fireflyframework_genai.memory.database_store import PostgreSQLStore
+        from fireflyframework_agentic.memory.database_store import PostgreSQLStore
 
         store = PostgreSQLStore(url="postgresql://test")
 
@@ -75,7 +75,7 @@ class TestPostgreSQLStore:
 
     async def test_connection_failure(self):
         """Test handling of connection failures."""
-        from fireflyframework_genai.memory.database_store import PostgreSQLStore
+        from fireflyframework_agentic.memory.database_store import PostgreSQLStore
 
         store = PostgreSQLStore(url="postgresql://invalid:5432/db")
 
@@ -87,7 +87,7 @@ class TestPostgreSQLStore:
 
     async def test_initialize_creates_schema(self, mock_asyncpg_pool):
         """Test that initialize creates schema and tables."""
-        from fireflyframework_genai.memory.database_store import PostgreSQLStore
+        from fireflyframework_agentic.memory.database_store import PostgreSQLStore
 
         pool, connection = mock_asyncpg_pool
         store = PostgreSQLStore(url="postgresql://test", schema_name="test_schema")
@@ -103,7 +103,7 @@ class TestPostgreSQLStore:
 
     async def test_save_entry(self, mock_asyncpg_pool):
         """Test saving a memory entry."""
-        from fireflyframework_genai.memory.database_store import PostgreSQLStore
+        from fireflyframework_agentic.memory.database_store import PostgreSQLStore
 
         pool, connection = mock_asyncpg_pool
         store = PostgreSQLStore(url="postgresql://test")
@@ -128,7 +128,7 @@ class TestPostgreSQLStore:
 
     async def test_load_entries(self, mock_asyncpg_pool):
         """Test loading entries from a namespace."""
-        from fireflyframework_genai.memory.database_store import PostgreSQLStore
+        from fireflyframework_agentic.memory.database_store import PostgreSQLStore
 
         pool, connection = mock_asyncpg_pool
         store = PostgreSQLStore(url="postgresql://test")
@@ -147,7 +147,7 @@ class TestPostgreSQLStore:
 
     async def test_load_by_key(self, mock_asyncpg_pool):
         """Test loading a specific entry by key."""
-        from fireflyframework_genai.memory.database_store import PostgreSQLStore
+        from fireflyframework_agentic.memory.database_store import PostgreSQLStore
 
         pool, connection = mock_asyncpg_pool
         store = PostgreSQLStore(url="postgresql://test")
@@ -166,7 +166,7 @@ class TestPostgreSQLStore:
 
     async def test_load_by_key_not_found(self, mock_asyncpg_pool):
         """Test loading non-existent key returns None."""
-        from fireflyframework_genai.memory.database_store import PostgreSQLStore
+        from fireflyframework_agentic.memory.database_store import PostgreSQLStore
 
         pool, connection = mock_asyncpg_pool
         store = PostgreSQLStore(url="postgresql://test")
@@ -182,7 +182,7 @@ class TestPostgreSQLStore:
 
     async def test_delete_entry(self, mock_asyncpg_pool):
         """Test deleting an entry."""
-        from fireflyframework_genai.memory.database_store import PostgreSQLStore
+        from fireflyframework_agentic.memory.database_store import PostgreSQLStore
 
         pool, connection = mock_asyncpg_pool
         store = PostgreSQLStore(url="postgresql://test")
@@ -200,7 +200,7 @@ class TestPostgreSQLStore:
 
     async def test_clear_namespace(self, mock_asyncpg_pool):
         """Test clearing all entries in a namespace."""
-        from fireflyframework_genai.memory.database_store import PostgreSQLStore
+        from fireflyframework_agentic.memory.database_store import PostgreSQLStore
 
         pool, connection = mock_asyncpg_pool
         store = PostgreSQLStore(url="postgresql://test")
@@ -217,7 +217,7 @@ class TestPostgreSQLStore:
 
     async def test_cleanup_expired(self, mock_asyncpg_pool):
         """Test cleanup of expired entries."""
-        from fireflyframework_genai.memory.database_store import PostgreSQLStore
+        from fireflyframework_agentic.memory.database_store import PostgreSQLStore
 
         pool, connection = mock_asyncpg_pool
         store = PostgreSQLStore(url="postgresql://test")
@@ -236,7 +236,7 @@ class TestPostgreSQLStore:
 
     async def test_close_pool(self, mock_asyncpg_pool):
         """Test closing the connection pool."""
-        from fireflyframework_genai.memory.database_store import PostgreSQLStore
+        from fireflyframework_agentic.memory.database_store import PostgreSQLStore
 
         pool, _ = mock_asyncpg_pool
         store = PostgreSQLStore(url="postgresql://test")
@@ -255,7 +255,7 @@ class TestPostgreSQLStore:
         within an already-running event loop.  Instead of calling them
         directly we verify they delegate to the async implementations.
         """
-        from fireflyframework_genai.memory.database_store import PostgreSQLStore
+        from fireflyframework_agentic.memory.database_store import PostgreSQLStore
 
         pool, connection = mock_asyncpg_pool
         store = PostgreSQLStore(url="postgresql://test")

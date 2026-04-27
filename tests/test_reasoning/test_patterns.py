@@ -23,9 +23,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from fireflyframework_genai.reasoning.chain_of_thought import ChainOfThoughtPattern
-from fireflyframework_genai.reasoning.goal_decomposition import GoalDecompositionPattern
-from fireflyframework_genai.reasoning.models import (
+from fireflyframework_agentic.reasoning.chain_of_thought import ChainOfThoughtPattern
+from fireflyframework_agentic.reasoning.goal_decomposition import GoalDecompositionPattern
+from fireflyframework_agentic.reasoning.models import (
     BranchEvaluation,
     GoalDecompositionResult,
     GoalPhase,
@@ -34,10 +34,10 @@ from fireflyframework_genai.reasoning.models import (
     ReasoningThought,
     ReflectionVerdict,
 )
-from fireflyframework_genai.reasoning.plan_and_execute import PlanAndExecutePattern
-from fireflyframework_genai.reasoning.react import ReActPattern
-from fireflyframework_genai.reasoning.reflexion import ReflexionPattern
-from fireflyframework_genai.reasoning.tree_of_thoughts import TreeOfThoughtsPattern
+from fireflyframework_agentic.reasoning.plan_and_execute import PlanAndExecutePattern
+from fireflyframework_agentic.reasoning.react import ReActPattern
+from fireflyframework_agentic.reasoning.reflexion import ReflexionPattern
+from fireflyframework_agentic.reasoning.tree_of_thoughts import TreeOfThoughtsPattern
 
 
 @dataclass
@@ -97,7 +97,7 @@ class TestReActPatternStructured:
 
     async def test_prompts_override(self):
         """Custom prompts should be used when provided."""
-        from fireflyframework_genai.prompts.template import PromptTemplate, PromptVariable
+        from fireflyframework_agentic.prompts.template import PromptTemplate, PromptVariable
 
         custom = PromptTemplate(
             "custom:react:thought",

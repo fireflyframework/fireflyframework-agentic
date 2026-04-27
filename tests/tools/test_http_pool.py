@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from fireflyframework_genai.tools.builtins.http import HTTPX_AVAILABLE, HttpTool
+from fireflyframework_agentic.tools.builtins.http import HTTPX_AVAILABLE, HttpTool
 
 
 class TestHttpConnectionPooling:
@@ -107,7 +107,7 @@ class TestHttpConnectionPooling:
     async def test_fallback_to_urllib_when_httpx_not_available(self):
         """Test that urllib fallback works when httpx is not available."""
         # Temporarily disable httpx
-        with patch("fireflyframework_genai.tools.builtins.http.HTTPX_AVAILABLE", False):
+        with patch("fireflyframework_agentic.tools.builtins.http.HTTPX_AVAILABLE", False):
             tool = HttpTool(use_pool=True)  # Request pooling
 
             # Should fallback to no pooling
@@ -207,7 +207,7 @@ class TestHttpToolBackwardCompatibility:
 
     async def test_urllib_fallback_works(self):
         """Test that urllib fallback executes requests."""
-        with patch("fireflyframework_genai.tools.builtins.http.HTTPX_AVAILABLE", False):
+        with patch("fireflyframework_agentic.tools.builtins.http.HTTPX_AVAILABLE", False):
             tool = HttpTool(use_pool=False)
 
             # Mock urllib.request.urlopen

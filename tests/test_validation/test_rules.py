@@ -17,7 +17,7 @@
 import pytest
 from pydantic import BaseModel
 
-from fireflyframework_genai.validation.rules import (
+from fireflyframework_agentic.validation.rules import (
     CustomRule,
     EnumRule,
     FieldValidator,

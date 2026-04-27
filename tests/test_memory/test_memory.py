@@ -14,11 +14,11 @@
 
 """Tests for the memory subsystem."""
 
-from fireflyframework_genai.memory.conversation import ConversationMemory
-from fireflyframework_genai.memory.manager import MemoryManager
-from fireflyframework_genai.memory.store import FileStore, InMemoryStore, MemoryStore
-from fireflyframework_genai.memory.types import ConversationTurn, MemoryEntry, MemoryScope
-from fireflyframework_genai.memory.working import WorkingMemory
+from fireflyframework_agentic.memory.conversation import ConversationMemory
+from fireflyframework_agentic.memory.manager import MemoryManager
+from fireflyframework_agentic.memory.store import FileStore, InMemoryStore, MemoryStore
+from fireflyframework_agentic.memory.types import ConversationTurn, MemoryEntry, MemoryScope
+from fireflyframework_agentic.memory.working import WorkingMemory
 
 # -- MemoryEntry tests -----------------------------------------------------
 

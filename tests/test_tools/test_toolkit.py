@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fireflyframework_genai.tools.base import BaseTool
-from fireflyframework_genai.tools.decorators import firefly_tool, guarded, retryable
-from fireflyframework_genai.tools.guards import ValidationGuard
-from fireflyframework_genai.tools.registry import ToolRegistry
-from fireflyframework_genai.tools.toolkit import ToolKit
+from fireflyframework_agentic.tools.base import BaseTool
+from fireflyframework_agentic.tools.decorators import firefly_tool, guarded, retryable
+from fireflyframework_agentic.tools.guards import ValidationGuard
+from fireflyframework_agentic.tools.registry import ToolRegistry
+from fireflyframework_agentic.tools.toolkit import ToolKit
 
 
 class _DummyTool(BaseTool):

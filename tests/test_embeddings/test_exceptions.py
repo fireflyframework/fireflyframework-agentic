@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.exceptions import (
+from fireflyframework_agentic.exceptions import (
     EmbeddingError,
     EmbeddingProviderError,
-    FireflyGenAIError,
+    FireflyAgenticError,
     VectorStoreConnectionError,
     VectorStoreError,
 )
@@ -13,13 +13,13 @@ from fireflyframework_genai.exceptions import (
 
 class TestEmbeddingExceptions:
     def test_embedding_error_inherits_base(self):
-        assert issubclass(EmbeddingError, FireflyGenAIError)
+        assert issubclass(EmbeddingError, FireflyAgenticError)
 
     def test_embedding_provider_error_inherits_embedding(self):
         assert issubclass(EmbeddingProviderError, EmbeddingError)
 
     def test_vector_store_error_inherits_base(self):
-        assert issubclass(VectorStoreError, FireflyGenAIError)
+        assert issubclass(VectorStoreError, FireflyAgenticError)
 
     def test_vector_store_connection_inherits(self):
         assert issubclass(VectorStoreConnectionError, VectorStoreError)

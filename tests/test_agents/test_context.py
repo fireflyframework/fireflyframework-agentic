@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.agents.context import AgentContext
+from fireflyframework_agentic.agents.context import AgentContext
 
 
 class TestAgentContext:

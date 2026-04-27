@@ -29,7 +29,7 @@ import asyncio
 
 from _common import MODEL, ensure_api_key
 
-from fireflyframework_genai.agents.templates import create_classifier_agent
+from fireflyframework_agentic.agents.templates import create_classifier_agent
 
 SAMPLES = [
     "My invoice shows an incorrect charge for last month's subscription.",

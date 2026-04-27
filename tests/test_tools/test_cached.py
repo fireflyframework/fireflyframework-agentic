@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 
-from fireflyframework_genai.tools.cached import CachedTool, _CacheEntry
+from fireflyframework_agentic.tools.cached import CachedTool, _CacheEntry
 
 
 class _CounterTool:
@@ -102,6 +102,6 @@ class TestCachedTool:
         assert "120" in repr(cached)
 
     def test_import_from_package(self):
-        from fireflyframework_genai.tools import CachedTool as CachedToolAlias
+        from fireflyframework_agentic.tools import CachedTool as CachedToolAlias
 
         assert CachedToolAlias is CachedTool

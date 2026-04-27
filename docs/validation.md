@@ -23,7 +23,7 @@ with five built-in rule types:
 - **CustomRule** -- User-supplied predicate function.
 
 ```python
-from fireflyframework_genai.validation.rules import (
+from fireflyframework_agentic.validation.rules import (
     OutputValidator,
     RegexRule,
     RangeRule,
@@ -44,7 +44,7 @@ entire output dictionary at once. The result is a `ValidationReport` listing all
 passing and failing fields.
 
 ```python
-from fireflyframework_genai.validation.rules import OutputValidator, RegexRule, EnumRule, RangeRule
+from fireflyframework_agentic.validation.rules import OutputValidator, RegexRule, EnumRule, RangeRule
 
 validator = OutputValidator({
     "status": [EnumRule("status", ["approved", "rejected", "pending"])],
@@ -67,7 +67,7 @@ confidence markers (e.g. "I'm 85% confident") or using heuristic indicators like
 hedging language.
 
 ```python
-from fireflyframework_genai.validation.qos import ConfidenceScorer
+from fireflyframework_agentic.validation.qos import ConfidenceScorer
 
 scorer = ConfidenceScorer(my_agent)
 score = await scorer.score("The answer is definitely 42.")
@@ -79,7 +79,7 @@ Runs the same prompt through an agent multiple times and measures the consistenc
 of the outputs.
 
 ```python
-from fireflyframework_genai.validation.qos import ConsistencyChecker
+from fireflyframework_agentic.validation.qos import ConsistencyChecker
 
 checker = ConsistencyChecker(my_agent, num_runs=3)
 score, outputs = await checker.check("What is the capital of France?")
@@ -92,7 +92,7 @@ Verifies that a response is grounded in provided reference text by checking how 
 of the response content can be traced back to the source material.
 
 ```python
-from fireflyframework_genai.validation.qos import GroundingChecker
+from fireflyframework_agentic.validation.qos import GroundingChecker
 
 checker = GroundingChecker()
 score, field_map = checker.check(
@@ -108,7 +108,7 @@ print(score) # 1.0 if all fields are grounded in the source
 pipeline node or used standalone. It produces a `QoSResult` with a pass/fail verdict.
 
 ```python
-from fireflyframework_genai.validation.qos import (
+from fireflyframework_agentic.validation.qos import (
     QoSGuard, ConfidenceScorer, ConsistencyChecker, GroundingChecker,
 )
 
@@ -137,7 +137,7 @@ automatically retries with a feedback prompt describing exactly what was wrong.
 
 ```python
 from pydantic import BaseModel, Field
-from fireflyframework_genai.validation import OutputReviewer
+from fireflyframework_agentic.validation import OutputReviewer
 
 class InvoiceData(BaseModel):
     vendor: str
@@ -155,7 +155,7 @@ print(result.attempts) # 1 if first try succeeded, 2+ if retries were needed
 Combine schema parsing with field-level validation rules:
 
 ```python
-from fireflyframework_genai.validation import OutputReviewer, OutputValidator, EnumRule
+from fireflyframework_agentic.validation import OutputReviewer, OutputValidator, EnumRule
 
 validator = OutputValidator({
     "vendor": [EnumRule("vendor", ["Acme Corp", "Globex", "Initech"])],
@@ -173,8 +173,8 @@ result = await reviewer.review(agent, "Extract invoice data from: ...")
 Attach a reviewer to any reasoning pattern to validate the final output:
 
 ```python
-from fireflyframework_genai.reasoning import ReActPattern
-from fireflyframework_genai.validation import OutputReviewer
+from fireflyframework_agentic.reasoning import ReActPattern
+from fireflyframework_agentic.validation import OutputReviewer
 
 reviewer = OutputReviewer(output_type=InvoiceData, max_retries=2)
 pattern = ReActPattern(reviewer=reviewer)

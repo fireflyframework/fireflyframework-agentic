@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.vectorstores.memory_store import InMemoryVectorStore
-from fireflyframework_genai.vectorstores.types import SearchFilter, VectorDocument
+from fireflyframework_agentic.vectorstores.memory_store import InMemoryVectorStore
+from fireflyframework_agentic.vectorstores.types import SearchFilter, VectorDocument
 
 
 class TestInMemoryVectorStore:

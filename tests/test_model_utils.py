@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.model_utils import (
+from fireflyframework_agentic.model_utils import (
     detect_model_family,
     extract_model_info,
     get_model_identifier,

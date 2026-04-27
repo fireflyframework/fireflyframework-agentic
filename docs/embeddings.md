@@ -37,7 +37,7 @@ graph TD
 ## Quick Start
 
 ```python
-from fireflyframework_genai.embeddings.providers import OpenAIEmbedder
+from fireflyframework_agentic.embeddings.providers import OpenAIEmbedder
 
 # Create an embedder
 embedder = OpenAIEmbedder(model="text-embedding-3-small")
@@ -60,7 +60,7 @@ print(len(vector))  # 1536
 ### OpenAI
 
 ```python
-from fireflyframework_genai.embeddings.providers import OpenAIEmbedder
+from fireflyframework_agentic.embeddings.providers import OpenAIEmbedder
 
 embedder = OpenAIEmbedder(
     model="text-embedding-3-small",  # or "text-embedding-3-large"
@@ -69,12 +69,12 @@ embedder = OpenAIEmbedder(
 )
 ```
 
-Install: `pip install fireflyframework-genai[openai-embeddings]`
+Install: `pip install fireflyframework-agentic[openai-embeddings]`
 
 ### Azure OpenAI
 
 ```python
-from fireflyframework_genai.embeddings.providers import AzureEmbedder
+from fireflyframework_agentic.embeddings.providers import AzureEmbedder
 
 embedder = AzureEmbedder(
     model="my-embedding-deployment",
@@ -85,12 +85,12 @@ embedder = AzureEmbedder(
 )
 ```
 
-Install: `pip install fireflyframework-genai[azure-embeddings]`
+Install: `pip install fireflyframework-agentic[azure-embeddings]`
 
 ### Cohere
 
 ```python
-from fireflyframework_genai.embeddings.providers import CohereEmbedder
+from fireflyframework_agentic.embeddings.providers import CohereEmbedder
 
 embedder = CohereEmbedder(
     model="embed-english-v3.0",
@@ -99,12 +99,12 @@ embedder = CohereEmbedder(
 )
 ```
 
-Install: `pip install fireflyframework-genai[cohere-embeddings]`
+Install: `pip install fireflyframework-agentic[cohere-embeddings]`
 
 ### Google Generative AI
 
 ```python
-from fireflyframework_genai.embeddings.providers import GoogleEmbedder
+from fireflyframework_agentic.embeddings.providers import GoogleEmbedder
 
 embedder = GoogleEmbedder(
     model="models/text-embedding-004",
@@ -112,12 +112,12 @@ embedder = GoogleEmbedder(
 )
 ```
 
-Install: `pip install fireflyframework-genai[google-embeddings]`
+Install: `pip install fireflyframework-agentic[google-embeddings]`
 
 ### Mistral
 
 ```python
-from fireflyframework_genai.embeddings.providers import MistralEmbedder
+from fireflyframework_agentic.embeddings.providers import MistralEmbedder
 
 embedder = MistralEmbedder(
     model="mistral-embed",
@@ -125,12 +125,12 @@ embedder = MistralEmbedder(
 )
 ```
 
-Install: `pip install fireflyframework-genai[mistral-embeddings]`
+Install: `pip install fireflyframework-agentic[mistral-embeddings]`
 
 ### Voyage AI
 
 ```python
-from fireflyframework_genai.embeddings.providers import VoyageEmbedder
+from fireflyframework_agentic.embeddings.providers import VoyageEmbedder
 
 embedder = VoyageEmbedder(
     model="voyage-3",
@@ -138,12 +138,12 @@ embedder = VoyageEmbedder(
 )
 ```
 
-Install: `pip install fireflyframework-genai[voyage-embeddings]`
+Install: `pip install fireflyframework-agentic[voyage-embeddings]`
 
 ### AWS Bedrock
 
 ```python
-from fireflyframework_genai.embeddings.providers import BedrockEmbedder
+from fireflyframework_agentic.embeddings.providers import BedrockEmbedder
 
 embedder = BedrockEmbedder(
     model="amazon.titan-embed-text-v2:0",
@@ -151,12 +151,12 @@ embedder = BedrockEmbedder(
 )
 ```
 
-Install: `pip install fireflyframework-genai[bedrock-embeddings]`
+Install: `pip install fireflyframework-agentic[bedrock-embeddings]`
 
 ### Ollama (Local)
 
 ```python
-from fireflyframework_genai.embeddings.providers import OllamaEmbedder
+from fireflyframework_agentic.embeddings.providers import OllamaEmbedder
 
 embedder = OllamaEmbedder(
     model="nomic-embed-text",
@@ -164,7 +164,7 @@ embedder = OllamaEmbedder(
 )
 ```
 
-Install: `pip install fireflyframework-genai[ollama-embeddings]`
+Install: `pip install fireflyframework-agentic[ollama-embeddings]`
 
 ---
 
@@ -173,7 +173,7 @@ Install: `pip install fireflyframework-genai[ollama-embeddings]`
 Built-in functions for comparing embedding vectors:
 
 ```python
-from fireflyframework_genai.embeddings import cosine_similarity, euclidean_distance, dot_product
+from fireflyframework_agentic.embeddings import cosine_similarity, euclidean_distance, dot_product
 
 a = [0.1, 0.2, 0.3]
 b = [0.4, 0.5, 0.6]
@@ -190,8 +190,8 @@ dot_product(a, b)          # raw dot product
 Manage multiple named embedder instances:
 
 ```python
-from fireflyframework_genai.embeddings import EmbedderRegistry
-from fireflyframework_genai.embeddings.providers import OpenAIEmbedder, CohereEmbedder
+from fireflyframework_agentic.embeddings import EmbedderRegistry
+from fireflyframework_agentic.embeddings.providers import OpenAIEmbedder, CohereEmbedder
 
 registry = EmbedderRegistry()
 registry.register("openai", OpenAIEmbedder())
@@ -209,7 +209,7 @@ registry.unregister("cohere")
 ## Auto-Batching
 
 `BaseEmbedder` automatically splits large text lists into provider-sized batches
-(default: 100, configurable via `FireflyGenAIConfig.embedding_batch_size`).
+(default: 100, configurable via `FireflyAgenticConfig.embedding_batch_size`).
 Subclasses only need to implement `_embed_batch()` for a single batch.
 
 ```python
@@ -223,13 +223,13 @@ assert len(result.embeddings) == 500
 
 ## Configuration
 
-Global defaults via environment variables (prefix `FIREFLY_GENAI_`):
+Global defaults via environment variables (prefix `FIREFLY_AGENTIC_`):
 
 | Setting | Env Variable | Default |
 |---------|-------------|---------|
-| `default_embedding_model` | `FIREFLY_GENAI_DEFAULT_EMBEDDING_MODEL` | `openai:text-embedding-3-small` |
-| `embedding_batch_size` | `FIREFLY_GENAI_EMBEDDING_BATCH_SIZE` | `100` |
-| `embedding_max_retries` | `FIREFLY_GENAI_EMBEDDING_MAX_RETRIES` | `3` |
+| `default_embedding_model` | `FIREFLY_AGENTIC_DEFAULT_EMBEDDING_MODEL` | `openai:text-embedding-3-small` |
+| `embedding_batch_size` | `FIREFLY_AGENTIC_EMBEDDING_BATCH_SIZE` | `100` |
+| `embedding_max_retries` | `FIREFLY_AGENTIC_EMBEDDING_MAX_RETRIES` | `3` |
 
 ---
 
@@ -238,7 +238,7 @@ Global defaults via environment variables (prefix `FIREFLY_GENAI_`):
 To create a custom embedding provider, subclass `BaseEmbedder` and implement `_embed_batch()`:
 
 ```python
-from fireflyframework_genai.embeddings.base import BaseEmbedder
+from fireflyframework_agentic.embeddings.base import BaseEmbedder
 
 class MyEmbedder(BaseEmbedder):
     def __init__(self, model: str = "my-model", **kwargs):
@@ -256,7 +256,7 @@ class MyEmbedder(BaseEmbedder):
 Use embeddings in DAG pipelines:
 
 ```python
-from fireflyframework_genai.pipeline import Pipeline, PipelineStep, EmbeddingStep
+from fireflyframework_agentic.pipeline import Pipeline, PipelineStep, EmbeddingStep
 
 pipeline = Pipeline(
     steps=[

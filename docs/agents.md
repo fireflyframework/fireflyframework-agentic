@@ -9,7 +9,7 @@ a global registry, multi-agent delegation, execution context, and a decorator AP
 
 ## Concepts
 
-An agent in fireflyframework-genai is a named, configured wrapper around a Pydantic AI
+An agent in fireflyframework-agentic is a named, configured wrapper around a Pydantic AI
 agent. The framework manages its lifecycle (creation, startup, invocation, shutdown)
 and makes it discoverable through a central registry.
 
@@ -53,7 +53,7 @@ classDiagram
 The simplest way to create and register an agent is with the `@firefly_agent` decorator:
 
 ```python
-from fireflyframework_genai.agents import firefly_agent
+from fireflyframework_agentic.agents import firefly_agent
 
 @firefly_agent(name="writer", model="openai:gpt-4o")
 def writer_instructions(ctx):
@@ -66,8 +66,8 @@ dynamic instructions provider, and registers the agent in the global `AgentRegis
 ### Using the Class Directly
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.agents.registry import agent_registry
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.agents.registry import agent_registry
 
 agent = FireflyAgent(name="analyst", model="openai:gpt-4o")
 agent_registry.register(agent)
@@ -81,7 +81,7 @@ keys), pass a pre-configured Pydantic AI `Model` instance instead of a string:
 ```python
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
-from fireflyframework_genai.agents import FireflyAgent
+from fireflyframework_agentic.agents import FireflyAgent
 
 model = OpenAIChatModel("gpt-4o", provider=OpenAIProvider(api_key="sk-..."))
 agent = FireflyAgent(name="analyst", model=model)
@@ -105,8 +105,8 @@ parameter:
 This means you can mix and match all tool types freely:
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.tools.builtins import DateTimeTool, CalculatorTool
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.tools.builtins import DateTimeTool, CalculatorTool
 
 async def custom_lookup(query: str) -> str:
     return f"Result for {query}"
@@ -127,7 +127,7 @@ Any part of the framework -- REST endpoints, queue consumers, delegation routers
 can look up an agent by name.
 
 ```python
-from fireflyframework_genai.agents.registry import agent_registry
+from fireflyframework_agentic.agents.registry import agent_registry
 
 agent = agent_registry.get("writer")
 result = await agent.run("Write a haiku about Python.")
@@ -142,7 +142,7 @@ useful for initialising resources (database connections, caches) before the firs
 invocation and cleaning up afterwards.
 
 ```python
-from fireflyframework_genai.agents.lifecycle import AgentLifecycle
+from fireflyframework_agentic.agents.lifecycle import AgentLifecycle
 
 lifecycle = AgentLifecycle()
 lifecycle.on_init(lambda: print("Initialising"))
@@ -173,7 +173,7 @@ flowchart TD
 Distributes requests evenly across a pool of agents:
 
 ```python
-from fireflyframework_genai.agents.delegation import RoundRobinStrategy, DelegationRouter
+from fireflyframework_agentic.agents.delegation import RoundRobinStrategy, DelegationRouter
 
 strategy = RoundRobinStrategy()
 router = DelegationRouter([agent_a, agent_b, agent_c], strategy)
@@ -185,7 +185,7 @@ result = await router.route("Summarise this document.")
 Selects the first agent whose tags include a required capability:
 
 ```python
-from fireflyframework_genai.agents.delegation import CapabilityStrategy, DelegationRouter
+from fireflyframework_agentic.agents.delegation import CapabilityStrategy, DelegationRouter
 
 strategy = CapabilityStrategy(required_tag="translation")
 router = DelegationRouter([agent_a, agent_b], strategy)
@@ -199,7 +199,7 @@ agent from the pool. Ideal when agents have overlapping capabilities and
 simple tag matching is insufficient:
 
 ```python
-from fireflyframework_genai.agents.delegation import ContentBasedStrategy, DelegationRouter
+from fireflyframework_agentic.agents.delegation import ContentBasedStrategy, DelegationRouter
 
 strategy = ContentBasedStrategy(model="openai:gpt-4o-mini")
 router = DelegationRouter([agent_a, agent_b, agent_c], strategy)
@@ -216,7 +216,7 @@ Selects the agent backed by the cheapest model. Agents are ranked by
 approximate cost tiers derived from their `model_name` attribute:
 
 ```python
-from fireflyframework_genai.agents.delegation import CostAwareStrategy, DelegationRouter
+from fireflyframework_agentic.agents.delegation import CostAwareStrategy, DelegationRouter
 
 strategy = CostAwareStrategy()
 router = DelegationRouter([expensive_agent, cheap_agent], strategy)
@@ -233,7 +233,7 @@ Unknown models are assigned a middle-tier cost.
 Attach a `MemoryManager` to an agent to enable multi-turn conversation history and a working-memory scratchpad. When you pass `conversation_id` to `run()`/`run_sync()`/`run_stream()`, the agent automatically loads and persists `message_history`.
 
 ```python
-from fireflyframework_genai.memory import MemoryManager
+from fireflyframework_agentic.memory import MemoryManager
 
 memory = MemoryManager(max_conversation_tokens=32_000)
 agent = FireflyAgent(name="assistant", model="openai:gpt-4o", memory=memory)
@@ -250,9 +250,9 @@ When memory is attached, it is automatically forwarded to the pattern and the
 final output is persisted as a conversation turn.
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.memory import MemoryManager
-from fireflyframework_genai.reasoning import ReActPattern
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.memory import MemoryManager
+from fireflyframework_agentic.reasoning import ReActPattern
 
 memory = MemoryManager()
 agent = FireflyAgent(name="thinker", model="openai:gpt-4o", memory=memory)
@@ -284,7 +284,7 @@ The framework ships with five pre-built template agents as factory functions:
 See the [Template Agents Guide](templates.md) for full documentation and examples.
 
 ```python
-from fireflyframework_genai.agents.templates import create_summarizer_agent
+from fireflyframework_agentic.agents.templates import create_summarizer_agent
 
 agent = create_summarizer_agent(model="openai:gpt-4o", max_length="short")
 result = await agent.run("Summarize this document: ...")
@@ -302,7 +302,7 @@ enabling the framework logger.
 ### Enabling Logging
 
 ```python
-from fireflyframework_genai import configure_logging
+from fireflyframework_agentic import configure_logging
 
 configure_logging("INFO") # agent calls, reasoning progress, timing
 configure_logging("DEBUG") # + memory injection, turn persistence, LLM timing
@@ -311,7 +311,7 @@ configure_logging("DEBUG") # + memory injection, turn persistence, LLM timing
 Or use the shortcut:
 
 ```python
-from fireflyframework_genai import enable_debug
+from fireflyframework_agentic import enable_debug
 
 enable_debug()
 ```
@@ -355,7 +355,7 @@ At **DEBUG** level:
 - Memory injection and turn persistence with conversation ID.
 - Usage tracking failures (when cost tracking is active).
 
-The logging uses the `fireflyframework_genai` logger hierarchy, so it does
+The logging uses the `fireflyframework_agentic` logger hierarchy, so it does
 not affect application-level or third-party loggers.
 
 ---
@@ -368,7 +368,7 @@ via the configured `CostCalculator`, and feed a `UsageRecord` to the global
 `default_usage_tracker`. This happens transparently — no code changes are needed.
 
 ```python
-from fireflyframework_genai.observability import default_usage_tracker
+from fireflyframework_agentic.observability import default_usage_tracker
 
 # After running agents, inspect usage
 summary = default_usage_tracker.get_summary()
@@ -381,10 +381,10 @@ agent_summary = default_usage_tracker.get_summary_for_agent("my-agent")
 Configure via environment variables:
 
 ```bash
-FIREFLY_GENAI_COST_TRACKING_ENABLED=true # default
-FIREFLY_GENAI_BUDGET_ALERT_THRESHOLD_USD=5.00
-FIREFLY_GENAI_BUDGET_LIMIT_USD=10.00
-FIREFLY_GENAI_COST_CALCULATOR=auto # auto | static | genai_prices
+FIREFLY_AGENTIC_COST_TRACKING_ENABLED=true # default
+FIREFLY_AGENTIC_BUDGET_ALERT_THRESHOLD_USD=5.00
+FIREFLY_AGENTIC_BUDGET_LIMIT_USD=10.00
+FIREFLY_AGENTIC_COST_CALCULATOR=auto # auto | static | genai_prices
 ```
 
 See the [Observability Guide](observability.md#usage-tracking) for full details.
@@ -409,7 +409,7 @@ flowchart LR
 Implement the `AgentMiddleware` protocol — both hooks are optional:
 
 ```python
-from fireflyframework_genai.agents.middleware import AgentMiddleware, MiddlewareContext
+from fireflyframework_agentic.agents.middleware import AgentMiddleware, MiddlewareContext
 import time
 
 class AuditMiddleware:
@@ -428,7 +428,7 @@ Pass middleware at construction time, via the `@firefly_agent` decorator, or
 add to the chain dynamically:
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent, firefly_agent
+from fireflyframework_agentic.agents import FireflyAgent, firefly_agent
 
 # At construction
 agent = FireflyAgent(
@@ -457,7 +457,7 @@ order (LIFO).
 context. It is auto-wired by default alongside `LoggingMiddleware`.
 
 ```python
-from fireflyframework_genai.agents.builtin_middleware import RetryMiddleware
+from fireflyframework_agentic.agents.builtin_middleware import RetryMiddleware
 
 # Custom retry settings
 agent = FireflyAgent(
@@ -492,7 +492,7 @@ If you provide your own `LoggingMiddleware` instance in the `middleware` list,
 the framework will not add a second one (no duplication):
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent, LoggingMiddleware
+from fireflyframework_agentic.agents import FireflyAgent, LoggingMiddleware
 import logging
 
 # Custom logging level — only one LoggingMiddleware ends up in the chain
@@ -521,7 +521,7 @@ Parameters:
 - **`include_usage`** — Whether to extract token/cost data from the result (default: `True`).
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent, LoggingMiddleware
+from fireflyframework_agentic.agents import FireflyAgent, LoggingMiddleware
 import logging
 
 agent = FireflyAgent(
@@ -538,7 +538,7 @@ prompts raise a `PromptGuardError`. Set `sanitise=True` to redact suspicious
 fragments instead of rejecting.
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent, PromptGuardMiddleware
+from fireflyframework_agentic.agents import FireflyAgent, PromptGuardMiddleware
 
 agent = FireflyAgent(
     name="safe-agent",
@@ -557,7 +557,7 @@ agent = FireflyAgent(
 You can also supply a custom `PromptGuard` instance with extra patterns:
 
 ```python
-from fireflyframework_genai.security import PromptGuard
+from fireflyframework_agentic.security import PromptGuard
 
 guard = PromptGuard(custom_patterns=[r"(?i)drop\s+table"], sanitise=True)
 agent = FireflyAgent(
@@ -574,7 +574,7 @@ Scans LLM output for PII, secrets, harmful content, and custom patterns
 `OutputGuardError`. Set `sanitise=True` to redact matches instead.
 
 ```python
-from fireflyframework_genai.agents.builtin_middleware import OutputGuardMiddleware
+from fireflyframework_agentic.agents.builtin_middleware import OutputGuardMiddleware
 
 agent = FireflyAgent(
     name="safe-output",
@@ -613,7 +613,7 @@ Parameters:
   the middleware checks whether a single call exceeded this limit.
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent, CostGuardMiddleware
+from fireflyframework_agentic.agents import FireflyAgent, CostGuardMiddleware
 
 agent = FireflyAgent(
     name="budget-agent",
@@ -646,7 +646,7 @@ Records decision traces via `TraceRecorder` for audit and explainability.
 Not auto-wired — enable it explicitly.
 
 ```python
-from fireflyframework_genai.agents.builtin_middleware import ExplainabilityMiddleware
+from fireflyframework_agentic.agents.builtin_middleware import ExplainabilityMiddleware
 
 agent = FireflyAgent(
     name="audited-agent",
@@ -661,8 +661,8 @@ Caches agent results via a `ResultCache`. On `before_run`, checks the cache;
 on `after_run`, stores the result on miss.
 
 ```python
-from fireflyframework_genai.agents.cache import ResultCache
-from fireflyframework_genai.agents.builtin_middleware import CacheMiddleware
+from fireflyframework_agentic.agents.cache import ResultCache
+from fireflyframework_agentic.agents.builtin_middleware import CacheMiddleware
 
 cache = ResultCache(ttl_seconds=300)
 agent = FireflyAgent(
@@ -678,8 +678,8 @@ Validates agent output using an `OutputReviewer`. After the agent runs, the
 output is parsed and validated without re-running the agent.
 
 ```python
-from fireflyframework_genai.validation import OutputReviewer
-from fireflyframework_genai.agents.builtin_middleware import ValidationMiddleware
+from fireflyframework_agentic.validation import OutputReviewer
+from fireflyframework_agentic.agents.builtin_middleware import ValidationMiddleware
 
 reviewer = OutputReviewer(output_type=MyModel, max_retries=0)
 agent = FireflyAgent(
@@ -703,7 +703,7 @@ Parameters:
 - **`enabled`** — Enable/disable caching (default: `True`).
 
 ```python
-from fireflyframework_genai.agents.prompt_cache import PromptCacheMiddleware
+from fireflyframework_agentic.agents.prompt_cache import PromptCacheMiddleware
 
 agent = FireflyAgent(
     name="cached-agent",
@@ -743,7 +743,7 @@ Parameters:
 - **`enabled`** — Enable/disable circuit breaker (default: `True`).
 
 ```python
-from fireflyframework_genai.resilience.circuit_breaker import CircuitBreakerMiddleware
+from fireflyframework_agentic.resilience.circuit_breaker import CircuitBreakerMiddleware
 
 agent = FireflyAgent(
     name="resilient-agent",
@@ -762,7 +762,7 @@ instead of waiting for timeouts. This protects downstream services and allows
 the failing service time to recover.
 
 ```python
-from fireflyframework_genai.resilience.circuit_breaker import CircuitBreakerOpenError
+from fireflyframework_agentic.resilience.circuit_breaker import CircuitBreakerOpenError
 
 try:
     result = await agent.run("Question")
@@ -776,16 +776,16 @@ except CircuitBreakerOpenError:
 Combine multiple middleware for production:
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.agents.builtin_middleware import (
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.agents.builtin_middleware import (
     LoggingMiddleware,
     PromptGuardMiddleware,
     OutputGuardMiddleware,
     CostGuardMiddleware,
     ObservabilityMiddleware,
 )
-from fireflyframework_genai.agents.prompt_cache import PromptCacheMiddleware
-from fireflyframework_genai.resilience.circuit_breaker import CircuitBreakerMiddleware
+from fireflyframework_agentic.agents.prompt_cache import PromptCacheMiddleware
+from fireflyframework_agentic.resilience.circuit_breaker import CircuitBreakerMiddleware
 
 agent = FireflyAgent(
     name="production-agent",
@@ -848,8 +848,8 @@ tokens, while buffered mode provides `stream_text()` for complete chunks.
 All middleware work seamlessly with both streaming modes:
 
 ```python
-from fireflyframework_genai.agents.prompt_cache import PromptCacheMiddleware
-from fireflyframework_genai.resilience.circuit_breaker import CircuitBreakerMiddleware
+from fireflyframework_agentic.agents.prompt_cache import PromptCacheMiddleware
+from fireflyframework_agentic.resilience.circuit_breaker import CircuitBreakerMiddleware
 
 agent = FireflyAgent(
     name="streaming-agent",
@@ -909,7 +909,7 @@ flowchart LR
 ```
 
 ```python
-from fireflyframework_genai.agents.fallback import FallbackModelWrapper, run_with_fallback
+from fireflyframework_agentic.agents.fallback import FallbackModelWrapper, run_with_fallback
 
 fallback = FallbackModelWrapper(
     models=["openai:gpt-4o", "openai:gpt-4o-mini", "openai:gpt-3.5-turbo"],
@@ -958,7 +958,7 @@ the model name and prompt text. Useful for deduplicating identical requests
 in batch pipelines or high-traffic REST endpoints.
 
 ```python
-from fireflyframework_genai.agents.cache import ResultCache
+from fireflyframework_agentic.agents.cache import ResultCache
 
 cache = ResultCache(ttl_seconds=300, max_size=100)
 
@@ -990,7 +990,7 @@ through an agent's invocation chain. It is available to tools and reasoning patt
 during execution.
 
 ```python
-from fireflyframework_genai.agents.context import AgentContext
+from fireflyframework_agentic.agents.context import AgentContext
 
 ctx = AgentContext(correlation_id="req-123", metadata={"user": "alice"})
 ```

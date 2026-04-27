@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.tools.guards import (
+from fireflyframework_agentic.tools.guards import (
     CompositeGuard,
     RateLimitGuard,
     SandboxGuard,

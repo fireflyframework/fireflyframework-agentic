@@ -19,23 +19,23 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from fireflyframework_genai.agents.base import FireflyAgent
-from fireflyframework_genai.agents.registry import agent_registry
-from fireflyframework_genai.agents.templates.classifier import (
+from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.agents.registry import agent_registry
+from fireflyframework_agentic.agents.templates.classifier import (
     ClassificationResult,
     create_classifier_agent,
 )
-from fireflyframework_genai.agents.templates.conversational import (
+from fireflyframework_agentic.agents.templates.conversational import (
     create_conversational_agent,
 )
-from fireflyframework_genai.agents.templates.extractor import (
+from fireflyframework_agentic.agents.templates.extractor import (
     create_extractor_agent,
 )
-from fireflyframework_genai.agents.templates.router import (
+from fireflyframework_agentic.agents.templates.router import (
     RoutingDecision,
     create_router_agent,
 )
-from fireflyframework_genai.agents.templates.summarizer import (
+from fireflyframework_agentic.agents.templates.summarizer import (
     create_summarizer_agent,
 )
 
@@ -193,7 +193,7 @@ class TestConversationalAgent:
         assert "healthcare" in agent.description
 
     def test_with_memory(self) -> None:
-        from fireflyframework_genai.memory.manager import MemoryManager
+        from fireflyframework_agentic.memory.manager import MemoryManager
 
         mem = MemoryManager()
         agent = create_conversational_agent(name="mem-agent", model="test", memory=mem)
@@ -253,7 +253,7 @@ class TestTemplateImports:
     """Verify that all template factories are importable from the agents package."""
 
     def test_imports_from_agents(self) -> None:
-        from fireflyframework_genai.agents import (
+        from fireflyframework_agentic.agents import (
             create_classifier_agent,
             create_conversational_agent,
             create_extractor_agent,

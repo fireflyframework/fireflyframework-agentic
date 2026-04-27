@@ -25,8 +25,8 @@ pytest.importorskip("httpx", reason="httpx not installed")
 
 import httpx
 
-from fireflyframework_genai.studio.config import StudioConfig
-from fireflyframework_genai.studio.server import create_studio_app
+from fireflyframework_agentic.studio.config import StudioConfig
+from fireflyframework_agentic.studio.server import create_studio_app
 
 # ---------------------------------------------------------------------------
 # Fixtures

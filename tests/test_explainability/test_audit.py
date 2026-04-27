@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.explainability.audit import AuditTrail
+from fireflyframework_agentic.explainability.audit import AuditTrail
 
 
 class TestAuditTrail:

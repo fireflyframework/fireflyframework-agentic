@@ -20,7 +20,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from fireflyframework_genai.agents.prompt_cache import CacheStatistics, PromptCacheMiddleware
+from fireflyframework_agentic.agents.prompt_cache import CacheStatistics, PromptCacheMiddleware
 
 
 @pytest.mark.asyncio

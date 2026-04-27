@@ -16,8 +16,8 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.prompts.registry import PromptRegistry
-from fireflyframework_genai.prompts.template import PromptTemplate
+from fireflyframework_agentic.prompts.registry import PromptRegistry
+from fireflyframework_agentic.prompts.template import PromptTemplate
 
 
 class TestPromptRegistry:

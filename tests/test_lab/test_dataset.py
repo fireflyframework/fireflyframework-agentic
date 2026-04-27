@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.lab.dataset import EvalCase, EvalDataset
+from fireflyframework_agentic.lab.dataset import EvalCase, EvalDataset
 
 
 class TestEvalDataset:

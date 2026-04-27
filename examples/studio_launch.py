@@ -21,7 +21,7 @@ Demonstrates three ways to start the Studio IDE:
 3. Programmatic:   ``create_studio_app()`` + uvicorn
 
 Requirements:
-    pip install "fireflyframework-genai[studio]"
+    pip install "fireflyframework-agentic[studio]"
 """
 
 from __future__ import annotations
@@ -31,8 +31,8 @@ def main() -> None:
     """Launch Studio with custom configuration."""
     import uvicorn
 
-    from fireflyframework_genai.studio.config import StudioConfig
-    from fireflyframework_genai.studio.server import create_studio_app
+    from fireflyframework_agentic.studio.config import StudioConfig
+    from fireflyframework_agentic.studio.server import create_studio_app
 
     config = StudioConfig(
         port=8470,

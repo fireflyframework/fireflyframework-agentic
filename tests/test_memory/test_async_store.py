@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fireflyframework_genai.memory.store import FileStore
-from fireflyframework_genai.memory.types import MemoryEntry
+from fireflyframework_agentic.memory.store import FileStore
+from fireflyframework_agentic.memory.types import MemoryEntry
 
 
 class TestAsyncFileStore:

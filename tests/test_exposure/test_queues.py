@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.exceptions import ExposureError
-from fireflyframework_genai.exposure.queues.base import QueueMessage
-from fireflyframework_genai.exposure.queues.router import QueueRouter
+from fireflyframework_agentic.exceptions import ExposureError
+from fireflyframework_agentic.exposure.queues.base import QueueMessage
+from fireflyframework_agentic.exposure.queues.router import QueueRouter
 
 
 class TestQueueMessage:

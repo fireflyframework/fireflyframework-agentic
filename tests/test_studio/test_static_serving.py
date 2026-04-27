@@ -26,7 +26,7 @@ pytest.importorskip("httpx", reason="httpx not installed")
 
 import httpx
 
-from fireflyframework_genai.studio.server import create_studio_app
+from fireflyframework_agentic.studio.server import create_studio_app
 
 
 @pytest.fixture()
@@ -45,7 +45,7 @@ class TestStaticServing:
     async def test_serves_index_html_when_static_dir_exists(self, static_dir: Path):
         """When bundled static files exist, / serves index.html."""
         with patch(
-            "fireflyframework_genai.studio.server._get_default_static_dir",
+            "fireflyframework_agentic.studio.server._get_default_static_dir",
             return_value=static_dir,
         ):
             app = create_studio_app()
@@ -59,7 +59,7 @@ class TestStaticServing:
     async def test_api_routes_work_with_static_serving(self, static_dir: Path):
         """API routes still work when static files are mounted."""
         with patch(
-            "fireflyframework_genai.studio.server._get_default_static_dir",
+            "fireflyframework_agentic.studio.server._get_default_static_dir",
             return_value=static_dir,
         ):
             app = create_studio_app()

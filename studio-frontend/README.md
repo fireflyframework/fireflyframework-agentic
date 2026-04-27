@@ -1,7 +1,7 @@
 # Firefly Studio Frontend
 
 SvelteKit 5 frontend for [Firefly Studio](../docs/studio.md) -- the visual
-agent IDE for the Firefly GenAI framework.
+agent IDE for the Firefly Agentic framework.
 
 ## Prerequisites
 
@@ -42,7 +42,7 @@ npm run build
 Output goes to `build/`. To bundle it into the Python package:
 
 ```bash
-cp -r build/* ../src/fireflyframework_genai/studio/static/
+cp -r build/* ../src/fireflyframework_agentic/studio/static/
 ```
 
 ## Type Check

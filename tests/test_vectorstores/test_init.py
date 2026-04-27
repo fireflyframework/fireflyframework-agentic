@@ -5,7 +5,7 @@ from __future__ import annotations
 
 class TestVectorStoresPublicAPI:
     def test_imports(self):
-        from fireflyframework_genai.vectorstores import (
+        from fireflyframework_agentic.vectorstores import (
             BaseVectorStore,
             InMemoryVectorStore,
             SearchFilter,

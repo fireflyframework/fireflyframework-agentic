@@ -124,8 +124,8 @@ logs/
 docs/plans/
 
 # Studio bundled frontend (build artifact — run scripts/build_studio.py)
-src/fireflyframework_genai/studio/static/*
-!src/fireflyframework_genai/studio/static/.gitkeep
+src/fireflyframework_agentic/studio/static/*
+!src/fireflyframework_agentic/studio/static/.gitkeep
 
 # Studio frontend build output
 studio-frontend/build/

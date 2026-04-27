@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.vectorstores.memory_store import InMemoryVectorStore
-from fireflyframework_genai.vectorstores.registry import VectorStoreRegistry
+from fireflyframework_agentic.vectorstores.memory_store import InMemoryVectorStore
+from fireflyframework_agentic.vectorstores.registry import VectorStoreRegistry
 
 
 class TestVectorStoreRegistry:

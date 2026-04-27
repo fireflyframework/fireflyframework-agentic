@@ -21,7 +21,7 @@ import pytest
 # Check if JWT is available
 pytest.importorskip("jwt", reason="JWT tests require pyjwt")
 
-from fireflyframework_genai.security.rbac import RBACManager, require_permission
+from fireflyframework_agentic.security.rbac import RBACManager, require_permission
 
 
 class TestRBACManager:

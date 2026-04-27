@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.memory.conversation import ConversationMemory
-from fireflyframework_genai.memory.types import ConversationTurn
+from fireflyframework_agentic.memory.conversation import ConversationMemory
+from fireflyframework_agentic.memory.types import ConversationTurn
 
 
 class TestConversationSummarization:
@@ -53,13 +53,13 @@ class TestConversationSummarization:
 
 class TestLLMSummarizer:
     def test_create_llm_summarizer_returns_callable(self) -> None:
-        from fireflyframework_genai.memory.summarization import create_llm_summarizer
+        from fireflyframework_agentic.memory.summarization import create_llm_summarizer
 
         summarizer = create_llm_summarizer()
         assert callable(summarizer)
 
     def test_create_llm_summarizer_with_custom_model(self) -> None:
-        from fireflyframework_genai.memory.summarization import create_llm_summarizer
+        from fireflyframework_agentic.memory.summarization import create_llm_summarizer
 
         summarizer = create_llm_summarizer(model="openai:gpt-4o-mini")
         assert callable(summarizer)

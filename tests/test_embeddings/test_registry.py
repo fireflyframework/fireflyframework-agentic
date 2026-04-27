@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.embeddings.base import BaseEmbedder
-from fireflyframework_genai.embeddings.registry import EmbedderRegistry
+from fireflyframework_agentic.embeddings.base import BaseEmbedder
+from fireflyframework_agentic.embeddings.registry import EmbedderRegistry
 
 
 class _FakeEmbedder(BaseEmbedder):

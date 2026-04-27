@@ -25,8 +25,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from fireflyframework_genai.exceptions import DatabaseConnectionError, DatabaseStoreError
-from fireflyframework_genai.memory.types import MemoryEntry, MemoryScope
+from fireflyframework_agentic.exceptions import DatabaseConnectionError, DatabaseStoreError
+from fireflyframework_agentic.memory.types import MemoryEntry, MemoryScope
 
 
 @pytest.fixture
@@ -77,7 +77,7 @@ class TestMongoDBStore:
 
     async def test_import_error_without_motor(self):
         """Test that helpful error is raised when motor is not installed."""
-        from fireflyframework_genai.memory.database_store import MongoDBStore
+        from fireflyframework_agentic.memory.database_store import MongoDBStore
 
         store = MongoDBStore(url="mongodb://test")
 
@@ -89,7 +89,7 @@ class TestMongoDBStore:
 
     async def test_connection_failure(self):
         """Test handling of connection failures."""
-        from fireflyframework_genai.memory.database_store import MongoDBStore
+        from fireflyframework_agentic.memory.database_store import MongoDBStore
 
         store = MongoDBStore(url="mongodb://invalid:27017/")
 
@@ -103,7 +103,7 @@ class TestMongoDBStore:
 
     async def test_initialize_creates_indexes(self, mock_motor_client):
         """Test that initialize creates indexes."""
-        from fireflyframework_genai.memory.database_store import MongoDBStore
+        from fireflyframework_agentic.memory.database_store import MongoDBStore
 
         client, db, collection, _ = mock_motor_client
         store = MongoDBStore(url="mongodb://test")
@@ -116,7 +116,7 @@ class TestMongoDBStore:
 
     async def test_save_entry(self, mock_motor_client):
         """Test saving a memory entry."""
-        from fireflyframework_genai.memory.database_store import MongoDBStore
+        from fireflyframework_agentic.memory.database_store import MongoDBStore
 
         client, db, collection, _ = mock_motor_client
         store = MongoDBStore(url="mongodb://test")
@@ -139,7 +139,7 @@ class TestMongoDBStore:
 
     async def test_load_entries(self, mock_motor_client):
         """Test loading entries from a namespace."""
-        from fireflyframework_genai.memory.database_store import MongoDBStore
+        from fireflyframework_agentic.memory.database_store import MongoDBStore
 
         client, db, collection, cursor = mock_motor_client
         store = MongoDBStore(url="mongodb://test")
@@ -158,7 +158,7 @@ class TestMongoDBStore:
 
     async def test_load_filters_expired(self, mock_motor_client):
         """Test that load filters out expired entries."""
-        from fireflyframework_genai.memory.database_store import MongoDBStore
+        from fireflyframework_agentic.memory.database_store import MongoDBStore
 
         client, db, collection, cursor = mock_motor_client
         store = MongoDBStore(url="mongodb://test")
@@ -176,7 +176,7 @@ class TestMongoDBStore:
 
     async def test_load_by_key(self, mock_motor_client):
         """Test loading a specific entry by key."""
-        from fireflyframework_genai.memory.database_store import MongoDBStore
+        from fireflyframework_agentic.memory.database_store import MongoDBStore
 
         client, db, collection, _ = mock_motor_client
         store = MongoDBStore(url="mongodb://test")
@@ -195,7 +195,7 @@ class TestMongoDBStore:
 
     async def test_load_by_key_not_found(self, mock_motor_client):
         """Test loading non-existent key returns None."""
-        from fireflyframework_genai.memory.database_store import MongoDBStore
+        from fireflyframework_agentic.memory.database_store import MongoDBStore
 
         client, db, collection, _ = mock_motor_client
         store = MongoDBStore(url="mongodb://test")
@@ -211,7 +211,7 @@ class TestMongoDBStore:
 
     async def test_delete_entry(self, mock_motor_client):
         """Test deleting an entry."""
-        from fireflyframework_genai.memory.database_store import MongoDBStore
+        from fireflyframework_agentic.memory.database_store import MongoDBStore
 
         client, db, collection, _ = mock_motor_client
         store = MongoDBStore(url="mongodb://test")
@@ -230,7 +230,7 @@ class TestMongoDBStore:
 
     async def test_clear_namespace(self, mock_motor_client):
         """Test clearing all entries in a namespace."""
-        from fireflyframework_genai.memory.database_store import MongoDBStore
+        from fireflyframework_agentic.memory.database_store import MongoDBStore
 
         client, db, collection, _ = mock_motor_client
         store = MongoDBStore(url="mongodb://test")
@@ -248,7 +248,7 @@ class TestMongoDBStore:
 
     async def test_cleanup_expired(self, mock_motor_client):
         """Test cleanup of expired entries."""
-        from fireflyframework_genai.memory.database_store import MongoDBStore
+        from fireflyframework_agentic.memory.database_store import MongoDBStore
 
         client, db, collection, _ = mock_motor_client
         store = MongoDBStore(url="mongodb://test")
@@ -269,7 +269,7 @@ class TestMongoDBStore:
 
     async def test_close_connection(self, mock_motor_client):
         """Test closing the MongoDB connection."""
-        from fireflyframework_genai.memory.database_store import MongoDBStore
+        from fireflyframework_agentic.memory.database_store import MongoDBStore
 
         client, _, _, _ = mock_motor_client
         store = MongoDBStore(url="mongodb://test")
@@ -288,7 +288,7 @@ class TestMongoDBStore:
         within an already-running event loop.  Instead of calling them
         directly we verify they delegate to the async implementations.
         """
-        from fireflyframework_genai.memory.database_store import MongoDBStore
+        from fireflyframework_agentic.memory.database_store import MongoDBStore
 
         client, db, collection, cursor = mock_motor_client
         store = MongoDBStore(url="mongodb://test")

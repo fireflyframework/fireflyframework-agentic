@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from fireflyframework_genai.tools.builtins.http import HTTPX_AVAILABLE, HttpTool
+from fireflyframework_agentic.tools.builtins.http import HTTPX_AVAILABLE, HttpTool
 
 
 @pytest.fixture

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from fireflyframework_genai.pipeline.builder import PipelineBuilder
-from fireflyframework_genai.pipeline.context import PipelineContext
-from fireflyframework_genai.pipeline.steps import (
+from fireflyframework_agentic.pipeline.builder import PipelineBuilder
+from fireflyframework_agentic.pipeline.context import PipelineContext
+from fireflyframework_agentic.pipeline.steps import (
     CallableStep,
     FanInStep,
     FanOutStep,

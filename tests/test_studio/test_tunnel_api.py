@@ -23,7 +23,7 @@ pytest.importorskip("httpx", reason="httpx not installed")
 
 import httpx
 
-from fireflyframework_genai.studio.server import create_studio_app
+from fireflyframework_agentic.studio.server import create_studio_app
 
 
 @pytest.fixture()
@@ -65,14 +65,14 @@ class TestTunnelAPI:
 
 class TestExposeCLI:
     def test_expose_parser(self):
-        from fireflyframework_genai.studio.cli import parse_args
+        from fireflyframework_agentic.studio.cli import parse_args
 
         args = parse_args(["expose", "--port", "9000"])
         assert args.command == "expose"
         assert args.port == 9000
 
     def test_expose_parser_default_port(self):
-        from fireflyframework_genai.studio.cli import parse_args
+        from fireflyframework_agentic.studio.cli import parse_args
 
         args = parse_args(["expose"])
         assert args.command == "expose"

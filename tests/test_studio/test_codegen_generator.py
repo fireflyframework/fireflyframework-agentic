@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.studio.codegen.generator import generate_python
-from fireflyframework_genai.studio.codegen.models import (
+from fireflyframework_agentic.studio.codegen.generator import generate_python
+from fireflyframework_agentic.studio.codegen.models import (
     GraphEdge,
     GraphModel,
     GraphNode,
@@ -147,9 +147,9 @@ class TestPipelineGeneration:
         )
         code = generate_python(graph)
 
-        assert "from fireflyframework_genai.agents.base import FireflyAgent" in code
-        assert "from fireflyframework_genai.pipeline.builder import PipelineBuilder" in code
-        assert "from fireflyframework_genai.pipeline.steps import AgentStep" in code
+        assert "from fireflyframework_agentic.agents.base import FireflyAgent" in code
+        assert "from fireflyframework_agentic.pipeline.builder import PipelineBuilder" in code
+        assert "from fireflyframework_agentic.pipeline.steps import AgentStep" in code
 
     def test_multiple_edges(self) -> None:
         graph = GraphModel(

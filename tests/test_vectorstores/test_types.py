@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.vectorstores.types import (
+from fireflyframework_agentic.vectorstores.types import (
     SearchFilter,
     SearchResult,
     VectorDocument,

@@ -30,7 +30,7 @@ import asyncio
 from _common import MODEL, ensure_api_key
 from pydantic import BaseModel
 
-from fireflyframework_genai.agents.templates import create_extractor_agent
+from fireflyframework_agentic.agents.templates import create_extractor_agent
 
 
 class ContactInfo(BaseModel):

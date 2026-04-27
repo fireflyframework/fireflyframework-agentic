@@ -15,7 +15,7 @@
 
 """Distributed tracing with W3C Trace Context propagation.
 
-This example demonstrates how Firefly GenAI automatically propagates trace
+This example demonstrates how Firefly Agentic automatically propagates trace
 context across service boundaries using the W3C Trace Context standard.
 
 Features demonstrated:
@@ -33,7 +33,7 @@ Prerequisites:
          jaegertracing/all-in-one:latest
 
     2. Set environment variables:
-       export FIREFLY_GENAI_OTLP_ENDPOINT=http://localhost:4317
+       export FIREFLY_AGENTIC_OTLP_ENDPOINT=http://localhost:4317
        export OPENAI_API_KEY=sk-...
 
     3. View traces at: http://localhost:16686
@@ -46,9 +46,9 @@ import asyncio
 
 from opentelemetry import trace
 
-from fireflyframework_genai.agents.base import FireflyAgent
-from fireflyframework_genai.config import get_config
-from fireflyframework_genai.observability.tracer import (
+from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.config import get_config
+from fireflyframework_agentic.observability.tracer import (
     default_tracer,
     extract_trace_context,
     inject_trace_context,
@@ -163,7 +163,7 @@ async def main() -> None:
         print("✓ View at: http://localhost:16686")
     else:
         print("\n⚠ No OTLP endpoint configured - traces will be console-only")
-        print("Set FIREFLY_GENAI_OTLP_ENDPOINT=http://localhost:4317 to enable Jaeger")
+        print("Set FIREFLY_AGENTIC_OTLP_ENDPOINT=http://localhost:4317 to enable Jaeger")
 
     # Start distributed trace
     tracer = trace.get_tracer(__name__)
@@ -205,7 +205,7 @@ async def main() -> None:
     print("View Trace in Jaeger")
     print("=" * 70)
     print("1. Open http://localhost:16686")
-    print("2. Select 'fireflyframework_genai' service")
+    print("2. Select 'fireflyframework_agentic' service")
     print("3. Click 'Find Traces'")
     print(f"4. Look for trace ID: {root_context.trace_id:032x}")
     print("5. Click the trace to see the full span hierarchy:")

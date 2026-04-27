@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 
-from fireflyframework_genai.agents.cache import ResultCache
+from fireflyframework_agentic.agents.cache import ResultCache
 
 
 class TestResultCache:

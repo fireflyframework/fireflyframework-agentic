@@ -16,11 +16,11 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.observability.usage import UsageRecord, default_usage_tracker
-from fireflyframework_genai.pipeline.context import PipelineContext
-from fireflyframework_genai.pipeline.dag import DAG, DAGNode
-from fireflyframework_genai.pipeline.engine import PipelineEngine
-from fireflyframework_genai.pipeline.result import NodeResult, PipelineResult
+from fireflyframework_agentic.observability.usage import UsageRecord, default_usage_tracker
+from fireflyframework_agentic.pipeline.context import PipelineContext
+from fireflyframework_agentic.pipeline.dag import DAG, DAGNode
+from fireflyframework_agentic.pipeline.engine import PipelineEngine
+from fireflyframework_agentic.pipeline.result import NodeResult, PipelineResult
 
 
 class _EchoStep:

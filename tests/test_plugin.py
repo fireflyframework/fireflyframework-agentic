@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.plugin import (
+from fireflyframework_agentic.plugin import (
     DiscoveredPlugin,
     DiscoveryResult,
     PluginDiscovery,
@@ -30,7 +30,7 @@ class TestDiscoveryResult:
 class TestPluginDiscovery:
     def test_discover_group_returns_list(self) -> None:
         # No actual plugins installed, but the API should work
-        results = PluginDiscovery.discover_group("fireflyframework_genai.agents")
+        results = PluginDiscovery.discover_group("fireflyframework_agentic.agents")
         assert isinstance(results, list)
 
     def test_discover_all_returns_result(self) -> None:

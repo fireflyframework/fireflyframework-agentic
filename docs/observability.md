@@ -29,7 +29,7 @@ flowchart TD
 creating spans with GenAI-specific attributes (model name, token counts, agent name).
 
 ```python
-from fireflyframework_genai.observability import FireflyTracer
+from fireflyframework_agentic.observability import FireflyTracer
 
 tracer = FireflyTracer(service_name="my-genai-app")
 
@@ -44,7 +44,7 @@ For convenience, the `@traced` decorator automatically creates a span around any
 function call:
 
 ```python
-from fireflyframework_genai.observability import traced
+from fireflyframework_agentic.observability import traced
 
 @traced(name="process_request")
 async def process_request(prompt: str) -> str:
@@ -59,7 +59,7 @@ across service boundaries (HTTP, message queues, pipelines).
 **Trace Context Functions:**
 
 ```python
-from fireflyframework_genai.observability.tracer import inject_trace_context, extract_trace_context
+from fireflyframework_agentic.observability.tracer import inject_trace_context, extract_trace_context
 
 # Inject trace context into HTTP headers
 headers = {}
@@ -82,7 +82,7 @@ The framework's REST API automatically propagates trace context:
 ```python
 # Middleware injects trace context into responses
 # and extracts from incoming requests
-from fireflyframework_genai.exposure.rest.middleware import add_trace_propagation_middleware
+from fireflyframework_agentic.exposure.rest.middleware import add_trace_propagation_middleware
 
 add_trace_propagation_middleware(app)
 ```
@@ -93,7 +93,7 @@ Message queue consumers/producers automatically propagate trace context:
 
 ```python
 # Kafka example - trace context in message headers
-from fireflyframework_genai.exposure.queues.kafka import KafkaConsumer
+from fireflyframework_agentic.exposure.queues.kafka import KafkaConsumer
 
 consumer = KafkaConsumer(
     topic="requests",
@@ -107,7 +107,7 @@ consumer = KafkaConsumer(
 Traces flow through pipeline steps via `PipelineContext.correlation_id`:
 
 ```python
-from fireflyframework_genai.pipeline.context import PipelineContext
+from fireflyframework_agentic.pipeline.context import PipelineContext
 
 # Create context with correlation ID for trace linking
 context = PipelineContext(
@@ -127,7 +127,7 @@ result = await pipeline.run(context)
 measurements.
 
 ```python
-from fireflyframework_genai.observability import FireflyMetrics
+from fireflyframework_agentic.observability import FireflyMetrics
 
 metrics = FireflyMetrics(service_name="my-genai-app")
 metrics.increment("agent.invocations", labels={"agent": "writer"})
@@ -137,7 +137,7 @@ metrics.record_histogram("agent.latency_ms", 142.5, labels={"agent": "writer"})
 ### The @metered Decorator
 
 ```python
-from fireflyframework_genai.observability import metered
+from fireflyframework_agentic.observability import metered
 
 @metered(name="agent_call")
 async def call_agent(prompt: str) -> str:
@@ -152,7 +152,7 @@ async def call_agent(prompt: str) -> str:
 occurrences: agent started, tool invoked, reasoning step completed, error encountered.
 
 ```python
-from fireflyframework_genai.observability import FireflyEvents
+from fireflyframework_agentic.observability import FireflyEvents
 
 events = FireflyEvents()
 events.emit("agent.started", {"agent": "writer", "model": "gpt-4o"})
@@ -166,7 +166,7 @@ The `configure_exporters` function sets up OpenTelemetry exporters based on the
 framework's configuration:
 
 ```python
-from fireflyframework_genai.observability import configure_exporters
+from fireflyframework_agentic.observability import configure_exporters
 
 configure_exporters(
     otlp_endpoint="http://localhost:4317",
@@ -187,7 +187,7 @@ The `UsageTracker` automatically records token usage, cost estimates, and latenc
 for every agent run, reasoning pattern step, and pipeline execution.
 
 ```python
-from fireflyframework_genai.observability import default_usage_tracker
+from fireflyframework_agentic.observability import default_usage_tracker
 
 # After running agents, inspect accumulated usage
 summary = default_usage_tracker.get_summary()
@@ -207,12 +207,12 @@ are retained in memory. When the limit is exceeded, the oldest records are
 evicted (FIFO). This prevents unbounded memory growth in long-running services.
 
 ```python
-from fireflyframework_genai.observability.usage import UsageTracker
+from fireflyframework_agentic.observability.usage import UsageTracker
 
 tracker = UsageTracker(max_records=5_000)
 ```
 
-The default `max_records` is controlled by the `FIREFLY_GENAI_USAGE_TRACKER_MAX_RECORDS`
+The default `max_records` is controlled by the `FIREFLY_AGENTIC_USAGE_TRACKER_MAX_RECORDS`
 environment variable (default: `10_000`). Set to `0` for unlimited retention
 (not recommended for production).
 
@@ -242,13 +242,13 @@ Two cost calculator implementations are provided:
   exact match, prefix match (e.g. `openai:gpt-4o-2024-08-06` matches `openai:gpt-4o`),
   and **cross-provider alias matching** for proxy providers.
 - **`GenAIPricesCostCalculator`** — delegates to the optional `genai-prices` package
-  for up-to-date pricing data. Install with `pip install fireflyframework-genai[costs]`.
+  for up-to-date pricing data. Install with `pip install fireflyframework-agentic[costs]`.
 
 The `get_cost_calculator()` factory selects the best available calculator based on
-the `FIREFLY_GENAI_COST_CALCULATOR` setting (`"auto"`, `"static"`, or `"genai_prices"`).
+the `FIREFLY_AGENTIC_COST_CALCULATOR` setting (`"auto"`, `"static"`, or `"genai_prices"`).
 
 ```python
-from fireflyframework_genai.observability import get_cost_calculator
+from fireflyframework_agentic.observability import get_cost_calculator
 
 calc = get_cost_calculator()
 cost = calc.estimate("openai:gpt-4o", input_tokens=1000, output_tokens=500)
@@ -276,8 +276,8 @@ routes the request to the underlying model.
 Configure budget thresholds via environment variables:
 
 ```bash
-export FIREFLY_GENAI_BUDGET_ALERT_THRESHOLD_USD=5.00
-export FIREFLY_GENAI_BUDGET_LIMIT_USD=10.00
+export FIREFLY_AGENTIC_BUDGET_ALERT_THRESHOLD_USD=5.00
+export FIREFLY_AGENTIC_BUDGET_LIMIT_USD=10.00
 ```
 
 When cumulative cost exceeds the alert threshold, a `WARNING` is logged.
@@ -287,7 +287,7 @@ Budget checking runs automatically on every `UsageTracker.record()` call.
 To disable cost tracking entirely:
 
 ```bash
-export FIREFLY_GENAI_COST_TRACKING_ENABLED=false
+export FIREFLY_AGENTIC_COST_TRACKING_ENABLED=false
 ```
 
 ---
@@ -298,7 +298,7 @@ The `QuotaManager` provides production-grade quota enforcement with rate limitin
 daily budget caps, and adaptive backoff for 429 rate limit responses.
 
 ```python
-from fireflyframework_genai.observability.quota import QuotaManager
+from fireflyframework_agentic.observability.quota import QuotaManager
 
 quota = QuotaManager(
     daily_budget_usd=100.0,
@@ -327,7 +327,7 @@ quota.record_request("openai:gpt-4o", cost_usd=0.05, tokens=1500)
 `RateLimiter` implements a **sliding window** algorithm for precise rate limiting:
 
 ```python
-from fireflyframework_genai.observability.quota import RateLimiter
+from fireflyframework_agentic.observability.quota import RateLimiter
 
 limiter = RateLimiter(max_requests=60, window_seconds=60.0)
 
@@ -345,7 +345,7 @@ The sliding window ensures accurate rate limiting without bursts at window bound
 `AdaptiveBackoff` automatically increases retry delays for 429 responses:
 
 ```python
-from fireflyframework_genai.observability.quota import AdaptiveBackoff
+from fireflyframework_agentic.observability.quota import AdaptiveBackoff
 
 backoff = AdaptiveBackoff(
     base_delay=1.0, # Start at 1 second
@@ -376,21 +376,21 @@ The retry loop:
 4. Uses `AdaptiveBackoff` for exponential delay with jitter
 5. Resets backoff on success
 
-Configuration via environment variables or `FireflyGenAIConfig`:
+Configuration via environment variables or `FireflyAgenticConfig`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `FIREFLY_GENAI_RATE_LIMIT_MAX_RETRIES` | `3` | Max retry attempts for 429 errors |
-| `FIREFLY_GENAI_RATE_LIMIT_BASE_DELAY` | `1.0` | Base delay in seconds |
-| `FIREFLY_GENAI_RATE_LIMIT_MAX_DELAY` | `60.0` | Maximum delay between retries |
+| `FIREFLY_AGENTIC_RATE_LIMIT_MAX_RETRIES` | `3` | Max retry attempts for 429 errors |
+| `FIREFLY_AGENTIC_RATE_LIMIT_BASE_DELAY` | `1.0` | Base delay in seconds |
+| `FIREFLY_AGENTIC_RATE_LIMIT_MAX_DELAY` | `60.0` | Maximum delay between retries |
 
 ```python
-from fireflyframework_genai.config import get_config, reset_config
+from fireflyframework_agentic.config import get_config, reset_config
 import os
 
 # Configure via environment
-os.environ["FIREFLY_GENAI_RATE_LIMIT_MAX_RETRIES"] = "5"
-os.environ["FIREFLY_GENAI_RATE_LIMIT_BASE_DELAY"] = "2.0"
+os.environ["FIREFLY_AGENTIC_RATE_LIMIT_MAX_RETRIES"] = "5"
+os.environ["FIREFLY_AGENTIC_RATE_LIMIT_BASE_DELAY"] = "2.0"
 reset_config()  # Pick up new values
 
 # Or read current config
@@ -408,21 +408,21 @@ When disabled, each agent creates a standalone backoff tracker.
 
 ```bash
 # Enable quota management (default: true)
-export FIREFLY_GENAI_QUOTA_ENABLED=true
+export FIREFLY_AGENTIC_QUOTA_ENABLED=true
 
 # Set daily budget cap
-export FIREFLY_GENAI_QUOTA_BUDGET_DAILY_USD=100.0
+export FIREFLY_AGENTIC_QUOTA_BUDGET_DAILY_USD=100.0
 
 # Configure per-model rate limits (JSON)
-export FIREFLY_GENAI_QUOTA_RATE_LIMITS='{"openai:gpt-4o": 60, "anthropic:claude-opus-4": 50}'
+export FIREFLY_AGENTIC_QUOTA_RATE_LIMITS='{"openai:gpt-4o": 60, "anthropic:claude-opus-4": 50}'
 
 # Enable adaptive backoff (default: true)
-export FIREFLY_GENAI_QUOTA_ADAPTIVE_BACKOFF=true
+export FIREFLY_AGENTIC_QUOTA_ADAPTIVE_BACKOFF=true
 
 # Rate limit retry settings
-export FIREFLY_GENAI_RATE_LIMIT_MAX_RETRIES=3
-export FIREFLY_GENAI_RATE_LIMIT_BASE_DELAY=1.0
-export FIREFLY_GENAI_RATE_LIMIT_MAX_DELAY=60.0
+export FIREFLY_AGENTIC_RATE_LIMIT_MAX_RETRIES=3
+export FIREFLY_AGENTIC_RATE_LIMIT_BASE_DELAY=1.0
+export FIREFLY_AGENTIC_RATE_LIMIT_MAX_DELAY=60.0
 ```
 
 ### Integration with Agents
@@ -430,8 +430,8 @@ export FIREFLY_GENAI_RATE_LIMIT_MAX_DELAY=60.0
 Quota enforcement can be integrated via middleware or direct checks:
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.agents.builtin_middleware import CostGuardMiddleware
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.agents.builtin_middleware import CostGuardMiddleware
 
 # Budget enforcement via middleware
 agent = FireflyAgent(
@@ -463,7 +463,7 @@ with `timestamp`, `level`, `logger`, and `message` fields.
 Enable JSON logging with the `format_style` parameter:
 
 ```python
-from fireflyframework_genai import configure_logging
+from fireflyframework_agentic import configure_logging
 
 configure_logging("INFO", format_style="json")
 ```
@@ -471,13 +471,13 @@ configure_logging("INFO", format_style="json")
 Example output:
 
 ```json
-{"timestamp": "2026-01-15T10:30:00+00:00", "level": "INFO", "logger": "fireflyframework_genai.agents.base", "message": "run agent='writer' prompt='Write a...'"}
+{"timestamp": "2026-01-15T10:30:00+00:00", "level": "INFO", "logger": "fireflyframework_agentic.agents.base", "message": "run agent='writer' prompt='Write a...'"}
 ```
 
 The `JsonFormatter` class can also be used standalone with any Python logger:
 
 ```python
-from fireflyframework_genai.logging import JsonFormatter
+from fireflyframework_agentic.logging import JsonFormatter
 import logging
 
 handler = logging.StreamHandler()

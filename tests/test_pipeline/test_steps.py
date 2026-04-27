@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.pipeline.context import PipelineContext
-from fireflyframework_genai.pipeline.dag import DAG, DAGEdge, DAGNode
-from fireflyframework_genai.pipeline.engine import PipelineEngine
-from fireflyframework_genai.pipeline.steps import BranchStep
+from fireflyframework_agentic.pipeline.context import PipelineContext
+from fireflyframework_agentic.pipeline.dag import DAG, DAGEdge, DAGNode
+from fireflyframework_agentic.pipeline.engine import PipelineEngine
+from fireflyframework_agentic.pipeline.steps import BranchStep
 
 
 class _EchoStep:
@@ -67,6 +67,6 @@ class TestBranchStep:
         assert result.outputs["right_node"].skipped is True
 
     def test_branch_step_import_from_package(self):
-        from fireflyframework_genai.pipeline import BranchStep as BranchStepAlias
+        from fireflyframework_agentic.pipeline import BranchStep as BranchStepAlias
 
         assert BranchStepAlias is BranchStep

@@ -1,6 +1,6 @@
 # Firefly Studio
 
-**Visual agent IDE for the Firefly GenAI framework.**
+**Visual agent IDE for the Firefly Agentic framework.**
 
 Firefly Studio is a browser-based development environment for building,
 testing, and debugging GenAI agent pipelines. It provides a visual canvas
@@ -48,13 +48,13 @@ Firefly Studio is included in the `[studio]` extra:
 
 ```bash
 # Install with Studio support
-pip install "fireflyframework-genai[studio]"
+pip install "fireflyframework-agentic[studio]"
 
 # Or with UV
-uv add "fireflyframework-genai[studio]"
+uv add "fireflyframework-agentic[studio]"
 
 # Or install everything
-pip install "fireflyframework-genai[all]"
+pip install "fireflyframework-agentic[all]"
 ```
 
 The `[studio]` extra installs:
@@ -88,7 +88,7 @@ so no Node.js is required when installing from PyPI.
 firefly studio
 
 # Or from Python
-python -c "from fireflyframework_genai.studio import launch_studio; launch_studio()"
+python -c "from fireflyframework_agentic.studio import launch_studio; launch_studio()"
 ```
 
 Studio starts at `http://127.0.0.1:8470` by default and opens your browser.
@@ -371,7 +371,7 @@ change (debounced by 800ms).
 ### Generated Code Structure
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
+from fireflyframework_agentic.agents import FireflyAgent
 
 # Agent definitions
 agent_1 = FireflyAgent(
@@ -381,7 +381,7 @@ agent_1 = FireflyAgent(
 )
 
 # Pipeline (when edges exist)
-from fireflyframework_genai.pipeline.builder import PipelineBuilder
+from fireflyframework_agentic.pipeline.builder import PipelineBuilder
 
 pipeline = (
     PipelineBuilder("studio-pipeline")
@@ -420,7 +420,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 GOOGLE_API_KEY=...
 ```
 
-The assistant uses the framework's default model (`FIREFLY_GENAI_DEFAULT_MODEL`).
+The assistant uses the framework's default model (`FIREFLY_AGENTIC_DEFAULT_MODEL`).
 
 ### Canvas Tools
 
@@ -807,7 +807,7 @@ POST /api/codegen/to-code
 #### Response
 
 ```json
-{"code": "from fireflyframework_genai.agents import FireflyAgent\n..."}
+{"code": "from fireflyframework_agentic.agents import FireflyAgent\n..."}
 ```
 
 ### Files
@@ -957,7 +957,7 @@ The desktop build is automated via `.github/workflows/desktop.yml`:
 ### Launch Studio from Python
 
 ```python
-from fireflyframework_genai.studio import launch_studio
+from fireflyframework_agentic.studio import launch_studio
 
 # Starts the server and opens the browser
 launch_studio()
@@ -966,8 +966,8 @@ launch_studio()
 ### Embed the Studio App
 
 ```python
-from fireflyframework_genai.studio.config import StudioConfig
-from fireflyframework_genai.studio.server import create_studio_app
+from fireflyframework_agentic.studio.config import StudioConfig
+from fireflyframework_agentic.studio.server import create_studio_app
 
 # Create a configured app instance
 config = StudioConfig(port=9000, open_browser=False)
@@ -981,8 +981,8 @@ uvicorn.run(app, host="0.0.0.0", port=9000)
 ### Use Studio with Custom Projects Directory
 
 ```python
-from fireflyframework_genai.studio.config import StudioConfig
-from fireflyframework_genai.studio.server import create_studio_app
+from fireflyframework_agentic.studio.config import StudioConfig
+from fireflyframework_agentic.studio.server import create_studio_app
 
 config = StudioConfig(projects_dir="/data/my-studio-projects")
 app = create_studio_app(config=config)
@@ -992,7 +992,7 @@ app = create_studio_app(config=config)
 
 ```python
 from pathlib import Path
-from fireflyframework_genai.studio.projects import ProjectManager
+from fireflyframework_agentic.studio.projects import ProjectManager
 
 manager = ProjectManager(Path("/data/projects"))
 

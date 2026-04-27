@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fireflyframework_genai.embeddings.providers.mistral import MistralEmbedder
-from fireflyframework_genai.embeddings.types import EmbeddingResult
+from fireflyframework_agentic.embeddings.providers.mistral import MistralEmbedder
+from fireflyframework_agentic.embeddings.types import EmbeddingResult
 
 
 class TestMistralEmbedder:
-    @patch("fireflyframework_genai.embeddings.providers.mistral.Mistral")
+    @patch("fireflyframework_agentic.embeddings.providers.mistral.Mistral")
     async def test_embed_batch(self, mock_client_cls):
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
@@ -28,7 +28,7 @@ class TestMistralEmbedder:
         assert len(result.embeddings) == 2
         assert result.model == "mistral-embed"
 
-    @patch("fireflyframework_genai.embeddings.providers.mistral.Mistral")
+    @patch("fireflyframework_agentic.embeddings.providers.mistral.Mistral")
     async def test_embed_one(self, mock_client_cls):
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
@@ -43,7 +43,7 @@ class TestMistralEmbedder:
         assert isinstance(vec, list)
         assert len(vec) == 3
 
-    @patch("fireflyframework_genai.embeddings.providers.mistral.Mistral")
+    @patch("fireflyframework_agentic.embeddings.providers.mistral.Mistral")
     def test_default_model(self, mock_client_cls):
         embedder = MistralEmbedder()
         assert embedder.model == "mistral-embed"

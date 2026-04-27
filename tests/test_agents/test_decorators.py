@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pydantic_ai.models.test import TestModel
 
-from fireflyframework_genai.agents.base import FireflyAgent
-from fireflyframework_genai.agents.decorators import firefly_agent
-from fireflyframework_genai.agents.registry import agent_registry
+from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.agents.decorators import firefly_agent
+from fireflyframework_agentic.agents.registry import agent_registry
 
 
 class TestFireflyAgentDecorator:

@@ -20,7 +20,7 @@ import pytest
 
 pytest.importorskip("uvicorn", reason="uvicorn not installed")
 
-from fireflyframework_genai.studio.cli import main, parse_args
+from fireflyframework_agentic.studio.cli import main, parse_args
 
 # ---------------------------------------------------------------------------
 # parse_args — defaults

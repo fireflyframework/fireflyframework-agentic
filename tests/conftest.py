@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Shared test fixtures for the fireflyframework-genai test suite."""
+"""Shared test fixtures for the fireflyframework-agentic test suite."""
 
 from __future__ import annotations
 
@@ -22,9 +22,9 @@ import pytest
 @pytest.fixture(autouse=True)
 def _clear_registries():
     """Reset global registries between tests to avoid cross-test contamination."""
-    from fireflyframework_genai.agents.registry import agent_registry
-    from fireflyframework_genai.reasoning.registry import reasoning_registry
-    from fireflyframework_genai.tools.registry import tool_registry
+    from fireflyframework_agentic.agents.registry import agent_registry
+    from fireflyframework_agentic.reasoning.registry import reasoning_registry
+    from fireflyframework_agentic.tools.registry import tool_registry
 
     agent_registry._agents.clear()
     tool_registry.clear()

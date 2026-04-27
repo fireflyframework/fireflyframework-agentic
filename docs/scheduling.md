@@ -13,7 +13,7 @@ cron jobs with timezone support and optional payload injection.
 APScheduler is included in the Studio extras:
 
 ```bash
-pip install "fireflyframework-genai[studio]"
+pip install "fireflyframework-agentic[studio]"
 ```
 
 If APScheduler is not installed, the runtime logs a warning and skips
@@ -172,7 +172,7 @@ curl http://localhost:8470/api/projects/my-project/runtime/status
 
 | Issue | Solution |
 |---|---|
-| "apscheduler not installed" warning | Install with `pip install "fireflyframework-genai[studio]"` |
+| "apscheduler not installed" warning | Install with `pip install "fireflyframework-agentic[studio]"` |
 | Schedule not firing | Check that the runtime is started and `scheduler_active: true` |
 | Wrong time | Verify the timezone setting matches your expectation |
 | Pipeline errors on scheduled run | Check the console tab or execution history for error details |

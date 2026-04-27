@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 
-from fireflyframework_genai.studio.execution.checkpoint import (
+from fireflyframework_agentic.studio.execution.checkpoint import (
     Checkpoint,
     CheckpointManager,
 )

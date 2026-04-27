@@ -18,9 +18,9 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from fireflyframework_genai.agents.base import FireflyAgent
-from fireflyframework_genai.config import reset_config
-from fireflyframework_genai.observability.usage import UsageTracker
+from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.config import reset_config
+from fireflyframework_agentic.observability.usage import UsageTracker
 
 
 class _FakeUsage:
@@ -56,7 +56,7 @@ class TestAgentRecordUsage:
         fake_result = _FakeResult(usage=_FakeUsage(input_tokens=100, output_tokens=50, total_tokens=150))
 
         with patch(
-            "fireflyframework_genai.observability.usage.default_usage_tracker",
+            "fireflyframework_agentic.observability.usage.default_usage_tracker",
             tracker,
         ):
             agent._record_usage(fake_result, 42.0)
@@ -74,7 +74,7 @@ class TestAgentRecordUsage:
         fake_result = _FakeResult(usage=_FakeUsage(total_tokens=50))
 
         with patch(
-            "fireflyframework_genai.observability.usage.default_usage_tracker",
+            "fireflyframework_agentic.observability.usage.default_usage_tracker",
             tracker,
         ):
             agent._record_usage(fake_result, 10.0, correlation_id="pipe-123")
@@ -90,7 +90,7 @@ class TestAgentRecordUsage:
         fake_result = _FakeResult(usage=_FakeUsage(input_tokens=1000, output_tokens=500, total_tokens=1500))
 
         with patch(
-            "fireflyframework_genai.observability.usage.default_usage_tracker",
+            "fireflyframework_agentic.observability.usage.default_usage_tracker",
             tracker,
         ):
             agent._record_usage(fake_result, 100.0)
@@ -100,7 +100,7 @@ class TestAgentRecordUsage:
         assert records[0].cost_usd > 0  # cost should be calculated
 
     def test_record_usage_disabled(self, monkeypatch):
-        monkeypatch.setenv("FIREFLY_GENAI_COST_TRACKING_ENABLED", "false")
+        monkeypatch.setenv("FIREFLY_AGENTIC_COST_TRACKING_ENABLED", "false")
         reset_config()
 
         agent = FireflyAgent(name="disabled-test", model="test", auto_register=False)
@@ -108,7 +108,7 @@ class TestAgentRecordUsage:
         fake_result = _FakeResult()
 
         with patch(
-            "fireflyframework_genai.observability.usage.default_usage_tracker",
+            "fireflyframework_agentic.observability.usage.default_usage_tracker",
             tracker,
         ):
             agent._record_usage(fake_result, 10.0)
@@ -125,7 +125,7 @@ class TestAgentRecordUsage:
             output = "hi"
 
         with patch(
-            "fireflyframework_genai.observability.usage.default_usage_tracker",
+            "fireflyframework_agentic.observability.usage.default_usage_tracker",
             tracker,
         ):
             agent._record_usage(_NoUsageResult(), 10.0)
@@ -138,7 +138,7 @@ class TestAgentRecordUsage:
         fake_result = _FakeResult(usage=_FakeUsage(total_tokens=10))
 
         with patch(
-            "fireflyframework_genai.observability.usage.default_usage_tracker",
+            "fireflyframework_agentic.observability.usage.default_usage_tracker",
             tracker,
         ):
             agent._record_usage(fake_result, 5.0)

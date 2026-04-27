@@ -19,11 +19,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from fireflyframework_genai.memory import MemoryManager
-from fireflyframework_genai.reasoning.chain_of_thought import ChainOfThoughtPattern
-from fireflyframework_genai.reasoning.models import ReasoningThought, ReflectionVerdict
-from fireflyframework_genai.reasoning.pipeline import ReasoningPipeline
-from fireflyframework_genai.reasoning.reflexion import ReflexionPattern
+from fireflyframework_agentic.memory import MemoryManager
+from fireflyframework_agentic.reasoning.chain_of_thought import ChainOfThoughtPattern
+from fireflyframework_agentic.reasoning.models import ReasoningThought, ReflectionVerdict
+from fireflyframework_agentic.reasoning.pipeline import ReasoningPipeline
+from fireflyframework_agentic.reasoning.reflexion import ReflexionPattern
 
 
 @dataclass

@@ -1,4 +1,4 @@
-# Pre-commit hooks for fireflyframework-genai.
+# Pre-commit hooks for fireflyframework-agentic.
 #
 # Install once per clone:
 #   uv sync --extra dev
@@ -17,7 +17,7 @@ fail_fast: false
 exclude: |
   (?x)^(
     studio-desktop/frontend-dist/.*|
-    src/fireflyframework_genai/studio/static/.*
+    src/fireflyframework_agentic/studio/static/.*
   )$
 
 repos:

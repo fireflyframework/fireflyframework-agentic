@@ -16,8 +16,8 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.prompts.registry import prompt_registry
-from fireflyframework_genai.reasoning.prompts import (
+from fireflyframework_agentic.prompts.registry import prompt_registry
+from fireflyframework_agentic.reasoning.prompts import (
     _ALL_TEMPLATES,
     COT_STEP_PROMPT,
     GOAL_DECOMPOSE_PROMPT,

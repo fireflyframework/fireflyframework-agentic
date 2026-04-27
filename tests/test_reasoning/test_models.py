@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.reasoning.models import (
+from fireflyframework_agentic.reasoning.models import (
     BranchEvaluation,
     GoalDecompositionResult,
     GoalPhase,

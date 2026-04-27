@@ -1,4 +1,4 @@
-# Contributing to fireflyframework-genai
+# Contributing to fireflyframework-agentic
 
 Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
 
@@ -21,8 +21,8 @@ for submitting changes.
 ### Setup
 
 ```bash
-git clone https://github.com/fireflyframework/fireflyframework-genai.git
-cd fireflyframework-genai
+git clone https://github.com/fireflyframework/fireflyframework-agentic.git
+cd fireflyframework-agentic
 uv sync --all-extras
 ```
 
@@ -32,7 +32,7 @@ for REST, Kafka, RabbitMQ, and Redis.
 ### Building the Studio Frontend (source installs only)
 
 The Studio frontend is a SvelteKit SPA that lives in `studio-frontend/` and is
-served by FastAPI from `src/fireflyframework_genai/studio/static/`. The published
+served by FastAPI from `src/fireflyframework_agentic/studio/static/`. The published
 wheel includes a pre-built bundle, but a fresh `git clone` does **not** — running
 `firefly studio` against an unbuilt source tree returns `{"detail":"Not Found"}`
 on every page.
@@ -56,7 +56,7 @@ uv run pytest
 To generate a coverage report:
 
 ```bash
-uv run pytest --cov=fireflyframework_genai --cov-report=term-missing
+uv run pytest --cov=fireflyframework_agentic --cov-report=term-missing
 ```
 
 ### Linting
@@ -114,7 +114,7 @@ Imports are organised into three groups, separated by blank lines:
 
 1. Standard library
 2. Third-party packages
-3. Internal (`fireflyframework_genai`) modules
+3. Internal (`fireflyframework_agentic`) modules
 
 Ruff isort rules enforce this automatically.
 

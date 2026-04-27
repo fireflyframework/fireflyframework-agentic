@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.embeddings.base import BaseEmbedder
-from fireflyframework_genai.exceptions import VectorStoreError
-from fireflyframework_genai.vectorstores.base import BaseVectorStore, VectorStoreProtocol
-from fireflyframework_genai.vectorstores.types import SearchResult, VectorDocument
+from fireflyframework_agentic.embeddings.base import BaseEmbedder
+from fireflyframework_agentic.exceptions import VectorStoreError
+from fireflyframework_agentic.vectorstores.base import BaseVectorStore, VectorStoreProtocol
+from fireflyframework_agentic.vectorstores.types import SearchResult, VectorDocument
 
 
 class _FakeEmbedder(BaseEmbedder):

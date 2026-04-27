@@ -16,10 +16,10 @@
 
 <#
 .SYNOPSIS
-    Interactive uninstaller for fireflyframework-genai.
+    Interactive uninstaller for fireflyframework-agentic.
 
 .DESCRIPTION
-    Removes fireflyframework-genai with interactive confirmation, package
+    Removes fireflyframework-agentic with interactive confirmation, package
     detection, and optional cleanup of cached files and artifacts.
 
 .PARAMETER NonInteractive
@@ -31,7 +31,7 @@
 .EXAMPLE
     .\uninstall.ps1
     .\uninstall.ps1 -NonInteractive
-    irm https://raw.githubusercontent.com/fireflyframework/fireflyframework-genai/main/uninstall.ps1 | iex
+    irm https://raw.githubusercontent.com/fireflyframework/fireflyframework-agentic/main/uninstall.ps1 | iex
 #>
 
 [CmdletBinding()]
@@ -45,8 +45,8 @@ $ErrorActionPreference = "Stop"
 # ── Constants ────────────────────────────────────────────────────────────────
 
 $script:VERSION = "26.01.01"
-$script:PACKAGE = "fireflyframework-genai"
-$script:PACKAGE_IMPORT = "fireflyframework_genai"
+$script:PACKAGE = "fireflyframework-agentic"
+$script:PACKAGE_IMPORT = "fireflyframework_agentic"
 
 # ── State ────────────────────────────────────────────────────────────────────
 
@@ -83,7 +83,7 @@ function Show-Banner {
     Write-Host " \______  /\___  >___|  /\____|__  /__|" -ForegroundColor Cyan
     Write-Host "        \/     \/     \/         \/" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  fireflyframework-genai" -ForegroundColor White -NoNewline
+    Write-Host "  fireflyframework-agentic" -ForegroundColor White -NoNewline
     Write-Host " Uninstaller" -ForegroundColor DarkGray
     Write-Host "  Copyright 2026 Firefly Software Solutions Inc. Apache License 2.0." -ForegroundColor DarkGray
     Write-Host ""
@@ -282,17 +282,17 @@ function Show-Farewell {
     Write-Host ""
     Write-Host "  ╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Green
     Write-Host "  ║" -ForegroundColor Green -NoNewline
-    Write-Host "  fireflyframework-genai" -ForegroundColor White -NoNewline
+    Write-Host "  fireflyframework-agentic" -ForegroundColor White -NoNewline
     Write-Host " has been uninstalled.                " -NoNewline
     Write-Host "║" -ForegroundColor Green
     Write-Host "  ╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Green
     Write-Host ""
-    Write-Info "Thank you for using fireflyframework-genai!"
+    Write-Info "Thank you for using fireflyframework-agentic!"
     Write-Host ""
     Write-Host "  Reinstall anytime:" -ForegroundColor DarkGray
-    Write-Host "  irm https://raw.githubusercontent.com/fireflyframework/fireflyframework-genai/main/install.ps1 | iex" -ForegroundColor White
+    Write-Host "  irm https://raw.githubusercontent.com/fireflyframework/fireflyframework-agentic/main/install.ps1 | iex" -ForegroundColor White
     Write-Host ""
-    Write-Host "  Repository:  https://github.com/fireflyframework/fireflyframework-genai" -ForegroundColor DarkGray
+    Write-Host "  Repository:  https://github.com/fireflyframework/fireflyframework-agentic" -ForegroundColor DarkGray
     Write-Host ""
 }
 

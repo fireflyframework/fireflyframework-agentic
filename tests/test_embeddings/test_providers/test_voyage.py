@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fireflyframework_genai.embeddings.providers.voyage import VoyageEmbedder
-from fireflyframework_genai.embeddings.types import EmbeddingResult
+from fireflyframework_agentic.embeddings.providers.voyage import VoyageEmbedder
+from fireflyframework_agentic.embeddings.types import EmbeddingResult
 
 
 class TestVoyageEmbedder:
-    @patch("fireflyframework_genai.embeddings.providers.voyage.voyageai")
+    @patch("fireflyframework_agentic.embeddings.providers.voyage.voyageai")
     async def test_embed_batch(self, mock_voyageai):
         mock_client = MagicMock()
         mock_voyageai.AsyncClient.return_value = mock_client
@@ -25,7 +25,7 @@ class TestVoyageEmbedder:
         assert len(result.embeddings) == 2
         assert result.model == "voyage-3"
 
-    @patch("fireflyframework_genai.embeddings.providers.voyage.voyageai")
+    @patch("fireflyframework_agentic.embeddings.providers.voyage.voyageai")
     async def test_embed_one(self, mock_voyageai):
         mock_client = MagicMock()
         mock_voyageai.AsyncClient.return_value = mock_client
@@ -40,7 +40,7 @@ class TestVoyageEmbedder:
         assert isinstance(vec, list)
         assert len(vec) == 3
 
-    @patch("fireflyframework_genai.embeddings.providers.voyage.voyageai")
+    @patch("fireflyframework_agentic.embeddings.providers.voyage.voyageai")
     def test_default_model(self, mock_voyageai):
         embedder = VoyageEmbedder()
         assert embedder.model == "voyage-3"

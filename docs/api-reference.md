@@ -163,7 +163,7 @@ Each returns an array of `{"name": "...", "description": "..."}` objects.
 }
 ```
 
-**Response**: `{"code": "from fireflyframework_genai.agents import FireflyAgent\n..."}`
+**Response**: `{"code": "from fireflyframework_agentic.agents import FireflyAgent\n..."}`
 
 ---
 

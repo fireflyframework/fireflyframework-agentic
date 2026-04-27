@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.agents.lifecycle import AgentLifecycle
+from fireflyframework_agentic.agents.lifecycle import AgentLifecycle
 
 
 class TestAgentLifecycle:

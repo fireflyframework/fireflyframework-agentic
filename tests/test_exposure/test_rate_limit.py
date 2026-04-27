@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.exposure.rest.middleware import RateLimiter
+from fireflyframework_agentic.exposure.rest.middleware import RateLimiter
 
 
 class TestRateLimiter:

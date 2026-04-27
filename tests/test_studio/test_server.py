@@ -25,7 +25,7 @@ pytest.importorskip("httpx", reason="httpx not installed")
 
 import httpx
 
-from fireflyframework_genai.studio.server import create_studio_app
+from fireflyframework_agentic.studio.server import create_studio_app
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -64,7 +64,7 @@ class TestHealthEndpoint:
     async def test_health_returns_version(self, client: httpx.AsyncClient):
         resp = await client.get("/api/health")
         body = resp.json()
-        expected_version = importlib.metadata.version("fireflyframework-genai")
+        expected_version = importlib.metadata.version("fireflyframework-agentic")
         assert body["version"] == expected_version
 
 
@@ -133,11 +133,11 @@ class TestAppFactory:
 
     def test_create_studio_app_has_package_version(self):
         app = create_studio_app()
-        expected_version = importlib.metadata.version("fireflyframework-genai")
+        expected_version = importlib.metadata.version("fireflyframework-agentic")
         assert app.version == expected_version
 
     def test_create_studio_app_accepts_custom_config(self):
-        from fireflyframework_genai.studio.config import StudioConfig
+        from fireflyframework_agentic.studio.config import StudioConfig
 
         config = StudioConfig(_env_file=None, port=9999)
         app = create_studio_app(config=config)

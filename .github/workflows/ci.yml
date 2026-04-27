@@ -103,7 +103,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: frontend-dist
-          path: src/fireflyframework_genai/studio/static/
+          path: src/fireflyframework_agentic/studio/static/
       - run: uv run pytest --cov --cov-report=term-missing
 
   build:

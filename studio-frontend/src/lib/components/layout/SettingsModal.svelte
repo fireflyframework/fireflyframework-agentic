@@ -787,7 +787,7 @@
 								</div>
 								<div class="about-row">
 									<span class="about-label">Framework</span>
-									<span class="about-value">Firefly Framework GenAI</span>
+									<span class="about-value">Firefly Framework Agentic</span>
 								</div>
 								<div class="about-row">
 									<span class="about-label">Backend</span>

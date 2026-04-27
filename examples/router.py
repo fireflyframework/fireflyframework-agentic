@@ -29,7 +29,7 @@ import asyncio
 
 from _common import MODEL, ensure_api_key
 
-from fireflyframework_genai.agents.templates import create_router_agent
+from fireflyframework_agentic.agents.templates import create_router_agent
 
 REQUESTS = [
     "I was charged twice for my last order.",

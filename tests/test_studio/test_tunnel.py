@@ -21,7 +21,7 @@ from unittest.mock import patch
 
 import pytest
 
-from fireflyframework_genai.studio.tunnel import TunnelManager
+from fireflyframework_agentic.studio.tunnel import TunnelManager
 
 
 class TestTunnelManager:

@@ -16,8 +16,8 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.experiments.experiment import Experiment
-from fireflyframework_genai.experiments.variant import Variant
+from fireflyframework_agentic.experiments.experiment import Experiment
+from fireflyframework_agentic.experiments.variant import Variant
 
 
 class TestExperiment:

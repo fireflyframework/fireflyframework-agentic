@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.embeddings.base import BaseEmbedder
-from fireflyframework_genai.embeddings.types import EmbeddingResult
-from fireflyframework_genai.pipeline.context import PipelineContext
-from fireflyframework_genai.pipeline.steps import EmbeddingStep, RetrievalStep
-from fireflyframework_genai.vectorstores.memory_store import InMemoryVectorStore
-from fireflyframework_genai.vectorstores.types import VectorDocument
+from fireflyframework_agentic.embeddings.base import BaseEmbedder
+from fireflyframework_agentic.embeddings.types import EmbeddingResult
+from fireflyframework_agentic.pipeline.context import PipelineContext
+from fireflyframework_agentic.pipeline.steps import EmbeddingStep, RetrievalStep
+from fireflyframework_agentic.vectorstores.memory_store import InMemoryVectorStore
+from fireflyframework_agentic.vectorstores.types import VectorDocument
 
 
 class _FakeEmbedder(BaseEmbedder):

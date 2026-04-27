@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.observability.metrics import FireflyMetrics
+from fireflyframework_agentic.observability.metrics import FireflyMetrics
 
 
 class TestFireflyMetrics:

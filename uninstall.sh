@@ -16,12 +16,12 @@
 set -euo pipefail
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  fireflyframework-genai — Interactive Uninstaller
+#  fireflyframework-agentic — Interactive Uninstaller
 # ══════════════════════════════════════════════════════════════════════════════
 
 readonly VERSION="26.01.01"
-readonly PACKAGE="fireflyframework-genai"
-readonly PACKAGE_IMPORT="fireflyframework_genai"
+readonly PACKAGE="fireflyframework-agentic"
+readonly PACKAGE_IMPORT="fireflyframework_agentic"
 readonly TOTAL_STEPS=4
 
 # ── Installer state ──────────────────────────────────────────────────────────
@@ -355,9 +355,9 @@ print_farewell() {
     info "Thank you for using ${PACKAGE}!"
     printf "\n"
     printf "  %sReinstall anytime:%s\n" "$DIM" "$RESET"
-    printf "  curl -fsSL https://raw.githubusercontent.com/fireflyframework/fireflyframework-genai/main/install.sh | bash\n"
+    printf "  curl -fsSL https://raw.githubusercontent.com/fireflyframework/fireflyframework-agentic/main/install.sh | bash\n"
     printf "\n"
-    printf "  %sRepository:%s  https://github.com/fireflyframework/fireflyframework-genai\n\n" "$DIM" "$RESET"
+    printf "  %sRepository:%s  https://github.com/fireflyframework/fireflyframework-agentic\n\n" "$DIM" "$RESET"
 }
 
 # ══════════════════════════════════════════════════════════════════════════════

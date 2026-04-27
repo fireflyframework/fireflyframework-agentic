@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.observability.decorators import metered, traced
+from fireflyframework_agentic.observability.decorators import metered, traced
 
 
 class TestTracedDecorator:

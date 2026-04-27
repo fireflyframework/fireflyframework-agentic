@@ -21,17 +21,17 @@ from typing import Any
 
 import pytest
 
-from fireflyframework_genai.memory import MemoryManager
-from fireflyframework_genai.reasoning.base import AbstractReasoningPattern
-from fireflyframework_genai.reasoning.chain_of_thought import ChainOfThoughtPattern
-from fireflyframework_genai.reasoning.models import (
+from fireflyframework_agentic.memory import MemoryManager
+from fireflyframework_agentic.reasoning.base import AbstractReasoningPattern
+from fireflyframework_agentic.reasoning.chain_of_thought import ChainOfThoughtPattern
+from fireflyframework_agentic.reasoning.models import (
     BranchEvaluation,
     ReasoningThought,
     ReflectionVerdict,
 )
-from fireflyframework_genai.reasoning.react import ReActPattern
-from fireflyframework_genai.reasoning.reflexion import ReflexionPattern
-from fireflyframework_genai.reasoning.tree_of_thoughts import TreeOfThoughtsPattern
+from fireflyframework_agentic.reasoning.react import ReActPattern
+from fireflyframework_agentic.reasoning.reflexion import ReflexionPattern
+from fireflyframework_agentic.reasoning.tree_of_thoughts import TreeOfThoughtsPattern
 
 
 @dataclass
@@ -216,19 +216,19 @@ class TestResolveModel:
 
 class TestProtocolConformance:
     def test_cot_is_reasoning_pattern(self):
-        from fireflyframework_genai.reasoning.base import ReasoningPattern
+        from fireflyframework_agentic.reasoning.base import ReasoningPattern
 
         pattern = ChainOfThoughtPattern(max_steps=3)
         assert isinstance(pattern, ReasoningPattern)
 
     def test_react_is_reasoning_pattern(self):
-        from fireflyframework_genai.reasoning.base import ReasoningPattern
+        from fireflyframework_agentic.reasoning.base import ReasoningPattern
 
         pattern = ReActPattern(max_steps=3)
         assert isinstance(pattern, ReasoningPattern)
 
     def test_reflexion_is_reasoning_pattern(self):
-        from fireflyframework_genai.reasoning.base import ReasoningPattern
+        from fireflyframework_agentic.reasoning.base import ReasoningPattern
 
         pattern = ReflexionPattern(max_steps=3)
         assert isinstance(pattern, ReasoningPattern)
@@ -237,7 +237,7 @@ class TestProtocolConformance:
 class TestStepLimitError:
     async def test_cot_exceeds_max_steps(self):
         """Pattern should raise ReasoningStepLimitError when max_steps exceeded."""
-        from fireflyframework_genai.exceptions import ReasoningStepLimitError
+        from fireflyframework_agentic.exceptions import ReasoningStepLimitError
 
         # Always non-final thoughts → will exhaust max_steps
         agent = MockAgent([ReasoningThought(content=f"step {i}") for i in range(10)])

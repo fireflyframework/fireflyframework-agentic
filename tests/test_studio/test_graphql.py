@@ -26,8 +26,8 @@ pytest.importorskip("httpx", reason="httpx not installed")
 
 import httpx  # noqa: E402
 
-from fireflyframework_genai.studio.config import StudioConfig  # noqa: E402
-from fireflyframework_genai.studio.server import create_studio_app  # noqa: E402
+from fireflyframework_agentic.studio.config import StudioConfig  # noqa: E402
+from fireflyframework_agentic.studio.server import create_studio_app  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -209,14 +209,14 @@ class TestGraphQLFallback:
         # Need to reimport to trigger the fallback path
         from importlib import reload
 
-        import fireflyframework_genai.studio.api.graphql_api as gql_mod
+        import fireflyframework_agentic.studio.api.graphql_api as gql_mod
 
         reload(gql_mod)
 
         import tempfile
         from pathlib import Path
 
-        from fireflyframework_genai.studio.projects import ProjectManager
+        from fireflyframework_agentic.studio.projects import ProjectManager
 
         with tempfile.TemporaryDirectory() as td:
             pm = ProjectManager(Path(td))

@@ -31,9 +31,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from fireflyframework_genai.prompts.template import PromptTemplate, PromptVariable
-from fireflyframework_genai.tools import ToolKit, firefly_tool
-from fireflyframework_genai.validation.rules import (
+from fireflyframework_agentic.prompts.template import PromptTemplate, PromptVariable
+from fireflyframework_agentic.tools import ToolKit, firefly_tool
+from fireflyframework_agentic.validation.rules import (
     CustomRule,
     EnumRule,
     OutputValidator,
