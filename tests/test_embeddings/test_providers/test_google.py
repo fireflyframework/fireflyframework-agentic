@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from fireflyframework_genai.embeddings.providers.google import GoogleEmbedder
-from fireflyframework_genai.embeddings.types import EmbeddingResult
+from fireflyframework_agentic.embeddings.providers.google import GoogleEmbedder
+from fireflyframework_agentic.embeddings.types import EmbeddingResult
 
 
 class TestGoogleEmbedder:
-    @patch("fireflyframework_genai.embeddings.providers.google.genai")
+    @patch("fireflyframework_agentic.embeddings.providers.google.genai")
     async def test_embed_batch(self, mock_genai):
         mock_genai.embed_content.return_value = {"embedding": [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]}
 
@@ -20,7 +20,7 @@ class TestGoogleEmbedder:
         assert len(result.embeddings) == 2
         assert result.model == "models/text-embedding-004"
 
-    @patch("fireflyframework_genai.embeddings.providers.google.genai")
+    @patch("fireflyframework_agentic.embeddings.providers.google.genai")
     async def test_embed_one(self, mock_genai):
         mock_genai.embed_content.return_value = {"embedding": [[0.1, 0.2, 0.3]]}
 
@@ -30,12 +30,12 @@ class TestGoogleEmbedder:
         assert isinstance(vec, list)
         assert len(vec) == 3
 
-    @patch("fireflyframework_genai.embeddings.providers.google.genai")
+    @patch("fireflyframework_agentic.embeddings.providers.google.genai")
     def test_default_model(self, mock_genai):
         embedder = GoogleEmbedder()
         assert embedder.model == "models/text-embedding-004"
 
-    @patch("fireflyframework_genai.embeddings.providers.google.genai")
+    @patch("fireflyframework_agentic.embeddings.providers.google.genai")
     def test_configure_with_api_key(self, mock_genai):
         GoogleEmbedder(api_key="test-key")
         mock_genai.configure.assert_called_once_with(api_key="test-key")
