@@ -1036,22 +1036,12 @@ replacement. The backend CORS middleware allows this origin.
 
 ### Build for Production
 
-The recommended path is the helper script at the repository root, which
-runs `npm install` (if needed), builds the SPA, and copies the output into
-the Python package's `static/` directory in one step:
-
 ```bash
 uv run python scripts/build_studio.py
 ```
 
-Equivalent manual steps:
-
-```bash
-cd studio-frontend
-npm install
-npm run build
-cp -r build/* ../src/fireflyframework_genai/studio/static/
-```
+Runs `npm install` (if needed), builds the SPA, and copies the output
+into the Python package's `static/` directory.
 
 ### Tech Stack
 
