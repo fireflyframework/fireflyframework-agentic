@@ -65,8 +65,19 @@ The `[studio]` extra installs:
 | `uvicorn[standard]` | ASGI server |
 | `httpx` | HTTP client for internal API calls |
 
-The Studio frontend is pre-built and bundled inside the Python package.
-No Node.js is required to run Studio.
+The Studio frontend is pre-built and bundled inside the published wheel,
+so no Node.js is required when installing from PyPI.
+
+> **Running from a source checkout?** The git repository does **not** ship
+> the built frontend. After cloning, build it once with:
+>
+> ```bash
+> uv run python scripts/build_studio.py
+> ```
+>
+> Without this step, `firefly studio` will return `{"detail":"Not Found"}`
+> for every page. See [Frontend Development](#frontend-development) for
+> details and the [Contributing guide](../CONTRIBUTING.md) for full setup.
 
 ---
 
@@ -1025,14 +1036,21 @@ replacement. The backend CORS middleware allows this origin.
 
 ### Build for Production
 
+The recommended path is the helper script at the repository root, which
+runs `npm install` (if needed), builds the SPA, and copies the output into
+the Python package's `static/` directory in one step:
+
 ```bash
-npm run build
+uv run python scripts/build_studio.py
 ```
 
-Output goes to `studio-frontend/build/`. Copy to the Python package:
+Equivalent manual steps:
 
 ```bash
-cp -r studio-frontend/build/* src/fireflyframework_genai/studio/static/
+cd studio-frontend
+npm install
+npm run build
+cp -r build/* ../src/fireflyframework_genai/studio/static/
 ```
 
 ### Tech Stack
