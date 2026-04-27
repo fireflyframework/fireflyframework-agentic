@@ -1,3 +1,15 @@
+# Pre-commit hooks for fireflyframework-genai.
+#
+# Install once per clone:
+#   uv sync --extra dev
+#   uv run pre-commit install
+#
+# Run manually on the whole repo:
+#   uv run pre-commit run --all-files
+#
+# Update hook versions:
+#   uv run pre-commit autoupdate
+
 minimum_pre_commit_version: "3.8.0"
 fail_fast: false
 
