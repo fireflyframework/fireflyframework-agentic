@@ -251,6 +251,23 @@ CREATE VIRTUAL TABLE nodes_fts USING fts5(
 -- `text` from `key`, `properties->>'$.description'`, and the joined
 -- `properties->>'$.aliases'` array.
 
+-- Symmetric FTS over edge properties (e.g. WORKS_AT.role, BPMN flow conditions,
+-- relation descriptions). Lets queries like "list all CEOs" match across
+-- "CEO" / "Chief Executive Officer" / "chief executive" in one call.
+CREATE VIRTUAL TABLE edges_fts USING fts5(
+  source_doc_id  UNINDEXED,
+  label          UNINDEXED,
+  source_label   UNINDEXED,
+  source_key     UNINDEXED,
+  target_label   UNINDEXED,
+  target_key     UNINDEXED,
+  text,                                            -- materialised from properties (role + condition + description)
+  tokenize='unicode61 remove_diacritics 2'
+);
+
+-- Triggers (implementation-time): AFTER INSERT/UPDATE/DELETE on `edges`
+-- maintain `edges_fts.text` from the joined string content of edge properties.
+
 CREATE TABLE ingestions (
   doc_id              TEXT PRIMARY KEY,
   source_path         TEXT NOT NULL,
@@ -346,6 +363,13 @@ other forms found in the same document as `aliases`. The graph mapper stores
 `aliases` as a JSON property on the node; the FTS5 trigger then materialises both
 the canonical name and aliases into the searchable `text` column, so a fuzzy query
 for `"Sam"` retrieves the canonical `"Sam Altman"` node.
+
+The prompt also nudges the LLM toward canonical short forms for common employment
+roles ("CEO" rather than "Chief Executive Officer", "CTO" rather than "Chief
+Technology Officer", "VP" rather than "Vice President"). This is soft normalization
+without an enforced enum — original phrasings are kept when qualitatively distinct.
+`edges_fts` (section 5.3) handles whatever long-form variations remain at query
+time.
 
 **Within-doc disambiguation only.** Cross-doc resolution (the same human extracted
 from two different documents under different formal names) is a V2 feature — see
@@ -487,13 +511,20 @@ Both API keys read from the environment or a `.env` file (matching the recent
 
 ## 10. V2 trajectory (out of scope; noted only)
 
-- **Q&A agent** over `(graph, vectors, FTS)` using `anthropic:claude-sonnet-4-6` with
-  tool-use. Hybrid retrieval combines:
-  - `nodes_fts MATCH ...` for fuzzy keyword lookup over node names, aliases, and
-    descriptions (V1 already builds this index);
-  - Chroma chunk-vector search for semantic similarity;
-  - graph traversal via `idx_edges_endpoints` / `idx_edges_endpoints_reverse` for
-    multi-hop relations.
+- **Q&A / query agent** over `(graph, vectors, FTS)` using
+  `anthropic:claude-sonnet-4-6` with tool-use. Likely architecture: a small set of
+  typed retrieval tools (`find_entity`, `find_relations`, `neighbors`,
+  `chunk_search`) backed by FTS5, the endpoint indexes, and Chroma; a raw-SQL
+  escape hatch for novel queries; and a result-blending layer. V1 ships **no** NL
+  query interface — direct SQL via `graph_store.query()` or `sqlite3` is the V1
+  surface for retrieving data. The FTS and index additions in V1 are precisely the
+  substrate this agent needs.
+- **Canonical role vocabulary** for the Person extractor — a closed set of
+  ~30 normalised employment roles (C-suite, founders, directors, VPs, ICs, board
+  positions) plus an LLM normalization pass at ingest that maps free-text titles
+  to a canonical entry while preserving the original as `role_text`. Adds an
+  indexed `role_canonical` column on `WORKS_AT` for instant strict filtering.
+  Replaces V1's fuzzy-at-query approach with structured-at-ingest precision.
 - **Cross-document entity resolution.** V1 disambiguates only within a single
   document — "Sam Altman" in Doc A and "Samuel Altman" in Doc B remain separate
   `Person` nodes. V2 adds a resolution pass at ingest or as a periodic batch:
