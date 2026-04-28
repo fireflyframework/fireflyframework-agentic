@@ -106,3 +106,30 @@ async def test_upsert_nodes_replaces_on_conflict(store: SqliteGraphStore):
 
     junction = await store.query("SELECT chunk_id FROM node_chunks WHERE source_doc_id='d'")
     assert {r["chunk_id"] for r in junction} == {"c2"}
+
+
+from fireflyframework_agentic.graphstores import Edge
+
+
+async def test_upsert_edges_writes_rows_and_fts(store: SqliteGraphStore):
+    edges = [
+        Edge(
+            label="WORKS_AT",
+            source_label="Person",
+            source_key="sam-altman",
+            target_label="Organization",
+            target_key="openai",
+            properties={"role": "Chief Executive Officer", "start": "2019"},
+            source_doc_id="doc-1",
+            extractor_name="person",
+        ),
+    ]
+    await store.upsert_edges(edges)
+    rows = await store.query("SELECT * FROM edges WHERE source_doc_id='doc-1'")
+    assert len(rows) == 1
+    assert rows[0]["label"] == "WORKS_AT"
+    fts = await store.query(
+        "SELECT * FROM edges_fts WHERE edges_fts MATCH :q",
+        {"q": '"chief executive"'},
+    )
+    assert len(fts) == 1
