@@ -29,8 +29,9 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import os
 
-from _common import MODEL, ensure_api_key
+from dotenv import load_dotenv
 
 from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.agents.delegation import (
@@ -41,9 +42,12 @@ from fireflyframework_agentic.agents.delegation import (
     RoundRobinStrategy,
 )
 
+load_dotenv()
+
+MODEL = os.environ["MODEL"]
+
 
 async def main() -> None:
-    ensure_api_key()
 
     # Create specialised agents with different models and tags
     translator = FireflyAgent(

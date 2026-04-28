@@ -26,11 +26,16 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import os
 
-from _common import MODEL, ensure_api_key
+from dotenv import load_dotenv
 from pydantic import BaseModel
 
 from fireflyframework_agentic.agents.templates import create_extractor_agent
+
+load_dotenv()
+
+MODEL = os.environ["MODEL"]
 
 
 class ContactInfo(BaseModel):
@@ -51,7 +56,6 @@ discussing the partnership proposal.
 
 
 async def main() -> None:
-    ensure_api_key()
 
     agent = create_extractor_agent(
         ContactInfo,

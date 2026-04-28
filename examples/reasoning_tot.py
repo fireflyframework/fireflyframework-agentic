@@ -27,15 +27,19 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import os
 
-from _common import MODEL, ensure_api_key
+from dotenv import load_dotenv
 
 from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.reasoning import TreeOfThoughtsPattern
 
+load_dotenv()
+
+MODEL = os.environ["MODEL"]
+
 
 async def main() -> None:
-    ensure_api_key()
 
     agent = FireflyAgent(name="tot-agent", model=MODEL)
     pattern = TreeOfThoughtsPattern(branching_factor=3, max_depth=1, model=MODEL)

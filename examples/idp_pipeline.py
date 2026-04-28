@@ -44,11 +44,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import re
 import sys
 from typing import Any
 
-from _common import MODEL, ensure_api_key
+from dotenv import load_dotenv
 from idp_tools import (
     DOCUMENT_TYPE_DESCRIPTIONS,
     DOCUMENT_TYPES,
@@ -84,6 +85,10 @@ from fireflyframework_agentic.reasoning import ReflexionPattern
 from fireflyframework_agentic.tools.cached import CachedTool
 from fireflyframework_agentic.validation.qos import GroundingChecker
 from fireflyframework_agentic.validation.reviewer import OutputReviewer
+
+load_dotenv()
+
+MODEL = os.environ["MODEL"]
 
 # ── ANSI colour helpers ─────────────────────────────────────────────────────
 _USE_COLOR = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
@@ -1128,7 +1133,6 @@ def build_pipeline():
 
 
 async def main() -> None:
-    ensure_api_key()
 
     print(f"{BOLD}{CYAN}{'=' * 70}{RESET}")
     print(f"{BOLD}  Intelligent Document Processing (IDP) Pipeline{RESET}")

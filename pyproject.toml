@@ -119,6 +119,7 @@ dev = [
     "httpx>=0.28.0",
     "pdfplumber>=0.11.0",
     "pre-commit>=3.8.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.urls]
