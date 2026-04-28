@@ -14,4 +14,4 @@
 
 """Version information for fireflyframework-agentic."""
 
-__version__ = "26.02.06"
+__version__ = "26.04.28"
