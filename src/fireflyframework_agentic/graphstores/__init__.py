@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from fireflyframework_agentic.graphstores.protocol import GraphStoreProtocol
 from fireflyframework_agentic.graphstores.types import Edge, Node
 
-__all__ = ["Edge", "Node"]
+__all__ = ["Edge", "GraphStoreProtocol", "Node"]
