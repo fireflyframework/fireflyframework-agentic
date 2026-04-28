@@ -236,6 +236,20 @@ CREATE INDEX idx_edges_doc                ON edges(source_doc_id);
 CREATE INDEX idx_edges_endpoints          ON edges(source_label, source_key, target_label, target_key);
 CREATE INDEX idx_edges_endpoints_reverse  ON edges(target_label, target_key, source_label, source_key);
 
+-- Junction table for fast bidirectional node <-> chunk lookup.
+-- node -> chunks is already cheap via the JSON `chunk_ids` array on `nodes`,
+-- but chunk -> nodes ("which entities were extracted from this chunk?") needs
+-- this table to avoid a full scan. Populated on every node upsert; cleared
+-- automatically when its node is deleted via `delete_by_doc_id`.
+CREATE TABLE node_chunks (
+  source_doc_id  TEXT NOT NULL,
+  label          TEXT NOT NULL,
+  key            TEXT NOT NULL,
+  chunk_id       TEXT NOT NULL,
+  PRIMARY KEY (chunk_id, source_doc_id, label, key)
+);
+CREATE INDEX idx_node_chunks_node ON node_chunks(source_doc_id, label, key);
+
 -- Full-text search over node names + descriptions + aliases for fuzzy keyword lookup.
 -- Auto-populated from `nodes` via triggers; uses unicode61 with diacritic stripping.
 CREATE VIRTUAL TABLE nodes_fts USING fts5(
@@ -511,11 +525,25 @@ Both API keys read from the environment or a `.env` file (matching the recent
 
 ## 10. V2 trajectory (out of scope; noted only)
 
-- **Q&A / query agent** over `(graph, vectors, FTS)` using
-  `anthropic:claude-sonnet-4-6` with tool-use. Likely architecture: a small set of
-  typed retrieval tools (`find_entity`, `find_relations`, `neighbors`,
-  `chunk_search`) backed by FTS5, the endpoint indexes, and Chroma; a raw-SQL
-  escape hatch for novel queries; and a result-blending layer. V1 ships **no** NL
+- **Hybrid retrieval Q&A / query agent** over `(graph, FTS, vectors)` using
+  `anthropic:claude-sonnet-4-6` with tool-use. The agent blends **three
+  complementary modalities** per query:
+  1. **Graph traversal** for structural questions (who works at X, neighbours of Y,
+     multi-hop relations) — backed by `idx_edges_endpoints` and
+     `idx_edges_endpoints_reverse`.
+  2. **FTS5 keyword/fuzzy** for spelling variants and aliases — backed by
+     `nodes_fts` and `edges_fts`.
+  3. **Vector semantic** for conceptual questions over chunk content — backed by
+     Chroma.
+
+  Cross-modality joins use the **`chunk_ids` provenance** that every node carries
+  plus the **`node_chunks` junction table**: from a graph node you fetch source
+  chunks, from a chunk hit you fetch the entities extracted from it. That bridge is
+  what makes results citable and lets vector hits enrich graph hits and vice
+  versa.
+
+  Likely tool surface: `find_entity`, `find_relations`, `neighbors`,
+  `chunk_search`, plus a raw-SQL escape hatch for novel queries. V1 ships **no** NL
   query interface — direct SQL via `graph_store.query()` or `sqlite3` is the V1
   surface for retrieving data. The FTS and index additions in V1 are precisely the
   substrate this agent needs.
