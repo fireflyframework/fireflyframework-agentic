@@ -21,10 +21,11 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from pathlib import Path
 
-from fireflyframework_agentic.prompts.template import PromptTemplate, PromptVariable
+import yaml
+
+from fireflyframework_agentic.prompts.template import PromptTemplate
 
 logger = logging.getLogger(__name__)
 
@@ -35,19 +36,19 @@ class PromptLoader:
     @staticmethod
     def from_string(
         name: str,
-        template_str: str,
+        system_template: str,
+        user_template: str,
         *,
         version: str = "1.0.0",
         description: str = "",
-        variables: Sequence[PromptVariable] = (),
     ) -> PromptTemplate:
         """Create a :class:`PromptTemplate` from an inline string."""
         return PromptTemplate(
             name,
-            template_str,
+            system_template=system_template,
+            user_template=user_template,
             version=version,
             description=description,
-            variables=variables,
         )
 
     @staticmethod
@@ -57,7 +58,6 @@ class PromptLoader:
         name: str | None = None,
         version: str = "1.0.0",
         description: str = "",
-        variables: Sequence[PromptVariable] = (),
     ) -> PromptTemplate:
         """Create a :class:`PromptTemplate` by reading a file.
 
@@ -65,15 +65,12 @@ class PromptLoader:
         extension).
         """
         file_path = Path(path)
-        template_str = file_path.read_text(encoding="utf-8")
-        resolved_name = name or file_path.stem
-        return PromptTemplate(
-            resolved_name,
-            template_str,
-            version=version,
-            description=description,
-            variables=variables,
-        )
+        with open(file_path) as f:
+            data = yaml.safe_load(f)
+        if name is None:
+            name = file_path.stem
+        logger.debug("Loaded prompt template '%s' from %s", name, file_path)
+        return PromptTemplate(**data)
 
     @staticmethod
     def from_directory(
@@ -92,5 +89,4 @@ class PromptLoader:
             if file_path.is_file():
                 template = PromptLoader.from_file(file_path, version=version)
                 templates.append(template)
-                logger.debug("Loaded prompt template '%s' from %s", template.name, file_path)
         return templates

@@ -26,6 +26,9 @@ import logging
 from fireflyframework_agentic.exceptions import PromptNotFoundError
 from fireflyframework_agentic.prompts.template import PromptInfo, PromptTemplate
 
+PROMPT_TEMPLATE_REGISTRY: PromptRegistry | None = None
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -83,5 +86,11 @@ class PromptRegistry:
         return name in self._latest
 
 
-# Module-level singleton
-prompt_registry = PromptRegistry()
+def get_prompt_registry() -> PromptRegistry:
+    global PROMPT_TEMPLATE_REGISTRY
+    if not PROMPT_TEMPLATE_REGISTRY:
+        PROMPT_TEMPLATE_REGISTRY = PromptRegistry()
+    return PROMPT_TEMPLATE_REGISTRY
+
+
+prompt_registry: PromptRegistry = get_prompt_registry()

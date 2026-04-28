@@ -33,18 +33,6 @@ from fireflyframework_agentic.types import Metadata
 # Shared Jinja2 environment with safe defaults
 _jinja_env = Environment(loader=BaseLoader(), autoescape=False, keep_trailing_newline=True)
 
-# Sentinel value to distinguish "no default" from ``default=None``.
-_UNSET = object()
-
-
-class PromptVariable(BaseModel):
-    """Describes a single variable expected by a prompt template."""
-
-    name: str
-    description: str = ""
-    required: bool = True
-    default: Any = _UNSET
-
 
 class PromptInfo(BaseModel):
     """Lightweight, serialisable summary of a registered prompt template."""
@@ -53,6 +41,21 @@ class PromptInfo(BaseModel):
     version: str
     variable_names: list[str] = []
     description: str = ""
+
+
+class Prompt(BaseModel):
+    system: str
+    user: str
+
+    def estimate_tokens(self) -> int:
+        """Rough token estimate based on whitespace-split word count / 0.75.
+
+        This is a heuristic approximation.  For accurate counts, integrate
+        a tokeniser (e.g. tiktoken) at the application level.
+        """
+        system_word_count = len(self.system.split())
+        user_word_count = len(self.user.split())
+        return int((system_word_count + user_word_count) / 0.75)
 
 
 class PromptTemplate:
@@ -70,54 +73,36 @@ class PromptTemplate:
     def __init__(
         self,
         name: str,
-        template_str: str,
+        system_template: str,
+        user_template: str,
         *,
         version: str = "1.0.0",
         description: str = "",
-        variables: Sequence[PromptVariable] = (),
+        required_variables: list[str] | None = None,
         metadata: Metadata | None = None,
     ) -> None:
-        self._name = name
-        self._template_str = template_str
-        self._version = version
-        self._description = description
-        self._variables = list(variables)
-        self._metadata: Metadata = metadata or {}
+        self.name = name
+        self.system_template = system_template
+        self.user_template = user_template
+        self.version = version
+        self.description = description
+        self.required_variables = required_variables or []
+        self.metadata = metadata
+        self._compiled = {}
 
         try:
-            self._compiled = _jinja_env.from_string(template_str)
+            if self.system_template:
+                self._compiled["system"] = _jinja_env.from_string(self.system_template)
+
+            if self.user_template:
+                self._compiled["user"] = _jinja_env.from_string(self.user_template)
+
         except TemplateSyntaxError as exc:
             raise PromptError(f"Invalid Jinja2 syntax in template '{name}': {exc}") from exc
 
-    # -- Properties ----------------------------------------------------------
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    @property
-    def version(self) -> str:
-        return self._version
-
-    @property
-    def description(self) -> str:
-        return self._description
-
-    @property
-    def template_str(self) -> str:
-        return self._template_str
-
-    @property
-    def variables(self) -> list[PromptVariable]:
-        return list(self._variables)
-
-    @property
-    def metadata(self) -> Metadata:
-        return self._metadata
-
     # -- Rendering -----------------------------------------------------------
 
-    def render(self, **kwargs: Any) -> str:
+    def render(self, **kwargs: Any) -> Prompt:
         """Render the template with the given variables.
 
         Applies defaults for missing optional variables, then delegates to
@@ -128,43 +113,29 @@ class PromptTemplate:
         """
         self.validate_variables(kwargs)
         # Apply defaults for optional variables not provided
-        merged = {}
-        for var in self._variables:
-            if var.name in kwargs:
-                merged[var.name] = kwargs[var.name]
-            elif var.default is not _UNSET:
-                merged[var.name] = var.default
-        # Include any extra kwargs not declared as variables
-        for k, v in kwargs.items():
-            if k not in merged:
-                merged[k] = v
-        return self._compiled.render(**merged)
+
+        return Prompt(
+            system=self._compiled["system"].render(**kwargs) if "system" in self._compiled else "",
+            user=self._compiled["user"].render(**kwargs) if "user" in self._compiled else "",
+        )
 
     def validate_variables(self, kwargs: dict[str, Any]) -> None:
         """Raise :class:`PromptValidationError` if required variables are missing."""
-        missing = [v.name for v in self._variables if v.required and v.name not in kwargs]
+        required = set(self.required_variables)
+        provided = set(kwargs.keys())
+        missing = required - provided
         if missing:
-            raise PromptValidationError(f"Template '{self._name}' is missing required variables: {', '.join(missing)}")
-
-    def estimate_tokens(self, **kwargs: Any) -> int:
-        """Rough token estimate based on whitespace-split word count / 0.75.
-
-        This is a heuristic approximation.  For accurate counts, integrate
-        a tokeniser (e.g. tiktoken) at the application level.
-        """
-        rendered = self.render(**kwargs) if kwargs else self._template_str
-        word_count = len(rendered.split())
-        return int(word_count / 0.75)
+            raise PromptValidationError(f"Template '{self.name}' is missing required variables: {', '.join(missing)}")
 
     # -- Info ----------------------------------------------------------------
 
     def info(self) -> PromptInfo:
         return PromptInfo(
-            name=self._name,
-            version=self._version,
-            variable_names=[v.name for v in self._variables],
-            description=self._description,
+            name=self.name,
+            version=self.version,
+            variable_names=list(self.required_variables),
+            description=self.description,
         )
 
     def __repr__(self) -> str:
-        return f"PromptTemplate(name={self._name!r}, version={self._version!r})"
+        return f"PromptTemplate(name={self.name!r}, version={self.version!r})"

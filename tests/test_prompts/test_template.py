@@ -16,28 +16,47 @@
 
 from __future__ import annotations
 
-from fireflyframework_agentic.prompts.template import PromptTemplate
+from pathlib import Path
+
+import pytest
+import yaml
+
+from fireflyframework_agentic import PromptError
+from fireflyframework_agentic.prompts.template import Prompt, PromptTemplate
 
 
-class TestPromptTemplate:
-    def test_render_simple(self):
-        template = PromptTemplate(
-            name="greet",
-            template_str="Hello, {{ name }}!",
-            version="1.0.0",
-        )
-        assert template.render(name="Alice") == "Hello, Alice!"
+@pytest.fixture
+def prompt():
+    path = Path(__file__).parent / "assets" / "valid" / "valid.yaml.j2"
+    with open(path) as f:
+        return yaml.safe_load(f)
 
-    def test_render_multiple_vars(self):
-        template = PromptTemplate(
-            name="intro",
-            template_str="{{ name }} is a {{ role }}.",
-            version="1.0.0",
-        )
-        result = template.render(name="Bob", role="developer")
-        assert result == "Bob is a developer."
 
-    def test_template_name_and_version(self):
-        template = PromptTemplate(name="t", template_str="x", version="2.0.0")
-        assert template.name == "t"
-        assert template.version == "2.0.0"
+def test_new_prompt_template(prompt):
+    template = PromptTemplate(**prompt)
+
+    assert template.name == "TestTemplate"
+    assert template.version == "1.0.0"
+    assert template.description == "A test template"
+    assert "You are a helpful assistant" in template.system_template
+    assert "{{ query }}" in template.user_template
+    assert template.required_variables == ["query"]
+    assert template.metadata == {"category": "test"}
+
+
+def test_prompt_template_render(prompt):
+    template = PromptTemplate(**prompt)
+    result = template.render(query="What is the weather?")
+
+    assert isinstance(result, Prompt)
+    assert result.system is not None
+    assert result.user is not None
+    assert "You are a helpful assistant" in result.system
+    assert "What is the weather?" in result.user
+
+
+def test_prompt_template_render_missing_variables(prompt):
+    template = PromptTemplate(**prompt)
+
+    with pytest.raises(PromptError, match="Template 'TestTemplate' is missing required variables: query"):
+        template.render()
