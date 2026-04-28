@@ -213,13 +213,14 @@ CREATE TABLE nodes (
   source_doc_id   TEXT NOT NULL,
   label           TEXT NOT NULL,
   key             TEXT NOT NULL,
-  properties      TEXT NOT NULL,                  -- JSON
+  properties      TEXT NOT NULL,                  -- JSON; includes 'aliases' array where applicable
   extractor_name  TEXT NOT NULL,
   chunk_ids       TEXT NOT NULL,                  -- JSON array
   PRIMARY KEY (source_doc_id, label, key)
 );
-CREATE INDEX idx_nodes_doc   ON nodes(source_doc_id);
-CREATE INDEX idx_nodes_label ON nodes(label);
+CREATE INDEX idx_nodes_doc       ON nodes(source_doc_id);
+CREATE INDEX idx_nodes_label     ON nodes(label);
+CREATE INDEX idx_nodes_label_key ON nodes(label, key);          -- exact-match lookup (person/org by name)
 
 CREATE TABLE edges (
   source_doc_id   TEXT NOT NULL,
@@ -231,8 +232,24 @@ CREATE TABLE edges (
   properties      TEXT NOT NULL,                  -- JSON
   extractor_name  TEXT NOT NULL
 );
-CREATE INDEX idx_edges_doc       ON edges(source_doc_id);
-CREATE INDEX idx_edges_endpoints ON edges(source_label, source_key, target_label, target_key);
+CREATE INDEX idx_edges_doc                ON edges(source_doc_id);
+CREATE INDEX idx_edges_endpoints          ON edges(source_label, source_key, target_label, target_key);
+CREATE INDEX idx_edges_endpoints_reverse  ON edges(target_label, target_key, source_label, source_key);
+
+-- Full-text search over node names + descriptions + aliases for fuzzy keyword lookup.
+-- Auto-populated from `nodes` via triggers; uses unicode61 with diacritic stripping.
+CREATE VIRTUAL TABLE nodes_fts USING fts5(
+  source_doc_id  UNINDEXED,
+  label          UNINDEXED,
+  key,                                             -- canonical name
+  text,                                            -- key + aliases + description, space-joined
+  tokenize='unicode61 remove_diacritics 2'
+);
+
+-- Triggers (sketch — implementation-time): AFTER INSERT/UPDATE/DELETE on `nodes`
+-- INSERT/UPDATE/DELETE the corresponding `nodes_fts` row, materialising
+-- `text` from `key`, `properties->>'$.description'`, and the joined
+-- `properties->>'$.aliases'` array.
 
 CREATE TABLE ingestions (
   doc_id              TEXT PRIMARY KEY,
@@ -252,13 +269,14 @@ FTS5 is available if V2 wants keyword search.
 
 ```python
 class Entity(BaseModel):
-    name: str
+    name: str                                  # canonical name (most formal/complete form)
+    aliases: list[str] = []                    # other forms used in the same document
     type: str
     description: str
 
 class Relation(BaseModel):
-    source: str
-    target: str
+    source: str                                # references Entity.name
+    target: str                                # references Entity.name
     type: str
     description: str
 
@@ -268,9 +286,11 @@ class GenericExtraction(BaseModel):
 ```
 
 Graph mapping: each `Entity` becomes a node with `label="Entity"`, `key=name`,
-`properties={type, description}`. Each `Relation` becomes an edge with
+`properties={type, description, aliases}`. Each `Relation` becomes an edge with
 `label=relation.type.upper()`, source/target keyed by entity `name`. Names are deduped
-within a document.
+within a document. Aliases are indexed by FTS5 alongside `key` and `description`,
+making fuzzy lookups robust to within-doc spelling variation. Cross-doc resolution is
+V2 (section 10).
 
 ### 5.5 BPMN extractor schema (sketch)
 
@@ -298,17 +318,19 @@ the in-house serializer (`bpmn_serializer.py`).
 
 ```python
 class Person(BaseModel):
-    name: str
+    name: str                                  # canonical / most formal form found in the doc
+    aliases: list[str] = []                    # other forms used in the same doc ("Sam", "S. Altman")
     title: str | None = None
     bio: str | None = None
 
 class Organization(BaseModel):
-    name: str
+    name: str                                  # canonical name
+    aliases: list[str] = []                    # "OpenAI Inc.", "OpenAI, Inc.", abbreviations
     type: str | None = None
 
 class WorksAt(BaseModel):
-    person: str
-    organization: str
+    person: str                                # references Person.name
+    organization: str                          # references Organization.name
     role: str | None = None
     start: str | None = None
     end: str | None = None
@@ -318,6 +340,16 @@ class PersonExtraction(BaseModel):
     organizations: list[Organization]
     employments: list[WorksAt]
 ```
+
+The prompt instructs the LLM to pick the most formal name as `name` and list any
+other forms found in the same document as `aliases`. The graph mapper stores
+`aliases` as a JSON property on the node; the FTS5 trigger then materialises both
+the canonical name and aliases into the searchable `text` column, so a fuzzy query
+for `"Sam"` retrieves the canonical `"Sam Altman"` node.
+
+**Within-doc disambiguation only.** Cross-doc resolution (the same human extracted
+from two different documents under different formal names) is a V2 feature — see
+section 10.
 
 ### 5.7 `IngestLedger`
 
@@ -455,9 +487,19 @@ Both API keys read from the environment or a `.env` file (matching the recent
 
 ## 10. V2 trajectory (out of scope; noted only)
 
-- Q&A agent over `(graph, vectors)` using `anthropic:claude-sonnet-4-6` with
-  tool-use. Reads via the `query` SQL surface or via FTS5 keyword search if added.
-  Hybrid retrieval (vector + graph traversal).
+- **Q&A agent** over `(graph, vectors, FTS)` using `anthropic:claude-sonnet-4-6` with
+  tool-use. Hybrid retrieval combines:
+  - `nodes_fts MATCH ...` for fuzzy keyword lookup over node names, aliases, and
+    descriptions (V1 already builds this index);
+  - Chroma chunk-vector search for semantic similarity;
+  - graph traversal via `idx_edges_endpoints` / `idx_edges_endpoints_reverse` for
+    multi-hop relations.
+- **Cross-document entity resolution.** V1 disambiguates only within a single
+  document — "Sam Altman" in Doc A and "Samuel Altman" in Doc B remain separate
+  `Person` nodes. V2 adds a resolution pass at ingest or as a periodic batch:
+  candidate match via name embeddings (or `nodes_fts MATCH`) over existing nodes,
+  then an LLM merge decision ("is this the same entity?"). Merged nodes get a
+  canonical record with provenance back to the contributing per-doc records.
 - `--concurrency N` for parallel file processing (write-serialised through a queue).
 - Optional collapse of Chroma into the same SQLite file via `sqlite-vss` if a single-
   file backing becomes a hard requirement.
@@ -476,6 +518,7 @@ Both API keys read from the environment or a `.env` file (matching the recent
 | Cost runaway (3x LLM per doc) | `CostGuardMiddleware` budget cap; `--model` flag for cheaper variants. |
 | Single-writer SQLite under future parallel ingest | V1 is serial. A future `--concurrency N` serialises writes through a small queue; reads remain concurrent in WAL mode. |
 | Watcher misses a file during downtime | Startup scan reconciles against the ledger; missed files are picked up on next launch. |
+| **No cross-doc entity resolution in V1** — same entity under different names across documents creates separate nodes (e.g. "Sam Altman" in one doc, "Samuel Altman" in another) | Mitigated for retrieval by FTS5 over names + aliases + descriptions: a fuzzy query returns all variants. True merging into a single canonical record is a V2 feature (section 10). |
 
 ---
 
