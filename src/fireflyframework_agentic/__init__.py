@@ -27,8 +27,12 @@ Quick start::
     print(config.default_model)
 """
 
-from fireflyframework_agentic._version import __version__
+from importlib.metadata import version
+
 from fireflyframework_agentic.config import FireflyAgenticConfig, get_config, reset_config
+
+__version__ = version("fireflyframework-agentic")
+
 from fireflyframework_agentic.embeddings import BaseEmbedder, EmbedderRegistry, EmbeddingProtocol
 from fireflyframework_agentic.exceptions import (
     AgentError,
