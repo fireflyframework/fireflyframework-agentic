@@ -27,15 +27,15 @@ Usage::
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+import os
 
 from dotenv import load_dotenv
 
 from fireflyframework_agentic.agents import FireflyAgent
 
-load_dotenv(Path(__file__).parent / ".env")
+load_dotenv()
 
-MODEL = "openai:gpt-5.2-2025-12-11"
+MODEL = os.environ["MODEL"]
 
 
 async def main() -> None:

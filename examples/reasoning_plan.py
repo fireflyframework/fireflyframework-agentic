@@ -29,7 +29,7 @@ Usage::
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+import os
 
 from dotenv import load_dotenv
 
@@ -37,9 +37,9 @@ from fireflyframework_agentic import configure_logging
 from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.reasoning import PlanAndExecutePattern
 
-load_dotenv(Path(__file__).parent / ".env")
+load_dotenv()
 
-MODEL = "openai:gpt-5.2-2025-12-11"
+MODEL = os.environ["MODEL"]
 
 # Enable INFO-level logging so that plan generation and step execution
 # progress is printed in real time — only for fireflyframework_agentic loggers.

@@ -26,16 +26,16 @@ Usage::
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+import os
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
 from fireflyframework_agentic.agents.templates import create_extractor_agent
 
-load_dotenv(Path(__file__).parent / ".env")
+load_dotenv()
 
-MODEL = "openai:gpt-5.2-2025-12-11"
+MODEL = os.environ["MODEL"]
 
 
 class ContactInfo(BaseModel):

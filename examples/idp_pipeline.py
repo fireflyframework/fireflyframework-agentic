@@ -44,9 +44,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import re
 import sys
-from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
@@ -86,9 +86,9 @@ from fireflyframework_agentic.tools.cached import CachedTool
 from fireflyframework_agentic.validation.qos import GroundingChecker
 from fireflyframework_agentic.validation.reviewer import OutputReviewer
 
-load_dotenv(Path(__file__).parent / ".env")
+load_dotenv()
 
-MODEL = "openai:gpt-5.2-2025-12-11"
+MODEL = os.environ["MODEL"]
 
 # ── ANSI colour helpers ─────────────────────────────────────────────────────
 _USE_COLOR = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
