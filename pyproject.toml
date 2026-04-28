@@ -66,13 +66,6 @@ security = [
 http = [
     "httpx>=0.28.0",
 ]
-studio = [
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.34.0",
-    "httpx>=0.28.0",
-    "strawberry-graphql[fastapi]>=0.252.0",
-    "apscheduler>=4.0.0a5",
-]
 costs = [
     "genai-prices>=0.0.1",
 ]
@@ -113,7 +106,7 @@ vectorstores-qdrant = [
     "qdrant-client>=1.12.0",
 ]
 all = [
-    "fireflyframework-agentic[rest,queues,postgres,mongodb,security,http,studio,costs,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant]",
+    "fireflyframework-agentic[rest,queues,postgres,mongodb,security,http,costs,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant]",
 ]
 dev = [
     "pytest>=8.3.0",
@@ -127,9 +120,6 @@ dev = [
     "pdfplumber>=0.11.0",
     "pre-commit>=3.8.0",
 ]
-
-[project.scripts]
-firefly = "fireflyframework_agentic.studio.cli:main"
 
 [project.urls]
 Homepage = "https://fireflyframework.org/"

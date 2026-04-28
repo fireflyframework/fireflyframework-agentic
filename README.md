@@ -83,7 +83,7 @@ You write your business logic; the framework provides the architecture.
 
 4. **Optional dependencies** — Heavy libraries (`fastapi`, `aiokafka`, `aio-pika`,
    `redis`, `chromadb`, `pinecone`, `openai`) are declared as pip extras (`[rest]`,
-   `[studio]`, `[kafka]`, `[rabbitmq]`, `[redis]`, `[openai-embeddings]`,
+   `[kafka]`, `[rabbitmq]`, `[redis]`, `[openai-embeddings]`,
    `[vectorstores-chroma]`, `[all]`). The core framework imports them lazily inside
    factory functions so that you install only what your deployment requires.
 
@@ -396,14 +396,12 @@ classDiagram
   `EmbeddingStep` and `RetrievalStep` integrate directly into DAG pipelines
   for RAG workflows.
 
-- **Studio** — `firefly studio` launches a browser-based visual IDE for
-  building agent pipelines. Drag and connect Agent, Tool, Reasoning, and
-  Condition nodes on an interactive canvas. The Code tab generates Python
-  code from your graph in real time. An AI assistant (via WebSocket) helps
-  you build pipelines through natural language. Project management persists
-  graphs to disk. Checkpoints enable time-travel debugging. The frontend
-  is a SvelteKit 5 SPA bundled inside the Python package — no Node.js needed.
-  Install with `pip install "fireflyframework-agentic[studio]"`.
+- **Studio** — moved to its own repository:
+  [fireflyframework-agentic-studio](https://github.com/fireflyframework/fireflyframework-agentic-studio).
+  A browser-based visual IDE for building agent pipelines (drag-and-drop
+  canvas, code generation, AI assistant, time-travel debugging). Install
+  with `pip install fireflyframework-agentic-studio` and launch with
+  `firefly studio`.
 
 ---
 
@@ -492,7 +490,6 @@ uv sync --all-extras # or: pip install -e ".[all]"
 | Extra | What it adds | When you need it |
 |---|---|---|
 | `rest` | FastAPI, Uvicorn, SSE | Exposing agents as REST endpoints |
-| `studio` | FastAPI, Uvicorn, httpx | Visual Studio IDE (`firefly studio`) |
 | `kafka` | aiokafka | Consuming/producing via Apache Kafka |
 | `rabbitmq` | aio-pika | Consuming/producing via RabbitMQ |
 | `redis` | redis-py | Consuming/producing via Redis Pub/Sub |
@@ -520,12 +517,6 @@ uv sync --all-extras # or: pip install -e ".[all]"
 ```bash
 python -c "import fireflyframework_agentic; print(fireflyframework_agentic.__version__)"
 # 26.02.07
-```
-
-If you installed with `[studio]`, verify the CLI:
-
-```bash
-firefly --help
 ```
 
 ### Uninstall
@@ -812,7 +803,7 @@ Detailed guides for each module:
 - [Lab](docs/lab.md) — Benchmarks, datasets, evaluators
 - [Exposure REST](docs/exposure-rest.md) — FastAPI integration, SSE streaming
 - [Exposure Queues](docs/exposure-queues.md) — Kafka, RabbitMQ, Redis integration
-- [Studio](docs/studio.md) — Visual IDE, canvas, code generation, AI assistant, CLI
+- Studio — moved to [fireflyframework-agentic-studio](https://github.com/fireflyframework/fireflyframework-agentic-studio)
 ---
 
 ## Development

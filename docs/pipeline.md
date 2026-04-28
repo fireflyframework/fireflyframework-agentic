@@ -440,37 +440,9 @@ failure, or feeding events to an observability pipeline.
 
 ## Boundary Nodes (Input / Output)
 
-When building pipelines in Studio, you can use **Input** and **Output**
-boundary nodes to define pipeline entry and exit points. These nodes are
-compiled to pass-through `CallableStep` instances but carry configuration
-metadata that enables the `ProjectRuntime` to auto-generate REST endpoints,
-start queue consumers, or run cron schedulers.
-
-- **Input node** -- Defines trigger type (`manual`, `http`, `queue`,
-  `schedule`, `file_upload`) and an optional input schema.
-- **Output node** -- Defines destination type (`response`, `queue`,
-  `webhook`, `store`, `multi`) and an optional response schema.
-
-The compiler enforces that a pipeline has exactly one Input node and at
-least one Output node when boundary nodes are present.
-
-```python
-from fireflyframework_agentic.studio.execution.io_nodes import (
-    InputNodeConfig,
-    OutputNodeConfig,
-    QueueConfig,
-)
-
-# Queue-triggered pipeline
-input_cfg = InputNodeConfig(
-    trigger_type="queue",
-    queue_config=QueueConfig(broker="kafka", topic_or_queue="events"),
-)
-
-# Response destination
-output_cfg = OutputNodeConfig(destination_type="response")
-```
-
-See the [Input/Output Nodes Guide](input-output-nodes.md) for full
-configuration details and the [Project API Guide](project-api.md) for the
-auto-generated REST endpoints.
+Boundary nodes (`Input`, `Output`) for declaring pipeline entry and exit
+points -- with auto-generated REST endpoints, queue consumers, and
+scheduled triggers -- are provided by the
+[fireflyframework-agentic-studio](https://github.com/fireflyframework/fireflyframework-agentic-studio)
+package. See its docs for configuration details and the auto-generated
+project API.

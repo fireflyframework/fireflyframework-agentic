@@ -18,7 +18,6 @@ parts/
 var/
 *.manifest
 *.spec
-!studio-desktop/pyinstaller/*.spec
 pip-log.txt
 pip-delete-this-directory.txt
 
@@ -122,21 +121,6 @@ logs/
 
 # Design/plan docs (local only)
 docs/plans/
-
-# Studio bundled frontend (build artifact — run scripts/build_studio.py)
-src/fireflyframework_agentic/studio/static/*
-!src/fireflyframework_agentic/studio/static/.gitkeep
-
-# Studio frontend build output
-studio-frontend/build/
-studio-frontend/.svelte-kit/
-studio-frontend/node_modules/
-
-# Studio desktop (Tauri) build artifacts
-studio-desktop/src-tauri/target/
-studio-desktop/src-tauri/gen/
-studio-desktop/build/
-studio-desktop/dist/
 
 # Distribution / packaging
 *.tar.gz
