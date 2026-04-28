@@ -7,37 +7,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
 
-## [Unreleased]
+## [26.04.28] - 2026-04-28
+
+### Changed (BREAKING)
+
+- **Project rename: `fireflyframework-genai` → `fireflyframework-agentic`.**
+  Comprehensive rebrand from `genai` to `agentic` across every public surface.
+  See `MIGRATION` section below for an upgrade checklist.
+  - Python module: `fireflyframework_genai` → `fireflyframework_agentic`.
+  - PyPI package: `fireflyframework-genai` → `fireflyframework-agentic`.
+  - Class names: `FireflyGenAI*` → `FireflyAgentic*` (covers `FireflyGenAIConfig`
+    and `FireflyGenAIError`).
+  - Environment-variable prefix: `FIREFLY_GENAI_*` → `FIREFLY_AGENTIC_*`.
+  - REST factory: `create_genai_app()` → `create_agentic_app()`.
+  - Repository URLs: `github.com/fireflyframework/fireflyframework-genai` →
+    `…/fireflyframework-agentic`.
+  - Brand prose: "Firefly GenAI" → "Firefly Agentic".
+
+  Mentions of "GenAI" as a *category* (e.g. "GenAI metaframework", "GenAI
+  workloads", `keywords = ["genai"]`) are intentionally preserved -- the
+  framework targets the GenAI domain. References to the external
+  `genai-prices` library and the `GenAIPricesCostCalculator` wrapper class
+  also remain.
+
+### Removed (BREAKING)
+
+- **Studio extracted to its own repository.** The visual IDE, project runtime,
+  scheduler, tunnel, code generation, and AI assistant now live in
+  [fireflyframework-agentic-studio](https://github.com/fireflyframework/fireflyframework-agentic-studio).
+  Removed from this repo:
+  - `src/fireflyframework_agentic/studio/` (Python module).
+  - `studio-frontend/` (SvelteKit SPA).
+  - `studio-desktop/` (Tauri desktop bundle and PyInstaller spec).
+  - `scripts/build_studio.py`.
+  - `tests/test_studio/` (~30 test files).
+  - Studio-only docs: `studio.md`, `studio-agents.md`, `api-reference.md`,
+    `scheduling.md`, `tunnel-exposure.md`, `input-output-nodes.md`,
+    `project-api.md`, `tutorial-bpm-pipeline.md`.
+  - `examples/studio_launch.py`.
+  - `.github/workflows/desktop.yml` (Tauri build pipeline).
+  - `[studio]` extra in `pyproject.toml` (FastAPI, Uvicorn, Strawberry-GraphQL,
+    APScheduler).
+  - `firefly` CLI entry point (now ships with the studio package).
+  - `frontend-build` job and studio artifact wiring in CI.
 
 ### Added
 
-- **Firefly Studio** -- Visual browser-based IDE for building agent pipelines.
-  Launch with `firefly studio` or `pip install "fireflyframework-genai[studio]"`.
-  Features include:
-  - Interactive canvas with drag-and-drop Agent, Tool, Reasoning, and Condition
-    nodes powered by @xyflow/svelte.
-  - Real-time Python code generation from the visual graph with syntax
-    highlighting and auto-sync.
-  - AI assistant (WebSocket) that builds pipelines through natural language
-    using canvas manipulation tools (add/remove/configure/connect nodes).
-  - File-based project management with pipeline persistence.
-  - Checkpoint system for time-travel debugging with fork and diff support.
-  - Component registry endpoints that discover registered agents, tools, and
-    reasoning patterns from the framework.
-  - Usage monitoring dashboard connected to the framework's `UsageTracker`.
-  - Command palette (`Cmd+K`) with fuzzy search across 25 commands.
-  - Keyboard shortcuts for pipeline execution, canvas manipulation, and
-    navigation.
-  - SvelteKit 5 SPA frontend bundled inside the Python package (no Node.js
-    required in production).
-  - `StudioConfig` with environment variable overrides (`FIREFLY_STUDIO_*`).
-  - Path traversal protection on project storage.
-  - WebSocket lifecycle management with automatic UI state cleanup on
-    disconnect.
+- **Pre-commit hooks.** `.pre-commit-config.yaml` with ruff (lint + format),
+  file hygiene (trailing whitespace, EOF, YAML/TOML/JSON validation,
+  merge-conflict markers, large-file guard, AST check), `gitleaks` for secret
+  scanning, and `no-commit-to-branch` for `main`/`master`. CI gains a
+  `Pre-commit` job that runs the same hooks on every PR so `--no-verify`
+  bypasses are caught.
 
-- **`firefly` CLI** -- Console script entry point for launching Studio.
-  Supports `--port`, `--host`, `--no-browser`, and `--dev` flags. Defaults
-  to the `studio` subcommand when run without arguments.
+### Migration
+
+```diff
+- pip install fireflyframework-genai
++ pip install fireflyframework-agentic
+```
+
+```diff
+- from fireflyframework_genai import FireflyGenAIConfig, get_config
++ from fireflyframework_agentic import FireflyAgenticConfig, get_config
+
+- from fireflyframework_genai.exposure.rest import create_genai_app
++ from fireflyframework_agentic.exposure.rest import create_agentic_app
+```
+
+```diff
+- FIREFLY_GENAI_DEFAULT_MODEL=...
++ FIREFLY_AGENTIC_DEFAULT_MODEL=...
+```
+
+For users who previously installed the embedded Studio:
+
+```diff
+- pip install "fireflyframework-genai[studio]"
++ pip install fireflyframework-agentic-studio
+```
+
+A bulk replace covers most call sites:
+
+```bash
+grep -rl 'fireflyframework_genai' . | xargs sed -i 's/fireflyframework_genai/fireflyframework_agentic/g'
+grep -rl 'fireflyframework-genai' . | xargs sed -i 's/fireflyframework-genai/fireflyframework-agentic/g'
+grep -rl 'FireflyGenAI'           . | xargs sed -i 's/FireflyGenAI/FireflyAgentic/g'
+grep -rl 'FIREFLY_GENAI_'         . | xargs sed -i 's/FIREFLY_GENAI_/FIREFLY_AGENTIC_/g'
+```
+
+The full migration guide for Studio users lives in the
+[fireflyframework-agentic-studio README](https://github.com/fireflyframework/fireflyframework-agentic-studio#migration-from-fireflyframework-agenticstudio).
 
 ### Changed
 
