@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import logging
 
-from fireflyframework_genai.config import reset_config
-from fireflyframework_genai.observability.usage import (
+from fireflyframework_agentic.config import reset_config
+from fireflyframework_agentic.observability.usage import (
     UsageRecord,
     UsageSummary,
     UsageTracker,
@@ -171,8 +171,8 @@ class TestUsageTracker:
 
     def test_budget_alert_logged(self, monkeypatch, caplog):
         """Budget alert warning should be logged when threshold is exceeded."""
-        monkeypatch.setenv("FIREFLY_GENAI_COST_TRACKING_ENABLED", "true")
-        monkeypatch.setenv("FIREFLY_GENAI_BUDGET_ALERT_THRESHOLD_USD", "0.005")
+        monkeypatch.setenv("FIREFLY_AGENTIC_COST_TRACKING_ENABLED", "true")
+        monkeypatch.setenv("FIREFLY_AGENTIC_BUDGET_ALERT_THRESHOLD_USD", "0.005")
         reset_config()
 
         tracker = self._make_tracker()
@@ -184,8 +184,8 @@ class TestUsageTracker:
 
     def test_budget_limit_logged(self, monkeypatch, caplog):
         """Budget limit warning should be logged when limit is exceeded."""
-        monkeypatch.setenv("FIREFLY_GENAI_COST_TRACKING_ENABLED", "true")
-        monkeypatch.setenv("FIREFLY_GENAI_BUDGET_LIMIT_USD", "0.005")
+        monkeypatch.setenv("FIREFLY_AGENTIC_COST_TRACKING_ENABLED", "true")
+        monkeypatch.setenv("FIREFLY_AGENTIC_BUDGET_LIMIT_USD", "0.005")
         reset_config()
 
         tracker = self._make_tracker()
@@ -197,8 +197,8 @@ class TestUsageTracker:
 
     def test_cost_tracking_disabled_skips_budget(self, monkeypatch, caplog):
         """No budget warnings when cost tracking is disabled."""
-        monkeypatch.setenv("FIREFLY_GENAI_COST_TRACKING_ENABLED", "false")
-        monkeypatch.setenv("FIREFLY_GENAI_BUDGET_LIMIT_USD", "0.001")
+        monkeypatch.setenv("FIREFLY_AGENTIC_COST_TRACKING_ENABLED", "false")
+        monkeypatch.setenv("FIREFLY_AGENTIC_BUDGET_LIMIT_USD", "0.001")
         reset_config()
 
         tracker = self._make_tracker()

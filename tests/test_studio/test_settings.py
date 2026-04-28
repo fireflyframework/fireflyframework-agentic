@@ -23,7 +23,7 @@ import stat
 import pytest
 from pydantic import SecretStr
 
-from fireflyframework_genai.studio.settings import (
+from fireflyframework_agentic.studio.settings import (
     ModelDefaults,
     ProviderCredentials,
     StudioSettings,
@@ -38,7 +38,7 @@ pytest.importorskip("httpx", reason="httpx not installed")
 
 import httpx
 
-from fireflyframework_genai.studio.server import create_studio_app
+from fireflyframework_agentic.studio.server import create_studio_app
 
 # ---------------------------------------------------------------------------
 # Unit tests — file I/O

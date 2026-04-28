@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.studio.codegen.models import GraphNode, NodeType
-from fireflyframework_genai.studio.execution.io_nodes import (
+from fireflyframework_agentic.studio.codegen.models import GraphNode, NodeType
+from fireflyframework_agentic.studio.execution.io_nodes import (
     FileConfig,
     HttpConfig,
     InputNodeConfig,

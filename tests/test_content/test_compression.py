@@ -14,7 +14,7 @@
 
 """Tests for content compression utilities."""
 
-from fireflyframework_genai.content.compression import (
+from fireflyframework_agentic.content.compression import (
     ContextCompressor,
     SlidingWindowManager,
     TokenEstimator,

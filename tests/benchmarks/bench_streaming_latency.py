@@ -27,7 +27,7 @@ import time
 
 import pytest
 
-from fireflyframework_genai.agents.base import FireflyAgent
+from fireflyframework_agentic.agents.base import FireflyAgent
 
 
 @pytest.mark.benchmark(group="streaming-latency")

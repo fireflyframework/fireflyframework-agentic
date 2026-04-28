@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.agents.base import FireflyAgent
-from fireflyframework_genai.agents.registry import AgentRegistry
+from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.agents.registry import AgentRegistry
 
 
 class TestAgentRegistry:
@@ -37,7 +37,7 @@ class TestAgentRegistry:
         assert not registry.has("nonexistent")
 
     def test_get_nonexistent_raises(self):
-        from fireflyframework_genai.exceptions import AgentNotFoundError
+        from fireflyframework_agentic.exceptions import AgentNotFoundError
 
         registry = AgentRegistry()
         with pytest.raises(AgentNotFoundError):

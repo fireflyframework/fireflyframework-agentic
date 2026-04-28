@@ -62,7 +62,7 @@ classDiagram
 ### Using the Decorator
 
 ```python
-from fireflyframework_genai.tools import firefly_tool
+from fireflyframework_agentic.tools import firefly_tool
 
 @firefly_tool(name="calculator", description="Evaluate a math expression")
 async def calculator(expression: str) -> str:
@@ -74,7 +74,7 @@ async def calculator(expression: str) -> str:
 The fluent `ToolBuilder` lets you construct tools step by step:
 
 ```python
-from fireflyframework_genai.tools import ToolBuilder
+from fireflyframework_agentic.tools import ToolBuilder
 
 tool = (
     ToolBuilder("weather")
@@ -113,8 +113,8 @@ flowchart LR
 ### Applying Guards
 
 ```python
-from fireflyframework_genai.tools import guarded
-from fireflyframework_genai.tools.guards import RateLimitGuard
+from fireflyframework_agentic.tools import guarded
+from fireflyframework_agentic.tools.guards import RateLimitGuard
 
 @guarded(RateLimitGuard(max_calls=10, period_seconds=60))
 @firefly_tool(name="search", description="Search the web")
@@ -170,7 +170,7 @@ The framework ships with nine ready-to-use tools in `tools/builtins/`.
 - **DatabaseTool** -- SQL/NoSQL query abstraction. Subclass and implement `_execute_query()` with your driver. Read-only mode enforced by default.
 
 ```python
-from fireflyframework_genai.tools.builtins import (
+from fireflyframework_agentic.tools.builtins import (
     DateTimeTool,
     CalculatorTool,
     JsonTool,
@@ -191,8 +191,8 @@ calculator = CalculatorTool()
 Pydantic AI tools. You can pass them directly to the `tools` parameter:
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.tools.builtins import DateTimeTool, CalculatorTool
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.tools.builtins import DateTimeTool, CalculatorTool
 
 agent = FireflyAgent(
     name="assistant",
@@ -204,8 +204,8 @@ agent = FireflyAgent(
 You can also use a `ToolKit` to group tools:
 
 ```python
-from fireflyframework_genai.tools.toolkit import ToolKit
-from fireflyframework_genai.tools.builtins import DateTimeTool, JsonTool, TextTool
+from fireflyframework_agentic.tools.toolkit import ToolKit
+from fireflyframework_agentic.tools.builtins import DateTimeTool, JsonTool, TextTool
 
 kit = ToolKit("utilities", [DateTimeTool(), JsonTool(), TextTool()])
 agent = FireflyAgent(name="helper", model="openai:gpt-4o", tools=[kit])
@@ -223,7 +223,7 @@ for improved performance in production deployments.
 ### Basic Usage
 
 ```python
-from fireflyframework_genai.tools.builtins import HttpTool
+from fireflyframework_agentic.tools.builtins import HttpTool
 
 http_tool = HttpTool()
 
@@ -239,7 +239,7 @@ Enable connection pooling to reuse TCP connections across requests, reducing
 latency and improving throughput:
 
 ```python
-from fireflyframework_genai.tools.builtins import HttpTool
+from fireflyframework_agentic.tools.builtins import HttpTool
 
 http_tool = HttpTool(
     use_pool=True, # Enable connection pooling (default: True)
@@ -260,14 +260,14 @@ Connection pooling uses `httpx.AsyncClient` under the hood, providing:
 
 ```bash
 # Enable connection pooling (default: true)
-export FIREFLY_GENAI_HTTP_POOL_ENABLED=true
+export FIREFLY_AGENTIC_HTTP_POOL_ENABLED=true
 
 # Configure pool size
-export FIREFLY_GENAI_HTTP_POOL_SIZE=100
-export FIREFLY_GENAI_HTTP_POOL_MAX_KEEPALIVE=20
+export FIREFLY_AGENTIC_HTTP_POOL_SIZE=100
+export FIREFLY_AGENTIC_HTTP_POOL_MAX_KEEPALIVE=20
 
 # Set default timeout
-export FIREFLY_GENAI_HTTP_POOL_TIMEOUT=30.0
+export FIREFLY_AGENTIC_HTTP_POOL_TIMEOUT=30.0
 ```
 
 ### Fallback to urllib
@@ -291,8 +291,8 @@ With connection pooling enabled:
 ### Usage with Agents
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.tools.builtins import HttpTool
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.tools.builtins import HttpTool
 
 agent = FireflyAgent(
     name="api-agent",
@@ -335,8 +335,8 @@ input arguments. This is ideal for deterministic tools (lookups, calculations)
 where repeated calls with the same arguments should avoid redundant work.
 
 ```python
-from fireflyframework_genai.tools.cached import CachedTool
-from fireflyframework_genai.tools.builtins import HttpTool
+from fireflyframework_agentic.tools.cached import CachedTool
+from fireflyframework_agentic.tools.builtins import HttpTool
 
 cached_http = CachedTool(HttpTool(), ttl_seconds=600.0, max_entries=256)
 result = await cached_http.execute(url="https://api.example.com/data")
@@ -368,7 +368,7 @@ the tool's `_execute` call in `asyncio.wait_for`. If the call exceeds the
 timeout, a `ToolTimeoutError` is raised.
 
 ```python
-from fireflyframework_genai.tools.builtins import HttpTool
+from fireflyframework_agentic.tools.builtins import HttpTool
 
 # Timeout HTTP calls after 10 seconds
 http_tool = HttpTool(timeout=10.0)
@@ -389,7 +389,7 @@ in production pipelines.
 The `ToolRegistry` provides global tool lookup by name:
 
 ```python
-from fireflyframework_genai.tools.registry import ToolRegistry
+from fireflyframework_agentic.tools.registry import ToolRegistry
 
 registry = ToolRegistry()
 registry.register(my_tool)

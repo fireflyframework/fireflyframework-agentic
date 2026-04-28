@@ -1,4 +1,4 @@
-# fireflyframework-genai — Documentation
+# fireflyframework-agentic — Documentation
 
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](../LICENSE)
@@ -8,7 +8,7 @@ Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License
 
 ---
 
-**fireflyframework-genai** is the production-grade GenAI metaframework built on
+**fireflyframework-agentic** is the production-grade GenAI metaframework built on
 [Pydantic AI](https://ai.pydantic.dev/). It extends the engine with six composable
 layers — from core configuration through agent management, intelligent reasoning,
 experimentation, pipeline orchestration, and service exposure — so that every concern
@@ -93,7 +93,7 @@ below it, keeping the dependency graph acyclic and each module independently tes
 
 | | |
 |---|---|
-| **[REST Exposure](exposure-rest.md)** | `create_genai_app()`, auto-generated routes, SSE streaming, WebSocket, auth middleware, conversation CRUD, rate limiting, health checks |
+| **[REST Exposure](exposure-rest.md)** | `create_agentic_app()`, auto-generated routes, SSE streaming, WebSocket, auth middleware, conversation CRUD, rate limiting, health checks |
 | **[Queue Exposure](exposure-queues.md)** | Kafka, RabbitMQ, Redis consumers/producers, `QueueRouter` |
 
 ### Studio
@@ -140,7 +140,7 @@ standards, testing, and the pull request process.
 
 - **[Changelog](../CHANGELOG.md)** — Notable changes by version.
 - **[License](../LICENSE)** — Apache License 2.0.
-- **[Repository](https://github.com/fireflyframework/fireflyframework-genai)** — Source code on GitHub.
+- **[Repository](https://github.com/fireflyframework/fireflyframework-agentic)** — Source code on GitHub.
 - **[Pydantic AI](https://ai.pydantic.dev/)** — The underlying agent framework.
 
 ---

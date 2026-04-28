@@ -35,7 +35,7 @@ import json
 
 
 def main() -> None:
-    from fireflyframework_genai.memory.conversation import ConversationMemory
+    from fireflyframework_agentic.memory.conversation import ConversationMemory
 
     # ── 1. Build a conversation ─────────────────────────────────────────
     print("=== Build a Conversation ===\n")
@@ -107,7 +107,7 @@ def main() -> None:
     # ── 7. LLM summarizer factory ───────────────────────────────────────
     print("\n=== LLM Summarizer (factory demo) ===\n")
 
-    from fireflyframework_genai.memory.summarization import create_llm_summarizer
+    from fireflyframework_agentic.memory.summarization import create_llm_summarizer
 
     summarizer = create_llm_summarizer()
     print(f"  create_llm_summarizer() → {type(summarizer).__name__} (callable={callable(summarizer)})")

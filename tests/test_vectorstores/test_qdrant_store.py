@@ -6,18 +6,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from fireflyframework_genai.vectorstores.types import SearchFilter, VectorDocument
+from fireflyframework_agentic.vectorstores.types import SearchFilter, VectorDocument
 
 
 class TestQdrantVectorStore:
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.AsyncQdrantClient")
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.PointStruct")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.AsyncQdrantClient")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.PointStruct")
     async def test_upsert(self, mock_point_struct, mock_client_cls):
         mock_client = AsyncMock()
         mock_client_cls.return_value = mock_client
         mock_point_struct.side_effect = lambda **kw: MagicMock(**kw)
 
-        from fireflyframework_genai.vectorstores.qdrant_store import QdrantVectorStore
+        from fireflyframework_agentic.vectorstores.qdrant_store import QdrantVectorStore
 
         store = QdrantVectorStore(collection_name="test")
         await store.upsert(
@@ -29,8 +29,8 @@ class TestQdrantVectorStore:
         assert call_kwargs["collection_name"] == "test"
         assert len(call_kwargs["points"]) == 1
 
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.AsyncQdrantClient")
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.PointStruct")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.AsyncQdrantClient")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.PointStruct")
     async def test_upsert_with_metadata(self, mock_point_struct, mock_client_cls):
         mock_client = AsyncMock()
         mock_client_cls.return_value = mock_client
@@ -42,7 +42,7 @@ class TestQdrantVectorStore:
 
         mock_point_struct.side_effect = capture_point
 
-        from fireflyframework_genai.vectorstores.qdrant_store import QdrantVectorStore
+        from fireflyframework_agentic.vectorstores.qdrant_store import QdrantVectorStore
 
         store = QdrantVectorStore(collection_name="test")
         await store.upsert(
@@ -60,10 +60,10 @@ class TestQdrantVectorStore:
         assert captured_kwargs["payload"]["_namespace"] == "custom_ns"
         assert captured_kwargs["payload"]["type"] == "blog"
 
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.Filter")
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.MatchValue")
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.FieldCondition")
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.AsyncQdrantClient")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.Filter")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.MatchValue")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.FieldCondition")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.AsyncQdrantClient")
     async def test_search(self, mock_client_cls, mock_fc, mock_mv, mock_filter):
         mock_point1 = MagicMock()
         mock_point1.id = "1"
@@ -79,7 +79,7 @@ class TestQdrantVectorStore:
         mock_client.search.return_value = [mock_point1, mock_point2]
         mock_client_cls.return_value = mock_client
 
-        from fireflyframework_genai.vectorstores.qdrant_store import QdrantVectorStore
+        from fireflyframework_agentic.vectorstores.qdrant_store import QdrantVectorStore
 
         store = QdrantVectorStore(collection_name="test")
         results = await store.search([1.0, 0.0], top_k=2)
@@ -95,16 +95,16 @@ class TestQdrantVectorStore:
         assert results[1].document.id == "2"
         assert results[1].document.text == "world"
 
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.Filter")
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.MatchValue")
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.FieldCondition")
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.AsyncQdrantClient")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.Filter")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.MatchValue")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.FieldCondition")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.AsyncQdrantClient")
     async def test_search_with_filters(self, mock_client_cls, mock_fc, mock_mv, mock_filter):
         mock_client = AsyncMock()
         mock_client.search.return_value = []
         mock_client_cls.return_value = mock_client
 
-        from fireflyframework_genai.vectorstores.qdrant_store import QdrantVectorStore
+        from fireflyframework_agentic.vectorstores.qdrant_store import QdrantVectorStore
 
         store = QdrantVectorStore(collection_name="test")
         await store.search(
@@ -115,28 +115,28 @@ class TestQdrantVectorStore:
         # Should have created 2 FieldConditions: _namespace + type filter
         assert mock_fc.call_count == 2
 
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.Filter")
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.MatchValue")
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.FieldCondition")
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.AsyncQdrantClient")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.Filter")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.MatchValue")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.FieldCondition")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.AsyncQdrantClient")
     async def test_search_empty_results(self, mock_client_cls, mock_fc, mock_mv, mock_filter):
         mock_client = AsyncMock()
         mock_client.search.return_value = []
         mock_client_cls.return_value = mock_client
 
-        from fireflyframework_genai.vectorstores.qdrant_store import QdrantVectorStore
+        from fireflyframework_agentic.vectorstores.qdrant_store import QdrantVectorStore
 
         store = QdrantVectorStore(collection_name="test")
         results = await store.search([1.0, 0.0], top_k=5)
         assert results == []
 
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.PointIdsList")
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.AsyncQdrantClient")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.PointIdsList")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.AsyncQdrantClient")
     async def test_delete(self, mock_client_cls, mock_points_list):
         mock_client = AsyncMock()
         mock_client_cls.return_value = mock_client
 
-        from fireflyframework_genai.vectorstores.qdrant_store import QdrantVectorStore
+        from fireflyframework_agentic.vectorstores.qdrant_store import QdrantVectorStore
 
         store = QdrantVectorStore(collection_name="test")
         await store.delete(["1", "2"])
@@ -145,19 +145,19 @@ class TestQdrantVectorStore:
         assert call_kwargs["collection_name"] == "test"
         mock_points_list.assert_called_once_with(points=["1", "2"])
 
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.AsyncQdrantClient", None)
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.AsyncQdrantClient", None)
     async def test_import_error_when_qdrant_not_installed(self):
-        from fireflyframework_genai.vectorstores.qdrant_store import QdrantVectorStore
+        from fireflyframework_agentic.vectorstores.qdrant_store import QdrantVectorStore
 
         with pytest.raises(ImportError, match="qdrant-client"):
             QdrantVectorStore()
 
-    @patch("fireflyframework_genai.vectorstores.qdrant_store.AsyncQdrantClient")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.AsyncQdrantClient")
     async def test_constructor_params(self, mock_client_cls):
         mock_client = AsyncMock()
         mock_client_cls.return_value = mock_client
 
-        from fireflyframework_genai.vectorstores.qdrant_store import QdrantVectorStore
+        from fireflyframework_agentic.vectorstores.qdrant_store import QdrantVectorStore
 
         store = QdrantVectorStore(
             collection_name="my_coll",

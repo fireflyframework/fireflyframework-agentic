@@ -4,19 +4,19 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.agents.base import FireflyAgent
-from fireflyframework_genai.agents.builtin_middleware import (
+from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.agents.builtin_middleware import (
     BudgetExceededError,
     CostGuardMiddleware,
     PromptGuardError,
     PromptGuardMiddleware,
 )
-from fireflyframework_genai.agents.decorators import firefly_agent
-from fireflyframework_genai.agents.middleware import (
+from fireflyframework_agentic.agents.decorators import firefly_agent
+from fireflyframework_agentic.agents.middleware import (
     MiddlewareChain,
     MiddlewareContext,
 )
-from fireflyframework_genai.observability.usage import UsageTracker
+from fireflyframework_agentic.observability.usage import UsageTracker
 
 # -- Helpers ----------------------------------------------------------------
 
@@ -159,7 +159,7 @@ class TestMiddlewareOnRunWithReasoning:
     """Verify middleware fires on ``run_with_reasoning()``."""
 
     async def test_run_with_reasoning_fires_middleware(self) -> None:
-        from fireflyframework_genai.reasoning.trace import ReasoningResult, ReasoningTrace
+        from fireflyframework_agentic.reasoning.trace import ReasoningResult, ReasoningTrace
 
         class _MockPattern:
             name = "mock"
@@ -252,11 +252,11 @@ class TestCostGuardMiddleware:
 
 class TestLoggingMiddleware:
     async def test_emits_before_and_after(self, caplog) -> None:
-        from fireflyframework_genai.agents.builtin_middleware import LoggingMiddleware
+        from fireflyframework_agentic.agents.builtin_middleware import LoggingMiddleware
 
         mw = LoggingMiddleware()
         ctx = MiddlewareContext(agent_name="myagent", prompt="hi", method="run")
-        with caplog.at_level("INFO", logger="fireflyframework_genai.agents.builtin_middleware"):
+        with caplog.at_level("INFO", logger="fireflyframework_agentic.agents.builtin_middleware"):
             await mw.before_run(ctx)
             await mw.after_run(ctx, "result")
         messages = [r.message for r in caplog.records]
@@ -264,8 +264,8 @@ class TestLoggingMiddleware:
         assert any("completed" in m for m in messages)
 
     async def test_reasoning_suffix(self) -> None:
-        from fireflyframework_genai.agents.builtin_middleware import LoggingMiddleware
-        from fireflyframework_genai.reasoning.trace import ReasoningResult, ReasoningTrace
+        from fireflyframework_agentic.agents.builtin_middleware import LoggingMiddleware
+        from fireflyframework_agentic.reasoning.trace import ReasoningResult, ReasoningTrace
 
         result = ReasoningResult(
             output="out",
@@ -282,14 +282,14 @@ class TestLoggingMiddleware:
 
 class TestDefaultMiddleware:
     def test_auto_wires_logging_middleware(self) -> None:
-        from fireflyframework_genai.agents.builtin_middleware import LoggingMiddleware
+        from fireflyframework_agentic.agents.builtin_middleware import LoggingMiddleware
 
         agent = FireflyAgent("auto-test", model="test", auto_register=False)
         has_logging = any(isinstance(m, LoggingMiddleware) for m in agent.middleware._middlewares)
         assert has_logging
 
     def test_default_middleware_false_skips(self) -> None:
-        from fireflyframework_genai.agents.builtin_middleware import LoggingMiddleware
+        from fireflyframework_agentic.agents.builtin_middleware import LoggingMiddleware
 
         agent = FireflyAgent(
             "no-default",
@@ -301,7 +301,7 @@ class TestDefaultMiddleware:
         assert not has_logging
 
     def test_no_duplication_when_user_provides_logging(self) -> None:
-        from fireflyframework_genai.agents.builtin_middleware import LoggingMiddleware
+        from fireflyframework_agentic.agents.builtin_middleware import LoggingMiddleware
 
         user_mw = LoggingMiddleware(level=20)
         agent = FireflyAgent(
@@ -402,7 +402,7 @@ class TestDecoratorMiddlewareParam:
         assert len(instruct.middleware) == 3
 
     def test_decorator_accepts_memory(self) -> None:
-        from fireflyframework_genai.memory.manager import MemoryManager
+        from fireflyframework_agentic.memory.manager import MemoryManager
 
         mem = MemoryManager()
 
@@ -420,11 +420,11 @@ class TestColoredFormatter:
     def test_format_contains_ansi(self) -> None:
         import logging as stdlib_logging
 
-        from fireflyframework_genai.logging import ColoredFormatter
+        from fireflyframework_agentic.logging import ColoredFormatter
 
         fmt = ColoredFormatter()
         record = stdlib_logging.LogRecord(
-            name="fireflyframework_genai.agents.builtin_middleware",
+            name="fireflyframework_agentic.agents.builtin_middleware",
             level=stdlib_logging.INFO,
             pathname="",
             lineno=0,

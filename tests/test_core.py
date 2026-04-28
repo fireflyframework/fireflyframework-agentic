@@ -16,14 +16,14 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.config import FireflyGenAIConfig
-from fireflyframework_genai.exceptions import (
+from fireflyframework_agentic.config import FireflyAgenticConfig
+from fireflyframework_agentic.exceptions import (
     AgentError,
     ConfigurationError,
-    FireflyGenAIError,
+    FireflyAgenticError,
     ToolError,
 )
-from fireflyframework_genai.types import JSON, AgentDepsT, Metadata
+from fireflyframework_agentic.types import JSON, AgentDepsT, Metadata
 
 
 class TestTypes:
@@ -40,28 +40,28 @@ class TestTypes:
 
 class TestExceptions:
     def test_base_exception_hierarchy(self):
-        err = FireflyGenAIError("test")
+        err = FireflyAgenticError("test")
         assert isinstance(err, Exception)
         assert str(err) == "test"
 
     def test_agent_error_is_firefly_error(self):
         err = AgentError("agent failed")
-        assert isinstance(err, FireflyGenAIError)
+        assert isinstance(err, FireflyAgenticError)
 
     def test_tool_error_is_firefly_error(self):
         err = ToolError("tool failed")
-        assert isinstance(err, FireflyGenAIError)
+        assert isinstance(err, FireflyAgenticError)
 
     def test_configuration_error_is_firefly_error(self):
         err = ConfigurationError("bad config")
-        assert isinstance(err, FireflyGenAIError)
+        assert isinstance(err, FireflyAgenticError)
 
 
 class TestConfig:
     def test_config_creates_instance(self):
-        config = FireflyGenAIConfig()
+        config = FireflyAgenticConfig()
         assert config is not None
 
     def test_config_has_default_model(self):
-        config = FireflyGenAIConfig()
+        config = FireflyAgenticConfig()
         assert isinstance(config.default_model, str)

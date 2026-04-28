@@ -23,15 +23,15 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-from fireflyframework_genai.studio.codegen.models import (
+from fireflyframework_agentic.studio.codegen.models import (
     GraphEdge,
     GraphModel,
     GraphNode,
     NodeType,
 )
-from fireflyframework_genai.studio.execution.checkpoint import CheckpointManager
-from fireflyframework_genai.studio.execution.compiler import compile_graph
-from fireflyframework_genai.studio.execution.runner import StudioEventHandler
+from fireflyframework_agentic.studio.execution.checkpoint import CheckpointManager
+from fireflyframework_agentic.studio.execution.compiler import compile_graph
+from fireflyframework_agentic.studio.execution.runner import StudioEventHandler
 
 # ---------------------------------------------------------------------------
 # Helpers

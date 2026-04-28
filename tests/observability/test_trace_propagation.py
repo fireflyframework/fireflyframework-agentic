@@ -21,7 +21,7 @@ from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.trace import SpanContext, TraceFlags
 
-from fireflyframework_genai.observability.tracer import (
+from fireflyframework_agentic.observability.tracer import (
     extract_trace_context,
     get_trace_context,
     inject_trace_context,

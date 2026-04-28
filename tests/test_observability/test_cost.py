@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.observability.cost import (
+from fireflyframework_agentic.observability.cost import (
     CostCalculator,
     GenAIPricesCostCalculator,
     StaticPriceCostCalculator,

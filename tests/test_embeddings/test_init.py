@@ -5,7 +5,7 @@ from __future__ import annotations
 
 class TestEmbeddingsPublicAPI:
     def test_core_imports(self):
-        from fireflyframework_genai.embeddings import (
+        from fireflyframework_agentic.embeddings import (
             BaseEmbedder,
             EmbedderRegistry,
             EmbeddingProtocol,
@@ -26,6 +26,6 @@ class TestEmbeddingsPublicAPI:
         assert euclidean_distance is not None
 
     def test_provider_imports(self):
-        from fireflyframework_genai.embeddings.providers.openai import OpenAIEmbedder
+        from fireflyframework_agentic.embeddings.providers.openai import OpenAIEmbedder
 
         assert OpenAIEmbedder is not None

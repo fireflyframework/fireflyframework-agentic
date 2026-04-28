@@ -30,7 +30,7 @@ flowchart TD
 ## Defining an Experiment
 
 ```python
-from fireflyframework_genai.experiments import Experiment, Variant
+from fireflyframework_agentic.experiments import Experiment, Variant
 
 experiment = Experiment(
     name="model_comparison",
@@ -50,7 +50,7 @@ The `ExperimentRunner` executes each variant against a list of test inputs and
 collects metrics (latency, token usage, quality scores).
 
 ```python
-from fireflyframework_genai.experiments import ExperimentRunner
+from fireflyframework_agentic.experiments import ExperimentRunner
 
 runner = ExperimentRunner()
 results = await runner.run(
@@ -67,7 +67,7 @@ The `ExperimentTracker` persists experiment results to disk (JSON) for later ana
 and reproducibility.
 
 ```python
-from fireflyframework_genai.experiments import ExperimentTracker
+from fireflyframework_agentic.experiments import ExperimentTracker
 
 tracker = ExperimentTracker(storage_dir="./experiment_results")
 tracker.save(results)
@@ -82,7 +82,7 @@ The `VariantComparator` computes comparison metrics across experiment variants t
 determine which variant performs better.
 
 ```python
-from fireflyframework_genai.experiments import VariantComparator
+from fireflyframework_agentic.experiments import VariantComparator
 
 comparator = VariantComparator()
 metrics = comparator.compare(results)

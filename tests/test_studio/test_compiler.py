@@ -20,10 +20,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from fireflyframework_genai.agents.registry import agent_registry
-from fireflyframework_genai.pipeline.context import PipelineContext
-from fireflyframework_genai.pipeline.engine import PipelineEngine
-from fireflyframework_genai.pipeline.steps import (
+from fireflyframework_agentic.agents.registry import agent_registry
+from fireflyframework_agentic.pipeline.context import PipelineContext
+from fireflyframework_agentic.pipeline.engine import PipelineEngine
+from fireflyframework_agentic.pipeline.steps import (
     AgentStep,
     BranchStep,
     CallableStep,
@@ -31,18 +31,18 @@ from fireflyframework_genai.pipeline.steps import (
     FanOutStep,
     ReasoningStep,
 )
-from fireflyframework_genai.reasoning.registry import reasoning_registry
-from fireflyframework_genai.studio.codegen.models import (
+from fireflyframework_agentic.reasoning.registry import reasoning_registry
+from fireflyframework_agentic.studio.codegen.models import (
     GraphEdge,
     GraphModel,
     GraphNode,
     NodeType,
 )
-from fireflyframework_genai.studio.execution.compiler import (
+from fireflyframework_agentic.studio.execution.compiler import (
     CompilationError,
     compile_graph,
 )
-from fireflyframework_genai.tools.registry import tool_registry
+from fireflyframework_agentic.tools.registry import tool_registry
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -125,7 +125,7 @@ class TestCompilationErrorCases:
         # Temporarily replace the dispatch table to simulate an unsupported type
         with (
             patch(
-                "fireflyframework_genai.studio.execution.compiler._NODE_COMPILERS",
+                "fireflyframework_agentic.studio.execution.compiler._NODE_COMPILERS",
                 {},
             ),
             pytest.raises(CompilationError, match="Unsupported node type"),
@@ -164,7 +164,7 @@ class TestCompileAgentNode:
         graph = _make_graph([node])
 
         with patch(
-            "fireflyframework_genai.agents.base.FireflyAgent",
+            "fireflyframework_agentic.agents.base.FireflyAgent",
         ) as mock_firefly_agent:
             mock_instance = MagicMock()
             mock_firefly_agent.return_value = mock_instance
@@ -197,7 +197,7 @@ class TestCompileAgentNode:
         graph = _make_graph([node])
 
         with patch(
-            "fireflyframework_genai.agents.base.FireflyAgent",
+            "fireflyframework_agentic.agents.base.FireflyAgent",
         ) as mock_firefly_agent:
             mock_firefly_agent.return_value = MagicMock()
             compile_graph(graph)

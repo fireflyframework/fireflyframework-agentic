@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 
-from fireflyframework_genai.logging import JsonFormatter, configure_logging
+from fireflyframework_agentic.logging import JsonFormatter, configure_logging
 
 
 class TestJsonFormatter:
@@ -52,12 +52,12 @@ class TestJsonFormatter:
 class TestConfigureLogging:
     def test_text_format(self) -> None:
         configure_logging("DEBUG")
-        logger = logging.getLogger("fireflyframework_genai")
+        logger = logging.getLogger("fireflyframework_agentic")
         assert logger.level == logging.DEBUG
 
     def test_json_format(self) -> None:
         configure_logging("INFO", format_style="json")
-        logger = logging.getLogger("fireflyframework_genai")
+        logger = logging.getLogger("fireflyframework_agentic")
         handler = [h for h in logger.handlers if getattr(h, "_firefly_managed", False)]
         assert len(handler) >= 1
         assert isinstance(handler[0].formatter, JsonFormatter)
@@ -65,6 +65,6 @@ class TestConfigureLogging:
     def test_replaces_previous_handler(self) -> None:
         configure_logging("INFO")
         configure_logging("DEBUG")
-        logger = logging.getLogger("fireflyframework_genai")
+        logger = logging.getLogger("fireflyframework_agentic")
         managed = [h for h in logger.handlers if getattr(h, "_firefly_managed", False)]
         assert len(managed) == 1

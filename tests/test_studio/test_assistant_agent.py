@@ -20,8 +20,8 @@ import json
 
 import pytest
 
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.studio.assistant.agent import (
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.studio.assistant.agent import (
     CanvasState,
     create_canvas_tools,
     create_studio_assistant,
@@ -33,7 +33,7 @@ class TestCreateStudioAssistant:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
         monkeypatch.setattr(
-            "fireflyframework_genai.studio.assistant.agent._resolve_assistant_model",
+            "fireflyframework_agentic.studio.assistant.agent._resolve_assistant_model",
             lambda: "openai:gpt-4o",
         )
         agent = create_studio_assistant()

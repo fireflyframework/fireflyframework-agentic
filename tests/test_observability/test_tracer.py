@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.observability.tracer import FireflyTracer
+from fireflyframework_agentic.observability.tracer import FireflyTracer
 
 
 class TestFireflyTracer:

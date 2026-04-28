@@ -23,7 +23,7 @@ pytest.importorskip("httpx", reason="httpx not installed")
 
 import httpx
 
-from fireflyframework_genai.studio.server import create_studio_app
+from fireflyframework_agentic.studio.server import create_studio_app
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -47,7 +47,7 @@ async def client(app):
 @pytest.fixture(autouse=True)
 def _reset_usage_tracker():
     """Reset the default usage tracker between tests."""
-    from fireflyframework_genai.observability.usage import default_usage_tracker
+    from fireflyframework_agentic.observability.usage import default_usage_tracker
 
     default_usage_tracker.reset()
     yield
@@ -96,7 +96,7 @@ class TestMonitoringUsage:
         assert body["by_model"] == {}
 
     async def test_usage_reflects_recorded_data(self, client: httpx.AsyncClient):
-        from fireflyframework_genai.observability.usage import (
+        from fireflyframework_agentic.observability.usage import (
             UsageRecord,
             default_usage_tracker,
         )
@@ -142,7 +142,7 @@ class TestMonitoringUsage:
         assert model_data["total_tokens"] == 150
 
     async def test_usage_aggregates_multiple_records(self, client: httpx.AsyncClient):
-        from fireflyframework_genai.observability.usage import (
+        from fireflyframework_agentic.observability.usage import (
             UsageRecord,
             default_usage_tracker,
         )

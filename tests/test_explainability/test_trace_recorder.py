@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.explainability.trace_recorder import TraceRecorder
+from fireflyframework_agentic.explainability.trace_recorder import TraceRecorder
 
 
 class TestTraceRecorder:

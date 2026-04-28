@@ -10,7 +10,7 @@ import sys
 
 def main() -> None:
     """Launch Firefly Studio as a desktop sidecar process."""
-    from fireflyframework_genai.studio.cli import main as studio_main
+    from fireflyframework_agentic.studio.cli import main as studio_main
 
     studio_main(sys.argv[1:])
 

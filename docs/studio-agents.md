@@ -19,8 +19,8 @@ All three agents are built on the `FireflyAgent` class from the framework's agen
 **Personality**: The creator of the construct. Speaks with measured authority and calm precision. Addresses the user as "The One" (or by name when configured). Favors words of Latin and Greek origin: "concordantly", "ergo", "vis-a-vis", "inherent", "inevitability", "axiomatically". Uses architectural and mathematical metaphors: "construct", "equation", "variable", "anomaly", "iteration". Never uses emojis or double-dashes.
 
 **Source files**:
-- Agent: `src/fireflyframework_genai/studio/assistant/agent.py`
-- API: `src/fireflyframework_genai/studio/api/assistant.py`
+- Agent: `src/fireflyframework_agentic/studio/assistant/agent.py`
+- API: `src/fireflyframework_agentic/studio/api/assistant.py`
 
 ### Capabilities
 
@@ -101,9 +101,9 @@ After the Architect completes a substantial build (calls `validate_pipeline` or 
 **Personality**: She who sees beyond the code. Speaks warmly and conversationally, with the cadence of someone sharing wisdom over coffee. Uses everyday metaphors: cooking, weather, journeys, gardens. Asks questions more than she gives answers. Occasionally cryptic, but always purposeful. Never uses emojis or double-dashes.
 
 **Source files**:
-- Agent: `src/fireflyframework_genai/studio/assistant/oracle.py`
-- Notifications: `src/fireflyframework_genai/studio/assistant/oracle_notifications.py`
-- API: `src/fireflyframework_genai/studio/api/oracle.py`
+- Agent: `src/fireflyframework_agentic/studio/assistant/oracle.py`
+- Notifications: `src/fireflyframework_agentic/studio/assistant/oracle_notifications.py`
+- API: `src/fireflyframework_agentic/studio/api/oracle.py`
 
 ### Capabilities
 
@@ -177,12 +177,12 @@ class OracleInsight:
 **Personality**: Cold precision. The enforcer who makes abstract pipelines concrete. Speaks formally with measured respect. Key phrases include: "Your code... has evolved", "I must validate. It is... inevitable", "Do not try to optimize the code. Optimize your intent." Sees himself as the one who makes things real. Never uses emojis or double-dashes.
 
 **Source files**:
-- Agent: `src/fireflyframework_genai/studio/assistant/smith.py`
-- API: `src/fireflyframework_genai/studio/api/smith.py`
+- Agent: `src/fireflyframework_agentic/studio/assistant/smith.py`
+- API: `src/fireflyframework_agentic/studio/api/smith.py`
 
 ### Capabilities
 
-- **Code generation**: Converts visual pipelines into production Python code using the Firefly GenAI Framework API
+- **Code generation**: Converts visual pipelines into production Python code using the Firefly Agentic Framework API
 - **Code validation**: Syntax-checks Python code via `py_compile` without executing
 - **Code execution**: Runs Python code in sandboxed subprocesses with 30-second timeouts
 - **Shell command execution**: Executes shell commands with three-tier safety classification

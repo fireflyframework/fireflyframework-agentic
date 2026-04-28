@@ -22,9 +22,9 @@ from pathlib import Path
 import httpx
 import pytest
 
-from fireflyframework_genai.studio.config import StudioConfig
-from fireflyframework_genai.studio.projects import ProjectInfo, ProjectManager
-from fireflyframework_genai.studio.server import create_studio_app
+from fireflyframework_agentic.studio.config import StudioConfig
+from fireflyframework_agentic.studio.projects import ProjectInfo, ProjectManager
+from fireflyframework_agentic.studio.server import create_studio_app
 
 pytest.importorskip("fastapi", reason="fastapi not installed")
 pytest.importorskip("httpx", reason="httpx not installed")

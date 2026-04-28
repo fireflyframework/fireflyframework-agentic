@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic_ai.exceptions import ModelHTTPError
 
-from fireflyframework_genai.agents.base import FireflyAgent
-from fireflyframework_genai.config import reset_config
+from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.config import reset_config
 
 
 @pytest.fixture(autouse=True)
@@ -58,7 +58,7 @@ class TestRunWithRateLimitRetry:
         with (
             patch("asyncio.sleep", new_callable=AsyncMock),
             patch(
-                "fireflyframework_genai.agents.base.get_config",
+                "fireflyframework_agentic.agents.base.get_config",
             ) as mock_cfg,
         ):
             cfg = mock_cfg.return_value
@@ -120,7 +120,7 @@ class TestRunWithRateLimitRetry:
         agent._agent.run = AsyncMock(return_value=mock_result)
 
         with patch(
-            "fireflyframework_genai.agents.base.get_config",
+            "fireflyframework_agentic.agents.base.get_config",
         ) as mock_cfg:
             cfg = mock_cfg.return_value
             cfg.rate_limit_max_retries = 3

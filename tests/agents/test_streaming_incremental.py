@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.agents.base import FireflyAgent
+from fireflyframework_agentic.agents.base import FireflyAgent
 
 
 @pytest.mark.asyncio
@@ -117,7 +117,7 @@ class TestIncrementalStreaming:
 
     async def test_both_modes_record_usage(self):
         """Test that both streaming modes record usage after completion."""
-        from fireflyframework_genai.observability.usage import default_usage_tracker
+        from fireflyframework_agentic.observability.usage import default_usage_tracker
 
         # Get initial summary
         initial_summary = default_usage_tracker.get_summary()
@@ -158,7 +158,7 @@ class TestIncrementalStreaming:
 
     async def test_middleware_fires_with_incremental_mode(self):
         """Test that incremental streaming works with middleware."""
-        from fireflyframework_genai.agents.builtin_middleware import LoggingMiddleware
+        from fireflyframework_agentic.agents.builtin_middleware import LoggingMiddleware
 
         agent = FireflyAgent(
             "test-mw-inc2",
@@ -212,7 +212,7 @@ class TestIncrementalStreamingEdgeCases:
 
     async def test_incremental_with_conversation_id(self):
         """Test incremental streaming with conversation memory."""
-        from fireflyframework_genai.memory.manager import MemoryManager
+        from fireflyframework_agentic.memory.manager import MemoryManager
 
         memory = MemoryManager()
         agent = FireflyAgent("test-conv", model="test", memory=memory, auto_register=False)

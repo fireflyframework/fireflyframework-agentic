@@ -30,8 +30,8 @@ import asyncio
 
 from _common import MODEL, ensure_api_key
 
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.reasoning import ReActPattern
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.reasoning import ReActPattern
 
 
 async def main() -> None:

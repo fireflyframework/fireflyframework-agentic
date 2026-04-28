@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.tools.builder import ToolBuilder
+from fireflyframework_agentic.tools.builder import ToolBuilder
 
 
 class TestToolBuilder:

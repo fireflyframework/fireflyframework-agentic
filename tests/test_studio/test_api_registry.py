@@ -23,7 +23,7 @@ pytest.importorskip("httpx", reason="httpx not installed")
 
 import httpx
 
-from fireflyframework_genai.studio.server import create_studio_app
+from fireflyframework_agentic.studio.server import create_studio_app
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -58,8 +58,8 @@ class TestRegistryAgents:
     async def test_agents_returns_agent_info_after_registration(self, client: httpx.AsyncClient):
         from pydantic_ai.models.test import TestModel
 
-        from fireflyframework_genai.agents.base import FireflyAgent
-        from fireflyframework_genai.agents.registry import agent_registry
+        from fireflyframework_agentic.agents.base import FireflyAgent
+        from fireflyframework_agentic.agents.registry import agent_registry
 
         agent = FireflyAgent(
             "test-agent",
@@ -93,8 +93,8 @@ class TestRegistryTools:
         assert resp.json() == []
 
     async def test_tools_returns_tool_info_after_registration(self, client: httpx.AsyncClient):
-        from fireflyframework_genai.tools.base import BaseTool
-        from fireflyframework_genai.tools.registry import tool_registry
+        from fireflyframework_agentic.tools.base import BaseTool
+        from fireflyframework_agentic.tools.registry import tool_registry
 
         class DummyTool(BaseTool):
             async def _execute(self, **kwargs):
@@ -123,7 +123,7 @@ class TestRegistryPatterns:
         assert resp.json() == []
 
     async def test_patterns_returns_list_after_registration(self, client: httpx.AsyncClient):
-        from fireflyframework_genai.reasoning.registry import reasoning_registry
+        from fireflyframework_agentic.reasoning.registry import reasoning_registry
 
         reasoning_registry.register("chain-of-thought", object())
         reasoning_registry.register("react", object())

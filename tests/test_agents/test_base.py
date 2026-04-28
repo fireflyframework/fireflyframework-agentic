@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from pydantic_ai.models import Model
 
-from fireflyframework_genai.agents.base import FireflyAgent
+from fireflyframework_agentic.agents.base import FireflyAgent
 
 
 class TestFireflyAgent:

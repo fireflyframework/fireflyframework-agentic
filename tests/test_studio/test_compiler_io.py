@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.studio.codegen.models import (
+from fireflyframework_agentic.studio.codegen.models import (
     GraphEdge,
     GraphModel,
     GraphNode,
     NodeType,
 )
-from fireflyframework_genai.studio.execution.compiler import (
+from fireflyframework_agentic.studio.execution.compiler import (
     CompilationError,
     compile_graph,
 )

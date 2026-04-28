@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 
-from fireflyframework_genai.studio.codegen.generator import _get_default_model, generate_python
-from fireflyframework_genai.studio.codegen.models import GraphModel, GraphNode, NodeType
+from fireflyframework_agentic.studio.codegen.generator import _get_default_model, generate_python
+from fireflyframework_agentic.studio.codegen.models import GraphModel, GraphNode, NodeType
 
 
 class TestDynamicDefaultModel:
@@ -61,7 +61,7 @@ class TestArchitectDefaultModel:
             )
         )
 
-        from fireflyframework_genai.studio.assistant.agent import _build_instructions
+        from fireflyframework_agentic.studio.assistant.agent import _build_instructions
 
         instructions = _build_instructions(settings_path=settings_file)
         assert "anthropic:claude-sonnet-4-20250514" in instructions

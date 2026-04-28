@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from fireflyframework_genai.agents.fallback import FallbackModelWrapper
+from fireflyframework_agentic.agents.fallback import FallbackModelWrapper
 
 
 class TestFallbackModelWrapper:

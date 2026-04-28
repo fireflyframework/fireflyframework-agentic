@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from fireflyframework_genai.pipeline.dag import DAG, DAGNode
-from fireflyframework_genai.pipeline.engine import PipelineEngine, PipelineEventHandler
+from fireflyframework_agentic.pipeline.dag import DAG, DAGNode
+from fireflyframework_agentic.pipeline.engine import PipelineEngine, PipelineEventHandler
 
 
 class _EchoStep:
@@ -45,7 +45,7 @@ class _TestEventHandler:
 
 class TestPipelineEventHandler:
     async def test_events_on_success(self):
-        from fireflyframework_genai.pipeline.dag import DAGEdge
+        from fireflyframework_agentic.pipeline.dag import DAGEdge
 
         handler = _TestEventHandler()
         dag = DAG("evt-test")

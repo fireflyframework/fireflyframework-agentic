@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.studio.codegen.models import (
+from fireflyframework_agentic.studio.codegen.models import (
     GraphEdge,
     GraphModel,
     GraphNode,

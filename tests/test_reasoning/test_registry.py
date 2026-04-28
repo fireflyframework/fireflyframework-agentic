@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.reasoning.registry import ReasoningPatternRegistry
+from fireflyframework_agentic.reasoning.registry import ReasoningPatternRegistry
 
 
 class TestReasoningPatternRegistry:
@@ -28,7 +28,7 @@ class TestReasoningPatternRegistry:
         assert registry.get("test") is object
 
     def test_get_nonexistent_raises(self):
-        from fireflyframework_genai.exceptions import ReasoningPatternNotFoundError
+        from fireflyframework_agentic.exceptions import ReasoningPatternNotFoundError
 
         registry = ReasoningPatternRegistry()
         with pytest.raises(ReasoningPatternNotFoundError):

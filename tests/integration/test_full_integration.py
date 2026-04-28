@@ -30,13 +30,13 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.agents.base import FireflyAgent
-from fireflyframework_genai.agents.builtin_middleware import CostGuardMiddleware, LoggingMiddleware
-from fireflyframework_genai.agents.prompt_cache import PromptCacheMiddleware
-from fireflyframework_genai.memory.manager import MemoryManager
-from fireflyframework_genai.pipeline.builder import PipelineBuilder
-from fireflyframework_genai.pipeline.steps import AgentStep, BatchLLMStep
-from fireflyframework_genai.resilience.circuit_breaker import CircuitBreakerMiddleware
+from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.agents.builtin_middleware import CostGuardMiddleware, LoggingMiddleware
+from fireflyframework_agentic.agents.prompt_cache import PromptCacheMiddleware
+from fireflyframework_agentic.memory.manager import MemoryManager
+from fireflyframework_agentic.pipeline.builder import PipelineBuilder
+from fireflyframework_agentic.pipeline.steps import AgentStep, BatchLLMStep
+from fireflyframework_agentic.resilience.circuit_breaker import CircuitBreakerMiddleware
 
 
 @pytest.mark.asyncio
@@ -141,7 +141,7 @@ class TestFullIntegration:
         builder.add_edge("classify", "aggregate")
 
         # Run pipeline
-        from fireflyframework_genai.pipeline.context import PipelineContext
+        from fireflyframework_agentic.pipeline.context import PipelineContext
 
         pipeline = builder.build()
         result = await pipeline.run(PipelineContext(inputs={}))
@@ -175,7 +175,7 @@ class TestFullIntegration:
 
     async def test_agent_step_in_pipeline_with_memory(self):
         """Test AgentStep in pipeline preserves memory."""
-        from fireflyframework_genai.pipeline.context import PipelineContext
+        from fireflyframework_agentic.pipeline.context import PipelineContext
 
         memory = MemoryManager()
 
@@ -205,7 +205,7 @@ class TestFullIntegration:
 
         step = BatchLLMStep(agent, prompts_key="prompts", batch_size=5)
 
-        from fireflyframework_genai.pipeline.context import PipelineContext
+        from fireflyframework_agentic.pipeline.context import PipelineContext
 
         context = PipelineContext(inputs={}, correlation_id="test")
         inputs = {"prompts": ["P1", "P2", "P3"]}
@@ -287,7 +287,7 @@ class TestFeatureComposition:
 
     async def test_pipeline_with_all_step_types(self):
         """Test pipeline with various step types."""
-        from fireflyframework_genai.pipeline.context import PipelineContext
+        from fireflyframework_agentic.pipeline.context import PipelineContext
 
         agent = FireflyAgent("step-agent", model="test", auto_register=False)
 

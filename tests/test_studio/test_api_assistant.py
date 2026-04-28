@@ -25,7 +25,7 @@ pytest.importorskip("httpx", reason="httpx not installed")
 
 from starlette.testclient import TestClient
 
-from fireflyframework_genai.studio.server import create_studio_app
+from fireflyframework_agentic.studio.server import create_studio_app
 
 
 @pytest.fixture()
@@ -36,7 +36,7 @@ def app(monkeypatch):
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr(
-        "fireflyframework_genai.studio.assistant.agent._resolve_assistant_model",
+        "fireflyframework_agentic.studio.assistant.agent._resolve_assistant_model",
         lambda: "openai:gpt-4o",
     )
     return create_studio_app()
@@ -94,7 +94,7 @@ class TestAssistantWebSocket:
 
         # Patch create_studio_assistant in the module where it's imported
         monkeypatch.setattr(
-            "fireflyframework_genai.studio.assistant.agent.create_studio_assistant",
+            "fireflyframework_agentic.studio.assistant.agent.create_studio_assistant",
             lambda canvas=None: mock_agent,
         )
 
@@ -128,7 +128,7 @@ class TestAssistantWebSocket:
         mock_agent.run = AsyncMock(return_value=mock_result)
 
         monkeypatch.setattr(
-            "fireflyframework_genai.studio.assistant.agent.create_studio_assistant",
+            "fireflyframework_agentic.studio.assistant.agent.create_studio_assistant",
             lambda canvas=None: mock_agent,
         )
 

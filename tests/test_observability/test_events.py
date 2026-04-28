@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.observability.events import FireflyEvent, FireflyEvents
+from fireflyframework_agentic.observability.events import FireflyEvent, FireflyEvents
 
 
 class TestFireflyEvent:

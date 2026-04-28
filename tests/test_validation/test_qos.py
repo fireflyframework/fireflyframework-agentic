@@ -14,7 +14,7 @@
 
 """Tests for QoS guards."""
 
-from fireflyframework_genai.validation.qos import GroundingChecker, QoSGuard
+from fireflyframework_agentic.validation.qos import GroundingChecker, QoSGuard
 
 
 class TestGroundingChecker:

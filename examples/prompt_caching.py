@@ -40,8 +40,8 @@ from __future__ import annotations
 import asyncio
 import os
 
-from fireflyframework_genai.agents.base import FireflyAgent
-from fireflyframework_genai.agents.prompt_cache import CacheStatistics, PromptCacheMiddleware
+from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.agents.prompt_cache import CacheStatistics, PromptCacheMiddleware
 
 # Sample long system prompt that would benefit from caching
 LEGAL_ASSISTANT_PROMPT = (
@@ -103,7 +103,7 @@ async def demo_without_caching():
     print(f"System prompt length: ~{len(LEGAL_ASSISTANT_PROMPT.split())} words")
     print(f"Processing {len(questions)} questions without caching...\n")
 
-    from fireflyframework_genai.observability.usage import default_usage_tracker
+    from fireflyframework_agentic.observability.usage import default_usage_tracker
 
     initial_cost = default_usage_tracker.get_summary().total_cost_usd
 
@@ -148,7 +148,7 @@ async def demo_with_caching():
     print(f"System prompt length: ~{len(LEGAL_ASSISTANT_PROMPT.split())} words")
     print(f"Processing {len(questions)} questions with caching...\n")
 
-    from fireflyframework_genai.observability.usage import default_usage_tracker
+    from fireflyframework_agentic.observability.usage import default_usage_tracker
 
     initial_cost = default_usage_tracker.get_summary().total_cost_usd
 
@@ -311,7 +311,7 @@ async def main():
     print("✓ Reduces latency by avoiding reprocessing")
     print("✓ Works best with >1024 token cacheable content")
     print("\nUsage:")
-    print("  from fireflyframework_genai.agents.prompt_cache import PromptCacheMiddleware")
+    print("  from fireflyframework_agentic.agents.prompt_cache import PromptCacheMiddleware")
     print()
     print("  agent = FireflyAgent(")
     print("      'assistant',")

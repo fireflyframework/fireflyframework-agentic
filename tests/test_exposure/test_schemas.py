@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.exposure.rest.schemas import (
+from fireflyframework_agentic.exposure.rest.schemas import (
     AgentRequest,
     AgentResponse,
     HealthResponse,

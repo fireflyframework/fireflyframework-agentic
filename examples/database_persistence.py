@@ -25,7 +25,7 @@ and working memory storage. The database backend provides:
 
 Prerequisites:
     1. Install PostgreSQL dependencies:
-       pip install fireflyframework-genai[postgres]
+       pip install fireflyframework-agentic[postgres]
 
     2. Start PostgreSQL (using Docker):
        docker run -d \\
@@ -36,8 +36,8 @@ Prerequisites:
          postgres:17
 
     3. Set environment variables:
-       export FIREFLY_GENAI_MEMORY_BACKEND=postgres
-       export FIREFLY_GENAI_MEMORY_POSTGRES_URL=postgresql://postgres:firefly123@localhost/firefly_memory
+       export FIREFLY_AGENTIC_MEMORY_BACKEND=postgres
+       export FIREFLY_AGENTIC_MEMORY_POSTGRES_URL=postgresql://postgres:firefly123@localhost/firefly_memory
        export OPENAI_API_KEY=sk-...
 
 Usage:
@@ -46,10 +46,10 @@ Usage:
 
 import asyncio
 
-from fireflyframework_genai.agents.base import FireflyAgent
-from fireflyframework_genai.config import get_config
-from fireflyframework_genai.memory.database_store import PostgreSQLStore
-from fireflyframework_genai.memory.manager import MemoryManager
+from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.config import get_config
+from fireflyframework_agentic.memory.database_store import PostgreSQLStore
+from fireflyframework_agentic.memory.manager import MemoryManager
 
 
 async def main() -> None:
@@ -100,7 +100,7 @@ async def main() -> None:
 
     # Store a fact in working memory (persisted to PostgreSQL)
     memory.set_fact("user_name", "Alice")
-    memory.set_fact("project", "Firefly GenAI Framework")
+    memory.set_fact("project", "Firefly Agentic Framework")
     print("\n✓ Stored facts in working memory (PostgreSQL)")
 
     # Second interaction - memory is recalled from PostgreSQL

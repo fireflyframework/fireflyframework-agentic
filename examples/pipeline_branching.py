@@ -36,11 +36,11 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 
-from fireflyframework_genai.pipeline.builder import PipelineBuilder
-from fireflyframework_genai.pipeline.context import PipelineContext
-from fireflyframework_genai.pipeline.dag import DAG, DAGEdge, DAGNode
-from fireflyframework_genai.pipeline.engine import PipelineEngine
-from fireflyframework_genai.pipeline.steps import BranchStep, CallableStep
+from fireflyframework_agentic.pipeline.builder import PipelineBuilder
+from fireflyframework_agentic.pipeline.context import PipelineContext
+from fireflyframework_agentic.pipeline.dag import DAG, DAGEdge, DAGNode
+from fireflyframework_agentic.pipeline.engine import PipelineEngine
+from fireflyframework_agentic.pipeline.steps import BranchStep, CallableStep
 
 # -- Event handler that prints live progress ----------------------------------
 

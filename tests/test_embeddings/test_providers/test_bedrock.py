@@ -6,12 +6,12 @@ import io
 import json
 from unittest.mock import MagicMock, patch
 
-from fireflyframework_genai.embeddings.providers.bedrock import BedrockEmbedder
-from fireflyframework_genai.embeddings.types import EmbeddingResult
+from fireflyframework_agentic.embeddings.providers.bedrock import BedrockEmbedder
+from fireflyframework_agentic.embeddings.types import EmbeddingResult
 
 
 class TestBedrockEmbedder:
-    @patch("fireflyframework_genai.embeddings.providers.bedrock.boto3")
+    @patch("fireflyframework_agentic.embeddings.providers.bedrock.boto3")
     async def test_embed_batch(self, mock_boto3):
         mock_client = MagicMock()
         mock_boto3.client.return_value = mock_client
@@ -33,7 +33,7 @@ class TestBedrockEmbedder:
         assert len(result.embeddings) == 2
         assert result.model == "amazon.titan-embed-text-v2:0"
 
-    @patch("fireflyframework_genai.embeddings.providers.bedrock.boto3")
+    @patch("fireflyframework_agentic.embeddings.providers.bedrock.boto3")
     async def test_embed_one(self, mock_boto3):
         mock_client = MagicMock()
         mock_boto3.client.return_value = mock_client
@@ -47,7 +47,7 @@ class TestBedrockEmbedder:
         assert isinstance(vec, list)
         assert len(vec) == 3
 
-    @patch("fireflyframework_genai.embeddings.providers.bedrock.boto3")
+    @patch("fireflyframework_agentic.embeddings.providers.bedrock.boto3")
     def test_default_model(self, mock_boto3):
         embedder = BedrockEmbedder()
         assert embedder.model == "amazon.titan-embed-text-v2:0"

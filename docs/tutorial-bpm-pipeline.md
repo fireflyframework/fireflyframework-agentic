@@ -13,7 +13,7 @@ structured results -- accessible from anywhere.
 ## Prerequisites
 
 ```bash
-pip install "fireflyframework-genai[studio]"
+pip install "fireflyframework-agentic[studio]"
 ```
 
 You need a configured AI provider (OpenAI, Anthropic, etc.). Set your API

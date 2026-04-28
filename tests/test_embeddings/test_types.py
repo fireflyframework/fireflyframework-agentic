@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.embeddings.types import EmbeddingResult, EmbeddingUsage
+from fireflyframework_agentic.embeddings.types import EmbeddingResult, EmbeddingUsage
 
 
 class TestEmbeddingUsage:

@@ -28,15 +28,15 @@ flowchart TD
 Install the REST extra:
 
 ```bash
-uv add "fireflyframework-genai[rest]"
+uv add "fireflyframework-agentic[rest]"
 ```
 
 Create a FastAPI application:
 
 ```python
-from fireflyframework_genai.exposure.rest import create_genai_app
+from fireflyframework_agentic.exposure.rest import create_agentic_app
 
-app = create_genai_app(title="My GenAI Service", version="1.0.0")
+app = create_agentic_app(title="My GenAI Service", version="1.0.0")
 ```
 
 Run with Uvicorn:
@@ -49,7 +49,7 @@ uvicorn myapp:app --reload
 
 ## Application Factory
 
-The `create_genai_app` function creates a configured FastAPI application with:
+The `create_agentic_app` function creates a configured FastAPI application with:
 
 - Agent routes auto-generated from the `AgentRegistry`.
 - Health-check endpoints at `/health` and `/health/ready`.
@@ -57,7 +57,7 @@ The `create_genai_app` function creates a configured FastAPI application with:
 - CORS middleware with configurable origins.
 
 ```python
-app = create_genai_app(
+app = create_agentic_app(
     title="Production GenAI API",
     version="2.0.0",
     enable_cors=True,
@@ -140,7 +140,7 @@ The REST layer includes a sliding-window rate limiter that can be applied
 as middleware to protect agents from excessive traffic.
 
 ```python
-from fireflyframework_genai.exposure.rest.middleware import add_rate_limit_middleware
+from fireflyframework_agentic.exposure.rest.middleware import add_rate_limit_middleware
 
 add_rate_limit_middleware(
     app,
@@ -167,7 +167,7 @@ add_rate_limit_middleware(
 The `RateLimiter` class can also be used standalone outside of middleware:
 
 ```python
-from fireflyframework_genai.exposure.rest.middleware import RateLimiter
+from fireflyframework_agentic.exposure.rest.middleware import RateLimiter
 
 limiter = RateLimiter(max_requests=10, window_seconds=30.0)
 if not limiter.is_allowed("client-123"):
@@ -188,7 +188,7 @@ When both are configured, a request is accepted if **either** method succeeds.
 Unauthenticated requests receive a `401 Unauthorized` response.
 
 ```python
-from fireflyframework_genai.exposure.rest.middleware import add_auth_middleware
+from fireflyframework_agentic.exposure.rest.middleware import add_auth_middleware
 
 add_auth_middleware(
     app,
@@ -202,8 +202,8 @@ The authentication middleware is **auto-wired** when the config fields
 `auth_api_keys` or `auth_bearer_tokens` are set:
 
 ```bash
-export FIREFLY_GENAI_AUTH_API_KEYS='["key-abc-123"]'
-export FIREFLY_GENAI_AUTH_BEARER_TOKENS='["token-xyz"]'
+export FIREFLY_AGENTIC_AUTH_API_KEYS='["key-abc-123"]'
+export FIREFLY_AGENTIC_AUTH_BEARER_TOKENS='["token-xyz"]'
 ```
 
 ---

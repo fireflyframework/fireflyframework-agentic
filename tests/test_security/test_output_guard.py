@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.agents.builtin_middleware import (
+from fireflyframework_agentic.agents.builtin_middleware import (
     OutputGuardError,
     OutputGuardMiddleware,
 )
-from fireflyframework_genai.agents.middleware import MiddlewareContext
-from fireflyframework_genai.security.output_guard import OutputGuard, default_output_guard
+from fireflyframework_agentic.agents.middleware import MiddlewareContext
+from fireflyframework_agentic.security.output_guard import OutputGuard, default_output_guard
 
 # -- OutputGuard core --------------------------------------------------------
 

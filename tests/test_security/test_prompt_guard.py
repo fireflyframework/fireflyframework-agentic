@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.security.prompt_guard import PromptGuard, PromptGuardResult
+from fireflyframework_agentic.security.prompt_guard import PromptGuard, PromptGuardResult
 
 
 class TestPromptGuard:

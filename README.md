@@ -1,7 +1,7 @@
-# fireflyframework-genai
+# fireflyframework-agentic
 **The production-grade GenAI metaframework built on [Pydantic AI](https://ai.pydantic.dev/).**
 
-[![CI](https://github.com/fireflyframework/fireflyframework-genai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fireflyframework/fireflyframework-genai/actions/workflows/ci.yml)
+[![CI](https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/ci.yml)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-1383%20passing-brightgreen.svg)]()
@@ -13,7 +13,7 @@ Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License
 
 ## Table of Contents
 
-- [Why fireflyframework-genai?](#why-fireflyframework-genai)
+- [Why fireflyframework-agentic?](#why-fireflyframework-agentic)
 - [Key Principles](#key-principles)
 - [Architecture at a Glance](#architecture-at-a-glance)
 - [Feature Highlights](#feature-highlights)
@@ -33,7 +33,7 @@ Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License
 
 ---
 
-## Why fireflyframework-genai?
+## Why fireflyframework-agentic?
 
 [Pydantic AI](https://ai.pydantic.dev/) provides an excellent foundation: type-safe,
 model-agnostic agents with structured output. But a production GenAI system demands
@@ -43,7 +43,7 @@ turns, observe every call with traces and metrics, run A/B experiments to compar
 models, and expose the whole thing over REST or message queues — all without coupling
 your domain logic to infrastructure concerns.
 
-**fireflyframework-genai is the production framework built on top of Pydantic AI.**
+**fireflyframework-agentic is the production framework built on top of Pydantic AI.**
 It extends the engine with six composable layers — from core configuration through
 agent management, intelligent reasoning, experimentation, pipeline orchestration,
 and service exposure — so that every concern has a dedicated, protocol-driven module.
@@ -71,8 +71,8 @@ You write your business logic; the framework provides the architecture.
    without modifying framework internals.
 
 2. **Convention over configuration** — Sensible defaults everywhere.
-   `FireflyGenAIConfig` is a Pydantic Settings singleton that reads from environment
-   variables prefixed with `FIREFLY_GENAI_` and `.env` files. One config object
+   `FireflyAgenticConfig` is a Pydantic Settings singleton that reads from environment
+   variables prefixed with `FIREFLY_AGENTIC_` and `.env` files. One config object
    governs model defaults, retry counts, token limits, observability endpoints,
    memory backends, and validation thresholds — override only what you need.
 
@@ -94,7 +94,7 @@ You write your business logic; the framework provides the architecture.
 ```mermaid
 graph TD
     subgraph Exposure Layer
-        REST["REST API<br/><small>create_genai_app · SSE streaming<br/>health · middleware · router</small>"]
+        REST["REST API<br/><small>create_agentic_app · SSE streaming<br/>health · middleware · router</small>"]
         QUEUES["Message Queues<br/><small>Kafka · RabbitMQ · Redis<br/>consumers · producers · QueueRouter</small>"]
     end
 
@@ -128,9 +128,9 @@ graph TD
     end
 
     subgraph Core Layer
-        CFG["Config<br/><small>FireflyGenAIConfig<br/>get_config · reset_config</small>"]
+        CFG["Config<br/><small>FireflyAgenticConfig<br/>get_config · reset_config</small>"]
         TYPES["Types & Protocols<br/><small>AgentLike · 10 protocols<br/>TypeVars · type aliases</small>"]
-        EXC["Exceptions<br/><small>FireflyGenAIError hierarchy<br/>18 exception classes</small>"]
+        EXC["Exceptions<br/><small>FireflyAgenticError hierarchy<br/>18 exception classes</small>"]
         PLUG["Plugin System<br/><small>PluginDiscovery<br/>3 entry-point groups</small>"]
     end
 
@@ -369,7 +369,7 @@ classDiagram
   `EvalDataset` loads/saves test cases from JSON. `ModelComparison` runs the
   same prompts across multiple agents for side-by-side analysis.
 
-- **Exposure** — `create_genai_app()` produces a FastAPI application with
+- **Exposure** — `create_agentic_app()` produces a FastAPI application with
   auto-generated `POST /agents/{name}/run` endpoints, SSE streaming via
   `sse_stream`, health/readiness/liveness checks, CORS and request-ID middleware,
   and multimodal input support. Queue consumers (`KafkaAgentConsumer`,
@@ -403,7 +403,7 @@ classDiagram
   you build pipelines through natural language. Project management persists
   graphs to disk. Checkpoints enable time-travel debugging. The frontend
   is a SvelteKit 5 SPA bundled inside the Python package — no Node.js needed.
-  Install with `pip install "fireflyframework-genai[studio]"`.
+  Install with `pip install "fireflyframework-agentic[studio]"`.
 
 ---
 
@@ -458,20 +458,20 @@ choose extras, and installs everything with progress indicators and verification
 **macOS / Linux:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fireflyframework/fireflyframework-genai/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fireflyframework/fireflyframework-agentic/main/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/fireflyframework/fireflyframework-genai/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/fireflyframework/fireflyframework-agentic/main/install.ps1 | iex
 ```
 
 Both installers support non-interactive mode for CI/CD:
 
 ```bash
 # macOS / Linux — install with all extras, no prompts
-curl -fsSL https://raw.githubusercontent.com/fireflyframework/fireflyframework-genai/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fireflyframework/fireflyframework-agentic/main/install.sh | bash
 ```
 
 ```powershell
@@ -482,8 +482,8 @@ curl -fsSL https://raw.githubusercontent.com/fireflyframework/fireflyframework-g
 ### Install from Source
 
 ```bash
-git clone https://github.com/fireflyframework/fireflyframework-genai.git
-cd fireflyframework-genai
+git clone https://github.com/fireflyframework/fireflyframework-agentic.git
+cd fireflyframework-agentic
 uv sync --all-extras # or: pip install -e ".[all]"
 ```
 
@@ -518,7 +518,7 @@ uv sync --all-extras # or: pip install -e ".[all]"
 ### Verify Installation
 
 ```bash
-python -c "import fireflyframework_genai; print(fireflyframework_genai.__version__)"
+python -c "import fireflyframework_agentic; print(fireflyframework_agentic.__version__)"
 # 26.02.07
 ```
 
@@ -533,13 +533,13 @@ firefly --help
 **macOS / Linux:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fireflyframework/fireflyframework-genai/main/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fireflyframework/fireflyframework-agentic/main/uninstall.sh | bash
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/fireflyframework/fireflyframework-genai/main/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/fireflyframework/fireflyframework-agentic/main/uninstall.ps1 | iex
 ```
 
 Or manually remove the cloned directory and its virtual environment.
@@ -560,8 +560,8 @@ OPENAI_API_KEY=sk-...
 # GROQ_API_KEY=gsk_...
 
 # Framework settings
-FIREFLY_GENAI_DEFAULT_MODEL=openai:gpt-4o
-FIREFLY_GENAI_DEFAULT_TEMPERATURE=0.3
+FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o
+FIREFLY_AGENTIC_DEFAULT_TEMPERATURE=0.3
 ```
 
 The model string format is `"provider:model_name"` — e.g. `"openai:gpt-4o"`,
@@ -573,7 +573,7 @@ to `FireflyAgent(model=...)` — see the [tutorial](docs/tutorial.md#model-provi
 ### 2. Define an Agent
 
 ```python
-from fireflyframework_genai.agents import firefly_agent
+from fireflyframework_agentic.agents import firefly_agent
 
 @firefly_agent(name="assistant", model="openai:gpt-4o")
 def assistant_instructions(ctx):
@@ -583,7 +583,7 @@ def assistant_instructions(ctx):
 ### 3. Register a Tool
 
 ```python
-from fireflyframework_genai.tools import firefly_tool
+from fireflyframework_agentic.tools import firefly_tool
 
 @firefly_tool(name="lookup", description="Look up a term")
 async def lookup(query: str) -> str:
@@ -593,8 +593,8 @@ async def lookup(query: str) -> str:
 ### 4. Add Memory for Multi-Turn Conversations
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.memory import MemoryManager
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.memory import MemoryManager
 
 memory = MemoryManager(max_conversation_tokens=32_000)
 agent = FireflyAgent(name="bot", model="openai:gpt-4o", memory=memory)
@@ -607,7 +607,7 @@ result = await agent.run("What did I just say?", conversation_id=cid)
 ### 5. Apply a Reasoning Pattern
 
 ```python
-from fireflyframework_genai.reasoning import ReActPattern
+from fireflyframework_agentic.reasoning import ReActPattern
 
 react = ReActPattern(max_steps=5)
 result = await react.execute(agent, "What is the weather in London?")
@@ -618,7 +618,7 @@ print(result.output)
 
 ```python
 from pydantic import BaseModel
-from fireflyframework_genai.validation import OutputReviewer
+from fireflyframework_agentic.validation import OutputReviewer
 
 class Answer(BaseModel):
     answer: str
@@ -632,8 +632,8 @@ print(result.output) # Answer(answer="4", confidence=0.99)
 ### 7. Wire a Pipeline
 
 ```python
-from fireflyframework_genai.pipeline.builder import PipelineBuilder
-from fireflyframework_genai.pipeline.steps import AgentStep, CallableStep
+from fireflyframework_agentic.pipeline.builder import PipelineBuilder
+from fireflyframework_agentic.pipeline.steps import AgentStep, CallableStep
 
 pipeline = (
     PipelineBuilder("my-pipeline")
@@ -649,8 +649,8 @@ result = await pipeline.run(inputs="Process this document")
 ### 8. Embed and Search (RAG)
 
 ```python
-from fireflyframework_genai.embeddings.providers import OpenAIEmbedder
-from fireflyframework_genai.vectorstores import InMemoryVectorStore, VectorDocument
+from fireflyframework_agentic.embeddings.providers import OpenAIEmbedder
+from fireflyframework_agentic.vectorstores import InMemoryVectorStore, VectorDocument
 
 embedder = OpenAIEmbedder(model="text-embedding-3-small")
 store = InMemoryVectorStore(embedder=embedder)
@@ -669,16 +669,16 @@ print(results[0].document.text)  # Python is great for AI
 ### 9. Expose via REST
 
 ```python
-from fireflyframework_genai.exposure.rest import create_genai_app
+from fireflyframework_agentic.exposure.rest import create_agentic_app
 
-app = create_genai_app(title="My GenAI Service")
+app = create_agentic_app(title="My GenAI Service")
 # uvicorn myapp:app --reload
 ```
 
 ### 10. Expose via Queues (Consumer)
 
 ```python
-from fireflyframework_genai.exposure.queues.kafka import KafkaAgentConsumer
+from fireflyframework_agentic.exposure.queues.kafka import KafkaAgentConsumer
 
 consumer = KafkaAgentConsumer("assistant", topic="requests", bootstrap_servers="localhost:9092")
 await consumer.start()
@@ -687,7 +687,7 @@ await consumer.start()
 ### 11. Publish via Queues (Producer)
 
 ```python
-from fireflyframework_genai.exposure.queues.kafka import KafkaAgentProducer
+from fireflyframework_agentic.exposure.queues.kafka import KafkaAgentProducer
 
 producer = KafkaAgentProducer(topic="results", bootstrap_servers="localhost:9092")
 await producer.publish({"agent": "assistant", "output": "Done processing."})
@@ -696,7 +696,7 @@ await producer.close()
 
 ## Using in Jupyter Notebooks
 
-firefly-genai works seamlessly in Jupyter notebooks and JupyterLab.
+firefly-agentic works seamlessly in Jupyter notebooks and JupyterLab.
 Since the framework is async-first, use `await` directly in notebook cells
 (Jupyter provides a running event loop automatically).
 
@@ -704,14 +704,14 @@ Since the framework is async-first, use `await` directly in notebook cells
 
 ```bash
 # From your clone directory
-cd fireflyframework-genai
+cd fireflyframework-agentic
 source .venv/bin/activate # activate the venv created by the installer
 pip install ipykernel # install Jupyter kernel support
-python -m ipykernel install --user --name fireflygenai --display-name "Firefly GenAI"
+python -m ipykernel install --user --name fireflyagentic --display-name "Firefly Agentic"
 jupyter lab # or: jupyter notebook
 ```
 
-Then select the **Firefly GenAI** kernel when creating a new notebook.
+Then select the **Firefly Agentic** kernel when creating a new notebook.
 
 ### Example Notebook
 
@@ -719,12 +719,12 @@ Then select the **Firefly GenAI** kernel when creating a new notebook.
 # Cell 1 — configure
 import os
 os.environ["OPENAI_API_KEY"] = "sk-..." # or set in .env
-os.environ["FIREFLY_GENAI_DEFAULT_MODEL"] = "openai:gpt-4o"
+os.environ["FIREFLY_AGENTIC_DEFAULT_MODEL"] = "openai:gpt-4o"
 ```
 
 ```python
 # Cell 2 — create an agent
-from fireflyframework_genai.agents import FireflyAgent
+from fireflyframework_agentic.agents import FireflyAgent
 
 agent = FireflyAgent(name="notebook-bot", model="openai:gpt-4o")
 result = await agent.run("Explain quantum entanglement in two sentences.")
@@ -733,7 +733,7 @@ print(result.output)
 
 ```python
 # Cell 3 — use memory for multi-turn conversations
-from fireflyframework_genai.memory import MemoryManager
+from fireflyframework_agentic.memory import MemoryManager
 
 memory = MemoryManager(max_conversation_tokens=32_000)
 agent_with_mem = FireflyAgent(name="chat", model="openai:gpt-4o", memory=memory)
@@ -748,7 +748,7 @@ print(result.output) # Alice
 
 ```python
 # Cell 4 — reasoning patterns
-from fireflyframework_genai.reasoning import ReActPattern
+from fireflyframework_agentic.reasoning import ReActPattern
 
 react = ReActPattern(max_steps=5)
 result = await react.execute(agent, "What are the top 3 uses of Python in 2026?")
@@ -758,7 +758,7 @@ print(result.output)
 ```python
 # Cell 5 — structured output with validation
 from pydantic import BaseModel
-from fireflyframework_genai.validation import OutputReviewer
+from fireflyframework_agentic.validation import OutputReviewer
 
 class Summary(BaseModel):
     title: str
@@ -818,8 +818,8 @@ Detailed guides for each module:
 ## Development
 
 ```bash
-git clone https://github.com/fireflyframework/fireflyframework-genai.git
-cd fireflyframework-genai
+git clone https://github.com/fireflyframework/fireflyframework-agentic.git
+cd fireflyframework-agentic
 uv sync --all-extras
 ```
 

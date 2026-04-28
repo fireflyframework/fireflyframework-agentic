@@ -64,26 +64,26 @@ from idp_tools import (
     split_prompt,
 )
 
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.agents.builtin_middleware import (
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.agents.builtin_middleware import (
     CostGuardMiddleware,
     OutputGuardMiddleware,
     PromptGuardMiddleware,
 )
-from fireflyframework_genai.agents.templates import create_classifier_agent, create_extractor_agent
-from fireflyframework_genai.content.chunking import TextChunker
-from fireflyframework_genai.content.compression import ContextCompressor, TruncationStrategy
-from fireflyframework_genai.explainability import AuditTrail, ReportBuilder, TraceRecorder
-from fireflyframework_genai.logging import configure_logging
-from fireflyframework_genai.memory import MemoryManager
-from fireflyframework_genai.pipeline.builder import PipelineBuilder
-from fireflyframework_genai.pipeline.context import PipelineContext
-from fireflyframework_genai.pipeline.engine import PipelineEngine
-from fireflyframework_genai.pipeline.steps import CallableStep
-from fireflyframework_genai.reasoning import ReflexionPattern
-from fireflyframework_genai.tools.cached import CachedTool
-from fireflyframework_genai.validation.qos import GroundingChecker
-from fireflyframework_genai.validation.reviewer import OutputReviewer
+from fireflyframework_agentic.agents.templates import create_classifier_agent, create_extractor_agent
+from fireflyframework_agentic.content.chunking import TextChunker
+from fireflyframework_agentic.content.compression import ContextCompressor, TruncationStrategy
+from fireflyframework_agentic.explainability import AuditTrail, ReportBuilder, TraceRecorder
+from fireflyframework_agentic.logging import configure_logging
+from fireflyframework_agentic.memory import MemoryManager
+from fireflyframework_agentic.pipeline.builder import PipelineBuilder
+from fireflyframework_agentic.pipeline.context import PipelineContext
+from fireflyframework_agentic.pipeline.engine import PipelineEngine
+from fireflyframework_agentic.pipeline.steps import CallableStep
+from fireflyframework_agentic.reasoning import ReflexionPattern
+from fireflyframework_agentic.tools.cached import CachedTool
+from fireflyframework_agentic.validation.qos import GroundingChecker
+from fireflyframework_agentic.validation.reviewer import OutputReviewer
 
 # ── ANSI colour helpers ─────────────────────────────────────────────────────
 _USE_COLOR = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
@@ -1132,7 +1132,7 @@ async def main() -> None:
 
     print(f"{BOLD}{CYAN}{'=' * 70}{RESET}")
     print(f"{BOLD}  Intelligent Document Processing (IDP) Pipeline{RESET}")
-    print(f"{DIM}  Firefly GenAI Framework — Complex Example{RESET}")
+    print(f"{DIM}  Firefly Agentic Framework — Complex Example{RESET}")
     print(f"{BOLD}{CYAN}{'=' * 70}{RESET}")
     print(f"\n{DIM}PDF:{RESET} {PDF_URL}\n")
 

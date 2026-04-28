@@ -20,8 +20,8 @@ import asyncio
 
 import pytest
 
-from fireflyframework_genai.pipeline.engine import PipelineEventHandler
-from fireflyframework_genai.studio.execution.runner import StudioEventHandler
+from fireflyframework_agentic.pipeline.engine import PipelineEventHandler
+from fireflyframework_agentic.studio.execution.runner import StudioEventHandler
 
 pytest.importorskip("fastapi", reason="fastapi not installed")
 
@@ -202,7 +202,7 @@ class TestStudioEventHandlerWait:
 class TestExecutionWebSocket:
     @pytest.fixture()
     def app(self):
-        from fireflyframework_genai.studio.server import create_studio_app
+        from fireflyframework_agentic.studio.server import create_studio_app
 
         return create_studio_app()
 

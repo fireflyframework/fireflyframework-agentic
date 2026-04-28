@@ -6,8 +6,8 @@ import asyncio
 
 import pytest
 
-from fireflyframework_genai.exceptions import ToolTimeoutError
-from fireflyframework_genai.tools.base import BaseTool
+from fireflyframework_agentic.exceptions import ToolTimeoutError
+from fireflyframework_agentic.tools.base import BaseTool
 
 
 class _SlowTool(BaseTool):

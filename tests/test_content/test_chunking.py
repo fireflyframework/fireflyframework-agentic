@@ -16,7 +16,7 @@
 
 import pytest
 
-from fireflyframework_genai.content.chunking import (
+from fireflyframework_agentic.content.chunking import (
     BatchProcessor,
     Chunk,
     Chunker,

@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.agents.delegation import RoundRobinStrategy
-from fireflyframework_genai.exceptions import DelegationError
+from fireflyframework_agentic.agents.delegation import RoundRobinStrategy
+from fireflyframework_agentic.exceptions import DelegationError
 
 
 class TestRoundRobinStrategy:
@@ -39,7 +39,7 @@ class TestRoundRobinStrategy:
 
 # -- CostAwareStrategy -------------------------------------------------------
 
-from fireflyframework_genai.agents.delegation import CostAwareStrategy  # noqa: E402
+from fireflyframework_agentic.agents.delegation import CostAwareStrategy  # noqa: E402
 
 
 class _FakeAgent:
@@ -98,7 +98,7 @@ class TestCostAwareStrategy:
 
 # -- ContentBasedStrategy ----------------------------------------------------
 
-from fireflyframework_genai.agents.delegation import ContentBasedStrategy  # noqa: E402
+from fireflyframework_agentic.agents.delegation import ContentBasedStrategy  # noqa: E402
 
 
 class TestContentBasedStrategy:

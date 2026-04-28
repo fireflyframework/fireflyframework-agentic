@@ -2,7 +2,7 @@
 
 Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
 
-Runnable example scripts demonstrating the major features of `fireflyframework-genai`.
+Runnable example scripts demonstrating the major features of `fireflyframework-agentic`.
 
 ## Prerequisites
 
@@ -78,7 +78,7 @@ If `OPENAI_API_KEY` is not set, each script will prompt you interactively.
 
 ## Studio Examples
 
-- **`studio_launch.py`** — Launch Firefly Studio programmatically with custom `StudioConfig`. Shows how to embed the Studio app with a custom port, host, and project directory. Requires `pip install "fireflyframework-genai[studio]"`. **No API key required** (the AI assistant requires one, but the IDE itself does not).
+- **`studio_launch.py`** — Launch Firefly Studio programmatically with custom `StudioConfig`. Shows how to embed the Studio app with a custom port, host, and project directory. Requires `pip install "fireflyframework-agentic[studio]"`. **No API key required** (the AI assistant requires one, but the IDE itself does not).
 
 ## Reasoning Pattern Examples
 

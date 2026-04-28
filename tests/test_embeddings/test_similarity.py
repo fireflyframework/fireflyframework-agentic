@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.embeddings.similarity import (
+from fireflyframework_agentic.embeddings.similarity import (
     cosine_similarity,
     dot_product,
     euclidean_distance,

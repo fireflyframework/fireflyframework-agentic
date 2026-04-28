@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.reasoning.trace import (
+from fireflyframework_agentic.reasoning.trace import (
     ActionStep,
     ObservationStep,
     ReasoningTrace,

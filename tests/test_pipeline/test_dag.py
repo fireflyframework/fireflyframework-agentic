@@ -16,13 +16,13 @@
 
 import pytest
 
-from fireflyframework_genai.exceptions import PipelineError
-from fireflyframework_genai.pipeline.builder import PipelineBuilder
-from fireflyframework_genai.pipeline.context import PipelineContext
-from fireflyframework_genai.pipeline.dag import DAG, DAGEdge, DAGNode
-from fireflyframework_genai.pipeline.engine import PipelineEngine
-from fireflyframework_genai.pipeline.result import NodeResult
-from fireflyframework_genai.pipeline.steps import FanInStep
+from fireflyframework_agentic.exceptions import PipelineError
+from fireflyframework_agentic.pipeline.builder import PipelineBuilder
+from fireflyframework_agentic.pipeline.context import PipelineContext
+from fireflyframework_agentic.pipeline.dag import DAG, DAGEdge, DAGNode
+from fireflyframework_agentic.pipeline.engine import PipelineEngine
+from fireflyframework_agentic.pipeline.result import NodeResult
+from fireflyframework_agentic.pipeline.steps import FanInStep
 
 # -- Helper step -----------------------------------------------------------
 

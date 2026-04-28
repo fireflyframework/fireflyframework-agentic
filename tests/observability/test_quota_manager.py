@@ -20,8 +20,8 @@ import time
 
 import pytest
 
-from fireflyframework_genai.exceptions import BudgetExceededError, RateLimitError
-from fireflyframework_genai.observability.quota import AdaptiveBackoff, QuotaManager, RateLimiter
+from fireflyframework_agentic.exceptions import BudgetExceededError, RateLimitError
+from fireflyframework_agentic.observability.quota import AdaptiveBackoff, QuotaManager, RateLimiter
 
 
 class TestRateLimiter:

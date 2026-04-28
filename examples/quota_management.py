@@ -15,7 +15,7 @@
 
 """API quota management and rate limiting example.
 
-This example demonstrates how to use Firefly GenAI's quota management system
+This example demonstrates how to use Firefly Agentic's quota management system
 to enforce production-grade budget and rate limits for LLM API calls.
 
 Features demonstrated:
@@ -27,9 +27,9 @@ Features demonstrated:
 
 Prerequisites:
     Set environment variables:
-       export FIREFLY_GENAI_QUOTA_ENABLED=true
-       export FIREFLY_GENAI_QUOTA_BUDGET_DAILY_USD=5.0
-       export FIREFLY_GENAI_QUOTA_RATE_LIMITS='{"openai:gpt-4o-mini": 10}'
+       export FIREFLY_AGENTIC_QUOTA_ENABLED=true
+       export FIREFLY_AGENTIC_QUOTA_BUDGET_DAILY_USD=5.0
+       export FIREFLY_AGENTIC_QUOTA_RATE_LIMITS='{"openai:gpt-4o-mini": 10}'
        export OPENAI_API_KEY=sk-...
 
 Usage:
@@ -38,11 +38,11 @@ Usage:
 
 import asyncio
 
-from fireflyframework_genai.agents.base import FireflyAgent
-from fireflyframework_genai.config import get_config
-from fireflyframework_genai.exceptions import BudgetExceededError, RateLimitError
-from fireflyframework_genai.observability.quota import QuotaManager
-from fireflyframework_genai.observability.usage import default_usage_tracker
+from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.config import get_config
+from fireflyframework_agentic.exceptions import BudgetExceededError, RateLimitError
+from fireflyframework_agentic.observability.quota import QuotaManager
+from fireflyframework_agentic.observability.usage import default_usage_tracker
 
 
 async def demonstrate_budget_enforcement():
@@ -199,7 +199,7 @@ async def demonstrate_config_integration():
 
     if cfg.quota_enabled:
         # Quota manager is automatically created from config
-        from fireflyframework_genai.observability.quota import default_quota_manager
+        from fireflyframework_agentic.observability.quota import default_quota_manager
 
         if default_quota_manager:
             print("\n✓ Default quota manager created from configuration")
@@ -209,7 +209,7 @@ async def demonstrate_config_integration():
             print("\n⚠ Quota enabled but no default manager created")
     else:
         print("\n⚠ Quota management is disabled")
-        print("  Set FIREFLY_GENAI_QUOTA_ENABLED=true to enable")
+        print("  Set FIREFLY_AGENTIC_QUOTA_ENABLED=true to enable")
 
 
 async def demonstrate_production_pattern():

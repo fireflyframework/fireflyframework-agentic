@@ -36,7 +36,7 @@ social-engineering attacks.
 ### Quick Start
 
 ```python
-from fireflyframework_genai.security import default_prompt_guard
+from fireflyframework_agentic.security import default_prompt_guard
 
 result = default_prompt_guard.scan("Tell me about Python.")
 assert result.safe is True
@@ -52,7 +52,7 @@ print(result.matched_patterns) # list of matched regex patterns
 Add domain-specific injection patterns alongside the defaults:
 
 ```python
-from fireflyframework_genai.security import PromptGuard
+from fireflyframework_agentic.security import PromptGuard
 
 guard = PromptGuard(
     custom_patterns=[
@@ -117,8 +117,8 @@ Use `PromptGuardMiddleware` and `OutputGuardMiddleware` directly — no need to
 write your own:
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent, PromptGuardMiddleware
-from fireflyframework_genai.agents.builtin_middleware import OutputGuardMiddleware
+from fireflyframework_agentic.agents import FireflyAgent, PromptGuardMiddleware
+from fireflyframework_agentic.agents.builtin_middleware import OutputGuardMiddleware
 
 agent = FireflyAgent(
     name="guarded",
@@ -196,7 +196,7 @@ sanitisation and no length limit. For production, create a custom instance
 tailored to your domain:
 
 ```python
-from fireflyframework_genai.security import PromptGuard
+from fireflyframework_agentic.security import PromptGuard
 
 production_guard = PromptGuard(
     sanitise=True,
@@ -219,7 +219,7 @@ three built-in categories plus custom and deny patterns.
 ### Quick Start
 
 ```python
-from fireflyframework_genai.security import OutputGuard
+from fireflyframework_agentic.security import OutputGuard
 
 guard = OutputGuard()
 result = guard.scan("The user's SSN is 123-45-6789")
@@ -315,7 +315,7 @@ The RBAC module provides JWT-based authentication and role/permission management
 for multi-tenant agent deployments.
 
 ```python
-from fireflyframework_genai.security.rbac import RBACManager, require_permission
+from fireflyframework_agentic.security.rbac import RBACManager, require_permission
 
 # Initialize RBAC with JWT secret
 rbac = RBACManager(jwt_secret="your-secret-key-here")
@@ -343,7 +343,7 @@ if rbac.has_permission(claims["sub"], "agent.run"):
 Protect agent endpoints with the `@require_permission` decorator:
 
 ```python
-from fireflyframework_genai.security.rbac import require_permission
+from fireflyframework_agentic.security.rbac import require_permission
 
 @require_permission("agent.run")
 async def call_agent(prompt: str, token: str):
@@ -372,9 +372,9 @@ if rbac.has_permission("user1@example.com", "agent.run", tenant="tenant-1"):
 ### Environment Configuration
 
 ```bash
-export FIREFLY_GENAI_RBAC_ENABLED=true
-export FIREFLY_GENAI_RBAC_JWT_SECRET=your-secret-key
-export FIREFLY_GENAI_RBAC_TOKEN_EXPIRY_SECONDS=3600
+export FIREFLY_AGENTIC_RBAC_ENABLED=true
+export FIREFLY_AGENTIC_RBAC_JWT_SECRET=your-secret-key
+export FIREFLY_AGENTIC_RBAC_TOKEN_EXPIRY_SECONDS=3600
 ```
 
 ---
@@ -384,7 +384,7 @@ export FIREFLY_GENAI_RBAC_TOKEN_EXPIRY_SECONDS=3600
 The encryption module provides AES-256-GCM encryption for sensitive data at rest.
 
 ```python
-from fireflyframework_genai.security.encryption import AESEncryptionProvider
+from fireflyframework_agentic.security.encryption import AESEncryptionProvider
 
 # Initialize encryption provider
 encryption = AESEncryptionProvider(key="your-32-byte-encryption-key-here")
@@ -403,8 +403,8 @@ assert decrypted == plaintext
 Wrap any `MemoryStore` with encryption for automatic transparent encryption:
 
 ```python
-from fireflyframework_genai.security.encryption import EncryptedMemoryStore
-from fireflyframework_genai.memory import FileStore
+from fireflyframework_agentic.security.encryption import EncryptedMemoryStore
+from fireflyframework_agentic.memory import FileStore
 
 # Base storage backend
 file_store = FileStore(base_dir=".memory")
@@ -430,8 +430,8 @@ produce different ciphertexts.
 ### Environment Configuration
 
 ```bash
-export FIREFLY_GENAI_ENCRYPTION_ENABLED=true
-export FIREFLY_GENAI_ENCRYPTION_KEY=your-32-byte-key-here # Must be 32 bytes for AES-256
+export FIREFLY_AGENTIC_ENCRYPTION_ENABLED=true
+export FIREFLY_AGENTIC_ENCRYPTION_KEY=your-32-byte-key-here # Must be 32 bytes for AES-256
 ```
 
 **Security Note:** Store encryption keys in a secure vault (AWS Secrets Manager,
@@ -445,7 +445,7 @@ The `DatabaseTool` automatically detects and blocks SQL injection attempts using
 pattern matching before executing queries.
 
 ```python
-from fireflyframework_genai.tools.builtins.database import DatabaseTool
+from fireflyframework_agentic.tools.builtins.database import DatabaseTool
 
 db_tool = DatabaseTool(
     connection_string="postgresql://localhost/mydb",
@@ -495,7 +495,7 @@ query = f"SELECT * FROM users WHERE email = '{email}'" # BLOCKED
 
 ```bash
 # Disable SQL injection detection (not recommended)
-export FIREFLY_GENAI_DATABASE_ALLOW_UNSAFE_QUERIES=true
+export FIREFLY_AGENTIC_DATABASE_ALLOW_UNSAFE_QUERIES=true
 ```
 
 ---
@@ -509,7 +509,7 @@ The REST API enforces restrictive CORS policies by default.
 By default, **no origins** are allowed:
 
 ```python
-from fireflyframework_genai.exposure.rest.middleware import add_cors_middleware
+from fireflyframework_agentic.exposure.rest.middleware import add_cors_middleware
 
 # Default - blocks all cross-origin requests
 add_cors_middleware(app)
@@ -530,10 +530,10 @@ add_cors_middleware(
 ### Environment Configuration
 
 ```bash
-export FIREFLY_GENAI_CORS_ALLOWED_ORIGINS='["https://app.example.com"]'
-export FIREFLY_GENAI_CORS_ALLOW_CREDENTIALS=true
-export FIREFLY_GENAI_CORS_ALLOW_METHODS='["GET", "POST"]'
-export FIREFLY_GENAI_CORS_MAX_AGE=3600
+export FIREFLY_AGENTIC_CORS_ALLOWED_ORIGINS='["https://app.example.com"]'
+export FIREFLY_AGENTIC_CORS_ALLOW_CREDENTIALS=true
+export FIREFLY_AGENTIC_CORS_ALLOW_METHODS='["GET", "POST"]'
+export FIREFLY_AGENTIC_CORS_MAX_AGE=3600
 ```
 
 **Security Note:** Never use `allow_origins=["*"]` in production. Always
@@ -548,14 +548,14 @@ maintain an explicit allow list of trusted domains.
 Combine multiple security layers for comprehensive protection:
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.agents.builtin_middleware import (
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.agents.builtin_middleware import (
     PromptGuardMiddleware,
     OutputGuardMiddleware,
     CostGuardMiddleware,
 )
-from fireflyframework_genai.security.rbac import require_permission
-from fireflyframework_genai.security.encryption import EncryptedMemoryStore
+from fireflyframework_agentic.security.rbac import require_permission
+from fireflyframework_agentic.security.encryption import EncryptedMemoryStore
 
 # Encrypted storage
 encrypted_store = EncryptedMemoryStore(FileStore(), encryption)

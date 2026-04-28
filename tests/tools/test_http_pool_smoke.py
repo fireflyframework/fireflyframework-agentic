@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import asyncio
 
-from fireflyframework_genai.tools.builtins.http import HTTPX_AVAILABLE, HttpTool
+from fireflyframework_agentic.tools.builtins.http import HTTPX_AVAILABLE, HttpTool
 
 
 async def main():

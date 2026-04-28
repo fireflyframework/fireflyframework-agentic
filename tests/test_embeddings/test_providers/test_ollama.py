@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fireflyframework_genai.embeddings.providers.ollama import OllamaEmbedder
-from fireflyframework_genai.embeddings.types import EmbeddingResult
+from fireflyframework_agentic.embeddings.providers.ollama import OllamaEmbedder
+from fireflyframework_agentic.embeddings.types import EmbeddingResult
 
 
 class TestOllamaEmbedder:
-    @patch("fireflyframework_genai.embeddings.providers.ollama.httpx")
+    @patch("fireflyframework_agentic.embeddings.providers.ollama.httpx")
     async def test_embed_batch(self, mock_httpx):
         mock_client = MagicMock()
         mock_httpx.AsyncClient.return_value = mock_client
@@ -26,7 +26,7 @@ class TestOllamaEmbedder:
         assert len(result.embeddings) == 2
         assert result.model == "nomic-embed-text"
 
-    @patch("fireflyframework_genai.embeddings.providers.ollama.httpx")
+    @patch("fireflyframework_agentic.embeddings.providers.ollama.httpx")
     async def test_embed_one(self, mock_httpx):
         mock_client = MagicMock()
         mock_httpx.AsyncClient.return_value = mock_client
@@ -42,7 +42,7 @@ class TestOllamaEmbedder:
         assert isinstance(vec, list)
         assert len(vec) == 3
 
-    @patch("fireflyframework_genai.embeddings.providers.ollama.httpx")
+    @patch("fireflyframework_agentic.embeddings.providers.ollama.httpx")
     def test_default_model(self, mock_httpx):
         embedder = OllamaEmbedder()
         assert embedder.model == "nomic-embed-text"

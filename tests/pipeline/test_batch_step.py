@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.agents.base import FireflyAgent
-from fireflyframework_genai.pipeline.context import PipelineContext
-from fireflyframework_genai.pipeline.steps import BatchLLMStep
+from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.pipeline.context import PipelineContext
+from fireflyframework_agentic.pipeline.steps import BatchLLMStep
 
 
 @pytest.mark.asyncio

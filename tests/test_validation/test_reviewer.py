@@ -22,9 +22,9 @@ from typing import Any
 import pytest
 from pydantic import BaseModel, Field
 
-from fireflyframework_genai.exceptions import OutputReviewError
-from fireflyframework_genai.validation.reviewer import OutputReviewer, RetryAttempt, ReviewResult
-from fireflyframework_genai.validation.rules import EnumRule, OutputValidator
+from fireflyframework_agentic.exceptions import OutputReviewError
+from fireflyframework_agentic.validation.reviewer import OutputReviewer, RetryAttempt, ReviewResult
+from fireflyframework_agentic.validation.rules import EnumRule, OutputValidator
 
 
 @dataclass

@@ -6,18 +6,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from fireflyframework_genai.vectorstores.types import SearchFilter, VectorDocument
+from fireflyframework_agentic.vectorstores.types import SearchFilter, VectorDocument
 
 
 class TestChromaVectorStore:
-    @patch("fireflyframework_genai.vectorstores.chroma_store.chromadb")
+    @patch("fireflyframework_agentic.vectorstores.chroma_store.chromadb")
     async def test_upsert(self, mock_chromadb):
         mock_collection = MagicMock()
         mock_client = MagicMock()
         mock_client.get_or_create_collection.return_value = mock_collection
         mock_chromadb.Client.return_value = mock_client
 
-        from fireflyframework_genai.vectorstores.chroma_store import ChromaVectorStore
+        from fireflyframework_agentic.vectorstores.chroma_store import ChromaVectorStore
 
         store = ChromaVectorStore(collection_name="test")
         await store.upsert([VectorDocument(id="1", text="hello", embedding=[1.0, 0.0])])
@@ -27,14 +27,14 @@ class TestChromaVectorStore:
         assert call_kwargs[1]["documents"] == ["hello"]
         assert call_kwargs[1]["embeddings"] == [[1.0, 0.0]]
 
-    @patch("fireflyframework_genai.vectorstores.chroma_store.chromadb")
+    @patch("fireflyframework_agentic.vectorstores.chroma_store.chromadb")
     async def test_upsert_with_namespace(self, mock_chromadb):
         mock_collection = MagicMock()
         mock_client = MagicMock()
         mock_client.get_or_create_collection.return_value = mock_collection
         mock_chromadb.Client.return_value = mock_client
 
-        from fireflyframework_genai.vectorstores.chroma_store import ChromaVectorStore
+        from fireflyframework_agentic.vectorstores.chroma_store import ChromaVectorStore
 
         store = ChromaVectorStore(collection_name="test")
         await store.upsert(
@@ -44,7 +44,7 @@ class TestChromaVectorStore:
         call_kwargs = mock_collection.upsert.call_args
         assert call_kwargs[1]["metadatas"] == [{"_namespace": "custom_ns"}]
 
-    @patch("fireflyframework_genai.vectorstores.chroma_store.chromadb")
+    @patch("fireflyframework_agentic.vectorstores.chroma_store.chromadb")
     async def test_search(self, mock_chromadb):
         mock_collection = MagicMock()
         mock_collection.query.return_value = {
@@ -57,7 +57,7 @@ class TestChromaVectorStore:
         mock_client.get_or_create_collection.return_value = mock_collection
         mock_chromadb.Client.return_value = mock_client
 
-        from fireflyframework_genai.vectorstores.chroma_store import ChromaVectorStore
+        from fireflyframework_agentic.vectorstores.chroma_store import ChromaVectorStore
 
         store = ChromaVectorStore(collection_name="test")
         results = await store.search([1.0, 0.0], top_k=2)
@@ -72,7 +72,7 @@ class TestChromaVectorStore:
         assert "_namespace" not in results[0].document.metadata
         assert results[1].document.metadata == {"tag": "test"}
 
-    @patch("fireflyframework_genai.vectorstores.chroma_store.chromadb")
+    @patch("fireflyframework_agentic.vectorstores.chroma_store.chromadb")
     async def test_search_with_filters(self, mock_chromadb):
         mock_collection = MagicMock()
         mock_collection.query.return_value = {
@@ -85,7 +85,7 @@ class TestChromaVectorStore:
         mock_client.get_or_create_collection.return_value = mock_collection
         mock_chromadb.Client.return_value = mock_client
 
-        from fireflyframework_genai.vectorstores.chroma_store import ChromaVectorStore
+        from fireflyframework_agentic.vectorstores.chroma_store import ChromaVectorStore
 
         store = ChromaVectorStore(collection_name="test")
         results = await store.search(
@@ -99,7 +99,7 @@ class TestChromaVectorStore:
         assert call_kwargs[1]["where"]["type"] == "blog"
         assert call_kwargs[1]["where"]["_namespace"] == "default"
 
-    @patch("fireflyframework_genai.vectorstores.chroma_store.chromadb")
+    @patch("fireflyframework_agentic.vectorstores.chroma_store.chromadb")
     async def test_search_empty_results(self, mock_chromadb):
         mock_collection = MagicMock()
         mock_collection.query.return_value = {
@@ -112,41 +112,41 @@ class TestChromaVectorStore:
         mock_client.get_or_create_collection.return_value = mock_collection
         mock_chromadb.Client.return_value = mock_client
 
-        from fireflyframework_genai.vectorstores.chroma_store import ChromaVectorStore
+        from fireflyframework_agentic.vectorstores.chroma_store import ChromaVectorStore
 
         store = ChromaVectorStore(collection_name="test")
         results = await store.search([1.0, 0.0], top_k=5)
         assert results == []
 
-    @patch("fireflyframework_genai.vectorstores.chroma_store.chromadb")
+    @patch("fireflyframework_agentic.vectorstores.chroma_store.chromadb")
     async def test_delete(self, mock_chromadb):
         mock_collection = MagicMock()
         mock_client = MagicMock()
         mock_client.get_or_create_collection.return_value = mock_collection
         mock_chromadb.Client.return_value = mock_client
 
-        from fireflyframework_genai.vectorstores.chroma_store import ChromaVectorStore
+        from fireflyframework_agentic.vectorstores.chroma_store import ChromaVectorStore
 
         store = ChromaVectorStore(collection_name="test")
         await store.delete(["1", "2"])
         mock_collection.delete.assert_called_once_with(ids=["1", "2"], where={"_namespace": "default"})
 
-    @patch("fireflyframework_genai.vectorstores.chroma_store.chromadb")
+    @patch("fireflyframework_agentic.vectorstores.chroma_store.chromadb")
     async def test_custom_client(self, mock_chromadb):
         mock_collection = MagicMock()
         custom_client = MagicMock()
         custom_client.get_or_create_collection.return_value = mock_collection
 
-        from fireflyframework_genai.vectorstores.chroma_store import ChromaVectorStore
+        from fireflyframework_agentic.vectorstores.chroma_store import ChromaVectorStore
 
         ChromaVectorStore(collection_name="my_coll", client=custom_client)
         # Should use the custom client, not create a new one
         mock_chromadb.Client.assert_not_called()
         custom_client.get_or_create_collection.assert_called_once_with(name="my_coll")
 
-    @patch("fireflyframework_genai.vectorstores.chroma_store.chromadb", None)
+    @patch("fireflyframework_agentic.vectorstores.chroma_store.chromadb", None)
     async def test_import_error_when_chromadb_not_installed(self):
-        from fireflyframework_genai.vectorstores.chroma_store import ChromaVectorStore
+        from fireflyframework_agentic.vectorstores.chroma_store import ChromaVectorStore
 
         with pytest.raises(ImportError, match="chromadb"):
             ChromaVectorStore()

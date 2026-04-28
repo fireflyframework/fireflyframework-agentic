@@ -36,7 +36,7 @@ import asyncio
 import os
 import time
 
-from fireflyframework_genai.agents.base import FireflyAgent
+from fireflyframework_agentic.agents.base import FireflyAgent
 
 
 async def demo_buffered_streaming():

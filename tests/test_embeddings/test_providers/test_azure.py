@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fireflyframework_genai.embeddings.providers.azure import AzureEmbedder
-from fireflyframework_genai.embeddings.types import EmbeddingResult
+from fireflyframework_agentic.embeddings.providers.azure import AzureEmbedder
+from fireflyframework_agentic.embeddings.types import EmbeddingResult
 
 
 class TestAzureEmbedder:
-    @patch("fireflyframework_genai.embeddings.providers.azure.AsyncAzureOpenAI")
+    @patch("fireflyframework_agentic.embeddings.providers.azure.AsyncAzureOpenAI")
     async def test_embed_batch(self, mock_client_cls):
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
@@ -33,7 +33,7 @@ class TestAzureEmbedder:
         assert len(result.embeddings) == 2
         assert result.model == "text-embedding-ada-002"
 
-    @patch("fireflyframework_genai.embeddings.providers.azure.AsyncAzureOpenAI")
+    @patch("fireflyframework_agentic.embeddings.providers.azure.AsyncAzureOpenAI")
     async def test_embed_one(self, mock_client_cls):
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
@@ -53,7 +53,7 @@ class TestAzureEmbedder:
         assert isinstance(vec, list)
         assert len(vec) == 2
 
-    @patch("fireflyframework_genai.embeddings.providers.azure.AsyncAzureOpenAI")
+    @patch("fireflyframework_agentic.embeddings.providers.azure.AsyncAzureOpenAI")
     def test_model_name(self, mock_client_cls):
         embedder = AzureEmbedder(
             model="text-embedding-ada-002",

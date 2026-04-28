@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from fireflyframework_genai.studio.config import StudioConfig
+from fireflyframework_agentic.studio.config import StudioConfig
 
 
 @pytest.fixture(autouse=True)

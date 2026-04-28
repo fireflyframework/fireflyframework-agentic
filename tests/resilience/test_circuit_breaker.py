@@ -20,7 +20,7 @@ import asyncio
 
 import pytest
 
-from fireflyframework_genai.resilience.circuit_breaker import (
+from fireflyframework_agentic.resilience.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerOpenError,
     CircuitState,

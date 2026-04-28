@@ -29,7 +29,7 @@ import asyncio
 
 from _common import MODEL, ensure_api_key
 
-from fireflyframework_genai.agents.templates import create_summarizer_agent
+from fireflyframework_agentic.agents.templates import create_summarizer_agent
 
 ARTICLE = """\
 Artificial intelligence has undergone a dramatic transformation over the past

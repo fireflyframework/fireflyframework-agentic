@@ -42,16 +42,16 @@ flowchart TD
 Install the queue extra for your broker:
 
 ```bash
-uv add "fireflyframework-genai[kafka]" # Kafka
-uv add "fireflyframework-genai[rabbitmq]" # RabbitMQ
-uv add "fireflyframework-genai[redis]" # Redis
-uv add "fireflyframework-genai[queues]" # All brokers
+uv add "fireflyframework-agentic[kafka]" # Kafka
+uv add "fireflyframework-agentic[rabbitmq]" # RabbitMQ
+uv add "fireflyframework-agentic[redis]" # Redis
+uv add "fireflyframework-agentic[queues]" # All brokers
 ```
 
 ### Kafka
 
 ```python
-from fireflyframework_genai.exposure.queues.kafka import KafkaAgentConsumer
+from fireflyframework_agentic.exposure.queues.kafka import KafkaAgentConsumer
 
 consumer = KafkaAgentConsumer(
     agent_name="assistant",
@@ -65,7 +65,7 @@ await consumer.start()
 ### RabbitMQ
 
 ```python
-from fireflyframework_genai.exposure.queues.rabbitmq import RabbitMQAgentConsumer
+from fireflyframework_agentic.exposure.queues.rabbitmq import RabbitMQAgentConsumer
 
 consumer = RabbitMQAgentConsumer(
     agent_name="assistant",
@@ -78,7 +78,7 @@ await consumer.start()
 ### Redis
 
 ```python
-from fireflyframework_genai.exposure.queues.redis import RedisAgentConsumer
+from fireflyframework_agentic.exposure.queues.redis import RedisAgentConsumer
 
 consumer = RedisAgentConsumer(
     agent_name="assistant",
@@ -95,7 +95,7 @@ await consumer.start()
 All consumers and producers operate on `QueueMessage` objects:
 
 ```python
-from fireflyframework_genai.exposure.queues import QueueMessage
+from fireflyframework_agentic.exposure.queues import QueueMessage
 
 message = QueueMessage(
     body="Summarise this document.",
@@ -121,7 +121,7 @@ flowchart TD
 ```
 
 ```python
-from fireflyframework_genai.exposure.queues import QueueRouter, QueueMessage
+from fireflyframework_agentic.exposure.queues import QueueRouter, QueueMessage
 
 router = QueueRouter(default_agent="fallback")
 router.add_route(r"summary\..*", "summariser")
@@ -139,7 +139,7 @@ To integrate with a message broker not supported out of the box, extend
 `BaseQueueConsumer` and implement the `start` and `stop` methods:
 
 ```python
-from fireflyframework_genai.exposure.queues.base import BaseQueueConsumer
+from fireflyframework_agentic.exposure.queues.base import BaseQueueConsumer
 
 class MyBrokerConsumer(BaseQueueConsumer):
     async def start(self) -> None:

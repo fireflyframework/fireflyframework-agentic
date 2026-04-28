@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import pytest
 
-from fireflyframework_genai.tools.builder import ToolBuilder
-from fireflyframework_genai.tools.registry import ToolRegistry
+from fireflyframework_agentic.tools.builder import ToolBuilder
+from fireflyframework_agentic.tools.registry import ToolRegistry
 
 
 class TestToolRegistry:
@@ -36,7 +36,7 @@ class TestToolRegistry:
         assert registry.get("t1") is tool
 
     def test_get_nonexistent_raises(self):
-        from fireflyframework_genai.exceptions import ToolNotFoundError
+        from fireflyframework_agentic.exceptions import ToolNotFoundError
 
         registry = ToolRegistry()
         with pytest.raises(ToolNotFoundError):

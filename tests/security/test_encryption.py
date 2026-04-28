@@ -21,9 +21,9 @@ import pytest
 # Check if cryptography is available
 pytest.importorskip("cryptography", reason="Encryption tests require cryptography")
 
-from fireflyframework_genai.memory.store import InMemoryStore
-from fireflyframework_genai.memory.types import MemoryEntry, MemoryScope
-from fireflyframework_genai.security.encryption import AESEncryptionProvider, EncryptedMemoryStore
+from fireflyframework_agentic.memory.store import InMemoryStore
+from fireflyframework_agentic.memory.types import MemoryEntry, MemoryScope
+from fireflyframework_agentic.security.encryption import AESEncryptionProvider, EncryptedMemoryStore
 
 
 class TestAESEncryptionProvider:

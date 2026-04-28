@@ -283,10 +283,10 @@ Compiler constraints:
 ## Python Data Models
 
 The configuration models live in
-`fireflyframework_genai.studio.execution.io_nodes`:
+`fireflyframework_agentic.studio.execution.io_nodes`:
 
 ```python
-from fireflyframework_genai.studio.execution.io_nodes import (
+from fireflyframework_agentic.studio.execution.io_nodes import (
     InputNodeConfig,
     OutputNodeConfig,
     QueueConfig,

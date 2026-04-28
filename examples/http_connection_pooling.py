@@ -21,7 +21,7 @@ connections, avoiding the overhead of establishing new connections
 for each request.
 
 Requirements:
-    pip install fireflyframework-genai[http]  # Installs httpx
+    pip install fireflyframework-agentic[http]  # Installs httpx
 
 Performance Benefits:
     - 30-50% faster for sequential requests
@@ -36,7 +36,7 @@ import asyncio
 import contextlib
 import time
 
-from fireflyframework_genai.tools.builtins.http import HTTPX_AVAILABLE, HttpTool
+from fireflyframework_agentic.tools.builtins.http import HTTPX_AVAILABLE, HttpTool
 
 
 async def demo_with_connection_pooling():
@@ -44,7 +44,7 @@ async def demo_with_connection_pooling():
     print("\n=== HTTP Connection Pooling Demo ===\n")
 
     if not HTTPX_AVAILABLE:
-        print("⚠️  httpx not installed. Install with: pip install fireflyframework-genai[http]")
+        print("⚠️  httpx not installed. Install with: pip install fireflyframework-agentic[http]")
         print("Falling back to urllib (no connection pooling)\n")
     else:
         print("✓ httpx is available - connection pooling enabled\n")
@@ -203,15 +203,15 @@ async def main():
     print("  ✓ Lower resource usage and better scalability")
     print()
     print("To enable connection pooling:")
-    print("  1. Install httpx: pip install fireflyframework-genai[http]")
+    print("  1. Install httpx: pip install fireflyframework-agentic[http]")
     print("  2. Set use_pool=True when creating HttpTool")
     print("  3. Configure pool_size based on your workload")
     print()
     print("Configuration via environment variables:")
-    print("  FIREFLY_GENAI_HTTP_POOL_ENABLED=true")
-    print("  FIREFLY_GENAI_HTTP_POOL_SIZE=100")
-    print("  FIREFLY_GENAI_HTTP_POOL_MAX_KEEPALIVE=20")
-    print("  FIREFLY_GENAI_HTTP_POOL_TIMEOUT=30.0")
+    print("  FIREFLY_AGENTIC_HTTP_POOL_ENABLED=true")
+    print("  FIREFLY_AGENTIC_HTTP_POOL_SIZE=100")
+    print("  FIREFLY_AGENTIC_HTTP_POOL_MAX_KEEPALIVE=20")
+    print("  FIREFLY_AGENTIC_HTTP_POOL_TIMEOUT=30.0")
     print()
 
 

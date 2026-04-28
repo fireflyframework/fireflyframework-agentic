@@ -1,9 +1,9 @@
-# The Firefly GenAI Framework — Complete Tutorial
+# The Firefly Agentic Framework — Complete Tutorial
 
 Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
 
 > **From Zero to Expert** — This tutorial walks you through every module in
-> fireflyframework-genai by building a real project from scratch: an **Intelligent
+> fireflyframework-agentic by building a real project from scratch: an **Intelligent
 > Document Processing (IDP)** pipeline that classifies, digitises, extracts, validates,
 > and assembles data from invoices.
 >
@@ -21,7 +21,7 @@ Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License
 
 **Part I — Foundation**
 1. [Introduction](#chapter-1-introduction) — What, who, why, design principles, running example
-2. [Installation & Project Setup](#chapter-2-installation--project-setup) — UV, extras, `FireflyGenAIConfig`, model providers
+2. [Installation & Project Setup](#chapter-2-installation--project-setup) — UV, extras, `FireflyAgenticConfig`, model providers
 3. [Your First Agent](#chapter-3-your-first-agent) — `FireflyAgent`, `@firefly_agent`, registry, context, lifecycle *(diagram)*
 4. [Tools](#chapter-4-tools) — `@firefly_tool`, `ToolBuilder`, guards, composition, built-ins, `ToolKit`, attaching tools to agents *(diagram)*
 5. [Prompts](#chapter-5-prompts) — Jinja2 templates, versioning, composition, validation, file loading
@@ -61,13 +61,13 @@ Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License
 
 ## Chapter 1: Introduction
 
-### What Is fireflyframework-genai?
+### What Is fireflyframework-agentic?
 
-fireflyframework-genai is a **GenAI metaframework** — it sits on top of
+fireflyframework-agentic is a **GenAI metaframework** — it sits on top of
 [Pydantic AI](https://ai.pydantic.dev/) and provides the structure, patterns, and
 production-grade plumbing that Pydantic AI deliberately leaves to the application developer.
 
-Think of Pydantic AI as the engine and fireflyframework-genai as the car around it:
+Think of Pydantic AI as the engine and fireflyframework-agentic as the car around it:
 the steering, brakes, GPS, dashboard, and everything else you need to actually drive
 to your destination.
 
@@ -84,7 +84,7 @@ The framework is guided by four principles that show up in every module:
 
 1. **Protocol-driven contracts** — Public APIs are Python `Protocol` classes or abstract
    base classes. You can swap or extend any component without touching framework internals.
-2. **Convention over configuration** — Sensible defaults everywhere. One `FireflyGenAIConfig`
+2. **Convention over configuration** — Sensible defaults everywhere. One `FireflyAgenticConfig`
    object (backed by Pydantic Settings) centralises every knob and reads from environment
    variables automatically.
 3. **Layered composition** — Modules are organised into six layers (Core, Agent,
@@ -119,7 +119,7 @@ pipeline. By Chapter 20 you will have the complete, production-ready system.
 ```bash
 mkdir idp-service && cd idp-service
 uv init
-uv add fireflyframework-genai
+uv add fireflyframework-agentic
 ```
 
 This installs the core framework with its minimal dependencies: `pydantic-ai`,
@@ -131,33 +131,33 @@ The framework provides optional extras for additional capabilities:
 
 ```bash
 # REST API support (FastAPI + Uvicorn + SSE)
-uv add "fireflyframework-genai[rest]"
+uv add "fireflyframework-agentic[rest]"
 
 # Individual message queue backends
-uv add "fireflyframework-genai[kafka]"
-uv add "fireflyframework-genai[rabbitmq]"
-uv add "fireflyframework-genai[redis]"
+uv add "fireflyframework-agentic[kafka]"
+uv add "fireflyframework-agentic[rabbitmq]"
+uv add "fireflyframework-agentic[redis]"
 
 # All queue backends at once
-uv add "fireflyframework-genai[queues]"
+uv add "fireflyframework-agentic[queues]"
 
 # Everything (REST + all queues)
-uv add "fireflyframework-genai[all]"
+uv add "fireflyframework-agentic[all]"
 ```
 
 For our IDP project we will eventually use REST and queues, so install everything:
 
 ```bash
-uv add "fireflyframework-genai[all]"
+uv add "fireflyframework-agentic[all]"
 ```
 
-### Configuration with `FireflyGenAIConfig`
+### Configuration with `FireflyAgenticConfig`
 
 All framework settings live in a single Pydantic Settings class that reads from
-environment variables prefixed with `FIREFLY_GENAI_`:
+environment variables prefixed with `FIREFLY_AGENTIC_`:
 
 ```python
-from fireflyframework_genai import FireflyGenAIConfig, get_config
+from fireflyframework_agentic import FireflyAgenticConfig, get_config
 
 # get_config() returns a thread-safe singleton
 config = get_config()
@@ -179,10 +179,10 @@ OPENAI_API_KEY=sk-...
 # DEEPSEEK_API_KEY=...
 
 # --- Framework settings ---
-FIREFLY_GENAI_DEFAULT_MODEL=openai:gpt-4o
-FIREFLY_GENAI_DEFAULT_TEMPERATURE=0.3
-FIREFLY_GENAI_LOG_LEVEL=DEBUG
-FIREFLY_GENAI_OBSERVABILITY_ENABLED=true
+FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o
+FIREFLY_AGENTIC_DEFAULT_TEMPERATURE=0.3
+FIREFLY_AGENTIC_LOG_LEVEL=DEBUG
+FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true
 ```
 
 Here are the most commonly used configuration fields:
@@ -208,7 +208,7 @@ in tests to force re-creation.
 ### Model Providers & Authentication
 
 Before you can run an agent against a real LLM, you need credentials for your model
-provider. fireflyframework-genai delegates model communication entirely to
+provider. fireflyframework-agentic delegates model communication entirely to
 [Pydantic AI](https://ai.pydantic.dev/), which supports multiple providers out of the box.
 
 #### Approach 1: Environment Variables (Recommended)
@@ -233,11 +233,11 @@ framework. Just set the key and use the model string:
 ```bash
 # .env
 OPENAI_API_KEY=sk-...
-FIREFLY_GENAI_DEFAULT_MODEL=openai:gpt-4o
+FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o
 ```
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
+from fireflyframework_agentic.agents import FireflyAgent
 
 # Uses OPENAI_API_KEY from the environment
 agent = FireflyAgent(name="my-agent", model="openai:gpt-4o")
@@ -248,7 +248,7 @@ To switch providers, change the model string and API key — no code changes req
 ```bash
 # .env — switch to Anthropic
 ANTHROPIC_API_KEY=sk-ant-...
-FIREFLY_GENAI_DEFAULT_MODEL=anthropic:claude-sonnet-4-20250514
+FIREFLY_AGENTIC_DEFAULT_MODEL=anthropic:claude-sonnet-4-20250514
 ```
 
 #### Approach 2: Programmatic Model Objects
@@ -260,7 +260,7 @@ Pydantic AI `Model` object and pass it directly to `FireflyAgent`:
 ```python
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
-from fireflyframework_genai.agents import FireflyAgent
+from fireflyframework_agentic.agents import FireflyAgent
 
 # Explicit API key (e.g. loaded from a vault)
 model = OpenAIChatModel(
@@ -355,9 +355,9 @@ API key for whichever provider you choose:
 ```bash
 # .env
 OPENAI_API_KEY=sk-...
-FIREFLY_GENAI_DEFAULT_MODEL=openai:gpt-4o
-FIREFLY_GENAI_DEFAULT_TEMPERATURE=0.3
-FIREFLY_GENAI_OBSERVABILITY_ENABLED=true
+FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o
+FIREFLY_AGENTIC_DEFAULT_TEMPERATURE=0.3
+FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true
 ```
 
 ---
@@ -425,7 +425,7 @@ You write a function that returns the system prompt, and the framework takes car
 creating the agent, wiring the prompt, and registering it — all in one step:
 
 ```python
-from fireflyframework_genai.agents import firefly_agent
+from fireflyframework_agentic.agents import firefly_agent
 
 # The decorator creates a FireflyAgent, uses this function as the dynamic
 # instructions provider, and registers the agent in the global AgentRegistry.
@@ -450,8 +450,8 @@ When you need full control — custom output types, explicit tool lists, or you 
 not to use decorators — instantiate `FireflyAgent` directly and register it yourself:
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.agents.registry import agent_registry
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.agents.registry import agent_registry
 
 # Create the agent with a static instructions string and a typed output.
 # The `output_type` tells Pydantic AI to validate the LLM's response as a dict.
@@ -497,7 +497,7 @@ delegation routers, pipelines, reasoning patterns — discover and invoke agents
 importing them directly:
 
 ```python
-from fireflyframework_genai.agents.registry import agent_registry
+from fireflyframework_agentic.agents.registry import agent_registry
 
 # Retrieve an agent by name — returns the FireflyAgent or raises KeyError.
 agent = agent_registry.get("document_classifier")
@@ -518,7 +518,7 @@ path — who sent the request, which experiment is active, what trace ID to log.
 `AgentContext` is that bag of request-scoped data:
 
 ```python
-from fireflyframework_genai.agents.context import AgentContext
+from fireflyframework_agentic.agents.context import AgentContext
 
 # Create a context with a correlation ID and arbitrary metadata.
 # This context will be available in instructions providers and tool functions.
@@ -539,7 +539,7 @@ caches, file handles. `AgentLifecycle` gives you three hooks to manage them clea
 resources):
 
 ```python
-from fireflyframework_genai.agents.lifecycle import AgentLifecycle
+from fireflyframework_agentic.agents.lifecycle import AgentLifecycle
 
 lifecycle = AgentLifecycle()
 
@@ -562,7 +562,7 @@ a raw document (text or scanned image) and outputs structured metadata — docum
 language, page count, and orientation. Every subsequent stage depends on this output.
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
+from fireflyframework_agentic.agents import FireflyAgent
 
 # The classifier is our pipeline's entry point — it decides how the document
 # will be routed through digitisation, extraction, and validation.
@@ -582,7 +582,7 @@ For multimodal input (e.g. scanned images), the framework provides typed content
 wrappers that ensure the LLM receives the content in the right format:
 
 ```python
-from fireflyframework_genai.types import ImageUrl
+from fireflyframework_agentic.types import ImageUrl
 
 # Pass a list of mixed content — text instructions + an image.
 # The framework converts ImageUrl into the provider-specific multimodal format.
@@ -602,7 +602,7 @@ LLMs are powerful reasoners, but they cannot check a database, call an API, or r
 file on their own. **Tools** bridge that gap: they are functions the model can call
 during a conversation to fetch data, trigger side-effects, or run computations.
 
-Pydantic AI already supports tool functions, but fireflyframework-genai wraps them with
+Pydantic AI already supports tool functions, but fireflyframework-agentic wraps them with
 a richer layer: a **protocol-based type system** (`ToolProtocol` → `BaseTool`),
 **guards** that enforce validation, rate-limiting, sandboxing, and approval policies
 before a tool executes, **composition** primitives (sequential, fallback, conditional),
@@ -673,7 +673,7 @@ graph TB
 The fastest path — one decorator does everything:
 
 ```python
-from fireflyframework_genai.tools import firefly_tool
+from fireflyframework_agentic.tools import firefly_tool
 
 # @firefly_tool creates a BaseTool, registers it in the global ToolRegistry,
 # and makes it discoverable by name for ToolKit grouping and agent bridging.
@@ -690,7 +690,7 @@ When you need more control — or want to build tools programmatically at runtim
 use the fluent `ToolBuilder`:
 
 ```python
-from fireflyframework_genai.tools import ToolBuilder
+from fireflyframework_agentic.tools import ToolBuilder
 
 async def fetch_exchange_rate(currency: str) -> float:
     """Simulated exchange rate lookup."""
@@ -720,8 +720,8 @@ filesystem sandboxing, or human-in-the-loop approval. They run **before** the ha
 Ensures that all required parameters are present before the tool handler runs:
 
 ```python
-from fireflyframework_genai.tools import firefly_tool, guarded
-from fireflyframework_genai.tools.guards import ValidationGuard
+from fireflyframework_agentic.tools import firefly_tool, guarded
+from fireflyframework_agentic.tools.guards import ValidationGuard
 
 # The guard checks that all listed keys are present in kwargs.
 @guarded(ValidationGuard(required_keys=["vendor_name"]))
@@ -736,7 +736,7 @@ Prevents a tool from being called too frequently — essential for expensive or 
 external APIs:
 
 ```python
-from fireflyframework_genai.tools.guards import RateLimitGuard
+from fireflyframework_agentic.tools.guards import RateLimitGuard
 
 # Token-bucket limiter: 10 calls per 60-second sliding window.
 @guarded(RateLimitGuard(max_calls=10, period_seconds=60))
@@ -751,7 +751,7 @@ Restricts tool arguments via allow/deny regex patterns — useful for preventing
 traversal, secret leakage, or access to dangerous locations:
 
 ```python
-from fireflyframework_genai.tools.guards import SandboxGuard
+from fireflyframework_agentic.tools.guards import SandboxGuard
 
 # Allow paths under /tmp/uploads, deny path traversal (..) and .env files.
 @guarded(SandboxGuard(
@@ -770,7 +770,7 @@ You provide an async callback that receives the tool name and kwargs and returns
 `True` to approve:
 
 ```python
-from fireflyframework_genai.tools.guards import ApprovalGuard
+from fireflyframework_agentic.tools.guards import ApprovalGuard
 
 async def require_admin_approval(tool_name: str, kwargs: dict) -> bool:
     """In production, this would check a queue, Slack webhook, or admin UI."""
@@ -789,7 +789,7 @@ Chain multiple guards with `CompositeGuard` — all must pass (AND semantics, ev
 in order, first failure short-circuits):
 
 ```python
-from fireflyframework_genai.tools.guards import CompositeGuard, ValidationGuard, RateLimitGuard
+from fireflyframework_agentic.tools.guards import CompositeGuard, ValidationGuard, RateLimitGuard
 
 guard = CompositeGuard(guards=[
     ValidationGuard(required_keys=["query"]),
@@ -803,7 +803,7 @@ The `@retryable` decorator wraps a tool's `execute` method with exponential-back
 retry logic — useful for tools that call flaky external APIs:
 
 ```python
-from fireflyframework_genai.tools import firefly_tool, retryable
+from fireflyframework_agentic.tools import firefly_tool, retryable
 
 @retryable(max_retries=3, backoff=1.0)
 @firefly_tool(name="call_erp", description="Fetch data from the ERP API")
@@ -827,7 +827,7 @@ async def web_search(query: str) -> str:
 Combine tools into higher-level operations:
 
 ```python
-from fireflyframework_genai.tools import SequentialComposer, FallbackComposer, ConditionalComposer
+from fireflyframework_agentic.tools import SequentialComposer, FallbackComposer, ConditionalComposer
 
 # Sequential: output of one becomes the `input` kwarg to the next.
 # First positional arg is the composed tool's name.
@@ -859,7 +859,7 @@ router = ConditionalComposer(
 The framework ships with nine ready-to-use tools in `tools/builtins/`:
 
 ```python
-from fireflyframework_genai.tools.builtins import (
+from fireflyframework_agentic.tools.builtins import (
     DateTimeTool, # Current date/time, timezone conversion
     JsonTool, # Parse, validate, extract, format JSON
     TextTool, # Word count, regex extract, truncate, replace
@@ -880,7 +880,7 @@ The full list: **HttpTool**, **FileSystemTool**, **SearchTool**, **DatabaseTool*
 ### The Tool Registry
 
 ```python
-from fireflyframework_genai.tools.registry import tool_registry
+from fireflyframework_agentic.tools.registry import tool_registry
 
 tool_registry.register(my_tool)
 tool = tool_registry.get("my_tool")
@@ -893,8 +893,8 @@ A `ToolKit` groups related tools and can convert them to Pydantic AI tools for
 direct injection into an agent:
 
 ```python
-from fireflyframework_genai.tools import ToolKit
-from fireflyframework_genai.tools.builtins import DateTimeTool, CalculatorTool
+from fireflyframework_agentic.tools import ToolKit
+from fireflyframework_agentic.tools.builtins import DateTimeTool, CalculatorTool
 
 datetime_tool = DateTimeTool()
 calculator = CalculatorTool()
@@ -902,7 +902,7 @@ calculator = CalculatorTool()
 kit = ToolKit("utility-tools", [datetime_tool, calculator], description="Common utilities")
 
 # Register all tools in the toolkit at once
-from fireflyframework_genai.tools import tool_registry
+from fireflyframework_agentic.tools import tool_registry
 kit.register_all(tool_registry)
 ```
 
@@ -917,7 +917,7 @@ The `tools` parameter on `FireflyAgent` accepts any objects that Pydantic AI
 recognises as tools — plain functions, `pydantic_ai.Tool` objects, etc.:
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
+from fireflyframework_agentic.agents import FireflyAgent
 
 async def lookup_vendor(ctx, vendor_name: str) -> str:
     return f"Details for {vendor_name}"
@@ -954,9 +954,9 @@ Firefly `BaseTool` instances (created with `@firefly_tool`, `ToolBuilder`, or bu
 live in the `ToolRegistry`. To feed them into an agent, convert via `as_pydantic_tools()`:
 
 ```python
-from fireflyframework_genai.tools import ToolKit
-from fireflyframework_genai.tools.builtins import DateTimeTool, JsonTool
-from fireflyframework_genai.agents import FireflyAgent
+from fireflyframework_agentic.tools import ToolKit
+from fireflyframework_agentic.tools.builtins import DateTimeTool, JsonTool
+from fireflyframework_agentic.agents import FireflyAgent
 
 kit = ToolKit("utilities", [DateTimeTool(), JsonTool()])
 
@@ -981,8 +981,8 @@ Chapter 6 (reasoning patterns) and Chapter 20 (full IDP application).
 **Step 1 — Define the tools:**
 
 ```python
-from fireflyframework_genai.tools import firefly_tool, guarded
-from fireflyframework_genai.tools.guards import RateLimitGuard
+from fireflyframework_agentic.tools import firefly_tool, guarded
+from fireflyframework_agentic.tools.guards import RateLimitGuard
 
 @guarded(RateLimitGuard(max_calls=100, period_seconds=60))
 @firefly_tool(name="ocr_extract", description="Extract text from a document image via OCR")
@@ -1002,9 +1002,9 @@ async def vendor_lookup(vendor_name: str) -> str:
 **Step 2 — Group into a ToolKit and attach to the extraction agent:**
 
 ```python
-from fireflyframework_genai.tools import ToolKit
-from fireflyframework_genai.tools.builtins import CalculatorTool
-from fireflyframework_genai.agents import FireflyAgent
+from fireflyframework_agentic.tools import ToolKit
+from fireflyframework_agentic.tools.builtins import CalculatorTool
+from fireflyframework_agentic.agents import FireflyAgent
 
 extraction_kit = ToolKit(
     "idp-extraction",
@@ -1043,7 +1043,7 @@ method — not just a raw string.
 ### Creating a Prompt Template
 
 ```python
-from fireflyframework_genai.prompts import PromptTemplate
+from fireflyframework_agentic.prompts import PromptTemplate
 
 extraction_prompt = PromptTemplate(
     "invoice_extraction",
@@ -1071,7 +1071,7 @@ The `PromptRegistry` supports multiple versions of the same template. This is cr
 for A/B testing different prompt strategies:
 
 ```python
-from fireflyframework_genai.prompts import PromptRegistry
+from fireflyframework_agentic.prompts import PromptRegistry
 
 registry = PromptRegistry()
 registry.register(extraction_prompt_v1)
@@ -1093,7 +1093,7 @@ Templates can be composed using three strategies:
 Render templates in order and join them — useful for building system + context + task prompts:
 
 ```python
-from fireflyframework_genai.prompts.composer import SequentialComposer
+from fireflyframework_agentic.prompts.composer import SequentialComposer
 
 # By default, templates are joined with "\n\n". Override with `separator=`.
 composer = SequentialComposer(
@@ -1109,7 +1109,7 @@ Select a template based on a runtime condition. The `condition_fn` receives the
 render kwargs and returns a string key that maps into `template_map`:
 
 ```python
-from fireflyframework_genai.prompts.composer import ConditionalComposer
+from fireflyframework_agentic.prompts.composer import ConditionalComposer
 
 # The condition function inspects the kwargs and returns a template key.
 composer = ConditionalComposer(
@@ -1128,7 +1128,7 @@ Render templates and merge with a custom function — full control over how piec
 combine:
 
 ```python
-from fireflyframework_genai.prompts.composer import MergeComposer
+from fireflyframework_agentic.prompts.composer import MergeComposer
 
 # The merge_fn receives a list of rendered strings and returns the combined result.
 composer = MergeComposer(
@@ -1144,7 +1144,7 @@ The `PromptValidator` checks rendered prompts against configurable constraints �
 token limits and required sections — catching problems before they reach the LLM:
 
 ```python
-from fireflyframework_genai.prompts import PromptValidator
+from fireflyframework_agentic.prompts import PromptValidator
 
 # Validate that the rendered prompt fits within 4,000 tokens
 # and contains the required "Return valid JSON" section.
@@ -1164,8 +1164,8 @@ is useful until the rendered text reaches an agent. Here is how the two systems 
 the result as the prompt:
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.prompts import PromptTemplate
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.prompts import PromptTemplate
 
 extraction_prompt = PromptTemplate(
     "invoice_extraction",
@@ -1185,7 +1185,7 @@ print(result.output) # {"invoice_number": "INV-001", ...}
 multiple templates (system instructions + context + task) into one prompt:
 
 ```python
-from fireflyframework_genai.prompts.composer import SequentialComposer
+from fireflyframework_agentic.prompts.composer import SequentialComposer
 
 system = PromptTemplate("system", "You are a precise data extraction assistant.")
 context = PromptTemplate("context", "Document type: {{ doc_type }}")
@@ -1202,7 +1202,7 @@ calls `agent.run()`, it first renders its `"thought"` template, passes the resul
 to the agent, and records the output in the trace. You can override any slot:
 
 ```python
-from fireflyframework_genai.reasoning import ReActPattern
+from fireflyframework_agentic.reasoning import ReActPattern
 
 # Override the built-in thought prompt with your own template.
 custom = PromptTemplate("my:thought", "Think about: {{ context }}")
@@ -1216,7 +1216,7 @@ See Chapter 6 → *Configurable Prompts* for the full list of prompt slots per p
 For large prompts or team workflows, store templates as files:
 
 ```python
-from fireflyframework_genai.prompts import PromptLoader
+from fireflyframework_agentic.prompts import PromptLoader
 
 loader = PromptLoader()
 
@@ -1235,7 +1235,7 @@ becomes `"invoice_extraction"`).
 For our IDP pipeline, we create versioned prompts that can be A/B tested later:
 
 ```python
-from fireflyframework_genai.prompts import PromptTemplate, PromptRegistry
+from fireflyframework_agentic.prompts import PromptTemplate, PromptRegistry
 
 prompt_registry = PromptRegistry()
 
@@ -1359,7 +1359,7 @@ Here is the canonical flow, using the framework's tool system end-to-end:
 # ── Step 1: Define tools with @firefly_tool (see Chapter 4) ──────────────
 # These are automatically registered in the global ToolRegistry.
 
-from fireflyframework_genai.tools import firefly_tool, ToolKit
+from fireflyframework_agentic.tools import firefly_tool, ToolKit
 
 @firefly_tool(name="vendor_lookup", description="Look up vendor in the ERP system")
 async def vendor_lookup(vendor_name: str) -> str:
@@ -1381,7 +1381,7 @@ extraction_tools = ToolKit(
 
 # ── Step 3: Create an agent WITH the bridged tools ──────────────────────
 
-from fireflyframework_genai.agents import FireflyAgent
+from fireflyframework_agentic.agents import FireflyAgent
 
 extractor = FireflyAgent(
     name="extractor",
@@ -1393,7 +1393,7 @@ extractor = FireflyAgent(
 # The pattern calls extractor.run() internally, which triggers Pydantic AI's
 # tool dispatch — the LLM decides when to call vendor_lookup or calculate.
 
-from fireflyframework_genai.reasoning import ReActPattern
+from fireflyframework_agentic.reasoning import ReActPattern
 
 react = ReActPattern(max_steps=5)
 result = await react.execute(extractor, "What is the total with tax for vendor Acme Corp?")
@@ -1436,8 +1436,8 @@ This is by design. The framework has **two separate layers** with different purp
 Use `ToolKit` to curate which subset of registered tools each agent receives:
 
 ```python
-from fireflyframework_genai.tools import ToolKit
-from fireflyframework_genai.tools.registry import tool_registry
+from fireflyframework_agentic.tools import ToolKit
+from fireflyframework_agentic.tools.registry import tool_registry
 
 # Curate: only extraction-related tools for this agent
 extraction_kit = ToolKit("extraction", [
@@ -1460,8 +1460,8 @@ pattern's internal state as `state["memory"]`. This lets pattern hooks read and 
 working memory during iterations:
 
 ```python
-from fireflyframework_genai.reasoning import PlanAndExecutePattern
-from fireflyframework_genai.memory import MemoryManager
+from fireflyframework_agentic.reasoning import PlanAndExecutePattern
+from fireflyframework_agentic.memory import MemoryManager
 
 memory = MemoryManager(working_scope_id="extraction-session")
 
@@ -1487,7 +1487,7 @@ of parsing free-form strings for magic words like "FINISH", the model returns st
 objects with explicit fields. No more fragile regex parsing:
 
 ```python
-from fireflyframework_genai.reasoning.models import (
+from fireflyframework_agentic.reasoning.models import (
     ReasoningThought,
     ReasoningAction,
     ReasoningPlan,
@@ -1527,7 +1527,7 @@ Interleaves thinking and tool use. Each iteration produces a `ReasoningThought`;
 `is_final=True`, the loop stops.
 
 ```python
-from fireflyframework_genai.reasoning import ReActPattern
+from fireflyframework_agentic.reasoning import ReActPattern
 
 react = ReActPattern(max_steps=5)
 result = await react.execute(my_agent, "What is the total on invoice INV-001?")
@@ -1543,7 +1543,7 @@ combined with reasoning.
 The agent reasons step by step through a problem. Each step is a `ReasoningThought`.
 
 ```python
-from fireflyframework_genai.reasoning import ChainOfThoughtPattern
+from fireflyframework_agentic.reasoning import ChainOfThoughtPattern
 
 cot = ChainOfThoughtPattern(max_steps=10)
 result = await cot.execute(my_agent, "Calculate the VAT on $1,234.56 at 20%.")
@@ -1559,7 +1559,7 @@ each step with status tracking (`pending → running → completed/failed`). Sup
 replanning when steps fail.
 
 ```python
-from fireflyframework_genai.reasoning import PlanAndExecutePattern
+from fireflyframework_agentic.reasoning import PlanAndExecutePattern
 
 planner = PlanAndExecutePattern(max_steps=15, allow_replan=True)
 result = await planner.execute(
@@ -1578,7 +1578,7 @@ a `ReflectionVerdict`. If `is_satisfactory=False`, the issues and suggestions ar
 back into a retry prompt.
 
 ```python
-from fireflyframework_genai.reasoning import ReflexionPattern
+from fireflyframework_agentic.reasoning import ReflexionPattern
 
 reflexion = ReflexionPattern(max_steps=3)
 result = await reflexion.execute(my_agent, "Write a unit test for binary search.")
@@ -1593,7 +1593,7 @@ Explores multiple reasoning branches and evaluates each with a `BranchEvaluation
 (score + reasoning). The highest-scoring branch is selected.
 
 ```python
-from fireflyframework_genai.reasoning import TreeOfThoughtsPattern
+from fireflyframework_agentic.reasoning import TreeOfThoughtsPattern
 
 tot = TreeOfThoughtsPattern(branching_factor=3, max_depth=3)
 result = await tot.execute(my_agent, "Design an API for a task management system.")
@@ -1607,7 +1607,7 @@ explore and compare alternatives.
 Breaks a high-level goal into structured `GoalPhase` objects, each with concrete tasks.
 
 ```python
-from fireflyframework_genai.reasoning import GoalDecompositionPattern
+from fireflyframework_agentic.reasoning import GoalDecompositionPattern
 
 decomposer = GoalDecompositionPattern(max_steps=20)
 result = await decomposer.execute(my_agent, "Build an IDP pipeline for invoice processing.")
@@ -1622,8 +1622,8 @@ Every pattern uses `PromptTemplate` instances for its LLM calls. You can overrid
 prompt by passing a `prompts` dict:
 
 ```python
-from fireflyframework_genai.prompts.template import PromptTemplate, PromptVariable
-from fireflyframework_genai.reasoning import ReActPattern
+from fireflyframework_agentic.prompts.template import PromptTemplate, PromptVariable
+from fireflyframework_agentic.reasoning import ReActPattern
 
 custom_thought = PromptTemplate(
     "my:react:thought",
@@ -1650,7 +1650,7 @@ All built-in prompts are registered in the global `prompt_registry` under the
 Chain patterns sequentially — the output of one becomes the input to the next:
 
 ```python
-from fireflyframework_genai.reasoning import ReasoningPipeline, PlanAndExecutePattern, ReActPattern
+from fireflyframework_agentic.reasoning import ReasoningPipeline, PlanAndExecutePattern, ReActPattern
 
 pipeline = ReasoningPipeline([
     PlanAndExecutePattern(max_steps=15),
@@ -1679,7 +1679,7 @@ for step in result.trace.steps:
 Extend `AbstractReasoningPattern` and override the template methods:
 
 ```python
-from fireflyframework_genai.reasoning.base import AbstractReasoningPattern
+from fireflyframework_agentic.reasoning.base import AbstractReasoningPattern
 
 class VerifyAndCorrectPattern(AbstractReasoningPattern):
     def __init__(self, *, max_steps: int = 5):
@@ -1709,7 +1709,7 @@ class VerifyAndCorrectPattern(AbstractReasoningPattern):
 Register it to make it available framework-wide:
 
 ```python
-from fireflyframework_genai.reasoning.registry import reasoning_registry
+from fireflyframework_agentic.reasoning.registry import reasoning_registry
 
 reasoning_registry.register("verify_and_correct", VerifyAndCorrectPattern)
 ```
@@ -1728,7 +1728,7 @@ might miss something, so we use **Plan-and-Execute** to break it into steps, and
 **Reflexion** as a safety net when validation catches errors:
 
 ```python
-from fireflyframework_genai.reasoning import PlanAndExecutePattern, ReflexionPattern
+from fireflyframework_agentic.reasoning import PlanAndExecutePattern, ReflexionPattern
 
 # ── Recall from Chapter 4 ───────────────────────────────────────────
 # extractor_agent = FireflyAgent(
@@ -1831,7 +1831,7 @@ graph LR
 `TextChunker` splits text into overlapping chunks using one of three strategies:
 
 ```python
-from fireflyframework_genai.content.chunking import TextChunker
+from fireflyframework_agentic.content.chunking import TextChunker
 
 chunker = TextChunker(
     chunk_size=4000, # Max tokens per chunk
@@ -1859,7 +1859,7 @@ Each chunk is a `Chunk` model with `content`, `index`, `total_chunks`,
 horizontal rules (`---`):
 
 ```python
-from fireflyframework_genai.content.chunking import DocumentSplitter
+from fireflyframework_agentic.content.chunking import DocumentSplitter
 
 splitter = DocumentSplitter(min_length=50)
 segments = splitter.split(multi_page_text)
@@ -1871,7 +1871,7 @@ For large images that exceed a VLM's pixel budget, `ImageTiler` computes tile
 coordinates:
 
 ```python
-from fireflyframework_genai.content.chunking import ImageTiler
+from fireflyframework_agentic.content.chunking import ImageTiler
 
 tiler = ImageTiler(tile_width=1024, tile_height=1024, overlap=128)
 tiles = tiler.compute_tiles(image_width=4096, image_height=6144)
@@ -1883,7 +1883,7 @@ tiles = tiler.compute_tiles(image_width=4096, image_height=6144)
 `BatchProcessor` sends chunks through an agent concurrently:
 
 ```python
-from fireflyframework_genai.content.chunking import BatchProcessor
+from fireflyframework_agentic.content.chunking import BatchProcessor
 
 processor = BatchProcessor(concurrency=4)
 results = await processor.process(ocr_agent, chunks)
@@ -1899,7 +1899,7 @@ them:
 Hard-cuts the text at a token limit:
 
 ```python
-from fireflyframework_genai.content.compression import ContextCompressor, TruncationStrategy
+from fireflyframework_agentic.content.compression import ContextCompressor, TruncationStrategy
 
 compressor = ContextCompressor(strategy=TruncationStrategy())
 compressed = await compressor.compress(full_text, max_tokens=8000)
@@ -1910,7 +1910,7 @@ compressed = await compressor.compress(full_text, max_tokens=8000)
 Uses an LLM agent to intelligently summarise:
 
 ```python
-from fireflyframework_genai.content.compression import SummarizationStrategy
+from fireflyframework_agentic.content.compression import SummarizationStrategy
 
 compressor = ContextCompressor(
     strategy=SummarizationStrategy(summary_agent)
@@ -1923,7 +1923,7 @@ compressed = await compressor.compress(full_text, max_tokens=8000)
 Chunks the text, summarises each chunk in parallel, then merges the summaries:
 
 ```python
-from fireflyframework_genai.content.compression import MapReduceStrategy
+from fireflyframework_agentic.content.compression import MapReduceStrategy
 
 compressor = ContextCompressor(
     strategy=MapReduceStrategy(summary_agent)
@@ -1937,7 +1937,7 @@ Maintains a sliding window over a stream of messages, keeping total token usage 
 budget:
 
 ```python
-from fireflyframework_genai.content.compression import SlidingWindowManager
+from fireflyframework_agentic.content.compression import SlidingWindowManager
 
 window = SlidingWindowManager(max_tokens=8000)
 window.add("First OCR page output...")
@@ -1950,7 +1950,7 @@ current_context = window.get_context() # Only recent items that fit
 Estimate token counts without an API call:
 
 ```python
-from fireflyframework_genai.content.compression import TokenEstimator
+from fireflyframework_agentic.content.compression import TokenEstimator
 
 estimator = TokenEstimator() # Default ratio: 1.33 tokens per word
 tokens = estimator.estimate("This is a test sentence.")
@@ -1962,8 +1962,8 @@ In our IDP pipeline, the OCR phase may produce text that exceeds the extraction
 agent's context window. Here's how we handle it:
 
 ```python
-from fireflyframework_genai.content.chunking import TextChunker, BatchProcessor
-from fireflyframework_genai.content.compression import ContextCompressor, MapReduceStrategy
+from fireflyframework_agentic.content.chunking import TextChunker, BatchProcessor
+from fireflyframework_agentic.content.compression import ContextCompressor, MapReduceStrategy
 
 # Step 1: Chunk the raw OCR output
 chunker = TextChunker(chunk_size=3000, chunk_overlap=200, strategy="paragraph")
@@ -2052,8 +2052,8 @@ Here's the simplest way to give an agent a memory — attach a `MemoryManager` a
 a `conversation_id` to each call:
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.memory import MemoryManager
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.memory import MemoryManager
 
 # Create a memory manager with a 32K token budget for conversation history.
 # When the history exceeds this, the oldest turns get dropped automatically.
@@ -2081,7 +2081,7 @@ result2 = await agent.run("What about its type system?", conversation_id=conv_id
 budget by dropping the oldest turns (FIFO):
 
 ```python
-from fireflyframework_genai.memory import ConversationMemory
+from fireflyframework_agentic.memory import ConversationMemory
 
 conv_mem = ConversationMemory(max_tokens=16_000)
 cid = conv_mem.new_conversation()
@@ -2105,7 +2105,7 @@ When `FireflyAgent` has memory attached, this is all automatic.
 `WorkingMemory` is a scoped key-value store for facts and intermediate state:
 
 ```python
-from fireflyframework_genai.memory import WorkingMemory
+from fireflyframework_agentic.memory import WorkingMemory
 
 wm = WorkingMemory(scope_id="idp-session-42")
 wm.set("doc_type", "invoice")
@@ -2125,7 +2125,7 @@ Multiple `WorkingMemory` instances can share a backend while maintaining indepen
 namespaces:
 
 ```python
-from fireflyframework_genai.memory import InMemoryStore, WorkingMemory
+from fireflyframework_agentic.memory import InMemoryStore, WorkingMemory
 
 store = InMemoryStore()
 agent_a_mem = WorkingMemory(store=store, scope_id="agent_a")
@@ -2143,7 +2143,7 @@ assert agent_a_mem.get("key") == "from A" # Isolated
 Dict-backed, fast, non-persistent. Ideal for testing and short-lived sessions:
 
 ```python
-from fireflyframework_genai.memory import InMemoryStore
+from fireflyframework_agentic.memory import InMemoryStore
 store = InMemoryStore()
 ```
 
@@ -2152,7 +2152,7 @@ store = InMemoryStore()
 JSON file persistence. Each namespace gets its own file:
 
 ```python
-from fireflyframework_genai.memory import FileStore
+from fireflyframework_agentic.memory import FileStore
 store = FileStore(base_dir=".firefly_memory")
 ```
 
@@ -2161,7 +2161,7 @@ store = FileStore(base_dir=".firefly_memory")
 Implement the `MemoryStore` protocol:
 
 ```python
-from fireflyframework_genai.memory import MemoryStore, MemoryEntry
+from fireflyframework_agentic.memory import MemoryStore, MemoryEntry
 
 class RedisStore:
     def save(self, namespace: str, entry: MemoryEntry) -> None: ...
@@ -2177,7 +2177,7 @@ The `MemoryManager` facade is the object you attach to agents, delegation router
 pipelines:
 
 ```python
-from fireflyframework_genai.memory import MemoryManager
+from fireflyframework_agentic.memory import MemoryManager
 
 mgr = MemoryManager(
     max_conversation_tokens=32_000,
@@ -2240,10 +2240,10 @@ so custom patterns can read and write working memory during reasoning iterations
 Memory settings via environment variables:
 
 ```bash
-export FIREFLY_GENAI_MEMORY_BACKEND=in_memory
-export FIREFLY_GENAI_MEMORY_MAX_CONVERSATION_TOKENS=128000
-export FIREFLY_GENAI_MEMORY_SUMMARIZE_THRESHOLD=10
-export FIREFLY_GENAI_MEMORY_FILE_DIR=.firefly_memory
+export FIREFLY_AGENTIC_MEMORY_BACKEND=in_memory
+export FIREFLY_AGENTIC_MEMORY_MAX_CONVERSATION_TOKENS=128000
+export FIREFLY_AGENTIC_MEMORY_SUMMARIZE_THRESHOLD=10
+export FIREFLY_AGENTIC_MEMORY_FILE_DIR=.firefly_memory
 ```
 
 ### IDP Tie-In: Carrying Facts Across Pipeline Steps
@@ -2253,7 +2253,7 @@ out that a document is an invoice, the extractor needs to know that — it selec
 different prompts for invoices vs. receipts. Working memory is the bridge:
 
 ```python
-from fireflyframework_genai.memory import MemoryManager
+from fireflyframework_agentic.memory import MemoryManager
 
 # One memory manager for the entire pipeline run.
 # Every step can read and write facts here.
@@ -2306,7 +2306,7 @@ errors back to the agent and re-runs — up to `max_retries` times.
 Rules are composable predicates that check a single field value:
 
 ```python
-from fireflyframework_genai.validation.rules import (
+from fireflyframework_agentic.validation.rules import (
     RegexRule,
     FormatRule,
     RangeRule,
@@ -2353,7 +2353,7 @@ Validates an entire structured output (dict or Pydantic model). The constructor
 takes a dict mapping field names to lists of rules:
 
 ```python
-from fireflyframework_genai.validation.rules import OutputValidator
+from fireflyframework_agentic.validation.rules import OutputValidator
 
 validator = OutputValidator({
     "invoice_number": [RegexRule("invoice_number", r"^INV-\d{4,10}$")],
@@ -2380,7 +2380,7 @@ agent (for LLM-based evaluation) or operates purely on text (grounding).
 Asks the agent to self-evaluate its output confidence on a 0.0–1.0 scale:
 
 ```python
-from fireflyframework_genai.validation.qos import ConfidenceScorer
+from fireflyframework_agentic.validation.qos import ConfidenceScorer
 
 # The scorer needs an agent — it sends a self-evaluation prompt to the LLM.
 scorer = ConfidenceScorer(evaluator_agent)
@@ -2393,7 +2393,7 @@ Runs the same prompt multiple times and measures word-level agreement across
 outputs (Jaccard similarity):
 
 ```python
-from fireflyframework_genai.validation.qos import ConsistencyChecker
+from fireflyframework_agentic.validation.qos import ConsistencyChecker
 
 # The checker needs an agent and a run count. It runs the prompt num_runs times.
 checker = ConsistencyChecker(extractor_agent, num_runs=3)
@@ -2408,7 +2408,7 @@ Verifies that extracted field values actually appear in the source document —
 no agent needed, purely text-based:
 
 ```python
-from fireflyframework_genai.validation.qos import GroundingChecker
+from fireflyframework_agentic.validation.qos import GroundingChecker
 
 checker = GroundingChecker(min_grounding_ratio=0.8)
 
@@ -2428,7 +2428,7 @@ Composes all checks into a single gate. You build the individual checkers and
 pass them in:
 
 ```python
-from fireflyframework_genai.validation.qos import (
+from fireflyframework_agentic.validation.qos import (
     QoSGuard, ConfidenceScorer, ConsistencyChecker, GroundingChecker,
 )
 
@@ -2468,7 +2468,7 @@ automatically retries with a feedback prompt describing exactly what was wrong.
 
 ```python
 from pydantic import BaseModel, Field
-from fireflyframework_genai.validation import OutputReviewer
+from fireflyframework_agentic.validation import OutputReviewer
 
 class InvoiceData(BaseModel):
     vendor: str
@@ -2490,7 +2490,7 @@ print(result.attempts) # 1 if first try succeeded, 2+ if retries needed
 Combine schema parsing with field-level rules:
 
 ```python
-from fireflyframework_genai.validation import OutputReviewer, OutputValidator, EnumRule
+from fireflyframework_agentic.validation import OutputReviewer, OutputValidator, EnumRule
 
 validator = OutputValidator({"vendor": [EnumRule("vendor", ["Acme Corp", "Globex"])]})
 reviewer = OutputReviewer(
@@ -2505,8 +2505,8 @@ reviewer = OutputReviewer(
 Attach a reviewer to any reasoning pattern to validate the final output:
 
 ```python
-from fireflyframework_genai.reasoning import ReActPattern
-from fireflyframework_genai.validation import OutputReviewer
+from fireflyframework_agentic.reasoning import ReActPattern
+from fireflyframework_agentic.validation import OutputReviewer
 
 reviewer = OutputReviewer(output_type=InvoiceData, max_retries=2)
 pattern = ReActPattern(reviewer=reviewer)
@@ -2530,11 +2530,11 @@ For our IDP pipeline, we combine structural validation, QoS checks, and the outp
 reviewer:
 
 ```python
-from fireflyframework_genai.validation.rules import (
+from fireflyframework_agentic.validation.rules import (
     OutputValidator, FieldValidator, RegexRule, FormatRule, RangeRule,
 )
-from fireflyframework_genai.validation.qos import QoSGuard
-from fireflyframework_genai.validation import OutputReviewer
+from fireflyframework_agentic.validation.qos import QoSGuard
+from fireflyframework_agentic.validation import OutputReviewer
 from pydantic import BaseModel, Field
 
 # Define the expected output schema
@@ -2561,7 +2561,7 @@ reviewer = OutputReviewer(
 )
 
 # QoS guard — compose individual checkers with thresholds
-from fireflyframework_genai.validation.qos import (
+from fireflyframework_agentic.validation.qos import (
     QoSGuard, ConfidenceScorer, ConsistencyChecker, GroundingChecker,
 )
 
@@ -2641,8 +2641,8 @@ A pipeline is a **Directed Acyclic Graph (DAG)** where:
 The fluent `PipelineBuilder` is the recommended way to construct pipelines:
 
 ```python
-from fireflyframework_genai.pipeline.builder import PipelineBuilder
-from fireflyframework_genai.pipeline.steps import AgentStep, CallableStep, ReasoningStep
+from fireflyframework_agentic.pipeline.builder import PipelineBuilder
+from fireflyframework_agentic.pipeline.steps import AgentStep, CallableStep, ReasoningStep
 
 engine = (
     PipelineBuilder("invoice-pipeline")
@@ -2671,7 +2671,7 @@ Five built-in executors cover most scenarios:
 Process multiple items concurrently:
 
 ```python
-from fireflyframework_genai.pipeline.steps import FanOutStep, FanInStep
+from fireflyframework_agentic.pipeline.steps import FanOutStep, FanInStep
 
 engine = (
     PipelineBuilder("parallel-ocr")
@@ -2693,7 +2693,7 @@ Gate nodes with a condition function. If the condition returns `False`, the node
 skipped:
 
 ```python
-from fireflyframework_genai.pipeline.dag import DAGNode
+from fireflyframework_agentic.pipeline.dag import DAGNode
 
 dag.add_node(DAGNode(
     node_id="ocr",
@@ -2722,8 +2722,8 @@ Retries use linear backoff. On exhaustion, the node fails and the pipeline repor
 `PipelineContext` is the shared data bus flowing through the DAG:
 
 ```python
-from fireflyframework_genai.pipeline.context import PipelineContext
-from fireflyframework_genai.memory import MemoryManager
+from fireflyframework_agentic.pipeline.context import PipelineContext
+from fireflyframework_agentic.memory import MemoryManager
 
 memory = MemoryManager(working_scope_id="invoice-run-42")
 
@@ -2766,8 +2766,8 @@ for entry in result.execution_trace:
 For full control, build the DAG directly:
 
 ```python
-from fireflyframework_genai.pipeline.dag import DAG, DAGNode, DAGEdge
-from fireflyframework_genai.pipeline.engine import PipelineEngine
+from fireflyframework_agentic.pipeline.dag import DAG, DAGNode, DAGEdge
+from fireflyframework_agentic.pipeline.engine import PipelineEngine
 
 dag = DAG("my-pipeline")
 dag.add_node(DAGNode(node_id="step_a", step=my_step))
@@ -2783,11 +2783,11 @@ result = await engine.run(inputs="hello")
 Here's our IDP pipeline as a DAG with all five phases:
 
 ```python
-from fireflyframework_genai.pipeline.builder import PipelineBuilder
-from fireflyframework_genai.pipeline.steps import AgentStep, ReasoningStep, CallableStep
-from fireflyframework_genai.pipeline.context import PipelineContext
-from fireflyframework_genai.reasoning import PlanAndExecutePattern
-from fireflyframework_genai.memory import MemoryManager
+from fireflyframework_agentic.pipeline.builder import PipelineBuilder
+from fireflyframework_agentic.pipeline.steps import AgentStep, ReasoningStep, CallableStep
+from fireflyframework_agentic.pipeline.context import PipelineContext
+from fireflyframework_agentic.reasoning import PlanAndExecutePattern
+from fireflyframework_agentic.memory import MemoryManager
 
 # Step functions for non-agent nodes
 async def validate_step(context, inputs):
@@ -2855,7 +2855,7 @@ enabled, the framework instruments agent runs automatically — you get spans fo
 `FireflyTracer` wraps the OpenTelemetry `Tracer` and adds GenAI-specific attributes:
 
 ```python
-from fireflyframework_genai.observability import FireflyTracer
+from fireflyframework_agentic.observability import FireflyTracer
 
 tracer = FireflyTracer(service_name="idp-service")
 
@@ -2869,7 +2869,7 @@ with tracer.start_span("agent.run", attributes={"agent.name": "classifier"}) as 
 Automatically create a span around any function:
 
 ```python
-from fireflyframework_genai.observability import traced
+from fireflyframework_agentic.observability import traced
 
 @traced(name="classify_document")
 async def classify_document(text: str) -> dict:
@@ -2881,7 +2881,7 @@ async def classify_document(text: str) -> dict:
 `FireflyMetrics` provides counters, histograms, and gauges:
 
 ```python
-from fireflyframework_genai.observability import FireflyMetrics
+from fireflyframework_agentic.observability import FireflyMetrics
 
 metrics = FireflyMetrics(service_name="idp-service")
 
@@ -2895,7 +2895,7 @@ metrics.record_histogram("agent.latency_ms", 142.5, labels={"agent": "classifier
 #### The `@metered` Decorator
 
 ```python
-from fireflyframework_genai.observability import metered
+from fireflyframework_agentic.observability import metered
 
 @metered(name="extraction")
 async def extract_fields(text: str) -> dict:
@@ -2907,7 +2907,7 @@ async def extract_fields(text: str) -> dict:
 `FireflyEvents` emits structured events for significant occurrences:
 
 ```python
-from fireflyframework_genai.observability import FireflyEvents
+from fireflyframework_agentic.observability import FireflyEvents
 
 events = FireflyEvents()
 events.emit("agent.started", {"agent": "classifier", "model": "gpt-4o"})
@@ -2919,7 +2919,7 @@ events.emit("pipeline.step.completed", {"step": "classify", "duration_ms": 250})
 Configure where traces and metrics go:
 
 ```python
-from fireflyframework_genai.observability import configure_exporters
+from fireflyframework_agentic.observability import configure_exporters
 
 # Send to an OTLP collector (Jaeger, Grafana Tempo, etc.)
 configure_exporters(otlp_endpoint="http://localhost:4317")
@@ -2931,9 +2931,9 @@ configure_exporters(console=True)
 Configuration via environment variables:
 
 ```bash
-export FIREFLY_GENAI_OBSERVABILITY_ENABLED=true
-export FIREFLY_GENAI_OTLP_ENDPOINT=http://localhost:4317
-export FIREFLY_GENAI_LOG_LEVEL=DEBUG
+export FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true
+export FIREFLY_AGENTIC_OTLP_ENDPOINT=http://localhost:4317
+export FIREFLY_AGENTIC_LOG_LEVEL=DEBUG
 ```
 
 ### Usage Tracking & Cost Estimation
@@ -2943,7 +2943,7 @@ run, reasoning step, and pipeline execution. `UsageTracker` accumulates
 `UsageRecord` objects with input/output tokens, cost, latency, and model details.
 
 ```python
-from fireflyframework_genai.observability import default_usage_tracker
+from fireflyframework_agentic.observability import default_usage_tracker
 
 # After running agents, inspect accumulated usage
 summary = default_usage_tracker.get_summary()
@@ -2960,7 +2960,7 @@ Cost is calculated via `CostCalculator` — either a built-in static price table
 the optional `genai-prices` library for up-to-date pricing:
 
 ```python
-from fireflyframework_genai.observability import get_cost_calculator
+from fireflyframework_agentic.observability import get_cost_calculator
 
 calc = get_cost_calculator() # auto-selects best available
 cost = calc.estimate("openai:gpt-4o", input_tokens=1000, output_tokens=500)
@@ -2971,8 +2971,8 @@ cost = calc.estimate("openai:gpt-4o", input_tokens=1000, output_tokens=500)
 Set budget thresholds to get warnings when costs are high:
 
 ```bash
-export FIREFLY_GENAI_BUDGET_ALERT_THRESHOLD_USD=5.00
-export FIREFLY_GENAI_BUDGET_LIMIT_USD=10.00
+export FIREFLY_AGENTIC_BUDGET_ALERT_THRESHOLD_USD=5.00
+export FIREFLY_AGENTIC_BUDGET_LIMIT_USD=10.00
 ```
 
 Pipeline results include aggregated usage automatically:
@@ -2992,7 +2992,7 @@ code manually unless you want additional detail.
 ### IDP Tie-In: Instrumenting the Pipeline
 
 ```python
-from fireflyframework_genai.observability import FireflyTracer, FireflyMetrics, traced
+from fireflyframework_agentic.observability import FireflyTracer, FireflyMetrics, traced
 
 tracer = FireflyTracer(service_name="idp-service")
 metrics = FireflyMetrics(service_name="idp-service")
@@ -3029,7 +3029,7 @@ markdown or JSON.
 `TraceRecorder` captures every decision during execution:
 
 ```python
-from fireflyframework_genai.explainability import TraceRecorder
+from fireflyframework_agentic.explainability import TraceRecorder
 
 recorder = TraceRecorder()
 recorder.record_decision(
@@ -3049,7 +3049,7 @@ alternatives considered, and rationale.
 Transforms raw decision records into natural-language explanations:
 
 ```python
-from fireflyframework_genai.explainability import ExplanationGenerator
+from fireflyframework_agentic.explainability import ExplanationGenerator
 
 generator = ExplanationGenerator()
 explanation = generator.generate(recorder.decisions)
@@ -3062,7 +3062,7 @@ print(explanation)
 A tamper-evident log where each entry includes a hash of the previous entry:
 
 ```python
-from fireflyframework_genai.explainability import AuditTrail
+from fireflyframework_agentic.explainability import AuditTrail
 
 trail = AuditTrail()
 for decision in recorder.decisions:
@@ -3077,7 +3077,7 @@ assert trail.verify()
 Compile everything into a structured report:
 
 ```python
-from fireflyframework_genai.explainability import ReportBuilder
+from fireflyframework_agentic.explainability import ReportBuilder
 
 builder = ReportBuilder()
 builder.add_decisions(recorder.decisions)
@@ -3095,7 +3095,7 @@ json_data = builder.build_json()
 In our IDP pipeline, we record why each field was extracted the way it was:
 
 ```python
-from fireflyframework_genai.explainability import (
+from fireflyframework_agentic.explainability import (
     TraceRecorder, ExplanationGenerator, AuditTrail, ReportBuilder,
 )
 
@@ -3151,7 +3151,7 @@ length), and **compare results** — all in a few lines of code.
 ### Defining an Experiment
 
 ```python
-from fireflyframework_genai.experiments import Experiment, Variant
+from fireflyframework_agentic.experiments import Experiment, Variant
 
 experiment = Experiment(
     name="extraction_model_comparison",
@@ -3169,7 +3169,7 @@ The `ExperimentRunner` executes each variant against test inputs and collects me
 (latency, token usage, quality):
 
 ```python
-from fireflyframework_genai.experiments import ExperimentRunner
+from fireflyframework_agentic.experiments import ExperimentRunner
 
 runner = ExperimentRunner()
 results = await runner.run(
@@ -3186,7 +3186,7 @@ results = await runner.run(
 Persist results for later analysis and reproducibility:
 
 ```python
-from fireflyframework_genai.experiments import ExperimentTracker
+from fireflyframework_agentic.experiments import ExperimentTracker
 
 tracker = ExperimentTracker(storage_dir="./experiment_results")
 tracker.save(results)
@@ -3198,7 +3198,7 @@ loaded = tracker.load("extraction_model_comparison")
 ### Comparing Variants
 
 ```python
-from fireflyframework_genai.experiments import VariantComparator
+from fireflyframework_agentic.experiments import VariantComparator
 
 comparator = VariantComparator()
 metrics = comparator.compare(results)
@@ -3239,7 +3239,7 @@ iterate on agent quality before going to production.
 Test an agent conversationally:
 
 ```python
-from fireflyframework_genai.lab import LabSession
+from fireflyframework_agentic.lab import LabSession
 
 session = LabSession(name="extraction-dev", agent=extractor_agent)
 response = await session.interact("Extract fields from: Invoice #INV-001...")
@@ -3255,7 +3255,7 @@ for entry in session.history:
 Measure agent performance across a set of prompts:
 
 ```python
-from fireflyframework_genai.lab import Benchmark
+from fireflyframework_agentic.lab import Benchmark
 
 bench = Benchmark(inputs=[
     "Extract from: Invoice #INV-001, Acme Corp, $500",
@@ -3272,7 +3272,7 @@ print(f"P95 latency: {result.p95_latency_ms:.1f} ms")
 Compare multiple agents on the same prompts:
 
 ```python
-from fireflyframework_genai.lab import ModelComparison
+from fireflyframework_agentic.lab import ModelComparison
 
 comparison = ModelComparison(prompts=[
     "Extract from: Invoice #INV-001, Acme Corp, $500",
@@ -3291,7 +3291,7 @@ for entry in entries:
 Manage test inputs and expected outputs:
 
 ```python
-from fireflyframework_genai.lab import EvalDataset, EvalCase
+from fireflyframework_agentic.lab import EvalDataset, EvalCase
 
 dataset = EvalDataset(cases=[
     EvalCase(
@@ -3309,7 +3309,7 @@ dataset = EvalDataset.from_json("test_data/invoices.json")
 Run an agent against a dataset with a pluggable scorer:
 
 ```python
-from fireflyframework_genai.lab import EvalOrchestrator
+from fireflyframework_agentic.lab import EvalOrchestrator
 
 # Custom scorer for extraction accuracy
 def extraction_scorer(expected: str, actual: str) -> float:
@@ -3353,13 +3353,13 @@ You can also add custom endpoints for pipelines.
 ### Quick Start
 
 ```bash
-uv add "fireflyframework-genai[rest]"
+uv add "fireflyframework-agentic[rest]"
 ```
 
 ```python
-from fireflyframework_genai.exposure.rest import create_genai_app
+from fireflyframework_agentic.exposure.rest import create_agentic_app
 
-app = create_genai_app(title="IDP Service", version="1.0.0")
+app = create_agentic_app(title="IDP Service", version="1.0.0")
 ```
 
 ```bash
@@ -3414,7 +3414,7 @@ data: [DONE]
 ### Configuration
 
 ```python
-app = create_genai_app(
+app = create_agentic_app(
     title="IDP Service",
     version="1.0.0",
     enable_cors=True,
@@ -3436,10 +3436,10 @@ Pass `conversation_id` in the request body:
 ### IDP Tie-In: Exposing the Pipeline as a REST API
 
 ```python
-from fireflyframework_genai.exposure.rest import create_genai_app
+from fireflyframework_agentic.exposure.rest import create_agentic_app
 from fastapi import UploadFile
 
-app = create_genai_app(title="IDP Service")
+app = create_agentic_app(title="IDP Service")
 
 # Custom endpoint for the full IDP pipeline
 @app.post("/idp/process")
@@ -3474,7 +3474,7 @@ flowchart LR
         RES["Results Topic"]
     end
 
-    subgraph fireflyframework-genai
+    subgraph fireflyframework-agentic
         CONS["Consumer<br/><small>KafkaAgentConsumer<br/>RabbitMQAgentConsumer<br/>RedisAgentConsumer</small>"]
         ROUTER["QueueRouter<br/><small>pattern-based routing</small>"]
         REG["AgentRegistry"]
@@ -3494,9 +3494,9 @@ flowchart LR
 
 ```bash
 # Install the backend you need
-uv add "fireflyframework-genai[kafka]"
-uv add "fireflyframework-genai[rabbitmq]"
-uv add "fireflyframework-genai[redis]"
+uv add "fireflyframework-agentic[kafka]"
+uv add "fireflyframework-agentic[rabbitmq]"
+uv add "fireflyframework-agentic[redis]"
 ```
 
 ### Consumers
@@ -3507,7 +3507,7 @@ registered agent. They run continuously — think of them as your agent's "inbox
 #### Kafka Consumer
 
 ```python
-from fireflyframework_genai.exposure.queues.kafka import KafkaAgentConsumer
+from fireflyframework_agentic.exposure.queues.kafka import KafkaAgentConsumer
 
 # This consumer reads from the "idp-incoming-documents" topic.
 # Every message body is passed to the "document_classifier" agent's run() method.
@@ -3523,7 +3523,7 @@ await consumer.start() # Blocks and processes messages until stopped
 #### RabbitMQ Consumer
 
 ```python
-from fireflyframework_genai.exposure.queues.rabbitmq import RabbitMQAgentConsumer
+from fireflyframework_agentic.exposure.queues.rabbitmq import RabbitMQAgentConsumer
 
 consumer = RabbitMQAgentConsumer(
     agent_name="document_classifier",
@@ -3536,7 +3536,7 @@ await consumer.start()
 #### Redis Consumer
 
 ```python
-from fireflyframework_genai.exposure.queues.redis import RedisAgentConsumer
+from fireflyframework_agentic.exposure.queues.redis import RedisAgentConsumer
 
 consumer = RedisAgentConsumer(
     agent_name="document_classifier",
@@ -3554,8 +3554,8 @@ to the broker. Each producer satisfies the `QueueProducer` protocol.
 #### Kafka Producer
 
 ```python
-from fireflyframework_genai.exposure.queues.kafka import KafkaAgentProducer
-from fireflyframework_genai.exposure.queues import QueueMessage
+from fireflyframework_agentic.exposure.queues.kafka import KafkaAgentProducer
+from fireflyframework_agentic.exposure.queues import QueueMessage
 
 # Create a producer that publishes to the "idp-results" topic.
 producer = KafkaAgentProducer(
@@ -3576,7 +3576,7 @@ await producer.stop()
 #### RabbitMQ Producer
 
 ```python
-from fireflyframework_genai.exposure.queues.rabbitmq import RabbitMQAgentProducer
+from fireflyframework_agentic.exposure.queues.rabbitmq import RabbitMQAgentProducer
 
 producer = RabbitMQAgentProducer(
     queue_name="idp-results",
@@ -3589,7 +3589,7 @@ await producer.stop()
 #### Redis Producer
 
 ```python
-from fireflyframework_genai.exposure.queues.redis import RedisAgentProducer
+from fireflyframework_agentic.exposure.queues.redis import RedisAgentProducer
 
 producer = RedisAgentProducer(
     channel="idp-results",
@@ -3605,9 +3605,9 @@ The most common pattern is a **consumer that processes messages and publishes re
 This turns your agent into a microservice that reads from one topic and writes to another:
 
 ```python
-from fireflyframework_genai.exposure.queues.kafka import KafkaAgentConsumer, KafkaAgentProducer
-from fireflyframework_genai.exposure.queues import QueueMessage
-from fireflyframework_genai.agents.registry import agent_registry
+from fireflyframework_agentic.exposure.queues.kafka import KafkaAgentConsumer, KafkaAgentProducer
+from fireflyframework_agentic.exposure.queues import QueueMessage
+from fireflyframework_agentic.agents.registry import agent_registry
 
 # Set up both sides
 consumer = KafkaAgentConsumer(
@@ -3637,7 +3637,7 @@ async def process_and_publish():
 All consumers and producers work with `QueueMessage`:
 
 ```python
-from fireflyframework_genai.exposure.queues import QueueMessage
+from fireflyframework_agentic.exposure.queues import QueueMessage
 
 message = QueueMessage(
     body="Process this invoice",
@@ -3652,7 +3652,7 @@ message = QueueMessage(
 Route messages to different agents based on routing-key patterns:
 
 ```python
-from fireflyframework_genai.exposure.queues import QueueRouter
+from fireflyframework_agentic.exposure.queues import QueueRouter
 
 router = QueueRouter(default_agent="fallback")
 router.add_route(r"invoice\..*", "invoice_processor")
@@ -3668,7 +3668,7 @@ router.add_route(r"contract\..*", "contract_processor")
 For unsupported brokers, extend `BaseQueueConsumer`:
 
 ```python
-from fireflyframework_genai.exposure.queues.base import BaseQueueConsumer
+from fireflyframework_agentic.exposure.queues.base import BaseQueueConsumer
 
 class MyBrokerConsumer(BaseQueueConsumer):
     async def start(self) -> None:
@@ -3690,8 +3690,8 @@ and routes to specialised extractors. Results go back on a results topic for
 downstream systems to pick up:
 
 ```python
-from fireflyframework_genai.exposure.queues.kafka import KafkaAgentConsumer, KafkaAgentProducer
-from fireflyframework_genai.exposure.queues import QueueRouter, QueueMessage
+from fireflyframework_agentic.exposure.queues.kafka import KafkaAgentConsumer, KafkaAgentProducer
+from fireflyframework_agentic.exposure.queues import QueueRouter, QueueMessage
 
 # Route different document types to specialised extraction agents.
 # Messages with routing_key "invoice.*" go to the invoice extractor, etc.
@@ -3736,7 +3736,7 @@ the factory handles prompt engineering, output typing, and registry registration
 ### Summarizer
 
 ```python
-from fireflyframework_genai.agents.templates import create_summarizer_agent
+from fireflyframework_agentic.agents.templates import create_summarizer_agent
 
 agent = create_summarizer_agent(
     max_length="short", # concise | short | medium | detailed
@@ -3752,7 +3752,7 @@ result = await agent.run("Long invoice description text here...")
 Returns a structured `ClassificationResult` with category, confidence, and reasoning:
 
 ```python
-from fireflyframework_genai.agents.templates import create_classifier_agent
+from fireflyframework_agentic.agents.templates import create_classifier_agent
 
 agent = create_classifier_agent(
     categories=["invoice", "receipt", "contract", "form"],
@@ -3774,7 +3774,7 @@ Extracts structured data into a user-provided Pydantic model:
 
 ```python
 from pydantic import BaseModel
-from fireflyframework_genai.agents.templates import create_extractor_agent
+from fireflyframework_agentic.agents.templates import create_extractor_agent
 
 class Invoice(BaseModel):
     vendor: str
@@ -3799,8 +3799,8 @@ result = await agent.run("Invoice from Acme Corp, $1,234.56, 2026-01-15")
 Memory-enabled multi-turn assistant:
 
 ```python
-from fireflyframework_genai.agents.templates import create_conversational_agent
-from fireflyframework_genai.memory import MemoryManager
+from fireflyframework_agentic.agents.templates import create_conversational_agent
+from fireflyframework_agentic.memory import MemoryManager
 
 memory = MemoryManager(max_conversation_tokens=32_000)
 agent = create_conversational_agent(
@@ -3820,7 +3820,7 @@ result = await agent.run("What's the payment status?", conversation_id=cid)
 Intent-based routing to child agents:
 
 ```python
-from fireflyframework_genai.agents.templates import create_router_agent
+from fireflyframework_agentic.agents.templates import create_router_agent
 
 agent = create_router_agent(
     agent_map={
@@ -3850,7 +3850,7 @@ All template factories accept:
 Replace our manual agents with templates for cleaner code:
 
 ```python
-from fireflyframework_genai.agents.templates import (
+from fireflyframework_agentic.agents.templates import (
     create_classifier_agent,
     create_extractor_agent,
 )
@@ -3925,7 +3925,7 @@ graph LR
 ### Delegation Router
 
 ```python
-from fireflyframework_genai.agents.delegation import DelegationRouter, RoundRobinStrategy
+from fireflyframework_agentic.agents.delegation import DelegationRouter, RoundRobinStrategy
 
 router = DelegationRouter(
     agents=[agent_a, agent_b, agent_c],
@@ -3940,7 +3940,7 @@ Distributes requests evenly across a pool of agents. Useful for load balancing
 when all agents have equivalent capabilities:
 
 ```python
-from fireflyframework_genai.agents.delegation import RoundRobinStrategy
+from fireflyframework_agentic.agents.delegation import RoundRobinStrategy
 
 strategy = RoundRobinStrategy()
 router = DelegationRouter([agent_1, agent_2, agent_3], strategy)
@@ -3952,7 +3952,7 @@ router = DelegationRouter([agent_1, agent_2, agent_3], strategy)
 Selects the first agent whose tags include a required capability:
 
 ```python
-from fireflyframework_genai.agents.delegation import CapabilityStrategy
+from fireflyframework_agentic.agents.delegation import CapabilityStrategy
 
 strategy = CapabilityStrategy(required_tag="invoice_extraction")
 router = DelegationRouter([invoice_agent, receipt_agent], strategy)
@@ -3965,7 +3965,7 @@ result = await router.route("Extract invoice data.")
 When a `MemoryManager` is attached, delegated agents receive a forked memory scope:
 
 ```python
-from fireflyframework_genai.memory import MemoryManager
+from fireflyframework_agentic.memory import MemoryManager
 
 memory = MemoryManager(working_scope_id="main")
 router = DelegationRouter([agent_a, agent_b], RoundRobinStrategy(), memory=memory)
@@ -3976,7 +3976,7 @@ result = await router.route("Process this.")
 ### IDP Tie-In: Routing Documents to Specialised Agents
 
 ```python
-from fireflyframework_genai.agents.delegation import DelegationRouter, CapabilityStrategy
+from fireflyframework_agentic.agents.delegation import DelegationRouter, CapabilityStrategy
 
 # Specialised agents for different document types
 invoice_agent = create_extractor_agent(InvoiceSchema, name="invoice_extractor")
@@ -4004,7 +4004,7 @@ imports, no central configuration file — just install the package and go.
 ### Discovering Plugins
 
 ```python
-from fireflyframework_genai.plugin import PluginDiscovery
+from fireflyframework_agentic.plugin import PluginDiscovery
 
 result = PluginDiscovery.discover_all()
 print(f"Loaded {len(result.successful)} plugins, {len(result.failed)} failed")
@@ -4015,21 +4015,21 @@ print(f"Loaded {len(result.successful)} plugins, {len(result.failed)} failed")
 In your package's `pyproject.toml`, declare entry points under the framework's groups:
 
 ```toml
-[project.entry-points."fireflyframework_genai.agents"]
+[project.entry-points."fireflyframework_agentic.agents"]
 my_agent = "my_package.agents:MySpecialAgent"
 
-[project.entry-points."fireflyframework_genai.tools"]
+[project.entry-points."fireflyframework_agentic.tools"]
 my_tool = "my_package.tools:MyCustomTool"
 
-[project.entry-points."fireflyframework_genai.reasoning_patterns"]
+[project.entry-points."fireflyframework_agentic.reasoning_patterns"]
 my_pattern = "my_package.reasoning:MyCustomPattern"
 ```
 
 The three entry-point groups are:
 
-- `fireflyframework_genai.agents` — Custom agents.
-- `fireflyframework_genai.tools` — Custom tools.
-- `fireflyframework_genai.reasoning_patterns` — Custom reasoning patterns.
+- `fireflyframework_agentic.agents` — Custom agents.
+- `fireflyframework_agentic.tools` — Custom tools.
+- `fireflyframework_agentic.reasoning_patterns` — Custom reasoning patterns.
 
 On discovery, the framework loads each entry point and registers it in the appropriate
 registry.
@@ -4038,7 +4038,7 @@ registry.
 
 ```python
 # Enable auto-discovery on startup (default: True)
-# FIREFLY_GENAI_PLUGIN_AUTO_DISCOVER=true
+# FIREFLY_AGENTIC_PLUGIN_AUTO_DISCOVER=true
 ```
 
 ### IDP Tie-In: Packaging IDP as a Plugin
@@ -4047,7 +4047,7 @@ You can package the entire IDP pipeline as a plugin that self-registers when ins
 
 ```toml
 # In idp_plugin/pyproject.toml
-[project.entry-points."fireflyframework_genai.agents"]
+[project.entry-points."fireflyframework_agentic.agents"]
 document_classifier = "idp_plugin.agents:classifier_agent"
 field_extractor = "idp_plugin.agents:extractor_agent"
 ocr_agent = "idp_plugin.agents:ocr_agent"
@@ -4060,7 +4060,7 @@ agents automatically.
 
 ## Chapter 20: Putting It All Together
 
-You've learned every module in fireflyframework-genai, each in isolation. Now it's time
+You've learned every module in fireflyframework-agentic, each in isolation. Now it's time
 to see how they all fit together in a single, production-grade application. The diagram
 below shows the full system architecture — every layer, every connection:
 
@@ -4108,7 +4108,7 @@ graph TB
 
     subgraph "Foundation"
         PAI["Pydantic AI\n(model calls, streaming)"]
-        CFG["FireflyGenAIConfig\n(env-driven settings)"]
+        CFG["FireflyAgenticConfig\n(env-driven settings)"]
         PLUG["Plugin System\n(entry-point discovery)"]
     end
 
@@ -4163,27 +4163,27 @@ idp-service/
 ### Configuration (.env)
 
 ```bash
-FIREFLY_GENAI_DEFAULT_MODEL=openai:gpt-4o
-FIREFLY_GENAI_DEFAULT_TEMPERATURE=0.1
-FIREFLY_GENAI_MAX_RETRIES=3
-FIREFLY_GENAI_OBSERVABILITY_ENABLED=true
-FIREFLY_GENAI_OTLP_ENDPOINT=http://localhost:4317
-FIREFLY_GENAI_MEMORY_BACKEND=file
-FIREFLY_GENAI_MEMORY_FILE_DIR=.firefly_memory
-FIREFLY_GENAI_DEFAULT_CHUNK_SIZE=4000
-FIREFLY_GENAI_VALIDATION_ENABLED=true
+FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o
+FIREFLY_AGENTIC_DEFAULT_TEMPERATURE=0.1
+FIREFLY_AGENTIC_MAX_RETRIES=3
+FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true
+FIREFLY_AGENTIC_OTLP_ENDPOINT=http://localhost:4317
+FIREFLY_AGENTIC_MEMORY_BACKEND=file
+FIREFLY_AGENTIC_MEMORY_FILE_DIR=.firefly_memory
+FIREFLY_AGENTIC_DEFAULT_CHUNK_SIZE=4000
+FIREFLY_AGENTIC_VALIDATION_ENABLED=true
 ```
 
 ### Agents (agents.py)
 
 ```python
 from pydantic import BaseModel, Field
-from fireflyframework_genai.agents.templates import (
+from fireflyframework_agentic.agents.templates import (
     create_classifier_agent,
     create_extractor_agent,
     create_summarizer_agent,
 )
-from fireflyframework_genai.agents import FireflyAgent
+from fireflyframework_agentic.agents import FireflyAgent
 
 # Output schema for extraction
 class InvoiceData(BaseModel):
@@ -4240,9 +4240,9 @@ registers it in the global `ToolRegistry`, and returns the instance. The `ToolKi
 bundles them for agent injection via `as_pydantic_tools()`:
 
 ```python
-from fireflyframework_genai.tools import firefly_tool, guarded, retryable, ToolKit
-from fireflyframework_genai.tools.guards import RateLimitGuard, ValidationGuard
-from fireflyframework_genai.tools.builtins import CalculatorTool
+from fireflyframework_agentic.tools import firefly_tool, guarded, retryable, ToolKit
+from fireflyframework_agentic.tools.guards import RateLimitGuard, ValidationGuard
+from fireflyframework_agentic.tools.builtins import CalculatorTool
 
 # OCR tool — rate-limited because the upstream API is metered
 @retryable(max_retries=2, backoff=1.0)
@@ -4277,13 +4277,13 @@ extraction_kit = ToolKit(
 ### Validation (validation.py)
 
 ```python
-from fireflyframework_genai.validation.rules import (
+from fireflyframework_agentic.validation.rules import (
     OutputValidator, RegexRule, FormatRule, RangeRule,
 )
-from fireflyframework_genai.validation.qos import (
+from fireflyframework_agentic.validation.qos import (
     QoSGuard, ConfidenceScorer, ConsistencyChecker, GroundingChecker,
 )
-from fireflyframework_genai.validation import OutputReviewer
+from fireflyframework_agentic.validation import OutputReviewer
 from .agents import InvoiceData, extractor_agent
 
 invoice_validator = OutputValidator({
@@ -4312,14 +4312,14 @@ qos_guard = QoSGuard(
 ### Pipeline (pipeline.py)
 
 ```python
-from fireflyframework_genai.pipeline.builder import PipelineBuilder
-from fireflyframework_genai.pipeline.steps import AgentStep, ReasoningStep, CallableStep
-from fireflyframework_genai.pipeline.context import PipelineContext
-from fireflyframework_genai.reasoning import PlanAndExecutePattern, ReflexionPattern
-from fireflyframework_genai.content.chunking import TextChunker, BatchProcessor
-from fireflyframework_genai.content.compression import ContextCompressor, MapReduceStrategy
-from fireflyframework_genai.memory import MemoryManager
-from fireflyframework_genai.observability import traced
+from fireflyframework_agentic.pipeline.builder import PipelineBuilder
+from fireflyframework_agentic.pipeline.steps import AgentStep, ReasoningStep, CallableStep
+from fireflyframework_agentic.pipeline.context import PipelineContext
+from fireflyframework_agentic.reasoning import PlanAndExecutePattern, ReflexionPattern
+from fireflyframework_agentic.content.chunking import TextChunker, BatchProcessor
+from fireflyframework_agentic.content.compression import ContextCompressor, MapReduceStrategy
+from fireflyframework_agentic.memory import MemoryManager
+from fireflyframework_agentic.observability import traced
 from .agents import classifier_agent, ocr_agent, summary_agent, extractor_agent
 from .validation import invoice_validator, reviewer
 
@@ -4375,8 +4375,8 @@ async def process_document(document_bytes: bytes, metadata: dict | None = None) 
 ### REST Application (app.py)
 
 ```python
-from fireflyframework_genai.exposure.rest import create_genai_app
-from fireflyframework_genai.observability import configure_exporters
+from fireflyframework_agentic.exposure.rest import create_agentic_app
+from fireflyframework_agentic.observability import configure_exporters
 from fastapi import UploadFile
 from .pipeline import process_document
 
@@ -4384,7 +4384,7 @@ from .pipeline import process_document
 configure_exporters(otlp_endpoint="http://localhost:4317", console=True)
 
 # Create the app
-app = create_genai_app(title="IDP Service", version="1.0.0")
+app = create_agentic_app(title="IDP Service", version="1.0.0")
 
 @app.post("/idp/process")
 async def handle_document(file: UploadFile):
@@ -4399,8 +4399,8 @@ async def handle_document(file: UploadFile):
 ### Queue Consumers (consumers.py)
 
 ```python
-from fireflyframework_genai.exposure.queues.kafka import KafkaAgentConsumer
-from fireflyframework_genai.exposure.queues import QueueRouter
+from fireflyframework_agentic.exposure.queues.kafka import KafkaAgentConsumer
+from fireflyframework_agentic.exposure.queues import QueueRouter
 
 # Route different document types to specialised processing
 router = QueueRouter(default_agent="document_classifier")
@@ -4430,7 +4430,7 @@ python -m idp_service.consumers
 
 Before deploying to production, verify:
 
-- [ ] **Configuration** — All `FIREFLY_GENAI_*` environment variables are set.
+- [ ] **Configuration** — All `FIREFLY_AGENTIC_*` environment variables are set.
 - [ ] **Model access** — API keys for your LLM provider are configured.
 - [ ] **Observability** — OTLP endpoint is reachable; traces are flowing.
 - [ ] **Memory persistence** — `memory_backend` is set to `"file"` (or a custom backend)
@@ -4449,7 +4449,7 @@ Before deploying to production, verify:
 
 ## Next Steps
 
-Congratulations — you now know every module in fireflyframework-genai. Here are some
+Congratulations — you now know every module in fireflyframework-agentic. Here are some
 paths to explore further:
 
 - **Dive deeper** — Each chapter links to a detailed module guide in `docs/`.

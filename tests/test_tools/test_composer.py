@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from fireflyframework_genai.exceptions import ToolError
-from fireflyframework_genai.tools.composer import (
+from fireflyframework_agentic.exceptions import ToolError
+from fireflyframework_agentic.tools.composer import (
     ConditionalComposer,
     FallbackComposer,
     SequentialComposer,

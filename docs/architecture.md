@@ -2,7 +2,7 @@
 
 Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
 
-This document describes the high-level architecture of fireflyframework-genai, the
+This document describes the high-level architecture of fireflyframework-agentic, the
 relationships between its modules, and the design principles that guided its construction.
 
 ---
@@ -16,7 +16,7 @@ The framework follows four guiding principles:
    modifying framework internals.
 
 2. **Convention over configuration** -- Sensible defaults are provided for every setting.
-   A single `FireflyGenAIConfig` object (backed by Pydantic Settings) centralises
+   A single `FireflyAgenticConfig` object (backed by Pydantic Settings) centralises
    configuration and supports environment-variable overrides.
 
 3. **Layered composition** -- Modules are organised into layers (Core, Agent, Intelligence,
@@ -33,7 +33,7 @@ The framework follows four guiding principles:
 ```mermaid
 graph TD
     subgraph Exposure Layer
-        REST["REST API<br/><small>create_genai_app · SSE streaming · WebSocket<br/>health · auth middleware · router · conversations<br/>RateLimiter</small>"]
+        REST["REST API<br/><small>create_agentic_app · SSE streaming · WebSocket<br/>health · auth middleware · router · conversations<br/>RateLimiter</small>"]
         QUEUES["Message Queues<br/><small>Kafka · RabbitMQ · Redis<br/>consumers · producers · QueueRouter</small>"]
     end
 
@@ -66,9 +66,9 @@ graph TD
     end
 
     subgraph Core Layer
-        CFG["Config<br/><small>FireflyGenAIConfig<br/>get_config · reset_config</small>"]
+        CFG["Config<br/><small>FireflyAgenticConfig<br/>get_config · reset_config</small>"]
         TYPES["Types & Protocols<br/><small>AgentLike · 10 protocols<br/>TypeVars · type aliases</small>"]
-        EXC["Exceptions<br/><small>FireflyGenAIError hierarchy<br/>18 exception classes</small>"]
+        EXC["Exceptions<br/><small>FireflyAgenticError hierarchy<br/>18 exception classes</small>"]
         PLUG["Plugin System<br/><small>PluginDiscovery<br/>3 entry-point groups</small>"]
     end
 
@@ -207,9 +207,9 @@ The Core layer provides foundational types, configuration, exceptions, and the p
 system. Every other module depends on at least one Core component.
 
 - **types.py** -- Enumerations for model providers, agent states, and log levels.
-- **config.py** -- `FireflyGenAIConfig`, a Pydantic Settings singleton that reads
+- **config.py** -- `FireflyAgenticConfig`, a Pydantic Settings singleton that reads
   from environment variables and `.env` files.
-- **exceptions.py** -- A structured exception hierarchy rooted at `FireflyGenAIError`.
+- **exceptions.py** -- A structured exception hierarchy rooted at `FireflyAgenticError`.
 - **plugin.py** -- `PluginDiscovery` discovers and loads entry-point plugins at startup.
 
 ### Security Layer
@@ -343,7 +343,7 @@ observability and explainability artefacts.
 ```mermaid
 sequenceDiagram
     participant Client
-    participant REST as REST API<br/>(create_genai_app)
+    participant REST as REST API<br/>(create_agentic_app)
     participant MW as Middleware<br/>(CORS · RequestID)
     participant Reg as AgentRegistry
     participant Agent as FireflyAgent
@@ -512,17 +512,17 @@ graph TD
 ## Plugin System
 
 Plugins are discovered via Python entry points under three well-known groups:
-`fireflyframework_genai.agents`, `fireflyframework_genai.tools`, and
-`fireflyframework_genai.reasoning_patterns`. The `PluginDiscovery` class scans
+`fireflyframework_agentic.agents`, `fireflyframework_agentic.tools`, and
+`fireflyframework_agentic.reasoning_patterns`. The `PluginDiscovery` class scans
 these groups and loads the referenced objects so they can self-register with
 their respective registries.
 
 ```mermaid
 flowchart LR
     subgraph Package pyproject.toml
-        EP1["fireflyframework_genai.agents<br/><small>my_agent = my_pkg:MyAgent</small>"]
-        EP2["fireflyframework_genai.tools<br/><small>my_tool = my_pkg:MyTool</small>"]
-        EP3["fireflyframework_genai.reasoning_patterns<br/><small>my_pattern = my_pkg:MyPattern</small>"]
+        EP1["fireflyframework_agentic.agents<br/><small>my_agent = my_pkg:MyAgent</small>"]
+        EP2["fireflyframework_agentic.tools<br/><small>my_tool = my_pkg:MyTool</small>"]
+        EP3["fireflyframework_agentic.reasoning_patterns<br/><small>my_pattern = my_pkg:MyPattern</small>"]
     end
 
     PD["PluginDiscovery<br/><small>discover_all() · discover_group()</small>"]
@@ -544,17 +544,17 @@ flowchart LR
 To create a plugin, add entry points in your package's `pyproject.toml`:
 
 ```toml
-[project.entry-points."fireflyframework_genai.agents"]
+[project.entry-points."fireflyframework_agentic.agents"]
 my_agent = "my_package.agents:MyAgent"
 
-[project.entry-points."fireflyframework_genai.tools"]
+[project.entry-points."fireflyframework_agentic.tools"]
 my_tool = "my_package.tools:MyTool"
 ```
 
 Then call discovery at startup:
 
 ```python
-from fireflyframework_genai.plugin import PluginDiscovery
+from fireflyframework_agentic.plugin import PluginDiscovery
 
 result = PluginDiscovery.discover_all()
 print(f"Loaded {len(result.successful)} plugins, {len(result.failed)} failed")
@@ -564,20 +564,20 @@ print(f"Loaded {len(result.successful)} plugins, {len(result.failed)} failed")
 
 ## Configuration
 
-All configuration is managed through `FireflyGenAIConfig`, which reads values from
-environment variables prefixed with `FIREFLY_GENAI_`. For example:
+All configuration is managed through `FireflyAgenticConfig`, which reads values from
+environment variables prefixed with `FIREFLY_AGENTIC_`. For example:
 
 ```bash
-export FIREFLY_GENAI_DEFAULT_MODEL=openai:gpt-4o
-export FIREFLY_GENAI_LOG_LEVEL=DEBUG
-export FIREFLY_GENAI_OTEL_ENDPOINT=http://localhost:4317
+export FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o
+export FIREFLY_AGENTIC_LOG_LEVEL=DEBUG
+export FIREFLY_AGENTIC_OTEL_ENDPOINT=http://localhost:4317
 ```
 
 The configuration singleton is available via:
 
 ```python
-from fireflyframework_genai.core import FireflyGenAIConfig
+from fireflyframework_agentic.core import FireflyAgenticConfig
 
-config = FireflyGenAIConfig()
+config = FireflyAgenticConfig()
 print(config.default_model)
 ```

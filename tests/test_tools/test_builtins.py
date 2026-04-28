@@ -24,16 +24,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from fireflyframework_genai.exceptions import ToolError
-from fireflyframework_genai.tools.builtins.calculator_tool import CalculatorTool
-from fireflyframework_genai.tools.builtins.database import DatabaseTool
-from fireflyframework_genai.tools.builtins.datetime_tool import DateTimeTool
-from fireflyframework_genai.tools.builtins.filesystem import FileSystemTool
-from fireflyframework_genai.tools.builtins.http import HttpTool
-from fireflyframework_genai.tools.builtins.json_tool import JsonTool
-from fireflyframework_genai.tools.builtins.search import SearchResult, SearchTool
-from fireflyframework_genai.tools.builtins.shell import ShellTool
-from fireflyframework_genai.tools.builtins.text_tool import TextTool
+from fireflyframework_agentic.exceptions import ToolError
+from fireflyframework_agentic.tools.builtins.calculator_tool import CalculatorTool
+from fireflyframework_agentic.tools.builtins.database import DatabaseTool
+from fireflyframework_agentic.tools.builtins.datetime_tool import DateTimeTool
+from fireflyframework_agentic.tools.builtins.filesystem import FileSystemTool
+from fireflyframework_agentic.tools.builtins.http import HttpTool
+from fireflyframework_agentic.tools.builtins.json_tool import JsonTool
+from fireflyframework_agentic.tools.builtins.search import SearchResult, SearchTool
+from fireflyframework_agentic.tools.builtins.shell import ShellTool
+from fireflyframework_agentic.tools.builtins.text_tool import TextTool
 
 # ---------------------------------------------------------------------------
 # DateTimeTool
@@ -508,7 +508,7 @@ class TestResolveToolsBridge:
     def test_base_tool_converted(self) -> None:
         from pydantic_ai import Tool as PydanticTool
 
-        from fireflyframework_genai.agents.base import FireflyAgent
+        from fireflyframework_agentic.agents.base import FireflyAgent
 
         calc = CalculatorTool()
         resolved = FireflyAgent._resolve_tools([calc])
@@ -518,8 +518,8 @@ class TestResolveToolsBridge:
     def test_toolkit_expanded(self) -> None:
         from pydantic_ai import Tool as PydanticTool
 
-        from fireflyframework_genai.agents.base import FireflyAgent
-        from fireflyframework_genai.tools.toolkit import ToolKit
+        from fireflyframework_agentic.agents.base import FireflyAgent
+        from fireflyframework_agentic.tools.toolkit import ToolKit
 
         kit = ToolKit("utils", [DateTimeTool(), JsonTool()])
         resolved = FireflyAgent._resolve_tools([kit])
@@ -527,7 +527,7 @@ class TestResolveToolsBridge:
         assert all(isinstance(t, PydanticTool) for t in resolved)
 
     def test_plain_function_passes_through(self) -> None:
-        from fireflyframework_genai.agents.base import FireflyAgent
+        from fireflyframework_agentic.agents.base import FireflyAgent
 
         async def my_tool(x: str) -> str:
             return x
@@ -539,7 +539,7 @@ class TestResolveToolsBridge:
     def test_mixed_tools(self) -> None:
         from pydantic_ai import Tool as PydanticTool
 
-        from fireflyframework_genai.agents.base import FireflyAgent
+        from fireflyframework_agentic.agents.base import FireflyAgent
 
         async def my_tool(x: str) -> str:
             return x

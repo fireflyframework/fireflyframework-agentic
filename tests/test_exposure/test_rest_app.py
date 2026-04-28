@@ -27,7 +27,7 @@ pytest.importorskip("httpx", reason="httpx not installed")
 
 import httpx
 
-from fireflyframework_genai.exposure.rest.app import create_genai_app
+from fireflyframework_agentic.exposure.rest.app import create_agentic_app
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -38,8 +38,8 @@ def _make_app(**kwargs):
     """Create a test app with lifespan disabled."""
     from fastapi import FastAPI
 
-    from fireflyframework_genai.exposure.rest.health import create_health_router
-    from fireflyframework_genai.exposure.rest.router import create_agent_router
+    from fireflyframework_agentic.exposure.rest.health import create_health_router
+    from fireflyframework_agentic.exposure.rest.router import create_agent_router
 
     app = FastAPI(title="test")
     app.include_router(create_health_router())
@@ -149,11 +149,11 @@ class TestConversationEndpoints:
 
 
 class TestAppFactory:
-    def test_create_genai_app_returns_fastapi(self):
+    def test_create_agentic_app_returns_fastapi(self):
         """Verify the factory produces a FastAPI instance with expected routes."""
         from fastapi import FastAPI
 
-        app = create_genai_app(cors=False, request_id=False)
+        app = create_agentic_app(cors=False, request_id=False)
         assert isinstance(app, FastAPI)
 
         # Should have health and agent routes
@@ -161,14 +161,14 @@ class TestAppFactory:
         assert "/health" in paths
         assert "/agents/" in paths
 
-    def test_create_genai_app_rate_limit(self):
+    def test_create_agentic_app_rate_limit(self):
         """Verify rate-limit middleware wiring doesn't crash."""
-        app = create_genai_app(rate_limit=True, cors=False, request_id=False)
+        app = create_agentic_app(rate_limit=True, cors=False, request_id=False)
         assert app is not None
 
-    def test_create_genai_app_rate_limit_custom(self):
+    def test_create_agentic_app_rate_limit_custom(self):
         """Verify custom rate-limit config dict is accepted."""
-        app = create_genai_app(
+        app = create_agentic_app(
             rate_limit={"max_requests": 10, "window_seconds": 30},
             cors=False,
             request_id=False,

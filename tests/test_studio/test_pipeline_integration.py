@@ -23,10 +23,10 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fireflyframework_genai.agents.registry import agent_registry
-from fireflyframework_genai.pipeline.context import PipelineContext
-from fireflyframework_genai.pipeline.engine import PipelineEngine
-from fireflyframework_genai.pipeline.steps import (
+from fireflyframework_agentic.agents.registry import agent_registry
+from fireflyframework_agentic.pipeline.context import PipelineContext
+from fireflyframework_agentic.pipeline.engine import PipelineEngine
+from fireflyframework_agentic.pipeline.steps import (
     AgentStep,
     BranchStep,
     CallableStep,
@@ -34,15 +34,15 @@ from fireflyframework_genai.pipeline.steps import (
     FanOutStep,
     ReasoningStep,
 )
-from fireflyframework_genai.reasoning.registry import reasoning_registry
-from fireflyframework_genai.studio.codegen.models import (
+from fireflyframework_agentic.reasoning.registry import reasoning_registry
+from fireflyframework_agentic.studio.codegen.models import (
     GraphEdge,
     GraphModel,
     GraphNode,
     NodeType,
 )
-from fireflyframework_genai.studio.execution.compiler import compile_graph
-from fireflyframework_genai.tools.registry import tool_registry
+from fireflyframework_agentic.studio.execution.compiler import compile_graph
+from fireflyframework_agentic.tools.registry import tool_registry
 
 # ---------------------------------------------------------------------------
 # Helpers (same patterns as test_compiler.py)
@@ -114,7 +114,7 @@ class TestSimpleQAPipeline:
         )
         graph = _make_graph([node])
 
-        with patch("fireflyframework_genai.agents.base.FireflyAgent") as mock_cls:
+        with patch("fireflyframework_agentic.agents.base.FireflyAgent") as mock_cls:
             mock_cls.return_value = MagicMock()
             engine = compile_graph(graph)
 
@@ -303,7 +303,7 @@ class TestFullPipelineExecution:
         edges = [GraphEdge(id="e1", source="a1", target="t1")]
         graph = _make_graph(nodes, edges)
 
-        from fireflyframework_genai.studio.execution.runner import StudioEventHandler
+        from fireflyframework_agentic.studio.execution.runner import StudioEventHandler
 
         handler = StudioEventHandler()
         engine = compile_graph(graph, event_handler=handler)
@@ -396,7 +396,7 @@ class TestMultimodalAgentNodeCompiles:
         )
         graph = _make_graph([node])
 
-        with patch("fireflyframework_genai.agents.base.FireflyAgent") as mock_cls:
+        with patch("fireflyframework_agentic.agents.base.FireflyAgent") as mock_cls:
             mock_cls.return_value = MagicMock()
             engine = compile_graph(graph)
 

@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from fireflyframework_genai.prompts.template import PromptTemplate
+from fireflyframework_agentic.prompts.template import PromptTemplate
 
 
 class TestPromptTemplate:

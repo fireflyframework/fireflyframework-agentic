@@ -162,7 +162,7 @@ The model is resolved from:
 - **`ReasoningResult[T]`** — Generic result with typed `output: T`, `trace`, `steps_taken`, and `success`.
 
 ```python
-from fireflyframework_genai.reasoning.models import (
+from fireflyframework_agentic.reasoning.models import (
     ReasoningThought,
     ReasoningPlan,
     PlanStepDef,
@@ -229,11 +229,11 @@ for step in result.trace.steps:
 ## Logging & Debugging
 
 Every reasoning pattern and the `FireflyAgent` emit structured log messages
-under the `fireflyframework_genai` logger hierarchy. Use `configure_logging`
+under the `fireflyframework_agentic` logger hierarchy. Use `configure_logging`
 to turn on framework-level logging without affecting other libraries:
 
 ```python
-from fireflyframework_genai import configure_logging
+from fireflyframework_agentic import configure_logging
 
 configure_logging("INFO") # pattern lifecycle, step progress, timing
 configure_logging("DEBUG") # + LLM call durations, prompt enrichment, memory ops
@@ -242,7 +242,7 @@ configure_logging("DEBUG") # + LLM call durations, prompt enrichment, memory ops
 Or use the one-liner shortcut:
 
 ```python
-from fireflyframework_genai import enable_debug
+from fireflyframework_agentic import enable_debug
 
 enable_debug() # equivalent to configure_logging("DEBUG")
 ```
@@ -264,7 +264,7 @@ individual LLM calls against indefinite hangs. When a call exceeds the
 timeout, a `ReasoningError` is raised.
 
 ```python
-from fireflyframework_genai.reasoning import PlanAndExecutePattern
+from fireflyframework_agentic.reasoning import PlanAndExecutePattern
 
 pattern = PlanAndExecutePattern(
     max_steps=10,
@@ -305,7 +305,7 @@ flowchart TD
 ```
 
 ```python
-from fireflyframework_genai.reasoning import ReActPattern
+from fireflyframework_agentic.reasoning import ReActPattern
 
 pattern = ReActPattern(max_steps=5)
 result = await pattern.execute(my_agent, "What is the population of Tokyo?")
@@ -338,7 +338,7 @@ flowchart LR
 ```
 
 ```python
-from fireflyframework_genai.reasoning import ChainOfThoughtPattern
+from fireflyframework_agentic.reasoning import ChainOfThoughtPattern
 
 pattern = ChainOfThoughtPattern(max_steps=10)
 result = await pattern.execute(
@@ -383,7 +383,7 @@ flowchart TD
 ```
 
 ```python
-from fireflyframework_genai.reasoning import PlanAndExecutePattern
+from fireflyframework_agentic.reasoning import PlanAndExecutePattern
 
 pattern = PlanAndExecutePattern(max_steps=15, allow_replan=True)
 result = await pattern.execute(
@@ -423,7 +423,7 @@ flowchart TD
 ```
 
 ```python
-from fireflyframework_genai.reasoning import ReflexionPattern
+from fireflyframework_agentic.reasoning import ReflexionPattern
 
 pattern = ReflexionPattern(max_steps=3)
 result = await pattern.execute(
@@ -465,7 +465,7 @@ flowchart TD
 ```
 
 ```python
-from fireflyframework_genai.reasoning import TreeOfThoughtsPattern
+from fireflyframework_agentic.reasoning import TreeOfThoughtsPattern
 
 pattern = TreeOfThoughtsPattern(branching_factor=3, max_depth=3)
 result = await pattern.execute(
@@ -514,7 +514,7 @@ flowchart TD
 ```
 
 ```python
-from fireflyframework_genai.reasoning import GoalDecompositionPattern
+from fireflyframework_agentic.reasoning import GoalDecompositionPattern
 
 pattern = GoalDecompositionPattern(max_steps=20)
 result = await pattern.execute(
@@ -523,7 +523,7 @@ result = await pattern.execute(
 )
 
 # Delegate tasks to a sub-pattern:
-from fireflyframework_genai.reasoning import ReActPattern
+from fireflyframework_agentic.reasoning import ReActPattern
 
 pattern = GoalDecompositionPattern(
     max_steps=20,
@@ -558,8 +558,8 @@ flowchart TD
 4. **Store output** — On completion, the final output is stored under `reasoning:output`.
 
 ```python
-from fireflyframework_genai.memory import MemoryManager
-from fireflyframework_genai.reasoning import ReActPattern
+from fireflyframework_agentic.memory import MemoryManager
+from fireflyframework_agentic.reasoning import ReActPattern
 
 memory = MemoryManager()
 pattern = ReActPattern(max_steps=10)
@@ -592,7 +592,7 @@ flowchart LR
 ```
 
 ```python
-from fireflyframework_genai.reasoning import (
+from fireflyframework_agentic.reasoning import (
     PlanAndExecutePattern,
     ReActPattern,
     ReasoningPipeline,
@@ -621,8 +621,8 @@ by passing a `prompts` dict to the pattern constructor. Slots that are not overr
 use the built-in defaults.
 
 ```python
-from fireflyframework_genai.prompts.template import PromptTemplate, PromptVariable
-from fireflyframework_genai.reasoning import ReActPattern
+from fireflyframework_agentic.prompts.template import PromptTemplate, PromptVariable
+from fireflyframework_agentic.reasoning import ReActPattern
 
 custom_thought = PromptTemplate(
     "my:react:thought",
@@ -646,7 +646,7 @@ All built-in templates are registered in the global `prompt_registry` under the
 Templates can also be retrieved from the registry at runtime:
 
 ```python
-from fireflyframework_genai.prompts.registry import prompt_registry
+from fireflyframework_agentic.prompts.registry import prompt_registry
 
 thought_prompt = prompt_registry.get("reasoning:react:thought")
 ```
@@ -661,8 +661,8 @@ it does not match the expected schema. If all retries fail, the raw output is
 returned with a warning logged (non-fatal by default).
 
 ```python
-from fireflyframework_genai.validation import OutputReviewer
-from fireflyframework_genai.reasoning import ReActPattern
+from fireflyframework_agentic.validation import OutputReviewer
+from fireflyframework_agentic.reasoning import ReActPattern
 from pydantic import BaseModel
 
 class MyOutput(BaseModel):
@@ -685,8 +685,8 @@ patterns by name. All six built-in patterns can be registered at application
 startup, and custom patterns can be added dynamically.
 
 ```python
-from fireflyframework_genai.reasoning.registry import reasoning_registry
-from fireflyframework_genai.reasoning import ReActPattern
+from fireflyframework_agentic.reasoning.registry import reasoning_registry
+from fireflyframework_agentic.reasoning import ReActPattern
 
 reasoning_registry.register("react", ReActPattern)
 
@@ -704,9 +704,9 @@ the template method hooks. The base class handles the loop, tracing, memory, ste
 counting, and error handling for you.
 
 ```python
-from fireflyframework_genai.reasoning.base import AbstractReasoningPattern
-from fireflyframework_genai.reasoning.models import ReasoningThought
-from fireflyframework_genai.reasoning.trace import ThoughtStep, ReasoningStep
+from fireflyframework_agentic.reasoning.base import AbstractReasoningPattern
+from fireflyframework_agentic.reasoning.models import ReasoningThought
+from fireflyframework_agentic.reasoning.trace import ThoughtStep, ReasoningStep
 
 class MyCustomPattern(AbstractReasoningPattern):
     def __init__(self, *, max_steps: int = 10, step_timeout: float | None = None, **kwargs):
@@ -738,7 +738,7 @@ class MyCustomPattern(AbstractReasoningPattern):
 Register it to make it available framework-wide:
 
 ```python
-from fireflyframework_genai.reasoning.registry import reasoning_registry
+from fireflyframework_agentic.reasoning.registry import reasoning_registry
 
 reasoning_registry.register("my_custom", MyCustomPattern)
 ```
