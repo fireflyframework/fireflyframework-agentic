@@ -133,3 +133,28 @@ async def test_upsert_edges_writes_rows_and_fts(store: SqliteGraphStore):
         {"q": '"chief executive"'},
     )
     assert len(fts) == 1
+
+
+async def test_delete_by_doc_id_cascades_through_all_tables(store: SqliteGraphStore):
+    n1 = Node(label="Person", key="a", properties={}, source_doc_id="doc-1", extractor_name="x", chunk_ids=["c0"])
+    n2 = Node(label="Person", key="b", properties={}, source_doc_id="doc-2", extractor_name="x", chunk_ids=["c1"])
+    e1 = Edge(label="X", source_label="Person", source_key="a", target_label="Person", target_key="b",
+              properties={}, source_doc_id="doc-1", extractor_name="x")
+    e2 = Edge(label="X", source_label="Person", source_key="b", target_label="Person", target_key="a",
+              properties={}, source_doc_id="doc-2", extractor_name="x")
+    await store.upsert_nodes([n1, n2])
+    await store.upsert_edges([e1, e2])
+
+    deleted = await store.delete_by_doc_id("doc-1")
+    assert deleted >= 2
+
+    nodes_left = await store.query("SELECT source_doc_id FROM nodes")
+    assert {r["source_doc_id"] for r in nodes_left} == {"doc-2"}
+    edges_left = await store.query("SELECT source_doc_id FROM edges")
+    assert {r["source_doc_id"] for r in edges_left} == {"doc-2"}
+    junction_left = await store.query("SELECT source_doc_id FROM node_chunks")
+    assert {r["source_doc_id"] for r in junction_left} == {"doc-2"}
+    fts_nodes = await store.query("SELECT source_doc_id FROM nodes_fts")
+    assert {r["source_doc_id"] for r in fts_nodes} == {"doc-2"}
+    fts_edges = await store.query("SELECT source_doc_id FROM edges_fts")
+    assert {r["source_doc_id"] for r in fts_edges} == {"doc-2"}
