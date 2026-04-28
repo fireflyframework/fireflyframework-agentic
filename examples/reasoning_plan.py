@@ -29,12 +29,17 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
-from _common import MODEL, ensure_api_key
+from dotenv import load_dotenv
 
 from fireflyframework_agentic import configure_logging
 from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.reasoning import PlanAndExecutePattern
+
+load_dotenv(Path(__file__).parent / ".env")
+
+MODEL = "openai:gpt-5.2-2025-12-11"
 
 # Enable INFO-level logging so that plan generation and step execution
 # progress is printed in real time — only for fireflyframework_agentic loggers.
@@ -42,7 +47,6 @@ configure_logging("INFO")
 
 
 async def main() -> None:
-    ensure_api_key()
 
     agent = FireflyAgent(name="planner", model=MODEL)
     pattern = PlanAndExecutePattern(

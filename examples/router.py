@@ -26,10 +26,15 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
-from _common import MODEL, ensure_api_key
+from dotenv import load_dotenv
 
 from fireflyframework_agentic.agents.templates import create_router_agent
+
+load_dotenv(Path(__file__).parent / ".env")
+
+MODEL = "openai:gpt-5.2-2025-12-11"
 
 REQUESTS = [
     "I was charged twice for my last order.",
@@ -39,7 +44,6 @@ REQUESTS = [
 
 
 async def main() -> None:
-    ensure_api_key()
 
     agent = create_router_agent(
         agent_map={
