@@ -54,3 +54,55 @@ async def test_schema_creates_expected_tables(store: SqliteGraphStore):
 async def test_journal_mode_is_wal(store: SqliteGraphStore):
     rows = await store.query("PRAGMA journal_mode")
     assert rows[0]["journal_mode"].lower() == "wal"
+
+
+from fireflyframework_agentic.graphstores import Node
+
+
+async def test_upsert_nodes_writes_rows_and_fts(store: SqliteGraphStore):
+    nodes = [
+        Node(
+            label="Person",
+            key="sam-altman",
+            properties={"name": "Sam Altman", "aliases": ["Sam", "S. Altman"], "description": "CEO of OpenAI"},
+            source_doc_id="doc-1",
+            extractor_name="person",
+            chunk_ids=["c0", "c1"],
+        ),
+    ]
+    await store.upsert_nodes(nodes)
+
+    rows = await store.query("SELECT * FROM nodes WHERE source_doc_id='doc-1'")
+    assert len(rows) == 1
+    assert rows[0]["label"] == "Person"
+    assert rows[0]["key"] == "sam-altman"
+    import json
+    props = json.loads(rows[0]["properties"])
+    assert props["name"] == "Sam Altman"
+    assert json.loads(rows[0]["chunk_ids"]) == ["c0", "c1"]
+
+    junction = await store.query("SELECT * FROM node_chunks WHERE source_doc_id='doc-1'")
+    assert {r["chunk_id"] for r in junction} == {"c0", "c1"}
+
+    fts = await store.query(
+        "SELECT key, text FROM nodes_fts WHERE nodes_fts MATCH :q",
+        {"q": "altman"},
+    )
+    assert len(fts) >= 1
+    assert "altman" in fts[0]["text"].lower()
+
+
+async def test_upsert_nodes_replaces_on_conflict(store: SqliteGraphStore):
+    n1 = Node(label="Person", key="a", properties={"v": 1}, source_doc_id="d", extractor_name="x", chunk_ids=["c1"])
+    n2 = Node(label="Person", key="a", properties={"v": 2}, source_doc_id="d", extractor_name="x", chunk_ids=["c2"])
+    await store.upsert_nodes([n1])
+    await store.upsert_nodes([n2])
+
+    rows = await store.query("SELECT * FROM nodes WHERE source_doc_id='d'")
+    assert len(rows) == 1
+    import json
+    assert json.loads(rows[0]["properties"]) == {"v": 2}
+    assert json.loads(rows[0]["chunk_ids"]) == ["c2"]
+
+    junction = await store.query("SELECT chunk_id FROM node_chunks WHERE source_doc_id='d'")
+    assert {r["chunk_id"] for r in junction} == {"c2"}
