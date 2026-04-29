@@ -185,7 +185,7 @@ async def _ingest_corpus(
     embedder: Any,
     ledger: IngestLedger,
 ) -> int:
-    chunker = TextChunker(chunk_size=600, chunk_overlap=80)
+    chunker = TextChunker(chunk_size=200, chunk_overlap=30)
     loader = MarkitdownLoader()
     n_chunks = 0
     for path in sorted(_CORPUS_DIR.iterdir()):

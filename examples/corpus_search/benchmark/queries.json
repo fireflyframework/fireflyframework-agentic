@@ -202,6 +202,126 @@
       "expected_doc_basenames": ["01_company_overview.md"],
       "expected_substrings": ["Sam Patel", "Inès Laurent"],
       "negative": false
+    },
+    {
+      "id": "paraphrase_ceo_idiomatic",
+      "query": "Who runs the show at Acme?",
+      "category": "paraphrase",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["01_company_overview.md"],
+      "expected_substrings": ["Sam Patel"],
+      "negative": false
+    },
+    {
+      "id": "paraphrase_parental_leave",
+      "query": "How long is maternity or paternity leave at Acme?",
+      "category": "paraphrase",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["08_employee_handbook.md"],
+      "expected_substrings": ["16 weeks"],
+      "negative": false
+    },
+    {
+      "id": "paraphrase_hq_city",
+      "query": "In which city is Acme's main office?",
+      "category": "paraphrase",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["01_company_overview.md"],
+      "expected_substrings": ["Lisbon"],
+      "negative": false
+    },
+    {
+      "id": "multihop_v3_sign_rate_limit",
+      "query": "What will the /sign endpoint rate limit be in the upcoming API v3?",
+      "category": "multi_hop",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["03_engineering_roadmap.md", "07_product_specs.md"],
+      "expected_substrings": ["1,000 RPS"],
+      "negative": false
+    },
+    {
+      "id": "multihop_rust_phase1_perf",
+      "query": "What throughput improvement does Acme expect from the first phase of the Rust migration?",
+      "category": "multi_hop",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["03_engineering_roadmap.md"],
+      "expected_substrings": ["3×"],
+      "negative": false
+    },
+    {
+      "id": "multihop_emea_p99_latency",
+      "query": "What is the p99 latency target for the EMEA sign endpoint?",
+      "category": "multi_hop",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["03_engineering_roadmap.md"],
+      "expected_substrings": ["150ms"],
+      "negative": false
+    },
+    {
+      "id": "distractor_acme_sla_not_competitor",
+      "query": "What is the uptime SLA for Acme Bolt?",
+      "category": "distractor",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["07_product_specs.md", "03_engineering_roadmap.md"],
+      "expected_substrings": ["99.95%"],
+      "negative": false
+    },
+    {
+      "id": "distractor_current_sign_rps",
+      "query": "What is the current rate limit for the /sign endpoint?",
+      "category": "distractor",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["07_product_specs.md"],
+      "expected_substrings": ["500 RPS"],
+      "negative": false
+    },
+    {
+      "id": "distractor_competitor_ceo",
+      "query": "Who is the CEO of DocuStream?",
+      "category": "distractor",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["11_competitor_overview.md"],
+      "expected_substrings": ["Jordan Kim"],
+      "negative": false
+    },
+    {
+      "id": "cross_doc_series_c_valuation",
+      "query": "What is Acme's valuation after the Series C round?",
+      "category": "cross_doc_synthesis",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["01_company_overview.md", "09_press_release.md"],
+      "expected_substrings": ["640 million", "$640"],
+      "negative": false
+    },
+    {
+      "id": "negative_ipo_plans",
+      "query": "When is Acme Corp planning its IPO?",
+      "category": "negative",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": [],
+      "expected_substrings": [],
+      "negative": true
+    },
+    {
+      "id": "negative_mobile_app",
+      "query": "Does Acme have a mobile app for signing documents?",
+      "category": "negative",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": [],
+      "expected_substrings": [],
+      "negative": true
     }
   ]
 }
