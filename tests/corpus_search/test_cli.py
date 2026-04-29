@@ -60,3 +60,17 @@ def test_no_subcommand_errors():
     parser = build_arg_parser()
     with pytest.raises(SystemExit):
         parser.parse_args([])
+
+
+def test_show_chunk_subcommand_parses_required_id():
+    parser = build_arg_parser()
+    ns = parser.parse_args(["show-chunk", "abc123-0"])
+    assert ns.command == "show-chunk"
+    assert ns.chunk_id == "abc123-0"
+    assert ns.root == Path("./kg")
+
+
+def test_show_chunk_requires_chunk_id():
+    parser = build_arg_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["show-chunk"])

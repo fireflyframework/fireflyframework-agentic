@@ -86,8 +86,11 @@ If `OPENAI_API_KEY` is not set, each script will prompt you interactively.
   # Watch a folder for new files
   uv run python -m examples.corpus_search ingest --folder ./drop --watch
 
-  # Ask questions (also needs ANTHROPIC_API_KEY for expansion + answer)
+  # Ask questions (needs ANTHROPIC_API_KEY for expansion / rerank / answer)
   uv run python -m examples.corpus_search query "Who is the CEO of OpenAI?"
+
+  # Inspect a chunk by id (no API keys needed)
+  uv run python -m examples.corpus_search show-chunk <chunk-id>
   ```
 
   Outputs land under `./kg/`:

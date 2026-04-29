@@ -68,6 +68,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
                          help="Number of chunks fed to the answer agent after reranking.")
     p_query.add_argument("--verbose", action="store_true")
 
+    p_show = sub.add_parser(
+        "show-chunk",
+        help="Print a single chunk's content + source (no LLM, no embedding).",
+    )
+    p_show.add_argument("chunk_id", help="The chunk_id to look up (as printed in the Sources block of a query result).")
+    p_show.add_argument("--root", type=Path, default=_DEFAULT_ROOT,
+                        help="Corpus root (must contain corpus.sqlite).")
+    p_show.add_argument("--verbose", action="store_true")
+
     return parser
 
 
@@ -165,6 +174,32 @@ def _print_ingest_result(result) -> None:
     print(f"[{result.status}] {result.source_path} (doc_id={result.doc_id}, chunks={result.n_chunks})")
 
 
+async def _run_show_chunk(args: argparse.Namespace) -> int:
+    from examples.corpus_search.corpus import SqliteCorpus
+
+    corpus_path = args.root / "corpus.sqlite"
+    if not corpus_path.exists():
+        sys.stderr.write(f"corpus.sqlite not found at {corpus_path}\n")
+        return 2
+    corpus = SqliteCorpus(corpus_path)
+    await corpus.initialise()
+    try:
+        chunks = await corpus.get_chunks([args.chunk_id])
+        if not chunks:
+            sys.stderr.write(f"chunk_id {args.chunk_id!r} not found\n")
+            return 1
+        chunk = chunks[0]
+        print(f"chunk_id:    {chunk.chunk_id}")
+        print(f"doc_id:      {chunk.doc_id}")
+        print(f"source_path: {chunk.source_path}")
+        print(f"index:       {chunk.index_in_doc}")
+        print()
+        print(chunk.content)
+    finally:
+        await corpus.close()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     args = build_arg_parser().parse_args(argv)
@@ -180,6 +215,9 @@ def main(argv: list[str] | None = None) -> int:
         if rc:
             return rc
         return asyncio.run(_run_query(args))
+    if args.command == "show-chunk":
+        # No API keys needed — we're reading SQLite directly.
+        return asyncio.run(_run_show_chunk(args))
 
     return 2  # unreachable thanks to required=True
 
