@@ -9,7 +9,7 @@ The test suite is organized by **purpose**, with the PR-gate vs nightly split co
 | `unit/` | Pure logic. No real network, DB, or LLM calls. Mocks/fakes are fine. ~95% of the suite today. |
 | `integration/` | Multiple subsystems wired together (e.g. agent + middleware + memory + pipeline). Mocks at external boundaries are still allowed. |
 | `functional/` | A user-facing feature exercised end-to-end ("the agent completes workflow X"). |
-| `performance/` | Benchmarks. `pytest-benchmark`. Marked `@pytest.mark.nightly`. |
+| `performance/` | Benchmarks (`pytest-benchmark`). Files must be named `test_bench_*.py` so pytest's default collection picks them up. Marked `@pytest.mark.nightly`. |
 | `security/` | Defenses against attackers (SQL injection, prompt injection, RBAC, encryption). |
 | `data_validation/` | Schema, contract, and configuration validation. |
 | `responsible_ai/` | Safety of the system itself: PII in outputs, content filtering, fairness. |
@@ -45,5 +45,5 @@ grep -rn "@pytest.mark.nightly" tests/
 
 ## CI
 
-- `.github/workflows/pr-gate.yml` — runs on every PR and push to `main`. Executes `pytest -m "not nightly" --cov`.
-- `.github/workflows/nightly.yml` — runs daily at 03:00 UTC and on manual dispatch. Executes `pytest --cov` (no filter).
+- `.github/workflows/pr-gate.yml` — runs on every PR targeting `main` and on manual dispatch. Executes `pytest -m "not nightly" --cov --cov-report=term-missing`.
+- `.github/workflows/nightly.yml` — runs daily at 03:00 UTC and on manual dispatch. Executes `pytest --cov --cov-report=term-missing --durations=50` (no filter).

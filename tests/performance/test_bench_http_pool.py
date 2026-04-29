@@ -22,6 +22,7 @@ Run with:
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -87,8 +88,6 @@ class TestHttpConnectionPoolBenchmarks:
         tool = HttpTool(use_pool=True, pool_size=50)
 
         async def make_concurrent_requests():
-            import asyncio
-
             async def single_request():
                 with patch.object(tool._client, "request", new_callable=AsyncMock) as mock_request:
                     mock_request.return_value = mock_http_response

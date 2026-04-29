@@ -156,5 +156,5 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
-    "nightly: runs only in nightly CI. Real LLM/DB/HTTP, no mocks.",
+    "nightly: runs only in nightly CI. Long-running tests: benchmarks, real LLM/DB/HTTP, or anything not suitable for the PR gate.",
 ]
