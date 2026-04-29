@@ -35,6 +35,18 @@ class FolderWatcher:
     stability_polls: int = 2
     stability_interval_ms: int = 200
 
+    def _is_hidden(self, path: Path) -> bool:
+        """True if any path component (relative to ``self.folder``) starts with '.'.
+
+        Catches macOS ``.DS_Store``, editor swap files (``.something.swp``),
+        and ``.git`` / similar dotted directories anywhere in the tree.
+        """
+        try:
+            rel_parts = path.relative_to(self.folder).parts
+        except ValueError:
+            rel_parts = path.parts
+        return any(part.startswith(".") for part in rel_parts)
+
     async def startup_scan(self) -> AsyncIterator[Path]:
         """Yield every existing file under ``folder`` (recursive).
 
@@ -44,19 +56,16 @@ class FolderWatcher:
         for p in sorted(self.folder.rglob("*")):
             if not p.is_file():
                 continue
-            try:
-                rel_parts = p.relative_to(self.folder).parts
-            except ValueError:
-                rel_parts = p.parts
-            if any(part.startswith(".") for part in rel_parts):
+            if self._is_hidden(p):
                 continue
             yield p
 
     async def wait_for_stability(self, path: Path, *, max_wait_ms: int = 5000) -> bool:
-        deadline = asyncio.get_event_loop().time() + max_wait_ms / 1000.0
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + max_wait_ms / 1000.0
         last_size = -1
         stable_count = 0
-        while asyncio.get_event_loop().time() < deadline:
+        while loop.time() < deadline:
             try:
                 size = path.stat().st_size
             except FileNotFoundError:
@@ -80,6 +89,8 @@ class FolderWatcher:
                     continue
                 path = Path(raw_path)
                 if not path.is_file():
+                    continue
+                if self._is_hidden(path):
                     continue
                 if await self.wait_for_stability(path):
                     yield path

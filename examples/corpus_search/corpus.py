@@ -16,11 +16,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 _SCHEMA = """
 PRAGMA journal_mode = WAL;
@@ -189,7 +192,13 @@ class SqliteCorpus:
                    LIMIT :k""",
                 {"q": query, "k": top_k},
             )
-        except sqlite3.OperationalError:
+        except sqlite3.OperationalError as exc:
+            # FTS5 raises OperationalError on malformed MATCH expressions
+            # (hyphenated tokens parsed as column operators, unbalanced
+            # quotes, etc.). Other OperationalErrors (corrupt index, missing
+            # table, disk full) also land here — surface them via WARNING
+            # instead of silently dropping.
+            log.warning("bm25_search returned no results due to OperationalError: %s", exc)
             return []
         return [
             ChunkHit(

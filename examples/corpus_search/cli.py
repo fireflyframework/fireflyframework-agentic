@@ -51,6 +51,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p_query.add_argument("question", help="Natural-language question.")
     p_query.add_argument("--root", type=Path, default=_DEFAULT_ROOT,
                          help="Corpus root (must contain corpus.sqlite + chroma/).")
+    p_query.add_argument("--embed-model", default=_DEFAULT_EMBED_MODEL,
+                         help="Embedding model — must match the model used at ingest time.")
     p_query.add_argument("--expansion-model", default=_DEFAULT_EXPANSION_MODEL,
                          help="LLM for query expansion.")
     p_query.add_argument("--answer-model", default=_DEFAULT_ANSWER_MODEL,
@@ -123,12 +125,12 @@ async def _run_query(args: argparse.Namespace) -> int:
 
     agent = CorpusAgent(
         root=args.root,
-        embed_model=_DEFAULT_EMBED_MODEL,
+        embed_model=args.embed_model,
         expansion_model=args.expansion_model,
         answer_model=args.answer_model,
     )
     try:
-        result = await agent.query(args.question)
+        result = await agent.query(args.question, top_k=args.top_k)
         print(result.text)
         if result.citations:
             print()
@@ -153,7 +155,7 @@ def main(argv: list[str] | None = None) -> int:
             return rc
         return asyncio.run(_run_ingest(args))
     if args.command == "query":
-        rc = _check_keys(embed_model=_DEFAULT_EMBED_MODEL, need_anthropic=True)
+        rc = _check_keys(embed_model=args.embed_model, need_anthropic=True)
         if rc:
             return rc
         return asyncio.run(_run_query(args))

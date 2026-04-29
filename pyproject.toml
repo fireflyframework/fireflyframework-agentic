@@ -99,6 +99,7 @@ ollama-embeddings = [
 ]
 corpus-search = [
     "fireflyframework-agentic[markitdown,watch,vectorstores-chroma,openai-embeddings]",
+    "python-dotenv>=1.0.0",
 ]
 vectorstores-chroma = [
     "chromadb>=0.5.0",

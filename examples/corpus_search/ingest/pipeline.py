@@ -40,7 +40,9 @@ class _Embedder(Protocol):
 
 @runtime_checkable
 class _VectorStore(Protocol):
-    async def upsert(self, documents: Sequence[Any], namespace: str = "default") -> None: ...
+    async def upsert(
+        self, documents: Sequence[VectorDocument], namespace: str = "default"
+    ) -> None: ...
     async def delete(self, ids: Sequence[str], namespace: str = "default") -> None: ...
 
 

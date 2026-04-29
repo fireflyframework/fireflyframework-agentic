@@ -44,3 +44,46 @@ async def test_returns_stable_for_quiescent_file(tmp_path):
     target.write_text("hi")
     watcher = FolderWatcher(folder=tmp_path, debounce_ms=5, stability_polls=2, stability_interval_ms=10)
     assert await watcher.wait_for_stability(target, max_wait_ms=200) is True
+
+
+def test_is_hidden_skips_dotfile_at_top_level(tmp_path):
+    watcher = FolderWatcher(folder=tmp_path)
+    assert watcher._is_hidden(tmp_path / ".DS_Store") is True
+
+
+def test_is_hidden_skips_dotfile_in_subdirectory(tmp_path):
+    watcher = FolderWatcher(folder=tmp_path)
+    assert watcher._is_hidden(tmp_path / "subdir" / ".DS_Store") is True
+
+
+def test_is_hidden_skips_dotted_directory(tmp_path):
+    watcher = FolderWatcher(folder=tmp_path)
+    # File inside a hidden directory (e.g. .git/HEAD) should be filtered.
+    assert watcher._is_hidden(tmp_path / ".git" / "HEAD") is True
+
+
+def test_is_hidden_allows_hyphenated_paths(tmp_path):
+    watcher = FolderWatcher(folder=tmp_path)
+    assert watcher._is_hidden(tmp_path / "my-docs" / "report.pdf") is False
+
+
+def test_is_hidden_allows_normal_filenames(tmp_path):
+    watcher = FolderWatcher(folder=tmp_path)
+    assert watcher._is_hidden(tmp_path / "subdir" / "file.txt") is False
+
+
+async def test_startup_scan_skips_dotfiles_anywhere_in_tree(tmp_path):
+    (tmp_path / "good.txt").write_text("ok")
+    (tmp_path / ".DS_Store").write_text("metadata")
+    nested = tmp_path / "subdir"
+    nested.mkdir()
+    (nested / "ok.txt").write_text("ok")
+    (nested / ".DS_Store").write_text("metadata")
+
+    watcher = FolderWatcher(folder=tmp_path)
+    seen = []
+    async for path in watcher.startup_scan():
+        seen.append(path.name)
+    assert "good.txt" in seen
+    assert "ok.txt" in seen
+    assert ".DS_Store" not in seen

@@ -217,13 +217,19 @@ class CorpusAgent:
         async for path in watcher.watch():
             yield await self.ingest_one(path)
 
-    async def query(self, question: str) -> Answer:
+    async def query(self, question: str, *, top_k: int = 10) -> Answer:
+        """Run a hybrid-search + answer-synthesis pipeline.
+
+        ``top_k`` is the number of fused chunks fed into the answer agent.
+        """
         await self._ensure_query_ready()
         assert self._expander is not None
         assert self._retriever is not None
         assert self._answerer is not None
         queries = await self._expander.expand(question)
-        hits = await self._retriever.retrieve(queries, top_k_per_query=30, top_k_final=10)
+        hits = await self._retriever.retrieve(
+            queries, top_k_per_query=30, top_k_final=top_k,
+        )
         return await self._answerer.answer(question, hits)
 
     async def close(self) -> None:

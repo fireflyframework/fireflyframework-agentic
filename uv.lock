@@ -1067,6 +1067,7 @@ all = [
     { name = "pinecone" },
     { name = "pyjwt" },
     { name = "pymongo" },
+    { name = "python-dotenv" },
     { name = "qdrant-client" },
     { name = "redis" },
     { name = "sqlalchemy" },
@@ -1088,6 +1089,7 @@ corpus-search = [
     { name = "chromadb" },
     { name = "markitdown", extra = ["docx", "pdf", "pptx", "xlsx"] },
     { name = "openai" },
+    { name = "python-dotenv" },
     { name = "watchfiles" },
 ]
 costs = [
@@ -1214,6 +1216,7 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
     { name = "pytest-benchmark", marker = "extra == 'dev'", specifier = ">=5.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
+    { name = "python-dotenv", marker = "extra == 'corpus-search'", specifier = ">=1.0.0" },
     { name = "python-dotenv", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "qdrant-client", marker = "extra == 'vectorstores-qdrant'", specifier = ">=1.12.0" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=5.2.0" },
