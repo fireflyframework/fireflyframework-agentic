@@ -24,7 +24,6 @@ from fireflyframework_agentic.prompts.registry import PromptRegistry, prompt_reg
 from fireflyframework_agentic.prompts.template import (
     PromptInfo,
     PromptTemplate,
-    PromptVariable,
 )
 from fireflyframework_agentic.prompts.validator import PromptValidator, ValidationResult
 
@@ -36,7 +35,6 @@ __all__ = [
     "PromptRegistry",
     "PromptTemplate",
     "PromptValidator",
-    "PromptVariable",
     "SequentialComposer",
     "ValidationResult",
     "prompt_registry",

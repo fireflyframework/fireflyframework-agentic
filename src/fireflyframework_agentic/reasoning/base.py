@@ -38,7 +38,7 @@ from pydantic_ai import Agent as PydanticAgent
 from pydantic_ai.models import Model
 
 from fireflyframework_agentic.exceptions import ReasoningError, ReasoningStepLimitError
-from fireflyframework_agentic.prompts.template import PromptTemplate
+from fireflyframework_agentic.prompts.template import Prompt, PromptTemplate
 from fireflyframework_agentic.reasoning.trace import (
     ReasoningResult,
     ReasoningStep,
@@ -308,13 +308,13 @@ class AbstractReasoningPattern(ABC):
         memory.set_fact("reasoning:last_step", step_data)
 
     @staticmethod
-    def _enrich_prompt(prompt: str, memory: MemoryManager | None) -> str:
+    def _enrich_prompt(prompt: Prompt, memory: MemoryManager | None) -> str:
         """Prepend working memory context to a prompt when available."""
         if memory is None:
-            return prompt
+            return f"{prompt.system}\n\n{prompt.user}"
         context = memory.get_working_context()
         if not context:
-            return prompt
+            return f"{prompt.system}\n\n{prompt.user}"
         return f"{context}\n\n{prompt}"
 
     # -- Execute loop --------------------------------------------------------

@@ -31,15 +31,16 @@ the ``reasoning:`` namespace.
 from __future__ import annotations
 
 from fireflyframework_agentic.prompts.registry import prompt_registry
-from fireflyframework_agentic.prompts.template import PromptTemplate, PromptVariable
+from fireflyframework_agentic.prompts.template import PromptTemplate
 
 # ---------------------------------------------------------------------------
 # ReAct
 # ---------------------------------------------------------------------------
 
 REACT_THOUGHT_PROMPT = PromptTemplate(
-    "reasoning:react:thought",
-    (
+    name="reasoning:react:thought",
+    system_template="",
+    user_template=(
         "You are reasoning about a problem step by step using a "
         "Reason-Act-Observe loop.\n\n"
         "Context:\n{{ context }}\n\n"
@@ -50,14 +51,13 @@ REACT_THOUGHT_PROMPT = PromptTemplate(
     ),
     version="2.0.0",
     description="Generates a structured thought during a ReAct reasoning step.",
-    variables=[
-        PromptVariable(name="context", description="Current working context and input"),
-    ],
+    required_variables=["context"],
 )
 
 REACT_ACTION_PROMPT = PromptTemplate(
-    "reasoning:react:action",
-    (
+    name="reasoning:react:action",
+    system_template="",
+    user_template=(
         "Based on your reasoning, take the next step to solve the problem.\n\n"
         "Original problem:\n{{ problem }}\n\n"
         "Your current thinking:\n{{ thought }}\n\n"
@@ -65,10 +65,7 @@ REACT_ACTION_PROMPT = PromptTemplate(
     ),
     version="1.0.0",
     description="Executes an action step during ReAct reasoning.",
-    variables=[
-        PromptVariable(name="problem", description="The original problem statement"),
-        PromptVariable(name="thought", description="The current reasoning thought"),
-    ],
+    required_variables=["problem", "thought"],
 )
 
 # ---------------------------------------------------------------------------
@@ -76,8 +73,9 @@ REACT_ACTION_PROMPT = PromptTemplate(
 # ---------------------------------------------------------------------------
 
 COT_STEP_PROMPT = PromptTemplate(
-    "reasoning:cot:step",
-    (
+    name="reasoning:cot:step",
+    system_template="",
+    user_template=(
         "Problem: {{ problem }}\n\n"
         "{% if previous_steps %}"
         "Previous reasoning steps:\n{{ previous_steps }}\n\n"
@@ -89,13 +87,7 @@ COT_STEP_PROMPT = PromptTemplate(
     ),
     version="2.0.0",
     description="Generates a single chain-of-thought reasoning step.",
-    variables=[
-        PromptVariable(name="problem", description="The original problem statement"),
-        PromptVariable(
-            name="previous_steps", description="Formatted previous reasoning steps", required=False, default=""
-        ),
-        PromptVariable(name="step_number", description="Current step number"),
-    ],
+    required_variables=["problem", "step_number"],
 )
 
 # ---------------------------------------------------------------------------
@@ -103,8 +95,9 @@ COT_STEP_PROMPT = PromptTemplate(
 # ---------------------------------------------------------------------------
 
 PLAN_GENERATION_PROMPT = PromptTemplate(
-    "reasoning:plan:generate",
-    (
+    name="reasoning:plan:generate",
+    system_template="",
+    user_template=(
         "Create a structured execution plan for the following goal.\n\n"
         "Goal: {{ goal }}\n\n"
         "Break this into concrete, ordered steps. Each step should have a "
@@ -113,14 +106,13 @@ PLAN_GENERATION_PROMPT = PromptTemplate(
     ),
     version="2.0.0",
     description="Generates a structured execution plan from a goal.",
-    variables=[
-        PromptVariable(name="goal", description="The high-level goal to plan for"),
-    ],
+    required_variables=["goal"],
 )
 
 PLAN_STEP_EXECUTION_PROMPT = PromptTemplate(
-    "reasoning:plan:execute_step",
-    (
+    name="reasoning:plan:execute_step",
+    system_template="",
+    user_template=(
         "You are executing step {{ step_id }} of a plan.\n\n"
         "Overall goal: {{ goal }}\n"
         "Step: {{ step_description }}\n"
@@ -131,17 +123,13 @@ PLAN_STEP_EXECUTION_PROMPT = PromptTemplate(
     ),
     version="1.0.0",
     description="Executes a single step within a plan.",
-    variables=[
-        PromptVariable(name="step_id", description="The step identifier"),
-        PromptVariable(name="goal", description="The overall plan goal"),
-        PromptVariable(name="step_description", description="What this step should accomplish"),
-        PromptVariable(name="previous_results", description="Results from completed steps", required=False, default=""),
-    ],
+    required_variables=["step_id", "goal", "step_description"],
 )
 
 PLAN_REPLAN_PROMPT = PromptTemplate(
-    "reasoning:plan:replan",
-    (
+    name="reasoning:plan:replan",
+    system_template="",
+    user_template=(
         "A step in your plan has failed and you need to adjust.\n\n"
         "Original goal: {{ goal }}\n"
         "Failed step: {{ failed_step }}\n"
@@ -152,14 +140,7 @@ PLAN_REPLAN_PROMPT = PromptTemplate(
     ),
     version="1.0.0",
     description="Generates a revised plan after a step failure.",
-    variables=[
-        PromptVariable(name="goal", description="The overall plan goal"),
-        PromptVariable(name="failed_step", description="Description of the step that failed"),
-        PromptVariable(name="error", description="The error that caused the failure"),
-        PromptVariable(
-            name="completed_steps", description="Summary of completed steps", required=False, default="None"
-        ),
-    ],
+    required_variables=["goal", "failed_step", "error"],
 )
 
 # ---------------------------------------------------------------------------
@@ -167,8 +148,9 @@ PLAN_REPLAN_PROMPT = PromptTemplate(
 # ---------------------------------------------------------------------------
 
 REFLEXION_CRITIQUE_PROMPT = PromptTemplate(
-    "reasoning:reflexion:critique",
-    (
+    name="reasoning:reflexion:critique",
+    system_template="",
+    user_template=(
         "Critically evaluate the following answer.\n\n"
         "Original question: {{ question }}\n"
         "Answer: {{ answer }}\n\n"
@@ -177,15 +159,13 @@ REFLEXION_CRITIQUE_PROMPT = PromptTemplate(
     ),
     version="2.0.0",
     description="Structured self-evaluation for reflexion reasoning.",
-    variables=[
-        PromptVariable(name="question", description="The original question or task"),
-        PromptVariable(name="answer", description="The answer to evaluate"),
-    ],
+    required_variables=["question", "answer"],
 )
 
 REFLEXION_RETRY_PROMPT = PromptTemplate(
-    "reasoning:reflexion:retry",
-    (
+    name="reasoning:reflexion:retry",
+    system_template="",
+    user_template=(
         "{{ original_prompt }}\n\n"
         "Your previous answer had these issues:\n"
         "{% for issue in issues %}- {{ issue }}\n{% endfor %}\n"
@@ -195,11 +175,7 @@ REFLEXION_RETRY_PROMPT = PromptTemplate(
     ),
     version="1.0.0",
     description="Retry prompt with incorporated feedback for reflexion.",
-    variables=[
-        PromptVariable(name="original_prompt", description="The original task prompt"),
-        PromptVariable(name="issues", description="List of issues from the critique"),
-        PromptVariable(name="suggestions", description="List of improvement suggestions"),
-    ],
+    required_variables=["original_prompt", "issues", "suggestions"],
 )
 
 # ---------------------------------------------------------------------------
@@ -207,8 +183,9 @@ REFLEXION_RETRY_PROMPT = PromptTemplate(
 # ---------------------------------------------------------------------------
 
 TOT_BRANCH_PROMPT = PromptTemplate(
-    "reasoning:tot:branch",
-    (
+    name="reasoning:tot:branch",
+    system_template="",
+    user_template=(
         "Generate {{ branching_factor }} distinct approaches to solve this "
         "problem.\n\n"
         "Problem: {{ problem }}\n\n"
@@ -216,15 +193,13 @@ TOT_BRANCH_PROMPT = PromptTemplate(
     ),
     version="2.0.0",
     description="Generates multiple reasoning branches for Tree of Thoughts.",
-    variables=[
-        PromptVariable(name="branching_factor", description="Number of branches to generate"),
-        PromptVariable(name="problem", description="The problem to solve"),
-    ],
+    required_variables=["branching_factor", "problem"],
 )
 
 TOT_EVALUATE_PROMPT = PromptTemplate(
-    "reasoning:tot:evaluate",
-    (
+    name="reasoning:tot:evaluate",
+    system_template="",
+    user_template=(
         "Evaluate this approach to a problem.\n\n"
         "Problem: {{ problem }}\n"
         "Approach (branch {{ branch_id }}):\n{{ approach }}\n\n"
@@ -233,11 +208,7 @@ TOT_EVALUATE_PROMPT = PromptTemplate(
     ),
     version="2.0.0",
     description="Evaluates a single reasoning branch for Tree of Thoughts.",
-    variables=[
-        PromptVariable(name="problem", description="The original problem"),
-        PromptVariable(name="branch_id", description="Index of the branch being evaluated"),
-        PromptVariable(name="approach", description="The approach text to evaluate"),
-    ],
+    required_variables=["problem", "branch_id", "approach"],
 )
 
 # ---------------------------------------------------------------------------
@@ -245,8 +216,9 @@ TOT_EVALUATE_PROMPT = PromptTemplate(
 # ---------------------------------------------------------------------------
 
 GOAL_DECOMPOSE_PROMPT = PromptTemplate(
-    "reasoning:goal:decompose",
-    (
+    name="reasoning:goal:decompose",
+    system_template="",
+    user_template=(
         "Decompose this high-level goal into ordered phases.\n\n"
         "Goal: {{ goal }}\n\n"
         "Each phase should have a name, description, and a list of "
@@ -254,14 +226,13 @@ GOAL_DECOMPOSE_PROMPT = PromptTemplate(
     ),
     version="2.0.0",
     description="Decomposes a goal into structured phases with tasks.",
-    variables=[
-        PromptVariable(name="goal", description="The high-level goal to decompose"),
-    ],
+    required_variables=["goal"],
 )
 
 GOAL_PLAN_PHASE_PROMPT = PromptTemplate(
-    "reasoning:goal:plan_phase",
-    (
+    name="reasoning:goal:plan_phase",
+    system_template="",
+    user_template=(
         "Break this phase into concrete, actionable tasks.\n\n"
         "Phase: {{ phase }}\n"
         "Overall goal: {{ goal }}\n\n"
@@ -269,15 +240,13 @@ GOAL_PLAN_PHASE_PROMPT = PromptTemplate(
     ),
     version="1.0.0",
     description="Plans concrete tasks for a single goal phase.",
-    variables=[
-        PromptVariable(name="phase", description="The phase to break into tasks"),
-        PromptVariable(name="goal", description="The overall goal for context"),
-    ],
+    required_variables=["phase", "goal"],
 )
 
 GOAL_TASK_EXECUTION_PROMPT = PromptTemplate(
-    "reasoning:goal:execute_task",
-    (
+    name="reasoning:goal:execute_task",
+    system_template="",
+    user_template=(
         "Execute the following task as part of a larger goal.\n\n"
         "Overall goal: {{ goal }}\n"
         "Current task: {{ task }}\n\n"
@@ -285,10 +254,7 @@ GOAL_TASK_EXECUTION_PROMPT = PromptTemplate(
     ),
     version="1.0.0",
     description="Executes a single task within a goal decomposition.",
-    variables=[
-        PromptVariable(name="goal", description="The overall goal for context"),
-        PromptVariable(name="task", description="The specific task to execute"),
-    ],
+    required_variables=["goal", "task"],
 )
 
 # ---------------------------------------------------------------------------

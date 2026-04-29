@@ -22,6 +22,7 @@ from typing import Any
 import pytest
 
 from fireflyframework_agentic.memory import MemoryManager
+from fireflyframework_agentic.prompts.template import Prompt
 from fireflyframework_agentic.reasoning.base import AbstractReasoningPattern
 from fireflyframework_agentic.reasoning.chain_of_thought import ChainOfThoughtPattern
 from fireflyframework_agentic.reasoning.models import (
@@ -150,12 +151,12 @@ class TestEnrichPrompt:
     async def test_enrich_empty_memory_passthrough(self):
         """Empty working memory should not modify the prompt."""
         memory = MemoryManager()
-        enriched = AbstractReasoningPattern._enrich_prompt("My prompt", memory)
-        assert enriched == "My prompt"
+        enriched = AbstractReasoningPattern._enrich_prompt(Prompt(system="system", user="user"), memory)
+        assert enriched == "system\n\nuser"
 
     async def test_enrich_none_memory_passthrough(self):
-        result = AbstractReasoningPattern._enrich_prompt("hello", None)
-        assert result == "hello"
+        result = AbstractReasoningPattern._enrich_prompt(Prompt(system="system", user="user"), None)
+        assert result == "system\n\nuser"
 
 
 class TestFallbackParse:

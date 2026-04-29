@@ -176,7 +176,7 @@ class GoalDecompositionPattern(AbstractReasoningPattern):
         """Break a high-level goal into structured phases."""
         template = self._get_prompt("decompose", GOAL_DECOMPOSE_PROMPT)
         prompt = template.render(goal=str(goal))
-        decomp = await self._structured_run(agent, prompt, GoalDecompositionResult)
+        decomp = await self._structured_run(agent, prompt.user, GoalDecompositionResult)
         if not decomp.goal:
             decomp.goal = str(goal)
         return decomp

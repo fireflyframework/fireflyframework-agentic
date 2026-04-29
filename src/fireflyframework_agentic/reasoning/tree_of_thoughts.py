@@ -141,7 +141,7 @@ class TreeOfThoughtsPattern(AbstractReasoningPattern):
             branching_factor=str(self._branching_factor),
             problem=str(input),
         )
-        branch_list = await self._structured_run(agent, prompt, BranchList)
+        branch_list = await self._structured_run(agent, prompt.user, BranchList)
         branches = [b for b in branch_list.branches if b.strip()]
         return branches[: self._branching_factor] or [str(input)]
 
@@ -157,7 +157,7 @@ class TreeOfThoughtsPattern(AbstractReasoningPattern):
                 branch_id=str(idx),
                 approach=branch,
             )
-            evaluation = await self._structured_run(agent, prompt, BranchEvaluation)
+            evaluation = await self._structured_run(agent, prompt.user, BranchEvaluation)
             # Ensure branch_id is correct even if LLM returns wrong id
             if evaluation.branch_id != idx:
                 evaluation = BranchEvaluation(
