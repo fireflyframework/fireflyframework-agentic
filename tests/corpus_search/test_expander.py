@@ -102,3 +102,31 @@ async def test_expand_drops_empty_strings_from_variants(mock_agent_cls):
     assert "" not in out
     assert "alt phrasing" in out
     assert out[0] == "orig"
+
+
+@patch("examples.corpus_search.retrieval.expander.FireflyAgent")
+async def test_expand_logs_each_generated_query(mock_agent_cls, caplog):
+    """For visibility — the expander should log every query (original +
+    variants) at INFO so the user sees what BM25 + vector search will run.
+    """
+    import logging
+    mock_agent = MagicMock()
+    mock_agent_cls.return_value = mock_agent
+
+    expander = QueryExpander(model="anthropic:dummy")
+    expander._agent.run = AsyncMock(  # type: ignore[attr-defined]
+        return_value=_stub_run_result(["alt one", "alt two"]),
+    )
+
+    with caplog.at_level(logging.INFO, logger="examples.corpus_search.retrieval.expander"):
+        out = await expander.expand("original question", n_variants=2)
+
+    assert out == ["original question", "alt one", "alt two"]
+    messages = [r.getMessage() for r in caplog.records]
+    # Header line with count
+    assert any("produced 3 query" in m for m in messages)
+    # Original labelled
+    assert any("original" in m and "original question" in m for m in messages)
+    # Variants labelled
+    assert any("variant 1" in m and "alt one" in m for m in messages)
+    assert any("variant 2" in m and "alt two" in m for m in messages)

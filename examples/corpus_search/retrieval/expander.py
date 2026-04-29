@@ -75,4 +75,13 @@ class QueryExpander:
                 out.append(q)
             if len(out) >= n_variants + 1:
                 break
+
+        # Visibility — log each query on its own line so the user can see
+        # exactly what BM25 + vector search will be issued for. Index 0 is
+        # the original question; the rest are LLM-generated reformulations.
+        log.info("query expansion produced %d query/queries:", len(out))
+        for i, q in enumerate(out):
+            label = "original" if i == 0 else f"variant {i}"
+            log.info("  [%s] %s", label, q)
+
         return out
