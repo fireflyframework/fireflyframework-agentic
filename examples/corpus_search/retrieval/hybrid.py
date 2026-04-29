@@ -18,6 +18,7 @@ import logging
 from collections.abc import Sequence
 
 from examples.corpus_search.corpus import ChunkHit, SqliteCorpus
+from examples.corpus_search.retrieval.expander import ExpandedQuery
 from fireflyframework_agentic.embeddings.base import EmbeddingProtocol
 from fireflyframework_agentic.vectorstores.base import VectorStoreProtocol
 
@@ -45,10 +46,15 @@ def reciprocal_rank_fusion(rankings: Sequence[Sequence[str]], *, k: int = 60) ->
 class HybridRetriever:
     """Hybrid retrieval: BM25 (FTS5) + dense vectors, fused via RRF.
 
-    For each input query, runs BM25 and vector search in parallel against a
-    shared corpus + vector store, then fuses all rankings via Reciprocal Rank
-    Fusion. The final ``top_k_final`` chunk_ids have their content materialised
-    from the corpus before being returned.
+    For each input query, runs BM25 and/or vector search according to the
+    query's route, then fuses all rankings via Reciprocal Rank Fusion.
+
+    Queries are accepted as plain strings or ``ExpandedQuery`` objects:
+
+    - ``route='hybrid'`` (default for plain strings): BM25 + vector.
+    - ``route='vec_only'``: vector search only. Used for HyDE passages —
+      routing hypothetical document text through BM25 adds noise because the
+      token distribution of a generated passage doesn't match real documents.
     """
 
     def __init__(
@@ -64,7 +70,7 @@ class HybridRetriever:
 
     async def retrieve(
         self,
-        queries: Sequence[str],
+        queries: Sequence[str | ExpandedQuery],
         *,
         top_k_per_query: int = 30,
         top_k_final: int = 10,
@@ -73,22 +79,28 @@ class HybridRetriever:
             return []
 
         rankings: list[list[str]] = []
-        for q in queries:
-            # BM25
-            try:
-                bm25_hits = await self._corpus.bm25_search(q, top_k=top_k_per_query)
-                rankings.append([h.chunk_id for h in bm25_hits])
-            except Exception as exc:  # noqa: BLE001
-                log.warning("bm25 failed for query %r: %s", q, exc)
+        for raw_q in queries:
+            if isinstance(raw_q, ExpandedQuery):
+                text, route = raw_q.text, raw_q.route
+            else:
+                text, route = raw_q, "hybrid"
 
-            # Vector
+            # BM25 — skipped for vec_only (HyDE) queries
+            if route != "vec_only":
+                try:
+                    bm25_hits = await self._corpus.bm25_search(text, top_k=top_k_per_query)
+                    rankings.append([h.chunk_id for h in bm25_hits])
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("bm25 failed for query %r: %s", text, exc)
+
+            # Vector — always
             try:
-                qvec = await self._embedder.embed_one(q)
+                qvec = await self._embedder.embed_one(text)
                 vec_hits = await self._vector_store.search(qvec, top_k=top_k_per_query)
                 vec_ids = [getattr(h, "id", None) for h in vec_hits]
                 rankings.append([i for i in vec_ids if i])
             except Exception as exc:  # noqa: BLE001
-                log.warning("vector search failed for query %r: %s", q, exc)
+                log.warning("vector search failed for query %r: %s", text, exc)
 
         if not any(rankings):
             return []

@@ -17,21 +17,22 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from examples.corpus_search.retrieval.expander import QueryExpander
+from examples.corpus_search.retrieval.expander import ExpandedQuery, QueryExpander
 
 
-def _stub_run_result(variants: list[str]) -> Any:
+def _stub_run_result(variants: list[str], hyde: str = "") -> Any:
     """Builds an object shaped like pydantic_ai's RunResult (.output attribute)."""
 
     class _Output:
-        def __init__(self, vs: list[str]) -> None:
+        def __init__(self, vs: list[str], h: str) -> None:
             self.variants = vs
+            self.hyde = h
 
     class _R:
         pass
 
     r = _R()
-    r.output = _Output(variants)
+    r.output = _Output(variants, hyde)
     return r
 
 
@@ -41,15 +42,44 @@ async def test_expand_returns_original_first_then_variants(mock_agent_cls):
     mock_agent_cls.return_value = mock_agent
 
     expander = QueryExpander(model="anthropic:dummy")
-    expander._agent.run = AsyncMock(  # type: ignore[attr-defined]
+    expander._agent.run = AsyncMock(
         return_value=_stub_run_result(
             ["who runs OpenAI", "who is OpenAI's chief executive", "OpenAI leadership"],
         ),
     )
-    out = await expander.expand("Who is the CEO of OpenAI?", n_variants=3)
-    assert out[0] == "Who is the CEO of OpenAI?"
-    assert "who runs OpenAI" in out
-    assert len(out) <= 4  # original + n_variants
+    out = await expander.expand("Who is the CEO of OpenAI?", n_variants=4)
+    assert out[0] == ExpandedQuery(text="Who is the CEO of OpenAI?", route="hybrid")
+    assert any(q.text == "who runs OpenAI" for q in out)
+    assert all(isinstance(q, ExpandedQuery) for q in out)
+
+
+@patch("examples.corpus_search.retrieval.expander.FireflyAgent")
+async def test_expand_original_is_always_hybrid(mock_agent_cls):
+    mock_agent = MagicMock()
+    mock_agent_cls.return_value = mock_agent
+
+    expander = QueryExpander(model="anthropic:dummy")
+    expander._agent.run = AsyncMock(return_value=_stub_run_result([]))
+    out = await expander.expand("Q?")
+    assert out[0].route == "hybrid"
+
+
+@patch("examples.corpus_search.retrieval.expander.FireflyAgent")
+async def test_expand_hyde_has_vec_only_route(mock_agent_cls):
+    mock_agent = MagicMock()
+    mock_agent_cls.return_value = mock_agent
+
+    expander = QueryExpander(model="anthropic:dummy")
+    expander._agent.run = AsyncMock(
+        return_value=_stub_run_result(
+            ["alternative phrasing"],
+            hyde="The CEO is Jane Doe, who founded the company in 2010.",
+        ),
+    )
+    out = await expander.expand("Who is the CEO?", n_variants=4)
+    hyde_queries = [q for q in out if q.route == "vec_only"]
+    assert len(hyde_queries) == 1
+    assert "Jane Doe" in hyde_queries[0].text
 
 
 @patch("examples.corpus_search.retrieval.expander.FireflyAgent")
@@ -58,25 +88,33 @@ async def test_expand_dedupes_when_variant_equals_original(mock_agent_cls):
     mock_agent_cls.return_value = mock_agent
 
     expander = QueryExpander(model="anthropic:dummy")
-    expander._agent.run = AsyncMock(  # type: ignore[attr-defined]
+    expander._agent.run = AsyncMock(
         return_value=_stub_run_result(["What is X?", "Tell me about X", "What is X?"]),
     )
-    out = await expander.expand("What is X?", n_variants=3)
-    assert out.count("What is X?") == 1
-    assert "Tell me about X" in out
+    out = await expander.expand("What is X?", n_variants=4)
+    texts = [q.text for q in out]
+    assert texts.count("What is X?") == 1
+    assert "Tell me about X" in texts
 
 
 @patch("examples.corpus_search.retrieval.expander.FireflyAgent")
-async def test_expand_caps_at_n_variants_plus_one(mock_agent_cls):
+async def test_expand_caps_paraphrase_variants(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
 
     expander = QueryExpander(model="anthropic:dummy")
-    expander._agent.run = AsyncMock(  # type: ignore[attr-defined]
-        return_value=_stub_run_result(["v1", "v2", "v3", "v4", "v5", "v6"]),
+    expander._agent.run = AsyncMock(
+        return_value=_stub_run_result(
+            ["v1", "v2", "v3", "v4", "v5", "v6"],
+            hyde="Hypothetical passage about Q.",
+        ),
     )
     out = await expander.expand("Q", n_variants=3)
-    assert len(out) == 4  # original + at most 3 variants
+    hybrid_queries = [q for q in out if q.route == "hybrid"]
+    # original + at most n_variants-1=2 paraphrase variants
+    assert len(hybrid_queries) <= 3  # original + 2 paraphrases
+    # HyDE appended
+    assert any(q.route == "vec_only" for q in out)
 
 
 @patch("examples.corpus_search.retrieval.expander.FireflyAgent")
@@ -85,11 +123,11 @@ async def test_expand_falls_back_to_original_on_llm_error(mock_agent_cls):
     mock_agent_cls.return_value = mock_agent
 
     expander = QueryExpander(model="anthropic:dummy")
-    expander._agent.run = AsyncMock(  # type: ignore[attr-defined]
-        side_effect=RuntimeError("LLM unavailable"),
-    )
+    expander._agent.run = AsyncMock(side_effect=RuntimeError("LLM unavailable"))
     out = await expander.expand("Q", n_variants=3)
-    assert out == ["Q"]
+    assert len(out) == 1
+    assert out[0].text == "Q"
+    assert out[0].route == "hybrid"
 
 
 @patch("examples.corpus_search.retrieval.expander.FireflyAgent")
@@ -98,39 +136,40 @@ async def test_expand_drops_empty_strings_from_variants(mock_agent_cls):
     mock_agent_cls.return_value = mock_agent
 
     expander = QueryExpander(model="anthropic:dummy")
-    expander._agent.run = AsyncMock(  # type: ignore[attr-defined]
+    expander._agent.run = AsyncMock(
         return_value=_stub_run_result(["", "alt phrasing", "", "another"]),
     )
-    out = await expander.expand("orig", n_variants=3)
-    assert "" not in out
-    assert "alt phrasing" in out
-    assert out[0] == "orig"
+    out = await expander.expand("orig", n_variants=4)
+    assert not any(q.text == "" for q in out)
+    assert any(q.text == "alt phrasing" for q in out)
+    assert out[0].text == "orig"
 
 
 @patch("examples.corpus_search.retrieval.expander.FireflyAgent")
 async def test_expand_logs_each_generated_query(mock_agent_cls, caplog):
-    """For visibility — the expander should log every query (original +
-    variants) at INFO so the user sees what BM25 + vector search will run.
-    """
+    """The expander should log every query (original, variants, hyde) at INFO."""
     import logging
 
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
 
     expander = QueryExpander(model="anthropic:dummy")
-    expander._agent.run = AsyncMock(  # type: ignore[attr-defined]
-        return_value=_stub_run_result(["alt one", "alt two"]),
+    expander._agent.run = AsyncMock(
+        return_value=_stub_run_result(
+            ["alt one"],
+            hyde="Hypothetical document passage.",
+        ),
     )
 
     with caplog.at_level(logging.INFO, logger="examples.corpus_search.retrieval.expander"):
-        out = await expander.expand("original question", n_variants=2)
+        out = await expander.expand("original question", n_variants=3)
 
-    assert out == ["original question", "alt one", "alt two"]
+    texts = [q.text for q in out]
+    assert "original question" in texts
+    assert "alt one" in texts
+    assert any(q.route == "vec_only" for q in out)
+
     messages = [r.getMessage() for r in caplog.records]
-    # Header line with count
-    assert any("produced 3 query" in m for m in messages)
-    # Original labelled
     assert any("original" in m and "original question" in m for m in messages)
-    # Variants labelled
-    assert any("variant 1" in m and "alt one" in m for m in messages)
-    assert any("variant 2" in m and "alt two" in m for m in messages)
+    assert any("variant" in m and "alt one" in m for m in messages)
+    assert any("hyde" in m for m in messages)

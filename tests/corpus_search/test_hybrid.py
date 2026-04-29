@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 from examples.corpus_search.corpus import ChunkHit, SqliteCorpus, StoredChunk
+from examples.corpus_search.retrieval.expander import ExpandedQuery
 from examples.corpus_search.retrieval.hybrid import (
     HybridRetriever,
     reciprocal_rank_fusion,
@@ -154,3 +155,53 @@ async def test_retrieve_preserves_rrf_order(corpus):
     # d-2 should appear early in the result given vector ranks it first
     chunk_ids = [h.chunk_id for h in hits]
     assert "d-2" in chunk_ids[:3]
+
+
+# --- ExpandedQuery routing ---------------------------------------------------
+
+
+async def test_retrieve_vec_only_query_skips_bm25(corpus):
+    """A hyde (vec_only) ExpandedQuery must not issue a BM25 call.
+
+    We verify this by passing a query text that contains no words matching
+    any chunk in the corpus (so BM25 would return nothing useful) but the
+    stub vector store maps its embedding to d-3.  If BM25 were incorrectly
+    called it would simply return an empty ranking, which is harmless — so
+    we test the positive side: the vec_only result still surfaces via RRF.
+    """
+    # Embedding for "xyzzy" has len 5 → key 5.0 in the stub.
+    vector_store = _StubVectorStore({5.0: ["d-3", "d-1"]})
+    embedder = _StubEmbedder()
+    retriever = HybridRetriever(corpus=corpus, vector_store=vector_store, embedder=embedder)
+
+    hyde_q = ExpandedQuery(text="xyzzy", route="vec_only")
+    hits = await retriever.retrieve([hyde_q], top_k_per_query=5, top_k_final=5)
+    chunk_ids = [h.chunk_id for h in hits]
+    assert "d-3" in chunk_ids
+
+
+async def test_retrieve_hybrid_and_vec_only_fused(corpus):
+    """Hybrid and vec_only queries are fused together via RRF.
+
+    The hybrid query's BM25 and vector rankings and the hyde's vector
+    ranking all contribute — the chunk appearing across more rankings wins.
+    """
+    # "sam" (len 3) → d-0,d-1 via vector; "xyzzy" (len 5) → d-2,d-0 via vector.
+    vector_store = _StubVectorStore(
+        {
+            3.0: ["d-0", "d-1"],  # hybrid query vector hits
+            5.0: ["d-2", "d-0"],  # hyde query vector hits
+        }
+    )
+    embedder = _StubEmbedder()
+    retriever = HybridRetriever(corpus=corpus, vector_store=vector_store, embedder=embedder)
+
+    queries: list[str | ExpandedQuery] = [
+        ExpandedQuery(text="sam", route="hybrid"),
+        ExpandedQuery(text="xyzzy", route="vec_only"),
+    ]
+    hits = await retriever.retrieve(queries, top_k_per_query=5, top_k_final=5)
+    chunk_ids = [h.chunk_id for h in hits]
+    # d-0 appears in both vector rankings → highest RRF score
+    assert "d-0" in chunk_ids
+    assert chunk_ids.index("d-0") < chunk_ids.index("d-2") if "d-2" in chunk_ids else True

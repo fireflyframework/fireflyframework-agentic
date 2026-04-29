@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
 
@@ -23,26 +24,59 @@ from fireflyframework_agentic.agents import FireflyAgent
 log = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class ExpandedQuery:
+    """A single query issued during retrieval, with routing metadata.
+
+    ``route`` controls which search backends the query hits:
+
+    - ``"hybrid"``: BM25 (FTS5) + vector search — used for the original
+      question and paraphrase variants.
+    - ``"vec_only"``: vector search only — used for the HyDE passage.
+      Routing a hypothetical document through BM25 adds noise because its
+      token distribution doesn't match the real document vocabulary.
+    """
+
+    text: str
+    route: str  # "hybrid" | "vec_only"
+
+
 class _ExpandedQueries(BaseModel):
     """Structured output schema for the expansion agent."""
 
     variants: list[str] = Field(default_factory=list)
+    hyde: str = Field(
+        default="",
+        description=(
+            "A short hypothetical document passage (2-4 sentences) written as if "
+            "it were an excerpt from the source document that answers the question. "
+            "This is used for semantic vector retrieval only, not keyword search."
+        ),
+    )
 
 
 class QueryExpander:
-    """Expand a user question into multiple alternative phrasings via an LLM.
+    """Expand a user question into paraphrase variants plus a HyDE passage.
 
-    On LLM failure, falls back to returning just the original question. The
-    original question is always returned first; variants are deduplicated
-    against each other and the original; empty strings are dropped.
+    Returns a list of ``ExpandedQuery`` objects:
+
+    - The original question always comes first (``route='hybrid'``).
+    - Paraphrase variants follow (``route='hybrid'``) — they hit both BM25
+      and vector search.
+    - A single HyDE (Hypothetical Document Embedding) passage is appended
+      last (``route='vec_only'``) — routed to vector search only, because
+      its hypothetical token distribution would mislead BM25.
+
+    On LLM failure, falls back to the original question only.
     """
 
     _INSTRUCTIONS = (
-        "Generate alternative ways to phrase the user's question that might "
-        "match different wording in source documents. Include synonyms, "
-        "related concepts, and rephrased forms. Return only the variants — "
-        "do not repeat the original question. Each variant should be a "
-        "complete, standalone query."
+        "You are a retrieval query expander. Given a user's question:\n"
+        "1. Generate alternative phrasings (synonyms, related concepts, rephrased "
+        "forms) as standalone queries. Do not repeat the original question.\n"
+        "2. Write a short hypothetical document passage (2-4 sentences) that would "
+        "directly answer the question, phrased as an excerpt from the source document "
+        "— not as a question or answer pair, but as prose from the document itself."
     )
 
     def __init__(self, model: str) -> None:
@@ -53,32 +87,49 @@ class QueryExpander:
             instructions=self._INSTRUCTIONS,
         )
 
-    async def expand(self, question: str, *, n_variants: int = 4) -> list[str]:
-        prompt = f"Generate {n_variants} alternative phrasings.\n\nQuestion: {question}"
+    async def expand(self, question: str, *, n_variants: int = 4) -> list[ExpandedQuery]:
+        """Expand *question* into at most ``n_variants + 1`` queries.
+
+        ``n_variants`` controls how many paraphrase variants to request from
+        the LLM (one slot is reserved for the HyDE passage). The returned
+        list always starts with the original question and ends with the HyDE
+        entry when available.
+        """
+        n_paraphrase = max(1, n_variants - 1)
+        prompt = (
+            f"Generate {n_paraphrase} alternative phrasings and one hypothetical "
+            f"document passage.\n\nQuestion: {question}"
+        )
         try:
             result = await self._agent.run(prompt)
-            variants = list(getattr(result, "output", _ExpandedQueries()).variants)
+            output = getattr(result, "output", _ExpandedQueries())
+            variants = list(output.variants)
+            hyde = output.hyde.strip() if output.hyde else ""
         except Exception as exc:
             log.warning("query expansion failed for %r: %s", question, exc)
             variants = []
+            hyde = ""
 
-        # Original always first; dedupe; drop empties; cap at n_variants + 1.
-        seen: set[str] = set()
-        out: list[str] = []
-        for q in [question, *variants]:
-            q = q.strip()
-            if q and q not in seen:
-                seen.add(q)
-                out.append(q)
-            if len(out) >= n_variants + 1:
-                break
+        seen: set[str] = {question}
+        out: list[ExpandedQuery] = [ExpandedQuery(text=question, route="hybrid")]
 
-        # Visibility — log each query on its own line so the user can see
-        # exactly what BM25 + vector search will be issued for. Index 0 is
-        # the original question; the rest are LLM-generated reformulations.
+        for v in variants:
+            v = v.strip()
+            if v and v not in seen and len(out) <= n_paraphrase:
+                seen.add(v)
+                out.append(ExpandedQuery(text=v, route="hybrid"))
+
+        if hyde and hyde not in seen:
+            out.append(ExpandedQuery(text=hyde, route="vec_only"))
+
         log.info("query expansion produced %d query/queries:", len(out))
         for i, q in enumerate(out):
-            label = "original" if i == 0 else f"variant {i}"
-            log.info("  [%s] %s", label, q)
+            if i == 0:
+                label = "original"
+            elif q.route == "vec_only":
+                label = "hyde"
+            else:
+                label = f"variant {i}"
+            log.info("  [%s] %s", label, q.text)
 
         return out
