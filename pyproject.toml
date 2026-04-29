@@ -81,7 +81,6 @@ cohere-embeddings = [
 google-embeddings = [
     "google-generativeai>=0.8.0",
 ]
-graph-sqlite = []
 mistral-embeddings = [
     "mistralai>=1.0.0",
 ]
@@ -98,9 +97,8 @@ bedrock-embeddings = [
 ollama-embeddings = [
     "httpx>=0.28.0",
 ]
-kg-ingest = [
-    "fireflyframework-agentic[graph-sqlite,markitdown,watch,vectorstores-chroma,openai-embeddings]",
-    "lxml>=5.3.0",
+corpus-search = [
+    "fireflyframework-agentic[markitdown,watch,vectorstores-chroma,openai-embeddings]",
 ]
 vectorstores-chroma = [
     "chromadb>=0.5.0",
@@ -113,7 +111,7 @@ vectorstores-qdrant = [
 ]
 watch = ["watchfiles>=0.24.0"]
 all = [
-    "fireflyframework-agentic[rest,queues,postgres,mongodb,security,http,costs,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,graph-sqlite,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,kg-ingest,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,markitdown,watch]",
+    "fireflyframework-agentic[rest,queues,postgres,mongodb,security,http,costs,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,corpus-search,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,markitdown,watch]",
 ]
 dev = [
     "pytest>=8.3.0",
