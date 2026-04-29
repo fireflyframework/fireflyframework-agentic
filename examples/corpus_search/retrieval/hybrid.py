@@ -16,27 +16,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from typing import Any, Protocol, runtime_checkable
 
 from examples.corpus_search.corpus import ChunkHit, SqliteCorpus
+from fireflyframework_agentic.embeddings.base import EmbeddingProtocol
+from fireflyframework_agentic.vectorstores.base import VectorStoreProtocol
 
 log = logging.getLogger(__name__)
-
-
-@runtime_checkable
-class _Embedder(Protocol):
-    async def embed_one(self, text: str, **kwargs: Any) -> list[float]: ...
-
-
-@runtime_checkable
-class _VectorStore(Protocol):
-    async def search(
-        self,
-        query_embedding: list[float],
-        top_k: int = 5,
-        namespace: str = "default",
-        filters: Any = None,
-    ) -> list[Any]: ...
 
 
 def reciprocal_rank_fusion(
@@ -72,8 +57,8 @@ class HybridRetriever:
         self,
         *,
         corpus: SqliteCorpus,
-        vector_store: _VectorStore,
-        embedder: _Embedder,
+        vector_store: VectorStoreProtocol,
+        embedder: EmbeddingProtocol,
     ) -> None:
         self._corpus = corpus
         self._vector_store = vector_store

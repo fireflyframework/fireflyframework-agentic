@@ -17,33 +17,19 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
 
 from examples.corpus_search.corpus import SqliteCorpus, StoredChunk
 from examples.corpus_search.ingest.ledger import IngestLedger
 from examples.corpus_search.ingest.retry import embed_with_retry
 from fireflyframework_agentic.content.chunking import TextChunker
 from fireflyframework_agentic.content.loaders import Document, MarkitdownLoader
-from fireflyframework_agentic.embeddings.types import EmbeddingResult
+from fireflyframework_agentic.embeddings.base import EmbeddingProtocol
+from fireflyframework_agentic.vectorstores.base import VectorStoreProtocol
 from fireflyframework_agentic.vectorstores.types import VectorDocument
 
 log = logging.getLogger(__name__)
-
-
-@runtime_checkable
-class _Embedder(Protocol):
-    async def embed(self, texts: list[str], **kwargs: Any) -> EmbeddingResult: ...
-
-
-@runtime_checkable
-class _VectorStore(Protocol):
-    async def upsert(
-        self, documents: Sequence[VectorDocument], namespace: str = "default"
-    ) -> None: ...
-    async def delete(self, ids: Sequence[str], namespace: str = "default") -> None: ...
 
 
 @dataclass(slots=True)
@@ -70,8 +56,8 @@ async def ingest_one(
     *,
     path: Path,
     corpus: SqliteCorpus,
-    vector_store: _VectorStore,
-    embedder: _Embedder,
+    vector_store: VectorStoreProtocol,
+    embedder: EmbeddingProtocol,
     ledger: IngestLedger,
     chunker: TextChunker,
     loader: MarkitdownLoader,
