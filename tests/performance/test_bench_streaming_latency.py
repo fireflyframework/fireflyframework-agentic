@@ -18,7 +18,7 @@ These benchmarks compare buffered vs incremental streaming modes
 to measure time-to-first-token (TTFT) and overall streaming latency.
 
 Run with:
-    pytest tests/benchmarks/bench_streaming_latency.py --benchmark-only
+    pytest tests/performance/test_bench_streaming_latency.py --benchmark-only
 """
 
 from __future__ import annotations

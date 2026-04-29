@@ -17,7 +17,7 @@
 These benchmarks compare performance with and without connection pooling.
 
 Run with:
-    pytest tests/benchmarks/bench_http_pool.py --benchmark-only
+    pytest tests/performance/test_bench_http_pool.py --benchmark-only
 """
 
 from __future__ import annotations
