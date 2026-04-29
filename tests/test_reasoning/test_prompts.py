@@ -36,13 +36,13 @@ from fireflyframework_agentic.reasoning.prompts import (
 class TestPromptTemplateRendering:
     def test_react_thought(self):
         rendered = REACT_THOUGHT_PROMPT.render(context="user asked about weather")
-        assert "weather" in rendered
-        assert "final" in rendered
+        assert "weather" in rendered.user
+        assert "final" in rendered.user
 
     def test_cot_step(self):
         rendered = COT_STEP_PROMPT.render(problem="What is 2+2?", step_number="1")
-        assert "2+2" in rendered
-        assert "step 1" in rendered.lower()
+        assert "2+2" in rendered.user
+        assert "step 1" in rendered.user.lower()
 
     def test_cot_step_with_previous(self):
         rendered = COT_STEP_PROMPT.render(
@@ -50,13 +50,13 @@ class TestPromptTemplateRendering:
             previous_steps="Step 1: We need to add",
             step_number="2",
         )
-        assert "Previous reasoning" in rendered
-        assert "We need to add" in rendered
+        assert "Previous reasoning" in rendered.user
+        assert "We need to add" in rendered.user
 
     def test_plan_generation(self):
         rendered = PLAN_GENERATION_PROMPT.render(goal="Build a REST API")
-        assert "REST API" in rendered
-        assert "step_1" in rendered or "steps" in rendered.lower()
+        assert "REST API" in rendered.user
+        assert "step_1" in rendered.user or "steps" in rendered.user.lower()
 
     def test_plan_step_execution(self):
         rendered = PLAN_STEP_EXECUTION_PROMPT.render(
@@ -64,8 +64,8 @@ class TestPromptTemplateRendering:
             goal="Build app",
             step_description="Set up database",
         )
-        assert "step_1" in rendered
-        assert "database" in rendered
+        assert "step_1" in rendered.user
+        assert "database" in rendered.user
 
     def test_plan_replan(self):
         rendered = PLAN_REPLAN_PROMPT.render(
@@ -73,13 +73,13 @@ class TestPromptTemplateRendering:
             failed_step="Deploy",
             error="Connection refused",
         )
-        assert "Connection refused" in rendered
-        assert "revised" in rendered.lower() or "remaining" in rendered.lower()
+        assert "Connection refused" in rendered.user
+        assert "revised" in rendered.user.lower() or "remaining" in rendered.user.lower()
 
     def test_reflexion_critique(self):
         rendered = REFLEXION_CRITIQUE_PROMPT.render(question="What is Python?", answer="A programming language")
-        assert "Python" in rendered
-        assert "satisfactory" in rendered
+        assert "Python" in rendered.user
+        assert "satisfactory" in rendered.user
 
     def test_reflexion_retry(self):
         rendered = REFLEXION_RETRY_PROMPT.render(
@@ -87,27 +87,27 @@ class TestPromptTemplateRendering:
             issues=["too brief"],
             suggestions=["add more detail"],
         )
-        assert "too brief" in rendered
-        assert "add more detail" in rendered
+        assert "too brief" in rendered.user
+        assert "add more detail" in rendered.user
 
     def test_tot_branch(self):
         rendered = TOT_BRANCH_PROMPT.render(branching_factor="3", problem="Design an API")
-        assert "3" in rendered
-        assert "API" in rendered
+        assert "3" in rendered.user
+        assert "API" in rendered.user
 
     def test_tot_evaluate(self):
         rendered = TOT_EVALUATE_PROMPT.render(problem="Design an API", branch_id="0", approach="RESTful approach")
-        assert "RESTful" in rendered
-        assert "score" in rendered.lower()
+        assert "RESTful" in rendered.user
+        assert "score" in rendered.user.lower()
 
     def test_goal_decompose(self):
         rendered = GOAL_DECOMPOSE_PROMPT.render(goal="Build a feedback pipeline")
-        assert "feedback pipeline" in rendered
-        assert "phases" in rendered.lower()
+        assert "feedback pipeline" in rendered.user
+        assert "phases" in rendered.user.lower()
 
     def test_goal_plan_phase(self):
         rendered = GOAL_PLAN_PHASE_PROMPT.render(phase="Data collection", goal="Build pipeline")
-        assert "Data collection" in rendered
+        assert "Data collection" in rendered.user
 
 
 class TestPromptRegistration:

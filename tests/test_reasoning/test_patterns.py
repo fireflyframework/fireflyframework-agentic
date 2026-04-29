@@ -97,12 +97,13 @@ class TestReActPatternStructured:
 
     async def test_prompts_override(self):
         """Custom prompts should be used when provided."""
-        from fireflyframework_agentic.prompts.template import PromptTemplate, PromptVariable
+        from fireflyframework_agentic.prompts.template import PromptTemplate
 
         custom = PromptTemplate(
-            "custom:react:thought",
-            "CUSTOM: {{ context }}",
-            variables=[PromptVariable(name="context")],
+            name="test",
+            system_template="",
+            user_template="custom:react:thought\n\nCUSTOM: {{ context }}",
+            required_variables=["context"],
         )
         agent = MockAgent(
             [
