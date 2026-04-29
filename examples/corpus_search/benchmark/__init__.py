@@ -36,11 +36,3 @@ retrieval quality is reproducible; LLM-generated answer quality is not.
 """
 
 from __future__ import annotations
-
-from examples.corpus_search.benchmark.runner import (
-    BenchmarkResult,
-    QueryResult,
-    run_benchmark,
-)
-
-__all__ = ["BenchmarkResult", "QueryResult", "run_benchmark"]
