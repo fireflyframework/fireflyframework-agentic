@@ -27,7 +27,7 @@ from typing import Any
 
 import pytest
 
-from fireflyframework_agentic.memory.database_store import SQLiteStore
+from fireflyframework_agentic.memory.store import SQLiteStore
 from fireflyframework_agentic.memory.types import MemoryEntry, MemoryScope
 
 

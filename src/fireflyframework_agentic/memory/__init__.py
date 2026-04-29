@@ -16,7 +16,7 @@
 
 from fireflyframework_agentic.memory.conversation import ConversationMemory
 from fireflyframework_agentic.memory.manager import MemoryManager
-from fireflyframework_agentic.memory.store import FileStore, InMemoryStore, MemoryStore
+from fireflyframework_agentic.memory.store import FileStore, InMemoryStore, MemoryStore, SQLiteStore
 from fireflyframework_agentic.memory.summarization import create_llm_summarizer
 from fireflyframework_agentic.memory.types import ConversationTurn, MemoryEntry, MemoryScope
 from fireflyframework_agentic.memory.working import WorkingMemory
@@ -30,6 +30,7 @@ __all__ = [
     "MemoryManager",
     "MemoryScope",
     "MemoryStore",
+    "SQLiteStore",
     "WorkingMemory",
     "create_llm_summarizer",
 ]

@@ -14,15 +14,13 @@
 
 """Database-backed memory store implementations.
 
-This module provides persistence backends using PostgreSQL, MongoDB, and
-SQLite. PostgreSQL and MongoDB are async, pool-backed, and intended for
-production multi-tenant deployments. SQLite is sync, file-backed, and
-intended for local development and single-user installs (sqlite3 is in
-the standard library — no optional dependency required).
+This module provides production-grade persistence backends using PostgreSQL
+and MongoDB. Both implementations support connection pooling, automatic
+schema migration, and namespace-scoped isolation, and require an optional
+dependency group plus an external database service.
 
-All three implementations satisfy the
-:class:`~fireflyframework_agentic.memory.store.MemoryStore` Protocol and
-support namespace-scoped isolation.
+Stdlib-only backends (in-memory, JSON file, SQLite) live in
+:mod:`fireflyframework_agentic.memory.store`.
 
 Examples:
     PostgreSQL backend::
@@ -48,13 +46,6 @@ Examples:
             pool_size=10
         )
         await store.initialize()
-
-    SQLite backend::
-
-        from fireflyframework_agentic.memory.database_store import SQLiteStore
-
-        store = SQLiteStore("./firefly.sqlite")
-        store.save("agent_1", entry)
 """
 
 from __future__ import annotations
@@ -62,11 +53,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-import sqlite3
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 from fireflyframework_agentic.exceptions import DatabaseConnectionError, DatabaseStoreError
@@ -625,259 +613,3 @@ class MongoDBStore:
             logger.info("MongoDB connection closed")
             self._initialized = False
 
-
-# -- SQLite Store -----------------------------------------------------------
-
-
-class SQLiteStore:
-    """SQLite-backed memory store using stdlib :mod:`sqlite3`.
-
-    Unlike :class:`PostgreSQLStore` and :class:`MongoDBStore`, this backend
-    requires no optional dependencies and no remote service. It is
-    file-based, single-process safe through an in-process lock, and suitable
-    for local development, single-user installs, and any deployment where a
-    full database server would be overkill.
-
-    Multiple :class:`SQLiteStore` instances may share the same file across
-    processes; SQLite's file-level locking and optional WAL mode coordinate
-    access between them.
-
-    Parameters:
-        path: Path to the SQLite file. The file is created if it does not
-            exist; parent directories are created as needed.
-        table_name: Name of the table holding memory entries. Default
-            ``"_memory_entries"`` — the leading underscore avoids collisions
-            with business tables when the same file holds both memory and
-            ingestion data. Validated against ``[a-zA-Z_][a-zA-Z0-9_]*``.
-        wal: When *True*, opens the database in WAL journal mode for better
-            concurrent reader/writer behaviour. Default *False* (rollback
-            journal).
-    """
-
-    def __init__(
-        self,
-        path: str | Path,
-        *,
-        table_name: str = "_memory_entries",
-        wal: bool = False,
-    ) -> None:
-        if not _SAFE_IDENTIFIER.match(table_name):
-            raise ValueError(
-                f"Invalid table_name: {table_name!r}. Must be a valid SQL identifier."
-            )
-        self._path = Path(path)
-        self._table_name = table_name
-        self._wal = wal
-        self._lock = threading.Lock()
-        self._conn: sqlite3.Connection | None = None
-        self._initialize()
-
-    def _initialize(self) -> None:
-        """Open the connection, set pragmas, and migrate the schema."""
-        try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-            self._conn = sqlite3.connect(
-                str(self._path),
-                check_same_thread=False,
-                isolation_level=None,  # autocommit
-            )
-        except Exception as exc:
-            raise DatabaseConnectionError(
-                f"Failed to open SQLite database at {self._path}: {exc}"
-            ) from exc
-
-        try:
-            with self._lock:
-                cur = self._conn.cursor()
-                if self._wal:
-                    cur.execute("PRAGMA journal_mode=WAL")
-                cur.execute(
-                    f"""
-                    CREATE TABLE IF NOT EXISTS {self._table_name} (
-                        entry_id TEXT PRIMARY KEY,
-                        namespace TEXT NOT NULL,
-                        scope TEXT NOT NULL,
-                        key TEXT,
-                        content TEXT NOT NULL,
-                        created_at TEXT NOT NULL,
-                        expires_at TEXT,
-                        importance REAL NOT NULL DEFAULT 0.5
-                    )
-                    """
-                )
-                cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._table_name}_namespace "
-                    f"ON {self._table_name}(namespace)"
-                )
-                cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._table_name}_namespace_key "
-                    f"ON {self._table_name}(namespace, key) WHERE key IS NOT NULL"
-                )
-                cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._table_name}_expires_at "
-                    f"ON {self._table_name}(expires_at) WHERE expires_at IS NOT NULL"
-                )
-            logger.debug(
-                "SQLite schema ready at %s (table=%s, wal=%s)",
-                self._path,
-                self._table_name,
-                self._wal,
-            )
-        except Exception as exc:
-            raise DatabaseStoreError(f"Failed to initialise SQLite schema: {exc}") from exc
-
-    def _require_conn(self) -> sqlite3.Connection:
-        """Return the open connection, or raise if the store was closed."""
-        if self._conn is None:
-            raise DatabaseStoreError("SQLite store is closed")
-        return self._conn
-
-    def save(self, namespace: str, entry: MemoryEntry) -> None:
-        """Persist a single :class:`MemoryEntry` under *namespace*."""
-        try:
-            with self._lock:
-                self._require_conn().execute(
-                    f"""
-                    INSERT INTO {self._table_name}
-                    (entry_id, namespace, scope, key, content, created_at, expires_at, importance)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(entry_id) DO UPDATE SET
-                        namespace = excluded.namespace,
-                        scope = excluded.scope,
-                        key = excluded.key,
-                        content = excluded.content,
-                        created_at = excluded.created_at,
-                        expires_at = excluded.expires_at,
-                        importance = excluded.importance
-                    """,
-                    (
-                        entry.entry_id,
-                        namespace,
-                        entry.scope.value,
-                        entry.key,
-                        entry.model_dump_json(),
-                        entry.created_at.isoformat(),
-                        entry.expires_at.isoformat() if entry.expires_at else None,
-                        entry.importance,
-                    ),
-                )
-        except Exception as exc:
-            raise DatabaseStoreError(f"Failed to save entry: {exc}") from exc
-
-    def load(self, namespace: str) -> list[MemoryEntry]:
-        """Return all non-expired entries stored under *namespace*."""
-        try:
-            now = datetime.now(UTC).isoformat()
-            with self._lock:
-                rows = self._require_conn().execute(
-                    f"""
-                    SELECT content FROM {self._table_name}
-                    WHERE namespace = ?
-                      AND (expires_at IS NULL OR expires_at > ?)
-                    ORDER BY created_at ASC
-                    """,
-                    (namespace, now),
-                ).fetchall()
-            return [MemoryEntry.model_validate_json(r[0]) for r in rows]
-        except Exception as exc:
-            raise DatabaseStoreError(f"Failed to load entries: {exc}") from exc
-
-    def load_by_key(self, namespace: str, key: str) -> MemoryEntry | None:
-        """Return the latest non-expired entry matching *key*, or *None*."""
-        try:
-            now = datetime.now(UTC).isoformat()
-            with self._lock:
-                row = self._require_conn().execute(
-                    f"""
-                    SELECT content FROM {self._table_name}
-                    WHERE namespace = ?
-                      AND key = ?
-                      AND (expires_at IS NULL OR expires_at > ?)
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                    """,
-                    (namespace, key, now),
-                ).fetchone()
-            if row is None:
-                return None
-            return MemoryEntry.model_validate_json(row[0])
-        except Exception as exc:
-            raise DatabaseStoreError(f"Failed to load entry by key: {exc}") from exc
-
-    def delete(self, namespace: str, entry_id: str) -> None:
-        """Remove a single entry by ID."""
-        try:
-            with self._lock:
-                self._require_conn().execute(
-                    f"DELETE FROM {self._table_name} WHERE namespace = ? AND entry_id = ?",
-                    (namespace, entry_id),
-                )
-        except Exception as exc:
-            raise DatabaseStoreError(f"Failed to delete entry: {exc}") from exc
-
-    def clear(self, namespace: str) -> None:
-        """Remove all entries in *namespace*."""
-        try:
-            with self._lock:
-                self._require_conn().execute(
-                    f"DELETE FROM {self._table_name} WHERE namespace = ?",
-                    (namespace,),
-                )
-        except Exception as exc:
-            raise DatabaseStoreError(f"Failed to clear namespace: {exc}") from exc
-
-    def cleanup_expired(self) -> int:
-        """Remove all expired entries across all namespaces.
-
-        Returns:
-            Number of entries deleted.
-        """
-        try:
-            now = datetime.now(UTC).isoformat()
-            with self._lock:
-                cur = self._require_conn().execute(
-                    f"""
-                    DELETE FROM {self._table_name}
-                    WHERE expires_at IS NOT NULL AND expires_at <= ?
-                    """,
-                    (now,),
-                )
-                count = cur.rowcount
-            logger.debug("Cleaned up %d expired entries", count)
-            return count
-        except Exception as exc:
-            raise DatabaseStoreError(f"Failed to cleanup expired entries: {exc}") from exc
-
-    def close(self) -> None:
-        """Close the SQLite connection. Idempotent."""
-        with self._lock:
-            if self._conn is not None:
-                self._conn.close()
-                self._conn = None
-                logger.info("SQLite connection closed")
-
-    # -- Async wrappers ------------------------------------------------------
-
-    async def async_save(self, namespace: str, entry: MemoryEntry) -> None:
-        """Non-blocking version of :meth:`save`."""
-        await asyncio.to_thread(self.save, namespace, entry)
-
-    async def async_load(self, namespace: str) -> list[MemoryEntry]:
-        """Non-blocking version of :meth:`load`."""
-        return await asyncio.to_thread(self.load, namespace)
-
-    async def async_load_by_key(self, namespace: str, key: str) -> MemoryEntry | None:
-        """Non-blocking version of :meth:`load_by_key`."""
-        return await asyncio.to_thread(self.load_by_key, namespace, key)
-
-    async def async_delete(self, namespace: str, entry_id: str) -> None:
-        """Non-blocking version of :meth:`delete`."""
-        await asyncio.to_thread(self.delete, namespace, entry_id)
-
-    async def async_clear(self, namespace: str) -> None:
-        """Non-blocking version of :meth:`clear`."""
-        await asyncio.to_thread(self.clear, namespace)
-
-    async def async_cleanup_expired(self) -> int:
-        """Non-blocking version of :meth:`cleanup_expired`."""
-        return await asyncio.to_thread(self.cleanup_expired)
