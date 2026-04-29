@@ -23,7 +23,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-_DEFAULT_EMBED_MODEL = "openai:text-embedding-3-small"
+_DEFAULT_EMBED_MODEL = "azure:text-embedding-3-small"
 _DEFAULT_EXPANSION_MODEL = "anthropic:claude-haiku-4-5-20251001"
 _DEFAULT_ANSWER_MODEL = "anthropic:claude-sonnet-4-6"
 _DEFAULT_ROOT = Path("./kg")
@@ -62,12 +62,36 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _check_keys(need_anthropic: bool, need_openai: bool) -> int:
+def _check_keys(*, embed_model: str, need_anthropic: bool) -> int:
+    """Validate that the env contains the credentials the chosen backends need.
+
+    The embedding provider is parsed from the ``embed_model`` prefix:
+
+    - ``azure:<deployment>`` requires ``EMBEDDING_BINDING_HOST`` and
+      ``EMBEDDING_BINDING_API_KEY``.
+    - ``openai:<model>`` requires ``OPENAI_API_KEY``.
+
+    ``need_anthropic`` is set by the ``query`` subcommand only — ingest doesn't
+    need ``ANTHROPIC_API_KEY``.
+    """
+    provider = embed_model.split(":", 1)[0] if ":" in embed_model else "openai"
+    if provider == "azure":
+        if not os.environ.get("EMBEDDING_BINDING_HOST"):
+            sys.stderr.write("EMBEDDING_BINDING_HOST missing (set in environment or .env)\n")
+            return 2
+        if not os.environ.get("EMBEDDING_BINDING_API_KEY"):
+            sys.stderr.write("EMBEDDING_BINDING_API_KEY missing (set in environment or .env)\n")
+            return 2
+    elif provider == "openai":
+        if not os.environ.get("OPENAI_API_KEY"):
+            sys.stderr.write("OPENAI_API_KEY missing (set in environment or .env)\n")
+            return 2
+    else:
+        sys.stderr.write(f"Unknown embedding provider: {provider!r}\n")
+        return 2
+
     if need_anthropic and not os.environ.get("ANTHROPIC_API_KEY"):
         sys.stderr.write("ANTHROPIC_API_KEY missing (set in environment or .env)\n")
-        return 2
-    if need_openai and not os.environ.get("OPENAI_API_KEY"):
-        sys.stderr.write("OPENAI_API_KEY missing (set in environment or .env)\n")
         return 2
     return 0
 
@@ -124,12 +148,12 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
 
     if args.command == "ingest":
-        rc = _check_keys(need_anthropic=False, need_openai=True)
+        rc = _check_keys(embed_model=args.embed_model, need_anthropic=False)
         if rc:
             return rc
         return asyncio.run(_run_ingest(args))
     if args.command == "query":
-        rc = _check_keys(need_anthropic=True, need_openai=True)
+        rc = _check_keys(embed_model=_DEFAULT_EMBED_MODEL, need_anthropic=True)
         if rc:
             return rc
         return asyncio.run(_run_query(args))

@@ -89,7 +89,9 @@ async def agent(tmp_path):
             _embedder=_StubEmbedder(),
             _vector_store=_StubVectorStore(),
         )
-    await a._ensure_started()
+        # _ensure_started constructs QueryExpander + AnswerAgent (lazy);
+        # keep the FireflyAgent patches active during this call.
+        await a._ensure_started()
     yield a
     await a.close()
 

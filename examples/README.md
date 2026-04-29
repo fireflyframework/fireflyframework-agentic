@@ -79,14 +79,14 @@ If `OPENAI_API_KEY` is not set, each script will prompt you interactively.
 - **`corpus_search/`** — Drop a folder, get a queryable corpus. Hybrid retrieval over local files: `markitdown` converts each document, chunks land in SQLite (FTS5/BM25) plus a Chroma vector store. Query with natural language → Haiku expands the question into reformulations → BM25 + vector search per variant → Reciprocal Rank Fusion merges rankings → Sonnet synthesises an answer with `[chunk_id]` citations. No knowledge graph, no extractors, no reranker — just qmd-style hybrid search.
 
   ```bash
-  # Ingest
-  ANTHROPIC_API_KEY=... OPENAI_API_KEY=... \
+  # Ingest (Azure OpenAI for embeddings — no Anthropic key needed)
+  EMBEDDING_BINDING_HOST=https://...openai.azure.com EMBEDDING_BINDING_API_KEY=... \
     uv run python -m examples.corpus_search ingest --folder ./drop
 
   # Watch a folder for new files
   uv run python -m examples.corpus_search ingest --folder ./drop --watch
 
-  # Ask questions
+  # Ask questions (also needs ANTHROPIC_API_KEY for expansion + answer)
   uv run python -m examples.corpus_search query "Who is the CEO of OpenAI?"
   ```
 

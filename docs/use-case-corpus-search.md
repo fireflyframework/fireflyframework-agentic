@@ -59,8 +59,12 @@ services beyond LLM/embedding API calls. The agent runs as a single Python proce
 | Document loading | `markitdown[pdf,docx,pptx,xlsx]` |
 
 Network calls in V1 are limited to:
-- **OpenAI** — chunk embeddings (`text-embedding-3-small`).
+- **Embeddings** — Azure OpenAI by default (`EMBEDDING_BINDING_HOST` +
+  `EMBEDDING_BINDING_API_KEY`). Plain OpenAI is supported by passing
+  `--embed-model openai:<model>` (uses `OPENAI_API_KEY`).
 - **Anthropic** — query expansion (Haiku) and answer synthesis (Sonnet).
+  `ANTHROPIC_API_KEY` is **only required for `query`** — `ingest` never calls
+  Anthropic, so it can run with embedding credentials alone.
 
 ---
 
@@ -80,7 +84,8 @@ Network calls in V1 are limited to:
 | Answer synthesis | Sonnet 4.6 with retrieved chunks as context, `[chunk_id]` citations |
 | LLM (expansion) | `anthropic:claude-haiku-4-5-20251001`; env `ANTHROPIC_API_KEY` |
 | LLM (answer) | `anthropic:claude-sonnet-4-6` |
-| Embeddings | `openai:text-embedding-3-small`; env `OPENAI_API_KEY` |
+| Embeddings (default) | `azure:text-embedding-3-small` — env `EMBEDDING_BINDING_HOST` + `EMBEDDING_BINDING_API_KEY` |
+| Embeddings (alternative) | `openai:text-embedding-3-small` — env `OPENAI_API_KEY` |
 | Concurrency | Files processed serially in V1 |
 | Config surface | CLI flags only (no config file) |
 | Default `--root` | `./kg` |
@@ -421,15 +426,15 @@ There is no "rerun-only-failed" path.
 Single entry point with two subcommands:
 
 ```bash
-# Ingest
+# Ingest (default: Azure OpenAI for embeddings, no Anthropic key needed)
 python -m examples.corpus_search ingest \
     --folder ./drop \
     [--root ./kg] \
-    [--embed-model openai:text-embedding-3-small] \
+    [--embed-model azure:text-embedding-3-small] \
     [--watch] \
     [--verbose]
 
-# Query
+# Query (requires ANTHROPIC_API_KEY for expansion + answer)
 python -m examples.corpus_search query "who is the CEO of OpenAI?" \
     [--root ./kg] \
     [--expansion-model anthropic:claude-haiku-4-5-20251001] \
@@ -438,7 +443,14 @@ python -m examples.corpus_search query "who is the CEO of OpenAI?" \
     [--verbose]
 ```
 
-Both API keys read from environment / `.env` (matching the dotenv refactor in `examples/`).
+API keys read from environment / `.env` (matching the dotenv refactor in `examples/`).
+The CLI validates exactly the credentials needed for the chosen subcommand:
+
+| Subcommand | `--embed-model` prefix | Required env vars |
+|---|---|---|
+| `ingest` | `azure:` (default) | `EMBEDDING_BINDING_HOST`, `EMBEDDING_BINDING_API_KEY` |
+| `ingest` | `openai:` | `OPENAI_API_KEY` |
+| `query` | (uses defaults) | `EMBEDDING_BINDING_HOST`, `EMBEDDING_BINDING_API_KEY`, `ANTHROPIC_API_KEY` |
 
 ---
 

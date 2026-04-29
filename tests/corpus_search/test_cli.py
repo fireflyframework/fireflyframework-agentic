@@ -14,7 +14,7 @@ def test_ingest_subcommand_parses_required_folder():
     assert ns.folder == Path("./drop")
     assert ns.root == Path("./kg")
     assert ns.watch is False
-    assert ns.embed_model.startswith("openai:text-embedding")
+    assert ns.embed_model.startswith("azure:text-embedding")
 
 
 def test_ingest_subcommand_with_watch_and_custom_root():
