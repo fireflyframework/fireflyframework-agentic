@@ -1,22 +1,17 @@
 # Tests
 
-The test suite is organized by **purpose**, with the PR-gate vs nightly split controlled by the `@pytest.mark.nightly` marker.
+The test suite is organized by **purpose** (Recommenders-style categories) and split between **PR-gate** and **nightly** runs via the `@pytest.mark.nightly` marker.
+
+## PR-gate vs nightly
+
+- **PR-gate** runs on every pull request. It must stay fast and self-contained: no API keys, no real databases, no external network. Its job is to catch breaking changes before merge. A test runs in PR-gate by default.
+- **Nightly** runs once a day on `main` (and on manual dispatch). It runs the entire suite — everything PR-gate runs **plus** anything decorated with `@pytest.mark.nightly`. The nightly bucket is for tests that are too slow, too expensive, too flaky on shared runners, or too dependent on real infrastructure to belong on the PR critical path. Examples: benchmarks (timing-sensitive), real LLM/DB/HTTP integration tests, long end-to-end flows, fairness probes that hit a real model.
+
+A test opts into nightly-only by adding `@pytest.mark.nightly` to its function or class. Anything without the marker stays in both runs.
 
 ## Categories
 
-| Folder | What goes here |
-|---|---|
-| `unit/` | Pure logic. No real network, DB, or LLM calls. Mocks/fakes are fine. |
-| `integration/` | Multiple subsystems wired together (e.g. agent + middleware + memory + pipeline). Mocks at external boundaries are still allowed. |
-| `functional/` | A user-facing feature exercised end-to-end ("the agent completes workflow X"). |
-| `performance/` | Benchmarks (`pytest-benchmark`). Files must be named `test_bench_*.py` so pytest's default collection picks them up. Marked `@pytest.mark.nightly`. |
-| `security/` | Defenses against attackers (SQL injection, prompt injection, RBAC, encryption). |
-| `data_validation/` | Schema, contract, and configuration validation. |
-| `responsible_ai/` | Safety of the system itself: PII in outputs, content filtering, fairness. |
-
-`integration/` is about **wiring**; `functional/` is about **product behavior**. `security/` is about **adversaries**; `responsible_ai/` is about the **system not misbehaving on its own**.
-
-The taxonomy is adapted from [Recommenders](https://github.com/recommenders-team/recommenders). Definitions below follow Recommenders' wording, narrowed to an agentic framework.
+The taxonomy is adapted from [Recommenders](https://github.com/recommenders-team/recommenders). Definitions follow Recommenders' wording, narrowed to an agentic framework.
 
 ### `unit/` — unit tests
 
@@ -46,9 +41,7 @@ Tests that **ensure that the schema for input and output data for each function 
 
 Tests that **enforce fairness, transparency, explainability, human-centeredness, and privacy**. Not about adversaries; about the system not misbehaving on its own. PII leakage in LLM outputs, content safety filtering, bias in routing decisions, audit-trail completeness.
 
-## The `@pytest.mark.nightly` marker
-
-Tests that need real LLM/DB/HTTP infrastructure (or otherwise take long enough that they don't belong in PR CI) get marked:
+## Applying the `@pytest.mark.nightly` marker
 
 ```python
 import pytest
@@ -58,7 +51,7 @@ async def test_real_postgres_round_trip():
     ...
 ```
 
-The marker goes on **functions or classes only**, never via `pytestmark` at file level. Grep the suite to enumerate exactly what runs at night:
+The marker goes on **functions or classes only**, never via `pytestmark` at file level. Grep to list exactly what runs nightly-only:
 
 ```bash
 grep -rn "@pytest.mark.nightly" tests/
