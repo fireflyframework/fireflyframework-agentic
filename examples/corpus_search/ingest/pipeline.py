@@ -24,6 +24,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from examples.corpus_search.corpus import SqliteCorpus, StoredChunk
 from examples.corpus_search.ingest.ledger import IngestLedger
+from examples.corpus_search.ingest.retry import embed_with_retry
 from fireflyframework_agentic.content.chunking import TextChunker
 from fireflyframework_agentic.content.loaders import Document, MarkitdownLoader
 from fireflyframework_agentic.embeddings.types import EmbeddingResult
@@ -137,7 +138,13 @@ async def ingest_one(
             await ledger.upsert(doc_id, source_path, content_hash, status="success")
             return IngestionResult(doc_id=doc_id, source_path=source_path, status="success", n_chunks=0)
 
-        emb_result = await embedder.embed([c.content for c in stored_chunks])
+        emb_result = await embed_with_retry(
+            embedder,
+            [c.content for c in stored_chunks],
+            max_attempts=5,
+            initial_delay=1.0,
+            max_delay=60.0,
+        )
         embeddings = emb_result.embeddings
 
         await corpus.upsert_chunks(stored_chunks)
