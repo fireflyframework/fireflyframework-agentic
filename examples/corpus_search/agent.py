@@ -141,13 +141,9 @@ class CorpusAgent:
             azure_endpoint = os.environ.get("EMBEDDING_BINDING_HOST")
             api_key = os.environ.get("EMBEDDING_BINDING_API_KEY")
             if not azure_endpoint:
-                raise RuntimeError(
-                    "Azure embedder requires EMBEDDING_BINDING_HOST in the environment."
-                )
+                raise RuntimeError("Azure embedder requires EMBEDDING_BINDING_HOST in the environment.")
             if not api_key:
-                raise RuntimeError(
-                    "Azure embedder requires EMBEDDING_BINDING_API_KEY in the environment."
-                )
+                raise RuntimeError("Azure embedder requires EMBEDDING_BINDING_API_KEY in the environment.")
             return AzureEmbedder(
                 model=deployment,
                 azure_endpoint=azure_endpoint,
@@ -159,9 +155,7 @@ class CorpusAgent:
 
             return OpenAIEmbedder(model=deployment)
 
-        raise ValueError(
-            f"Unknown embedding provider {provider!r} (use 'azure:<deployment>' or 'openai:<model>')."
-        )
+        raise ValueError(f"Unknown embedding provider {provider!r} (use 'azure:<deployment>' or 'openai:<model>').")
 
     def _build_vector_store(self) -> Any:
         import chromadb
@@ -205,9 +199,7 @@ class CorpusAgent:
         root = Path(folder)
         watcher = FolderWatcher(folder=root)
         results: list[IngestionResult] = []
-        candidates = sorted(
-            p for p in root.rglob("*") if p.is_file() and not watcher._is_hidden(p)
-        )
+        candidates = sorted(p for p in root.rglob("*") if p.is_file() and not watcher._is_hidden(p))
         log.info("found %d file(s) under %s", len(candidates), root)
         for path in candidates:
             results.append(await self.ingest_one(path))
@@ -242,7 +234,9 @@ class CorpusAgent:
         # then narrows to top_k by judged relevance — better precision
         # than RRF-positional alone.
         candidates = await self._retriever.retrieve(
-            queries, top_k_per_query=30, top_k_final=self._rerank_pool,
+            queries,
+            top_k_per_query=30,
+            top_k_final=self._rerank_pool,
         )
         top_hits = await self._reranker.rerank(question, candidates, top_k=top_k)
         return await self._answerer.answer(question, top_hits)

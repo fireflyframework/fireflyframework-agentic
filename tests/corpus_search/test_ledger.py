@@ -55,9 +55,7 @@ async def test_load_failed_status_does_not_skip(ledger: IngestLedger):
 async def test_upsert_increments_attempt_on_re_upsert(ledger: IngestLedger):
     await ledger.upsert("doc-1", "/tmp/x.pdf", "h1", status="failed")
     await ledger.upsert("doc-1", "/tmp/x.pdf", "h2", status="success")
-    rows = await ledger._corpus.query(
-        "SELECT attempt, status, content_hash FROM ingestions WHERE doc_id='doc-1'"
-    )
+    rows = await ledger._corpus.query("SELECT attempt, status, content_hash FROM ingestions WHERE doc_id='doc-1'")
     assert rows[0]["attempt"] == 2
     assert rows[0]["status"] == "success"
     assert rows[0]["content_hash"] == "h2"
@@ -65,9 +63,7 @@ async def test_upsert_increments_attempt_on_re_upsert(ledger: IngestLedger):
 
 async def test_upsert_writes_iso_timestamp(ledger: IngestLedger):
     await ledger.upsert("doc-1", "/tmp/x.pdf", "h", status="success")
-    rows = await ledger._corpus.query(
-        "SELECT ingested_at FROM ingestions WHERE doc_id='doc-1'"
-    )
+    rows = await ledger._corpus.query("SELECT ingested_at FROM ingestions WHERE doc_id='doc-1'")
     # ISO-8601 with timezone, e.g. "2026-04-29T...+00:00"
     ts = rows[0]["ingested_at"]
     assert "T" in ts

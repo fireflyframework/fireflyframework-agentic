@@ -12,6 +12,7 @@ from examples.corpus_search.retrieval.hybrid import (
 
 # --- RRF helper -----------------------------------------------------------
 
+
 def test_rrf_with_single_ranking_returns_input_order():
     rankings = [["a", "b", "c"]]
     out = reciprocal_rank_fusion(rankings, k=60)
@@ -46,6 +47,7 @@ def test_rrf_empty_rankings_returns_empty():
 
 
 # --- HybridRetriever ------------------------------------------------------
+
 
 class _StubEmbedder:
     async def embed_one(self, text: str, **kwargs: Any) -> list[float]:
@@ -85,8 +87,14 @@ async def corpus(tmp_path):
     c = SqliteCorpus(tmp_path / "corpus.sqlite")
     await c.initialise()
     chunks = [
-        StoredChunk(chunk_id=f"d-{i}", doc_id="d", source_path="/p", index_in_doc=i,
-                    content=f"content {i} sam altman openai", metadata={})
+        StoredChunk(
+            chunk_id=f"d-{i}",
+            doc_id="d",
+            source_path="/p",
+            index_in_doc=i,
+            content=f"content {i} sam altman openai",
+            metadata={},
+        )
         for i in range(5)
     ]
     await c.upsert_chunks(chunks)
@@ -112,10 +120,12 @@ async def test_retrieve_combines_bm25_and_vector_via_rrf(corpus):
 
 
 async def test_retrieve_with_multiple_queries_dedupes(corpus):
-    vector_store = _StubVectorStore({
-        3.0: ["d-0", "d-1"],   # for "sam" (len 3)
-        3.0 + 1: ["d-1"],      # not used since we only key on first dim
-    })
+    vector_store = _StubVectorStore(
+        {
+            3.0: ["d-0", "d-1"],  # for "sam" (len 3)
+            3.0 + 1: ["d-1"],  # not used since we only key on first dim
+        }
+    )
     embedder = _StubEmbedder()
     retriever = HybridRetriever(corpus=corpus, vector_store=vector_store, embedder=embedder)
     hits = await retriever.retrieve(["sam", "sam"], top_k_per_query=5, top_k_final=10)

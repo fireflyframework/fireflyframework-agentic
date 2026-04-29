@@ -54,10 +54,7 @@ class QueryExpander:
         )
 
     async def expand(self, question: str, *, n_variants: int = 4) -> list[str]:
-        prompt = (
-            f"Generate {n_variants} alternative phrasings.\n\n"
-            f"Question: {question}"
-        )
+        prompt = f"Generate {n_variants} alternative phrasings.\n\nQuestion: {question}"
         try:
             result = await self._agent.run(prompt)
             variants = list(getattr(result, "output", _ExpandedQueries()).variants)

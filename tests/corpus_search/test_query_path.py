@@ -127,17 +127,26 @@ async def populated_corpus(tmp_path):
     await corpus.initialise()
     chunks = [
         StoredChunk(
-            chunk_id="d1-0", doc_id="d1", source_path="/tmp/sales.md", index_in_doc=0,
+            chunk_id="d1-0",
+            doc_id="d1",
+            source_path="/tmp/sales.md",
+            index_in_doc=0,
             content="The best region for sales is the Pacific Northwest.",
             metadata={},
         ),
         StoredChunk(
-            chunk_id="d1-1", doc_id="d1", source_path="/tmp/sales.md", index_in_doc=1,
+            chunk_id="d1-1",
+            doc_id="d1",
+            source_path="/tmp/sales.md",
+            index_in_doc=1,
             content="Quarterly revenue grew 15% across all regions.",
             metadata={},
         ),
         StoredChunk(
-            chunk_id="d2-0", doc_id="d2", source_path="/tmp/people.md", index_in_doc=0,
+            chunk_id="d2-0",
+            doc_id="d2",
+            source_path="/tmp/people.md",
+            index_in_doc=0,
             content="Sam Altman is the chief executive officer of OpenAI.",
             metadata={},
         ),
@@ -150,7 +159,8 @@ async def populated_corpus(tmp_path):
 async def test_bm25_search_with_question_mark_returns_results(populated_corpus):
     """The original smoke-test bug: ``?`` raised OperationalError. Sanitisation now strips it."""
     hits = await populated_corpus.bm25_search(
-        "What is the best region in terms of sales?", top_k=10,
+        "What is the best region in terms of sales?",
+        top_k=10,
     )
     chunk_ids = {h.chunk_id for h in hits}
     # The sales-related chunk is hit
@@ -200,7 +210,9 @@ class _StubEmbedder:
     async def embed(self, texts: list[str], **kwargs: Any) -> EmbeddingResult:
         return EmbeddingResult(
             embeddings=[[float(len(t)), 0.0, 0.0, 0.0] for t in texts],
-            model="stub", usage=None, dimensions=4,
+            model="stub",
+            usage=None,
+            dimensions=4,
         )
 
     async def embed_one(self, text: str, **kwargs: Any) -> list[float]:
@@ -219,16 +231,19 @@ class _StubVectorStore:
         for i in ids:
             self.docs.pop(i, None)
 
-    async def search(self, query_embedding: list[float], top_k: int = 5,
-                     namespace: str = "default", filters: Any = None) -> list[Any]:
+    async def search(
+        self, query_embedding: list[float], top_k: int = 5, namespace: str = "default", filters: Any = None
+    ) -> list[Any]:
         out = []
         for did in sorted(self.docs):
+
             class _R:
                 def __init__(self, i: str) -> None:
                     self.id = i
                     self.score = 0.0
                     self.metadata: dict[str, Any] = {}
                     self.content = ""
+
             out.append(_R(did))
         return out[:top_k]
 
@@ -252,11 +267,13 @@ async def agent(tmp_path):
             _vector_store=_StubVectorStore(),
         )
         await a._ensure_started()
+
         # Default the reranker to a passthrough so query-path tests focus
         # on the surrounding pipeline. Individual tests override when they
         # want to exercise reranker semantics.
         async def _passthrough(question, hits, *, top_k):
             return list(hits[:top_k])
+
         a._reranker.rerank = _passthrough
     yield a
     await a.close()
@@ -265,6 +282,7 @@ async def agent(tmp_path):
 def _stub_run_result(answer: Answer) -> Any:
     class _R:
         pass
+
     r = _R()
     r.output = answer
     return r
@@ -281,16 +299,19 @@ async def test_query_with_question_mark_does_not_blow_up_bm25(agent, tmp_path):
     await agent.ingest_one(src / "doc.txt")
 
     # Stub expansion and answer.
-    agent._expander.expand = AsyncMock(return_value=[
-        "What is the best region in terms of sales?",
-        "best sales region",
-    ])
+    agent._expander.expand = AsyncMock(
+        return_value=[
+            "What is the best region in terms of sales?",
+            "best sales region",
+        ]
+    )
     canned = Answer(text="Pacific Northwest [d-0].", citations=["d-0"])
     agent._answerer._agent.run = AsyncMock(return_value=_stub_run_result(canned))
 
     # Run BM25 directly first to confirm sanitisation made it work.
     bm25_hits = await agent._corpus.bm25_search(
-        "What is the best region in terms of sales?", top_k=10,
+        "What is the best region in terms of sales?",
+        top_k=10,
     )
     assert len(bm25_hits) >= 1, "sanitisation should let BM25 return hits for ?-terminated queries"
 
@@ -333,6 +354,7 @@ async def test_query_routes_top_k_to_reranker_not_retriever(agent, tmp_path):
     async def _retrieve_spy(queries, *, top_k_per_query, top_k_final):
         seen_retrieve_top_k.append(top_k_final)
         return await original_retrieve(queries, top_k_per_query=top_k_per_query, top_k_final=top_k_final)
+
     agent._retriever.retrieve = _retrieve_spy
 
     # Spy on reranker — should see the user's top_k.
@@ -341,6 +363,7 @@ async def test_query_routes_top_k_to_reranker_not_retriever(agent, tmp_path):
     async def _rerank_spy(question, hits, *, top_k):
         seen_rerank_top_k.append(top_k)
         return list(hits[:top_k])
+
     agent._reranker.rerank = _rerank_spy
 
     await agent.query("sales", top_k=3)
@@ -353,9 +376,7 @@ async def test_query_with_unicode_question_does_not_blow_up(agent, tmp_path):
     """Spanish/Portuguese accents are preserved through sanitisation."""
     src = tmp_path / "drop"
     src.mkdir()
-    (src / "saude.txt").write_text(
-        "El sistema de saúde brasileño tiene grandes retos en oncología y epidemiología."
-    )
+    (src / "saude.txt").write_text("El sistema de saúde brasileño tiene grandes retos en oncología y epidemiología.")
     await agent.ingest_one(src / "saude.txt")
 
     agent._expander.expand = AsyncMock(return_value=["¿Qué retos tiene la oncología en Brasil?"])

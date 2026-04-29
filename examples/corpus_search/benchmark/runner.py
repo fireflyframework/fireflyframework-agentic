@@ -118,8 +118,8 @@ class QueryResult:
     hit_at_1: bool = False
     hit_at_5: bool = False
     hit_at_20: bool = False
-    doc_match: bool = False           # was at least one expected doc retrieved at all
-    substring_match: bool = False     # at least one expected substring appeared in retrieved content
+    doc_match: bool = False  # was at least one expected doc retrieved at all
+    substring_match: bool = False  # at least one expected substring appeared in retrieved content
     rank_of_first_match: int | None = None  # 1-indexed; None if not retrieved
     rejected_correctly: bool | None = None  # True/False for negative queries; None for non-negative
 
@@ -167,9 +167,7 @@ def _expected_substring_present(hits: Sequence[ChunkHit], expected: Sequence[str
     return any(s in haystack for s in expected)
 
 
-def _rank_of_first_doc_match(
-    hits: Sequence[ChunkHit], expected_basenames: Sequence[str]
-) -> int | None:
+def _rank_of_first_doc_match(hits: Sequence[ChunkHit], expected_basenames: Sequence[str]) -> int | None:
     if not expected_basenames:
         return None
     for i, h in enumerate(hits, start=1):
@@ -217,9 +215,7 @@ def _build_embedder(mode: str) -> Any:
         endpoint = os.environ.get("EMBEDDING_BINDING_HOST")
         api_key = os.environ.get("EMBEDDING_BINDING_API_KEY")
         if not endpoint or not api_key:
-            raise RuntimeError(
-                "Real mode requires EMBEDDING_BINDING_HOST and EMBEDDING_BINDING_API_KEY."
-            )
+            raise RuntimeError("Real mode requires EMBEDDING_BINDING_HOST and EMBEDDING_BINDING_API_KEY.")
         return AzureEmbedder(
             model="text-embedding-3-small",
             azure_endpoint=endpoint,
@@ -274,7 +270,9 @@ async def run_benchmark(
             n_docs = sum(1 for p in _CORPUS_DIR.iterdir() if p.is_file())
 
             retriever = HybridRetriever(
-                corpus=corpus, vector_store=vector_store, embedder=embedder,
+                corpus=corpus,
+                vector_store=vector_store,
+                embedder=embedder,
             )
             reranker = None
             if use_rerank:
@@ -293,8 +291,7 @@ async def run_benchmark(
                 )
                 qr_list.append(qr)
 
-            agg = _aggregate(qr_list, mode=mode, use_rerank=use_rerank,
-                             n_corpus_docs=n_docs, n_corpus_chunks=n_chunks)
+            agg = _aggregate(qr_list, mode=mode, use_rerank=use_rerank, n_corpus_docs=n_docs, n_corpus_chunks=n_chunks)
 
             if print_summary:
                 _print_summary(agg)
@@ -325,7 +322,9 @@ async def _evaluate_query(
     # without rerank.
     pool_size = max(20, rerank_pool, top_k)
     candidates = await retriever.retrieve(
-        queries_for_retrieval, top_k_per_query=30, top_k_final=pool_size,
+        queries_for_retrieval,
+        top_k_per_query=30,
+        top_k_final=pool_size,
     )
 
     if reranker is not None:
@@ -389,17 +388,12 @@ def _aggregate(
     hit5 = sum(1 for q in non_neg if q.hit_at_5) / n_non_neg
     hit20 = sum(1 for q in non_neg if q.hit_at_20) / n_non_neg
 
-    mrr = sum(
-        (1.0 / q.rank_of_first_match) if q.rank_of_first_match else 0.0
-        for q in non_neg
-    ) / n_non_neg
+    mrr = sum((1.0 / q.rank_of_first_match) if q.rank_of_first_match else 0.0 for q in non_neg) / n_non_neg
 
     doc_match = sum(1 for q in non_neg if q.doc_match) / n_non_neg
     substr_match = sum(1 for q in non_neg if q.substring_match) / n_non_neg
 
-    correct_rejection = (
-        sum(1 for q in neg if q.rejected_correctly) / len(neg) if neg else None
-    )
+    correct_rejection = sum(1 for q in neg if q.rejected_correctly) / len(neg) if neg else None
 
     # By-category rollup
     by_cat: dict[str, dict[str, float]] = {}
@@ -482,20 +476,26 @@ def main(argv: list[str] | None = None) -> int:
         description="Run the corpus_search retrieval benchmark.",
     )
     parser.add_argument(
-        "--mode", choices=("mechanics", "real"), default="mechanics",
+        "--mode",
+        choices=("mechanics", "real"),
+        default="mechanics",
         help="mechanics: stub embedder, no API. real: Azure OpenAI embeddings.",
     )
     parser.add_argument(
-        "--rerank", action="store_true",
+        "--rerank",
+        action="store_true",
         help="Add the Haiku listwise reranker between retrieval and metrics.",
     )
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--rerank-pool", type=int, default=20)
     parser.add_argument(
-        "--rerank-model", default="anthropic:claude-haiku-4-5-20251001",
+        "--rerank-model",
+        default="anthropic:claude-haiku-4-5-20251001",
     )
     parser.add_argument(
-        "--json", type=Path, default=None,
+        "--json",
+        type=Path,
+        default=None,
         help="Write machine-readable results to this path.",
     )
     parser.add_argument("--quiet", action="store_true")
@@ -507,31 +507,29 @@ def main(argv: list[str] | None = None) -> int:
     )
     # Silence the noisy framework agent middleware — benchmark output is
     # what we actually want to read.
-    for noisy in ("fireflyframework_agentic.agents.builtin_middleware",
-                  "fireflyframework_agentic.events",
-                  "httpx"):
+    for noisy in ("fireflyframework_agentic.agents.builtin_middleware", "fireflyframework_agentic.events", "httpx"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
     if args.mode == "real" and not (
         os.environ.get("EMBEDDING_BINDING_HOST") and os.environ.get("EMBEDDING_BINDING_API_KEY")
     ):
-        sys.stderr.write(
-            "real mode requires EMBEDDING_BINDING_HOST and EMBEDDING_BINDING_API_KEY\n"
-        )
+        sys.stderr.write("real mode requires EMBEDDING_BINDING_HOST and EMBEDDING_BINDING_API_KEY\n")
         return 2
     if args.rerank and not os.environ.get("ANTHROPIC_API_KEY"):
         sys.stderr.write("--rerank requires ANTHROPIC_API_KEY\n")
         return 2
 
-    asyncio.run(run_benchmark(
-        mode=args.mode,
-        use_rerank=args.rerank,
-        top_k=args.top_k,
-        rerank_pool=args.rerank_pool,
-        rerank_model=args.rerank_model,
-        json_out=args.json,
-        print_summary=not args.quiet,
-    ))
+    asyncio.run(
+        run_benchmark(
+            mode=args.mode,
+            use_rerank=args.rerank,
+            top_k=args.top_k,
+            rerank_pool=args.rerank_pool,
+            rerank_model=args.rerank_model,
+            json_out=args.json,
+            print_summary=not args.quiet,
+        )
+    )
     return 0
 
 

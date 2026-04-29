@@ -162,7 +162,10 @@ async def embed_with_retry(
             wait = min(wait, max_delay)
             log.warning(
                 "embed attempt %d/%d failed (%s); retrying in %.1fs",
-                attempt, max_attempts, type(exc).__name__, wait,
+                attempt,
+                max_attempts,
+                type(exc).__name__,
+                wait,
             )
             await sleep_fn(wait)
             delay = min(delay * backoff_factor, max_delay)

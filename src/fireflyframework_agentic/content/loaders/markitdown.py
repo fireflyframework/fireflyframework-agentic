@@ -40,6 +40,7 @@ class MarkitdownLoader:
     def _md_instance(self) -> Any:
         if self._md is None:
             from markitdown import MarkItDown
+
             self._md = MarkItDown()
         return self._md
 

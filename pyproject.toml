@@ -126,6 +126,7 @@ dev = [
     "pdfplumber>=0.11.0",
     "pre-commit>=3.8.0",
     "python-dotenv>=1.0.0",
+    "markitdown[pdf,docx,pptx,xlsx]>=0.0.1a3",
 ]
 
 [project.urls]

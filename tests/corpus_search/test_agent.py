@@ -53,17 +53,20 @@ class _StubVectorStore:
         for i in ids:
             self.docs.pop(i, None)
 
-    async def search(self, query_embedding: list[float], top_k: int = 5,
-                     namespace: str = "default", filters: Any = None) -> list[Any]:
+    async def search(
+        self, query_embedding: list[float], top_k: int = 5, namespace: str = "default", filters: Any = None
+    ) -> list[Any]:
         # Naive: return all known docs ordered by id (deterministic)
         out = []
         for did in sorted(self.docs):
+
             class _R:
                 def __init__(self, i: str) -> None:
                     self.id = i
                     self.score = 0.0
                     self.metadata: dict[str, Any] = {}
                     self.content = ""
+
             out.append(_R(did))
         return out[:top_k]
 
@@ -139,9 +142,11 @@ async def test_query_returns_answer_with_citations(agent, tmp_path):
     agent._expander.expand = AsyncMock(return_value=["sam altman"])
     agent._reranker.rerank = _passthrough_reranker
     canned = Answer(text="Sam Altman is the CEO. [d-0]", citations=["d-0"])
+
     class _RR:
         def __init__(self, a: Answer) -> None:
             self.output = a
+
     agent._answerer._agent.run = AsyncMock(return_value=_RR(canned))
 
     result = await agent.query("Who is Sam Altman?")

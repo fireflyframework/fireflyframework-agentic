@@ -27,8 +27,10 @@ from examples.corpus_search.retrieval.answerer import (
 
 def _stub_run_result(answer: Answer) -> Any:
     """Builds an object shaped like pydantic_ai's RunResult (.output attribute)."""
+
     class _R:
         pass
+
     r = _R()
     r.output = answer
     return r

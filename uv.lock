@@ -1097,6 +1097,7 @@ costs = [
 ]
 dev = [
     { name = "httpx" },
+    { name = "markitdown", extra = ["docx", "pdf", "pptx", "xlsx"] },
     { name = "pdfplumber" },
     { name = "pre-commit" },
     { name = "pyright" },
@@ -1195,6 +1196,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'http'", specifier = ">=0.28.0" },
     { name = "httpx", marker = "extra == 'ollama-embeddings'", specifier = ">=0.28.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
+    { name = "markitdown", extras = ["pdf", "docx", "pptx", "xlsx"], marker = "extra == 'dev'", specifier = ">=0.0.1a3" },
     { name = "markitdown", extras = ["pdf", "docx", "pptx", "xlsx"], marker = "extra == 'markitdown'", specifier = ">=0.0.1a3" },
     { name = "mistralai", marker = "extra == 'mistral-embeddings'", specifier = ">=1.0.0" },
     { name = "motor", marker = "extra == 'mongodb'", specifier = ">=3.6.0" },

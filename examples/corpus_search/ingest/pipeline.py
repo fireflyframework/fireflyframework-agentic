@@ -130,7 +130,8 @@ async def ingest_one(
             except Exception as exc:  # noqa: BLE001
                 log.warning(
                     "vector store cleanup failed for prior chunks of doc %s: %s",
-                    doc_id, exc,
+                    doc_id,
+                    exc,
                 )
 
         if not stored_chunks:

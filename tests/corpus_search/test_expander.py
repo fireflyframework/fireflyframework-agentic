@@ -22,11 +22,14 @@ from examples.corpus_search.retrieval.expander import QueryExpander
 
 def _stub_run_result(variants: list[str]) -> Any:
     """Builds an object shaped like pydantic_ai's RunResult (.output attribute)."""
+
     class _Output:
         def __init__(self, vs: list[str]) -> None:
             self.variants = vs
+
     class _R:
         pass
+
     r = _R()
     r.output = _Output(variants)
     return r
@@ -110,6 +113,7 @@ async def test_expand_logs_each_generated_query(mock_agent_cls, caplog):
     variants) at INFO so the user sees what BM25 + vector search will run.
     """
     import logging
+
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
 

@@ -51,8 +51,10 @@ def _hit(chunk_id: str, content: str = "", source: str = "/tmp/x.md") -> ChunkHi
 
 def _stub_run_result(top_chunk_ids: list[str]) -> Any:
     """Builds an object shaped like pydantic_ai's RunResult (.output attr)."""
+
     class _R:
         pass
+
     r = _R()
     r.output = RerankerResult(top_chunk_ids=top_chunk_ids)
     return r

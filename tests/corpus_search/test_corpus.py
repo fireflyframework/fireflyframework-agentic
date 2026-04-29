@@ -14,9 +14,7 @@ async def corpus(tmp_path):
 
 
 async def test_schema_creates_chunks_and_ingestions(corpus: SqliteCorpus):
-    rows = await corpus.query(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-    )
+    rows = await corpus.query("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     names = {r["name"] for r in rows}
     assert {"chunks", "ingestions"} <= names
 
@@ -71,7 +69,9 @@ async def test_delete_by_doc_id_removes_chunks_and_fts_rows(corpus: SqliteCorpus
 
 async def test_upsert_chunks_replaces_on_conflict(corpus: SqliteCorpus):
     c1 = StoredChunk(chunk_id="d-0", doc_id="d", source_path="/p", index_in_doc=0, content="first version", metadata={})
-    c2 = StoredChunk(chunk_id="d-0", doc_id="d", source_path="/p", index_in_doc=0, content="second version", metadata={})
+    c2 = StoredChunk(
+        chunk_id="d-0", doc_id="d", source_path="/p", index_in_doc=0, content="second version", metadata={}
+    )
     await corpus.upsert_chunks([c1])
     await corpus.upsert_chunks([c2])
     rows = await corpus.query("SELECT content FROM chunks WHERE chunk_id='d-0'")
@@ -81,8 +81,8 @@ async def test_upsert_chunks_replaces_on_conflict(corpus: SqliteCorpus):
 
 async def test_get_chunks_by_ids(corpus: SqliteCorpus):
     chunks = [
-        StoredChunk(chunk_id=f"d-{i}", doc_id="d", source_path="/p", index_in_doc=i,
-                    content=f"chunk {i}", metadata={}) for i in range(3)
+        StoredChunk(chunk_id=f"d-{i}", doc_id="d", source_path="/p", index_in_doc=i, content=f"chunk {i}", metadata={})
+        for i in range(3)
     ]
     await corpus.upsert_chunks(chunks)
     got = await corpus.get_chunks(["d-0", "d-2"])
@@ -95,8 +95,7 @@ async def test_get_chunks_with_empty_list_returns_empty(corpus: SqliteCorpus):
 
 async def test_bm25_search_no_match_returns_empty(corpus: SqliteCorpus):
     chunks = [
-        StoredChunk(chunk_id="d-0", doc_id="d", source_path="/p", index_in_doc=0,
-                    content="hello world", metadata={}),
+        StoredChunk(chunk_id="d-0", doc_id="d", source_path="/p", index_in_doc=0, content="hello world", metadata={}),
     ]
     await corpus.upsert_chunks(chunks)
     hits = await corpus.bm25_search("totally-unrelated-query", top_k=10)

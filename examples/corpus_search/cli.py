@@ -40,32 +40,36 @@ def build_arg_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_ingest = sub.add_parser("ingest", help="Ingest a folder of documents.")
-    p_ingest.add_argument("--folder", type=Path, required=True,
-                          help="Folder of source documents to ingest.")
-    p_ingest.add_argument("--root", type=Path, default=_DEFAULT_ROOT,
-                          help="Output root for corpus.sqlite + chroma/.")
-    p_ingest.add_argument("--embed-model", default=_DEFAULT_EMBED_MODEL,
-                          help="Embedding model.")
-    p_ingest.add_argument("--watch", action="store_true",
-                          help="After processing existing files, watch for new ones.")
+    p_ingest.add_argument("--folder", type=Path, required=True, help="Folder of source documents to ingest.")
+    p_ingest.add_argument("--root", type=Path, default=_DEFAULT_ROOT, help="Output root for corpus.sqlite + chroma/.")
+    p_ingest.add_argument("--embed-model", default=_DEFAULT_EMBED_MODEL, help="Embedding model.")
+    p_ingest.add_argument("--watch", action="store_true", help="After processing existing files, watch for new ones.")
     p_ingest.add_argument("--verbose", action="store_true")
 
     p_query = sub.add_parser("query", help="Query the corpus.")
     p_query.add_argument("question", help="Natural-language question.")
-    p_query.add_argument("--root", type=Path, default=_DEFAULT_ROOT,
-                         help="Corpus root (must contain corpus.sqlite + chroma/).")
-    p_query.add_argument("--embed-model", default=_DEFAULT_EMBED_MODEL,
-                         help="Embedding model — must match the model used at ingest time.")
-    p_query.add_argument("--expansion-model", default=_DEFAULT_EXPANSION_MODEL,
-                         help="LLM for query expansion.")
-    p_query.add_argument("--answer-model", default=_DEFAULT_ANSWER_MODEL,
-                         help="LLM for answer synthesis.")
-    p_query.add_argument("--rerank-model", default=_DEFAULT_RERANK_MODEL,
-                         help="LLM for listwise reranking of retrieved candidates.")
-    p_query.add_argument("--rerank-pool", type=int, default=_DEFAULT_RERANK_POOL,
-                         help="Number of candidates pulled by hybrid retrieval before reranking.")
-    p_query.add_argument("--top-k", type=int, default=_DEFAULT_TOP_K,
-                         help="Number of chunks fed to the answer agent after reranking.")
+    p_query.add_argument(
+        "--root", type=Path, default=_DEFAULT_ROOT, help="Corpus root (must contain corpus.sqlite + chroma/)."
+    )
+    p_query.add_argument(
+        "--embed-model",
+        default=_DEFAULT_EMBED_MODEL,
+        help="Embedding model — must match the model used at ingest time.",
+    )
+    p_query.add_argument("--expansion-model", default=_DEFAULT_EXPANSION_MODEL, help="LLM for query expansion.")
+    p_query.add_argument("--answer-model", default=_DEFAULT_ANSWER_MODEL, help="LLM for answer synthesis.")
+    p_query.add_argument(
+        "--rerank-model", default=_DEFAULT_RERANK_MODEL, help="LLM for listwise reranking of retrieved candidates."
+    )
+    p_query.add_argument(
+        "--rerank-pool",
+        type=int,
+        default=_DEFAULT_RERANK_POOL,
+        help="Number of candidates pulled by hybrid retrieval before reranking.",
+    )
+    p_query.add_argument(
+        "--top-k", type=int, default=_DEFAULT_TOP_K, help="Number of chunks fed to the answer agent after reranking."
+    )
     p_query.add_argument("--verbose", action="store_true")
 
     p_show = sub.add_parser(
@@ -73,8 +77,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Print a single chunk's content + source (no LLM, no embedding).",
     )
     p_show.add_argument("chunk_id", help="The chunk_id to look up (as printed in the Sources block of a query result).")
-    p_show.add_argument("--root", type=Path, default=_DEFAULT_ROOT,
-                        help="Corpus root (must contain corpus.sqlite).")
+    p_show.add_argument("--root", type=Path, default=_DEFAULT_ROOT, help="Corpus root (must contain corpus.sqlite).")
     p_show.add_argument("--verbose", action="store_true")
 
     return parser

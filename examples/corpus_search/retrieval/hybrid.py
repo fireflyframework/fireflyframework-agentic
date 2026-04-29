@@ -24,9 +24,7 @@ from fireflyframework_agentic.vectorstores.base import VectorStoreProtocol
 log = logging.getLogger(__name__)
 
 
-def reciprocal_rank_fusion(
-    rankings: Sequence[Sequence[str]], *, k: int = 60
-) -> list[tuple[str, float]]:
+def reciprocal_rank_fusion(rankings: Sequence[Sequence[str]], *, k: int = 60) -> list[tuple[str, float]]:
     """Reciprocal Rank Fusion over multiple ranked lists.
 
     Given a list of rankings (each a sequence of ``chunk_id`` strings ordered

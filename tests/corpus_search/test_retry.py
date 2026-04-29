@@ -120,12 +120,14 @@ def test_is_retryable_detects_connection_error_class():
 def test_is_retryable_detects_429_status_code():
     class _CustomError(Exception):
         status_code = 429
+
     assert is_retryable(_CustomError("rate limit")) is True
 
 
 def test_is_retryable_detects_5xx_status_code():
     class _CustomError(Exception):
         status_code = 503
+
     assert is_retryable(_CustomError("service unavailable")) is True
 
 
@@ -197,7 +199,11 @@ async def test_embed_retries_on_429_and_succeeds():
     embedder = _Embedder(fail_with=[RateLimitError(), RateLimitError()])
     sleeper = _SleepRecorder()
     result = await embed_with_retry(
-        embedder, ["t"], max_attempts=5, initial_delay=0.1, sleep=sleeper,
+        embedder,
+        ["t"],
+        max_attempts=5,
+        initial_delay=0.1,
+        sleep=sleeper,
     )
     assert result.embeddings  # non-empty
     assert embedder.call_count == 3  # 2 failures + 1 success
@@ -208,7 +214,8 @@ async def test_retry_uses_exponential_backoff():
     embedder = _Embedder(fail_with=[RateLimitError(), RateLimitError(), RateLimitError()])
     sleeper = _SleepRecorder()
     await embed_with_retry(
-        embedder, ["t"],
+        embedder,
+        ["t"],
         max_attempts=10,
         initial_delay=1.0,
         backoff_factor=2.0,
@@ -223,7 +230,8 @@ async def test_retry_caps_delay_at_max():
     embedder = _Embedder(fail_with=[RateLimitError()] * 4)
     sleeper = _SleepRecorder()
     await embed_with_retry(
-        embedder, ["t"],
+        embedder,
+        ["t"],
         max_attempts=10,
         initial_delay=10.0,
         backoff_factor=10.0,
@@ -241,7 +249,8 @@ async def test_retry_after_header_overrides_exponential_when_larger():
     embedder = _Embedder(fail_with=[RateLimitError(retry_after="30")])
     sleeper = _SleepRecorder()
     await embed_with_retry(
-        embedder, ["t"],
+        embedder,
+        ["t"],
         max_attempts=5,
         initial_delay=1.0,
         max_delay=60.0,
@@ -258,7 +267,11 @@ async def test_retry_after_capped_at_max_delay():
     embedder = _Embedder(fail_with=[RateLimitError(retry_after="3600")])
     sleeper = _SleepRecorder()
     await embed_with_retry(
-        embedder, ["t"], max_attempts=2, max_delay=60.0, sleep=sleeper,
+        embedder,
+        ["t"],
+        max_attempts=2,
+        max_delay=60.0,
+        sleep=sleeper,
     )
     assert sleeper.delays == [60.0]
 
@@ -271,7 +284,11 @@ async def test_gives_up_after_max_attempts_and_raises_last_error():
     sleeper = _SleepRecorder()
     with pytest.raises(RateLimitError):
         await embed_with_retry(
-            embedder, ["t"], max_attempts=3, initial_delay=0.01, sleep=sleeper,
+            embedder,
+            ["t"],
+            max_attempts=3,
+            initial_delay=0.01,
+            sleep=sleeper,
         )
     assert embedder.call_count == 3
     assert len(sleeper.delays) == 2  # slept after attempt 1 and 2, not after 3
@@ -314,7 +331,11 @@ async def test_retries_pass_same_texts_each_time():
     embedder = _Embedder(fail_with=[RateLimitError(), RateLimitError()])
     sleeper = _SleepRecorder()
     await embed_with_retry(
-        embedder, ["a", "b"], max_attempts=5, initial_delay=0.01, sleep=sleeper,
+        embedder,
+        ["a", "b"],
+        max_attempts=5,
+        initial_delay=0.01,
+        sleep=sleeper,
     )
     # Each retry sees the exact same input
     assert embedder.received_texts == [["a", "b"], ["a", "b"], ["a", "b"]]

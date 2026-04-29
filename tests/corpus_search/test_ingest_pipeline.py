@@ -132,21 +132,29 @@ async def test_ingest_one_writes_chunks_and_vectors_and_ledger(setup):
 
 async def test_re_ingest_same_hash_returns_skipped(setup):
     path = _write_md(setup["tmp_path"], "doc.txt", "Stable content here.")
-    first = await ingest_one(path=path, **{k: setup[k] for k in ("corpus", "vector_store", "embedder", "ledger", "chunker", "loader")})
+    first = await ingest_one(
+        path=path, **{k: setup[k] for k in ("corpus", "vector_store", "embedder", "ledger", "chunker", "loader")}
+    )
     assert first.status == "success"
-    second = await ingest_one(path=path, **{k: setup[k] for k in ("corpus", "vector_store", "embedder", "ledger", "chunker", "loader")})
+    second = await ingest_one(
+        path=path, **{k: setup[k] for k in ("corpus", "vector_store", "embedder", "ledger", "chunker", "loader")}
+    )
     assert second.status == "skipped"
     assert second.n_chunks == 0
 
 
 async def test_re_ingest_changed_hash_replaces_chunks(setup):
     path = _write_md(setup["tmp_path"], "doc.txt", "Original content.")
-    first = await ingest_one(path=path, **{k: setup[k] for k in ("corpus", "vector_store", "embedder", "ledger", "chunker", "loader")})
+    first = await ingest_one(
+        path=path, **{k: setup[k] for k in ("corpus", "vector_store", "embedder", "ledger", "chunker", "loader")}
+    )
     assert first.status == "success"
 
     # Change file -> different hash
     path.write_text("Brand new content that is much longer to produce different chunks.")
-    second = await ingest_one(path=path, **{k: setup[k] for k in ("corpus", "vector_store", "embedder", "ledger", "chunker", "loader")})
+    second = await ingest_one(
+        path=path, **{k: setup[k] for k in ("corpus", "vector_store", "embedder", "ledger", "chunker", "loader")}
+    )
     assert second.status == "success"
     # Old chunks gone, only new ones in corpus
     rows = await setup["corpus"].query("SELECT chunk_id FROM chunks WHERE doc_id = :id", {"id": second.doc_id})
@@ -229,8 +237,13 @@ async def test_re_ingest_proceeds_when_prior_vector_delete_fails(tmp_path):
         path = tmp_path / "doc.txt"
         path.write_text("Original content.")
         first = await ingest_one(
-            path=path, corpus=corpus, vector_store=vector_store,
-            embedder=embedder, ledger=ledger, chunker=chunker, loader=loader,
+            path=path,
+            corpus=corpus,
+            vector_store=vector_store,
+            embedder=embedder,
+            ledger=ledger,
+            chunker=chunker,
+            loader=loader,
         )
         assert first.status == "success"
 
@@ -238,8 +251,13 @@ async def test_re_ingest_proceeds_when_prior_vector_delete_fails(tmp_path):
         # but the pipeline should log and proceed, not propagate.
         path.write_text("Brand new content here.")
         second = await ingest_one(
-            path=path, corpus=corpus, vector_store=vector_store,
-            embedder=embedder, ledger=ledger, chunker=chunker, loader=loader,
+            path=path,
+            corpus=corpus,
+            vector_store=vector_store,
+            embedder=embedder,
+            ledger=ledger,
+            chunker=chunker,
+            loader=loader,
         )
         assert second.status == "success"
 

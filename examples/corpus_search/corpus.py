@@ -58,6 +58,7 @@ def sanitize_fts_query(query: str) -> str:
         return ""
     return " OR ".join(f'"{t}"' for t in tokens)
 
+
 _SCHEMA = """
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;

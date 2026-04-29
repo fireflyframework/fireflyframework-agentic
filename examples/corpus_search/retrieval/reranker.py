@@ -129,7 +129,9 @@ class HaikuReranker:
         # it kept vs what was dropped.
         log.info(
             "rerank: %d candidates -> %d kept (model %s)",
-            len(hits), len(ranked), self._agent.name,
+            len(hits),
+            len(ranked),
+            self._agent.name,
         )
         for i, h in enumerate(ranked, start=1):
             log.info("  [%d] %s (%s)", i, h.chunk_id, h.source_path)

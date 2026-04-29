@@ -74,6 +74,4 @@ def test_benchmark_corpus_and_queries_are_in_sync():
 
     for q in queries:
         for basename in q.get("expected_doc_basenames", []):
-            assert basename in corpus_files, (
-                f"query {q['id']!r} expects {basename!r} but it's not in the corpus dir"
-            )
+            assert basename in corpus_files, f"query {q['id']!r} expects {basename!r} but it's not in the corpus dir"
