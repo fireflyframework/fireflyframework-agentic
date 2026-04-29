@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -24,6 +25,38 @@ from pathlib import Path
 from typing import Any
 
 log = logging.getLogger(__name__)
+
+
+_FTS5_NON_WORD = re.compile(r"[^\w\s]", flags=re.UNICODE)
+
+
+def sanitize_fts_query(query: str) -> str:
+    """Convert a free-text query into a safe FTS5 ``MATCH`` expression.
+
+    FTS5 reserves a number of characters as query syntax (``"``, ``(``, ``)``,
+    ``:``, ``*``, ``+``, ``-``, ``^``, ``?``, ``!``, ``,``, ``.``, ``;`` ...).
+    A natural-language question like ``"What is the best region?"`` raises
+    ``sqlite3.OperationalError: fts5: syntax error near '?'``.
+
+    Strategy:
+    - Replace every non-alphanumeric, non-whitespace character with a space.
+    - Tokenise on whitespace; drop empty tokens.
+    - Wrap each token in double quotes (FTS5 phrase syntax for a single token
+      = literal token; cheap insurance against any tokens that happen to match
+      reserved keywords like ``OR`` / ``AND`` / ``NOT``).
+    - Join with `` OR `` so any doc containing any of the words can match;
+      BM25 ranks by relevance, so common stopwords sink naturally via IDF.
+
+    Returns an empty string if no tokens survive — callers must treat that
+    as "no FTS hits" rather than passing the empty string to ``MATCH``.
+    """
+    if not query:
+        return ""
+    cleaned = _FTS5_NON_WORD.sub(" ", query)
+    tokens = [t for t in cleaned.split() if t]
+    if not tokens:
+        return ""
+    return " OR ".join(f'"{t}"' for t in tokens)
 
 _SCHEMA = """
 PRAGMA journal_mode = WAL;
@@ -181,6 +214,12 @@ class SqliteCorpus:
 
     def _bm25_search_sync(self, query: str, top_k: int) -> list[ChunkHit]:
         assert self._conn is not None
+        # Sanitise free-text queries (questions with ``?``, names with ``-``,
+        # phrases with quotes) into FTS5-safe MATCH syntax. Empty after
+        # sanitisation -> no hits.
+        match_expr = sanitize_fts_query(query)
+        if not match_expr:
+            return []
         try:
             cur = self._conn.execute(
                 """SELECT c.chunk_id, c.content, c.metadata, c.doc_id, c.source_path,
@@ -190,14 +229,13 @@ class SqliteCorpus:
                    WHERE chunks_fts MATCH :q
                    ORDER BY score
                    LIMIT :k""",
-                {"q": query, "k": top_k},
+                {"q": match_expr, "k": top_k},
             )
         except sqlite3.OperationalError as exc:
-            # FTS5 raises OperationalError on malformed MATCH expressions
-            # (hyphenated tokens parsed as column operators, unbalanced
-            # quotes, etc.). Other OperationalErrors (corrupt index, missing
-            # table, disk full) also land here — surface them via WARNING
-            # instead of silently dropping.
+            # Sanitisation should have prevented the common syntax-error
+            # cases. Anything reaching this handler is a real fault
+            # (corrupt index, missing table, disk full) — log it loudly
+            # rather than silently dropping.
             log.warning("bm25_search returned no results due to OperationalError: %s", exc)
             return []
         return [
