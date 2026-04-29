@@ -50,6 +50,7 @@ from dotenv import load_dotenv
 from examples.corpus_search.corpus import ChunkHit, SqliteCorpus
 from examples.corpus_search.ingest.ledger import IngestLedger
 from examples.corpus_search.ingest.pipeline import ingest_one
+from examples.corpus_search.retrieval.expander import ExpandedQuery, QueryExpander
 from examples.corpus_search.retrieval.hybrid import HybridRetriever
 from fireflyframework_agentic.content.chunking import TextChunker
 from fireflyframework_agentic.content.loaders import MarkitdownLoader
@@ -114,6 +115,10 @@ class QueryResult:
     retrieved_chunk_ids: list[str] = field(default_factory=list)
     retrieved_doc_basenames: list[str] = field(default_factory=list)
 
+    # Queries actually issued to the retriever (populated when --expand is used).
+    # Format: "[hybrid] text" or "[vec_only] text".
+    expanded_queries: list[str] = field(default_factory=list)
+
     # Per-query metrics
     hit_at_1: bool = False
     hit_at_5: bool = False
@@ -130,6 +135,7 @@ class BenchmarkResult:
 
     mode: str
     use_rerank: bool
+    use_expansion: bool
     n_queries: int
     n_corpus_docs: int
     n_corpus_chunks: int
@@ -248,6 +254,8 @@ async def run_benchmark(
     *,
     mode: str = "mechanics",
     use_rerank: bool = False,
+    use_expansion: bool = False,
+    expansion_model: str = "anthropic:claude-haiku-4-5-20251001",
     top_k: int = 5,
     rerank_pool: int = 20,
     rerank_model: str = "anthropic:claude-haiku-4-5-20251001",
@@ -280,18 +288,30 @@ async def run_benchmark(
 
                 reranker = HaikuReranker(model=rerank_model)
 
+            expander = None
+            if use_expansion:
+                expander = QueryExpander(model=expansion_model)
+
             qr_list: list[QueryResult] = []
             for q in queries:
                 qr = await _evaluate_query(
                     q=q,
                     retriever=retriever,
                     reranker=reranker,
+                    expander=expander,
                     top_k=top_k,
                     rerank_pool=rerank_pool,
                 )
                 qr_list.append(qr)
 
-            agg = _aggregate(qr_list, mode=mode, use_rerank=use_rerank, n_corpus_docs=n_docs, n_corpus_chunks=n_chunks)
+            agg = _aggregate(
+                qr_list,
+                mode=mode,
+                use_rerank=use_rerank,
+                use_expansion=use_expansion,
+                n_corpus_docs=n_docs,
+                n_corpus_chunks=n_chunks,
+            )
 
             if print_summary:
                 _print_summary(agg)
@@ -313,10 +333,18 @@ async def _evaluate_query(
     q: dict[str, Any],
     retriever: HybridRetriever,
     reranker: Any | None,
+    expander: QueryExpander | None,
     top_k: int,
     rerank_pool: int,
 ) -> QueryResult:
-    queries_for_retrieval = [q["query"]]  # no expansion in benchmark — kept deterministic
+    # Expand when requested; otherwise use the raw query (deterministic baseline).
+    if expander is not None:
+        expanded = await expander.expand(q["query"])
+        queries_for_retrieval: list[str | ExpandedQuery] = list(expanded)
+        expanded_query_strs = [f"[{eq.route}] {eq.text}" for eq in expanded]
+    else:
+        queries_for_retrieval = [q["query"]]
+        expanded_query_strs = []
 
     # Always pull a wider pool so rank metrics like Hit@20 are meaningful even
     # without rerank.
@@ -349,6 +377,7 @@ async def _evaluate_query(
         expected_substrings=list(expected_substrings),
         retrieved_chunk_ids=[h.chunk_id for h in top_hits],
         retrieved_doc_basenames=[_doc_basename(h.source_path) for h in top_hits],
+        expanded_queries=expanded_query_strs,
         hit_at_1=rank_first == 1,
         hit_at_5=rank_first is not None and rank_first <= 5,
         hit_at_20=rank_first is not None and rank_first <= 20,
@@ -358,13 +387,8 @@ async def _evaluate_query(
     )
 
     if qr.negative:
-        # Correct rejection: nothing relevant should rank highly. Heuristic:
-        # the first hit's BM25 score should be weak (closer to 0) and no
-        # candidate's content should contain the question's main proper-nouns.
-        # In practice, BM25 over an unrelated corpus returns very low or
-        # zero hits — we flag rejection as "correct" if no hit at top_k_final
-        # contains a proper-noun substring from the negative query.
-        # Simpler proxy: rejection is "correct" if rank_first is None.
+        # Correct rejection: rejection is "correct" if no expected doc ranked
+        # anywhere in the candidate pool.
         qr.rejected_correctly = rank_first is None
 
     return qr
@@ -375,6 +399,7 @@ def _aggregate(
     *,
     mode: str,
     use_rerank: bool,
+    use_expansion: bool,
     n_corpus_docs: int,
     n_corpus_chunks: int,
 ) -> BenchmarkResult:
@@ -411,6 +436,7 @@ def _aggregate(
     return BenchmarkResult(
         mode=mode,
         use_rerank=use_rerank,
+        use_expansion=use_expansion,
         n_queries=n,
         n_corpus_docs=n_corpus_docs,
         n_corpus_chunks=n_corpus_chunks,
@@ -429,7 +455,7 @@ def _aggregate(
 def _print_summary(agg: BenchmarkResult) -> None:
     print()
     print("=" * 70)
-    print(f" Benchmark summary  mode={agg.mode}  rerank={agg.use_rerank}")
+    print(f" Benchmark summary  mode={agg.mode}  expand={agg.use_expansion}  rerank={agg.use_rerank}")
     print("=" * 70)
     print(f" Corpus:    {agg.n_corpus_docs} docs, {agg.n_corpus_chunks} chunks")
     print(f" Queries:   {agg.n_queries}")
@@ -441,8 +467,11 @@ def _print_summary(agg: BenchmarkResult) -> None:
         substr = "✓" if q.substring_match else ("·" if q.negative else "✗")
         print(f"  {marker} [{q.id:32s}] rank={rank!s:>4} substr={substr}  ({q.category})")
         if not (q.hit_at_5 or q.rejected_correctly):
-            # Show what we got vs expected for failing cases
             print(f"      query: {q.query}")
+            if q.expanded_queries:
+                print("      issued queries:")
+                for eq in q.expanded_queries:
+                    print(f"        {eq}")
             print(f"      expected: {q.expected_doc_basenames or '(no docs — negative)'}")
             print(f"      retrieved top-5: {q.retrieved_doc_basenames[:5]}")
 
@@ -486,10 +515,23 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Add the Haiku listwise reranker between retrieval and metrics.",
     )
+    parser.add_argument(
+        "--expand",
+        action="store_true",
+        help=(
+            "Run query expansion (paraphrase variants + HyDE passage) before "
+            "retrieval. Measures the full pipeline including the expander. "
+            "Requires ANTHROPIC_API_KEY."
+        ),
+    )
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--rerank-pool", type=int, default=20)
     parser.add_argument(
         "--rerank-model",
+        default="anthropic:claude-haiku-4-5-20251001",
+    )
+    parser.add_argument(
+        "--expansion-model",
         default="anthropic:claude-haiku-4-5-20251001",
     )
     parser.add_argument(
@@ -515,14 +557,16 @@ def main(argv: list[str] | None = None) -> int:
     ):
         sys.stderr.write("real mode requires EMBEDDING_BINDING_HOST and EMBEDDING_BINDING_API_KEY\n")
         return 2
-    if args.rerank and not os.environ.get("ANTHROPIC_API_KEY"):
-        sys.stderr.write("--rerank requires ANTHROPIC_API_KEY\n")
+    if (args.rerank or args.expand) and not os.environ.get("ANTHROPIC_API_KEY"):
+        sys.stderr.write("--rerank and --expand require ANTHROPIC_API_KEY\n")
         return 2
 
     asyncio.run(
         run_benchmark(
             mode=args.mode,
             use_rerank=args.rerank,
+            use_expansion=args.expand,
+            expansion_model=args.expansion_model,
             top_k=args.top_k,
             rerank_pool=args.rerank_pool,
             rerank_model=args.rerank_model,
