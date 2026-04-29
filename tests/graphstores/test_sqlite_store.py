@@ -158,3 +158,15 @@ async def test_delete_by_doc_id_cascades_through_all_tables(store: SqliteGraphSt
     assert {r["source_doc_id"] for r in fts_nodes} == {"doc-2"}
     fts_edges = await store.query("SELECT source_doc_id FROM edges_fts")
     assert {r["source_doc_id"] for r in fts_edges} == {"doc-2"}
+
+
+from fireflyframework_agentic.graphstores import GraphStoreProtocol
+
+
+async def test_store_satisfies_protocol(store: SqliteGraphStore):
+    assert isinstance(store, GraphStoreProtocol)
+
+
+async def test_top_level_import_exposes_store():
+    from fireflyframework_agentic.graphstores import SqliteGraphStore as Imported
+    assert Imported is SqliteGraphStore
