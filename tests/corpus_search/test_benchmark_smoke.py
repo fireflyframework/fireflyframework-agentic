@@ -39,7 +39,7 @@ async def test_benchmark_mechanics_mode_completes_with_reasonable_floor():
 
     # Sanity: the corpus loaded, queries ran.
     assert result.n_queries > 0
-    assert result.n_corpus_docs >= 8
+    assert result.n_corpus_docs == 12
     assert result.n_corpus_chunks > 0
 
     # Floor expectations for mechanics mode. BM25 with our sanitiser should

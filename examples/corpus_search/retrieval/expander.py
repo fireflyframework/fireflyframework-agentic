@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -38,7 +39,7 @@ class ExpandedQuery:
     """
 
     text: str
-    route: str  # "hybrid" | "vec_only"
+    route: Literal["hybrid", "vec_only"]
 
 
 class _ExpandedQueries(BaseModel):

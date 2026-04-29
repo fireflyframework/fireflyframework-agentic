@@ -192,14 +192,14 @@ class CorpusAgent:
 
         Hidden files (anything starting with ``.``) are skipped — that includes
         macOS ``.DS_Store`` metadata and editor swap files. Filtering uses
-        :meth:`FolderWatcher._is_hidden` so the rules stay in sync with the
+        :meth:`FolderWatcher.is_hidden` so the rules stay in sync with the
         watcher path.
         """
         await self._ensure_corpus_ready()
         root = Path(folder)
         watcher = FolderWatcher(folder=root)
         results: list[IngestionResult] = []
-        candidates = sorted(p for p in root.rglob("*") if p.is_file() and not watcher._is_hidden(p))
+        candidates = sorted(p for p in root.rglob("*") if p.is_file() and not watcher.is_hidden(p))
         log.info("found %d file(s) under %s", len(candidates), root)
         for path in candidates:
             results.append(await self.ingest_one(path))

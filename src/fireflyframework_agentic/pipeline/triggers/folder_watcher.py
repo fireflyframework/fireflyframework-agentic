@@ -35,7 +35,7 @@ class FolderWatcher:
     stability_polls: int = 2
     stability_interval_ms: int = 200
 
-    def _is_hidden(self, path: Path) -> bool:
+    def is_hidden(self, path: Path) -> bool:
         """True if any path component (relative to ``self.folder``) starts with '.'.
 
         Catches macOS ``.DS_Store``, editor swap files (``.something.swp``),
@@ -56,7 +56,7 @@ class FolderWatcher:
         for p in sorted(self.folder.rglob("*")):
             if not p.is_file():
                 continue
-            if self._is_hidden(p):
+            if self.is_hidden(p):
                 continue
             yield p
 
@@ -90,7 +90,7 @@ class FolderWatcher:
                 path = Path(raw_path)
                 if not path.is_file():
                     continue
-                if self._is_hidden(path):
+                if self.is_hidden(path):
                     continue
                 if await self.wait_for_stability(path):
                     yield path

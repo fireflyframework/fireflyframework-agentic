@@ -45,28 +45,28 @@ async def test_returns_stable_for_quiescent_file(tmp_path):
 
 def test_is_hidden_skips_dotfile_at_top_level(tmp_path):
     watcher = FolderWatcher(folder=tmp_path)
-    assert watcher._is_hidden(tmp_path / ".DS_Store") is True
+    assert watcher.is_hidden(tmp_path / ".DS_Store") is True
 
 
 def test_is_hidden_skips_dotfile_in_subdirectory(tmp_path):
     watcher = FolderWatcher(folder=tmp_path)
-    assert watcher._is_hidden(tmp_path / "subdir" / ".DS_Store") is True
+    assert watcher.is_hidden(tmp_path / "subdir" / ".DS_Store") is True
 
 
 def test_is_hidden_skips_dotted_directory(tmp_path):
     watcher = FolderWatcher(folder=tmp_path)
     # File inside a hidden directory (e.g. .git/HEAD) should be filtered.
-    assert watcher._is_hidden(tmp_path / ".git" / "HEAD") is True
+    assert watcher.is_hidden(tmp_path / ".git" / "HEAD") is True
 
 
 def test_is_hidden_allows_hyphenated_paths(tmp_path):
     watcher = FolderWatcher(folder=tmp_path)
-    assert watcher._is_hidden(tmp_path / "my-docs" / "report.pdf") is False
+    assert watcher.is_hidden(tmp_path / "my-docs" / "report.pdf") is False
 
 
 def test_is_hidden_allows_normal_filenames(tmp_path):
     watcher = FolderWatcher(folder=tmp_path)
-    assert watcher._is_hidden(tmp_path / "subdir" / "file.txt") is False
+    assert watcher.is_hidden(tmp_path / "subdir" / "file.txt") is False
 
 
 async def test_startup_scan_skips_dotfiles_anywhere_in_tree(tmp_path):

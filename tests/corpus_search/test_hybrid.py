@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -163,11 +164,9 @@ async def test_retrieve_preserves_rrf_order(corpus):
 async def test_retrieve_vec_only_query_skips_bm25(corpus):
     """A hyde (vec_only) ExpandedQuery must not issue a BM25 call.
 
-    We verify this by passing a query text that contains no words matching
-    any chunk in the corpus (so BM25 would return nothing useful) but the
-    stub vector store maps its embedding to d-3.  If BM25 were incorrectly
-    called it would simply return an empty ranking, which is harmless — so
-    we test the positive side: the vec_only result still surfaces via RRF.
+    We verify both sides: the routing guard prevents the BM25 call (negative
+    assertion via mock), and the vec_only result still surfaces via RRF
+    (positive assertion on returned chunk_ids).
     """
     # Embedding for "xyzzy" has len 5 → key 5.0 in the stub.
     vector_store = _StubVectorStore({5.0: ["d-3", "d-1"]})
@@ -175,7 +174,9 @@ async def test_retrieve_vec_only_query_skips_bm25(corpus):
     retriever = HybridRetriever(corpus=corpus, vector_store=vector_store, embedder=embedder)
 
     hyde_q = ExpandedQuery(text="xyzzy", route="vec_only")
-    hits = await retriever.retrieve([hyde_q], top_k_per_query=5, top_k_final=5)
+    with patch.object(corpus, "bm25_search", new_callable=AsyncMock) as mock_bm25:
+        hits = await retriever.retrieve([hyde_q], top_k_per_query=5, top_k_final=5)
+        mock_bm25.assert_not_awaited()
     chunk_ids = [h.chunk_id for h in hits]
     assert "d-3" in chunk_ids
 
