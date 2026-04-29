@@ -88,7 +88,7 @@ class PromptRegistry:
 
 def get_prompt_registry() -> PromptRegistry:
     global PROMPT_TEMPLATE_REGISTRY
-    if not PROMPT_TEMPLATE_REGISTRY:
+    if PROMPT_TEMPLATE_REGISTRY is None:
         PROMPT_TEMPLATE_REGISTRY = PromptRegistry()
     return PROMPT_TEMPLATE_REGISTRY
 
