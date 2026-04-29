@@ -21,7 +21,6 @@ atomic unit of the Firefly prompt system.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import Any
 
 from jinja2 import BaseLoader, Environment, TemplateSyntaxError
