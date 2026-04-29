@@ -16,7 +16,7 @@ The test suite is organized by **purpose**, with the PR-gate vs nightly split co
 
 `integration/` is about **wiring**; `functional/` is about **product behavior**. `security/` is about **adversaries**; `responsible_ai/` is about the **system not misbehaving on its own**.
 
-The taxonomy is adapted from [Recommenders](https://github.com/recommenders-team/recommenders/tree/main/tests#test-workflows). Definitions below follow Recommenders' wording, narrowed to an agentic framework.
+The taxonomy is adapted from [Recommenders](https://github.com/recommenders-team/recommenders). Definitions below follow Recommenders' wording, narrowed to an agentic framework.
 
 ### `unit/` — unit tests
 
