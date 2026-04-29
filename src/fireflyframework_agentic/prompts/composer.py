@@ -23,7 +23,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from fireflyframework_agentic.prompts.template import PromptTemplate
+from fireflyframework_agentic.prompts.template import Prompt, PromptTemplate
 
 
 class SequentialComposer:
@@ -43,10 +43,14 @@ class SequentialComposer:
         self._templates = list(templates)
         self._separator = separator
 
-    def render(self, **kwargs: Any) -> str:
+    def render(self, **kwargs: Any) -> Prompt:
         """Render each template and join with the separator."""
-        parts = [t.render(**kwargs) for t in self._templates]
-        return self._separator.join(parts)
+        system_parts = [t.render(**kwargs).system for t in self._templates]
+        user_parts = [t.render(**kwargs).user for t in self._templates]
+        return Prompt(
+            system=self._separator.join(system_parts),
+            user=self._separator.join(user_parts),
+        )
 
 
 class ConditionalComposer:
@@ -66,12 +70,15 @@ class ConditionalComposer:
         self._condition_fn = condition_fn
         self._template_map = dict(template_map)
 
-    def render(self, **kwargs: Any) -> str:
+    def render(self, **kwargs: Any) -> Prompt:
         """Evaluate condition, select the template, and render it."""
         key = self._condition_fn(**kwargs)
         if key not in self._template_map:
             raise KeyError(f"Condition returned unknown key '{key}'")
-        return self._template_map[key].render(**kwargs)
+        return Prompt(
+            system=self._template_map[key].render(**kwargs).system,
+            user=self._template_map[key].render(**kwargs).user,
+        )
 
 
 class MergeComposer:
@@ -91,7 +98,11 @@ class MergeComposer:
         self._templates = list(templates)
         self._merge_fn = merge_fn
 
-    def render(self, **kwargs: Any) -> str:
+    def render(self, **kwargs: Any) -> Prompt:
         """Render all templates and merge the results."""
-        parts = [t.render(**kwargs) for t in self._templates]
-        return self._merge_fn(parts)
+        system_parts = [t.render(**kwargs).system for t in self._templates]
+        user_parts = [t.render(**kwargs).user for t in self._templates]
+        return Prompt(
+            system=self._merge_fn(system_parts),
+            user=self._merge_fn(user_parts),
+        )
