@@ -1,0 +1,1 @@
+This is a plain text fixture for the loader tests.
