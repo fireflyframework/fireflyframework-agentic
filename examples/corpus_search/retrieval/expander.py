@@ -20,7 +20,6 @@ from pydantic import BaseModel, Field
 
 from fireflyframework_agentic.agents import FireflyAgent
 
-
 log = logging.getLogger(__name__)
 
 

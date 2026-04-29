@@ -14,20 +14,19 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
-from collections.abc import Sequence
-
-from fireflyframework_agentic.content.chunking import TextChunker
-from fireflyframework_agentic.content.loaders import Document, MarkitdownLoader
-from fireflyframework_agentic.embeddings.types import EmbeddingResult
 
 from examples.corpus_search.corpus import SqliteCorpus, StoredChunk
 from examples.corpus_search.ingest.ledger import IngestLedger
-
+from fireflyframework_agentic.content.chunking import TextChunker
+from fireflyframework_agentic.content.loaders import Document, MarkitdownLoader
+from fireflyframework_agentic.embeddings.types import EmbeddingResult
 
 log = logging.getLogger(__name__)
 
@@ -179,15 +178,11 @@ async def ingest_one(
     except Exception as exc:
         log.warning("ingest failed for %s: %s", path, exc)
         # Best-effort cleanup so we don't leave partial state.
-        try:
+        with contextlib.suppress(Exception):
             await corpus.delete_by_doc_id(doc_id)
-        except Exception:
-            pass
-        try:
-            ids_to_drop = [c.chunk_id for c in stored_chunks]
-            if ids_to_drop:
+        ids_to_drop = [c.chunk_id for c in stored_chunks]
+        if ids_to_drop:
+            with contextlib.suppress(Exception):
                 await vector_store.delete(ids_to_drop)
-        except Exception:
-            pass
         await ledger.upsert(doc_id, source_path, content_hash, status="failed")
         return IngestionResult(doc_id=doc_id, source_path=source_path, status="failed", n_chunks=0)

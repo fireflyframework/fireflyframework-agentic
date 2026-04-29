@@ -20,7 +20,6 @@ from typing import Any, Protocol, runtime_checkable
 
 from examples.corpus_search.corpus import ChunkHit, SqliteCorpus
 
-
 log = logging.getLogger(__name__)
 
 

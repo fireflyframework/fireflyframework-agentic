@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from examples.corpus_search.corpus import SqliteCorpus
 
@@ -47,7 +47,7 @@ class IngestLedger:
         *,
         status: str,
     ) -> None:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         await self._corpus.query(
             """INSERT INTO ingestions
                  (doc_id, source_path, content_hash, status, ingested_at, attempt)

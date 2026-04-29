@@ -23,7 +23,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-
 _DEFAULT_EMBED_MODEL = "openai:text-embedding-3-small"
 _DEFAULT_EXPANSION_MODEL = "anthropic:claude-haiku-4-5-20251001"
 _DEFAULT_ANSWER_MODEL = "anthropic:claude-sonnet-4-6"

@@ -19,17 +19,15 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from fireflyframework_agentic.content.chunking import TextChunker
-from fireflyframework_agentic.content.loaders import MarkitdownLoader
-from fireflyframework_agentic.pipeline.triggers import FolderWatcher
-
 from examples.corpus_search.corpus import SqliteCorpus
 from examples.corpus_search.ingest.ledger import IngestLedger
 from examples.corpus_search.ingest.pipeline import IngestionResult, ingest_one
 from examples.corpus_search.retrieval.answerer import Answer, AnswerAgent
 from examples.corpus_search.retrieval.expander import QueryExpander
 from examples.corpus_search.retrieval.hybrid import HybridRetriever
-
+from fireflyframework_agentic.content.chunking import TextChunker
+from fireflyframework_agentic.content.loaders import MarkitdownLoader
+from fireflyframework_agentic.pipeline.triggers import FolderWatcher
 
 log = logging.getLogger(__name__)
 
@@ -85,6 +83,7 @@ class CorpusAgent:
         if self._vector_store is None:
             import chromadb
             from chromadb.config import Settings
+
             from fireflyframework_agentic.vectorstores.chroma_store import ChromaVectorStore
             client = chromadb.PersistentClient(
                 path=str(self.root / "chroma"),
