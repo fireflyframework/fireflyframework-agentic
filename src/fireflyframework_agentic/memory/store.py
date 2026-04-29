@@ -15,8 +15,14 @@
 """Pluggable memory store backends.
 
 :class:`MemoryStore` is the protocol that all backends must satisfy.
-The framework ships with :class:`InMemoryStore` (default, dict-backed)
-and :class:`FileStore` (JSON file persistence).
+The framework ships with :class:`InMemoryStore` (default, dict-backed),
+:class:`FileStore` (JSON file persistence), and :class:`SQLiteStore`
+(stdlib SQLite). All three are stdlib-only — no optional dependency
+required.
+
+Backends that require external services (PostgreSQL, MongoDB) live in
+:mod:`fireflyframework_agentic.memory.database_store` behind optional
+dependency groups.
 """
 
 from __future__ import annotations
@@ -24,11 +30,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sqlite3
 import threading
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+from fireflyframework_agentic.exceptions import DatabaseConnectionError
 from fireflyframework_agentic.memory.types import MemoryEntry
 
 logger = logging.getLogger(__name__)
@@ -166,6 +174,103 @@ class FileStore:
         path = self._path(namespace)
         if path.exists():
             path.unlink()
+
+    # -- Async wrappers for non-blocking I/O ---------------------------------
+
+    async def async_save(self, namespace: str, entry: MemoryEntry) -> None:
+        """Non-blocking version of :meth:`save`."""
+        await asyncio.to_thread(self.save, namespace, entry)
+
+    async def async_load(self, namespace: str) -> list[MemoryEntry]:
+        """Non-blocking version of :meth:`load`."""
+        return await asyncio.to_thread(self.load, namespace)
+
+    async def async_load_by_key(self, namespace: str, key: str) -> MemoryEntry | None:
+        """Non-blocking version of :meth:`load_by_key`."""
+        return await asyncio.to_thread(self.load_by_key, namespace, key)
+
+    async def async_delete(self, namespace: str, entry_id: str) -> None:
+        """Non-blocking version of :meth:`delete`."""
+        await asyncio.to_thread(self.delete, namespace, entry_id)
+
+    async def async_clear(self, namespace: str) -> None:
+        """Non-blocking version of :meth:`clear`."""
+        await asyncio.to_thread(self.clear, namespace)
+
+
+class SQLiteStore:
+    """SQLite-backed memory store using stdlib :mod:`sqlite3`.
+
+    Like :class:`FileStore`, this backend is stdlib-only and file-based.
+    Compared to :class:`FileStore`, every operation is atomic — a crash
+    mid-save cannot corrupt the file — and queries by namespace use a
+    SQL index instead of loading and parsing every entry in the
+    namespace.
+
+    Choose :class:`FileStore` for the simplest setup and human-readable
+    JSON files. Choose :class:`SQLiteStore` for crash safety and faster
+    operations on larger namespaces.
+
+    Parameters:
+        path: Path to the SQLite file. The file is created if it does
+            not exist; parent directories are created as needed.
+    """
+
+    _TABLE = "firefly_memory"
+
+    def __init__(self, path: str | Path) -> None:
+        self._path = Path(path)
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            with sqlite3.connect(str(self._path)) as conn:
+                conn.execute(
+                    f"""
+                    CREATE TABLE IF NOT EXISTS {self._TABLE} (
+                        entry_id TEXT PRIMARY KEY,
+                        namespace TEXT NOT NULL,
+                        content TEXT NOT NULL
+                    )
+                    """
+                )
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{self._TABLE}_namespace ON {self._TABLE}(namespace)")
+        except sqlite3.Error as exc:
+            raise DatabaseConnectionError(f"Failed to initialise SQLite database at {self._path}: {exc}") from exc
+
+    def save(self, namespace: str, entry: MemoryEntry) -> None:
+        with sqlite3.connect(str(self._path)) as conn:
+            conn.execute(
+                f"INSERT OR REPLACE INTO {self._TABLE} (entry_id, namespace, content) VALUES (?, ?, ?)",
+                (entry.entry_id, namespace, entry.model_dump_json()),
+            )
+
+    def load(self, namespace: str) -> list[MemoryEntry]:
+        with sqlite3.connect(str(self._path)) as conn:
+            rows = conn.execute(
+                f"SELECT content FROM {self._TABLE} WHERE namespace = ? ORDER BY rowid",
+                (namespace,),
+            ).fetchall()
+        entries = [MemoryEntry.model_validate_json(r[0]) for r in rows]
+        return [e for e in entries if not e.is_expired]
+
+    def load_by_key(self, namespace: str, key: str) -> MemoryEntry | None:
+        for entry in self.load(namespace):
+            if entry.key == key:
+                return entry
+        return None
+
+    def delete(self, namespace: str, entry_id: str) -> None:
+        with sqlite3.connect(str(self._path)) as conn:
+            conn.execute(
+                f"DELETE FROM {self._TABLE} WHERE namespace = ? AND entry_id = ?",
+                (namespace, entry_id),
+            )
+
+    def clear(self, namespace: str) -> None:
+        with sqlite3.connect(str(self._path)) as conn:
+            conn.execute(
+                f"DELETE FROM {self._TABLE} WHERE namespace = ?",
+                (namespace,),
+            )
 
     # -- Async wrappers for non-blocking I/O ---------------------------------
 
