@@ -6,7 +6,7 @@ The test suite is organized by **purpose**, with the PR-gate vs nightly split co
 
 | Folder | What goes here |
 |---|---|
-| `unit/` | Pure logic. No real network, DB, or LLM calls. Mocks/fakes are fine. ~95% of the suite today. |
+| `unit/` | Pure logic. No real network, DB, or LLM calls. Mocks/fakes are fine. |
 | `integration/` | Multiple subsystems wired together (e.g. agent + middleware + memory + pipeline). Mocks at external boundaries are still allowed. |
 | `functional/` | A user-facing feature exercised end-to-end ("the agent completes workflow X"). |
 | `performance/` | Benchmarks (`pytest-benchmark`). Files must be named `test_bench_*.py` so pytest's default collection picks them up. Marked `@pytest.mark.nightly`. |
@@ -20,7 +20,7 @@ The taxonomy is adapted from [Recommenders](https://github.com/recommenders-team
 
 ### `unit/` — unit tests
 
-Tests that make sure individual Python utilities and components run correctly. Unit tests are fast (ideally each one well under one second), have no external dependencies (no real network, DB, or LLM calls), and run in every pull request. They are the bulk of the suite — about 95% of the tests today.
+Tests that make sure individual Python utilities and components run correctly. Unit tests are fast (ideally each one well under one second), have no external dependencies (no real network, DB, or LLM calls), and run in every pull request.
 
 ### `integration/` — integration tests
 
