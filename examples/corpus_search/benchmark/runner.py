@@ -299,6 +299,9 @@ async def run_benchmark(
             if print_summary:
                 _print_summary(agg)
             if json_out is not None:
+                # Auto-create the parent directory so users don't have to
+                # remember `mkdir -p runs/` before passing --json.
+                json_out.parent.mkdir(parents=True, exist_ok=True)
                 json_out.write_text(json.dumps(asdict(agg), indent=2), encoding="utf-8")
                 if print_summary:
                     print(f"\nWrote machine-readable results to {json_out}")

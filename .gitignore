@@ -129,3 +129,4 @@ docs/plans/
 # corpus_search local working directories
 /drop/
 /kg/
+/runs/
