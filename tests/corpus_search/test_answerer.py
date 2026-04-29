@@ -112,3 +112,87 @@ def test_answer_pydantic_model_validates():
     # Default citations is empty list
     a2 = Answer(text="hi")
     assert a2.citations == []
+
+
+# --- cited_sources enrichment ----------------------------------------------
+
+
+@patch("examples.corpus_search.retrieval.answerer.FireflyAgent")
+async def test_cited_sources_enriched_from_hits(mock_agent_cls):
+    """The LLM returns chunk_id citations; the agent should enrich them
+    into CitedSource records with source_path + snippet pulled from the
+    hits we passed in.
+    """
+    mock_agent = MagicMock()
+    mock_agent_cls.return_value = mock_agent
+
+    answerer = AnswerAgent(model="anthropic:dummy")
+    canned = Answer(
+        text="ANVISA's RDC 1.000 establishes [d-3] and updates rules [d-9].",
+        citations=["d-3", "d-9"],
+    )
+    answerer._agent.run = AsyncMock(return_value=_stub_run_result(canned))
+
+    hits = [
+        _hit("d-3", "Sistema Nacional de Controle de Receituários (SNCR)...", source="/tmp/RDC1000.pdf"),
+        _hit("d-9", "Modifies RDC 58/2007 to permit electronic notifications.", source="/tmp/RDC1000.pdf"),
+        _hit("d-99", "Unrelated chunk that wasn't cited.", source="/tmp/other.pdf"),
+    ]
+    result = await answerer.answer("What is RDC 1000?", hits)
+
+    assert {s.chunk_id for s in result.cited_sources} == {"d-3", "d-9"}
+    by_id = {s.chunk_id: s for s in result.cited_sources}
+    assert by_id["d-3"].source_path == "/tmp/RDC1000.pdf"
+    assert by_id["d-3"].snippet.startswith("Sistema Nacional")
+    assert by_id["d-9"].source_path == "/tmp/RDC1000.pdf"
+
+
+@patch("examples.corpus_search.retrieval.answerer.FireflyAgent")
+async def test_cited_sources_drops_hallucinated_chunk_ids(mock_agent_cls):
+    """If the LLM cites a chunk_id that wasn't in the hits, drop it from
+    cited_sources rather than fabricating a record.
+    """
+    mock_agent = MagicMock()
+    mock_agent_cls.return_value = mock_agent
+
+    answerer = AnswerAgent(model="anthropic:dummy")
+    canned = Answer(
+        text="real claim [a-0]; fake claim [made-up-id].",
+        citations=["a-0", "made-up-id"],
+    )
+    answerer._agent.run = AsyncMock(return_value=_stub_run_result(canned))
+
+    hits = [_hit("a-0", "Real chunk content.")]
+    result = await answerer.answer("Q", hits)
+
+    assert [s.chunk_id for s in result.cited_sources] == ["a-0"]
+
+
+@patch("examples.corpus_search.retrieval.answerer.FireflyAgent")
+async def test_cited_sources_dedupes_repeated_citations(mock_agent_cls):
+    mock_agent = MagicMock()
+    mock_agent_cls.return_value = mock_agent
+
+    answerer = AnswerAgent(model="anthropic:dummy")
+    canned = Answer(
+        text="claim [a-0] more claim [a-0] yet another [a-0]",
+        citations=["a-0", "a-0", "a-0"],
+    )
+    answerer._agent.run = AsyncMock(return_value=_stub_run_result(canned))
+
+    hits = [_hit("a-0", "Some content.")]
+    result = await answerer.answer("Q", hits)
+
+    assert [s.chunk_id for s in result.cited_sources] == ["a-0"]
+
+
+@patch("examples.corpus_search.retrieval.answerer.FireflyAgent")
+async def test_empty_hits_returns_no_info_with_empty_cited_sources(mock_agent_cls):
+    """No hits -> short-circuit to no-info answer with cited_sources=[]."""
+    mock_agent = MagicMock()
+    mock_agent_cls.return_value = mock_agent
+
+    answerer = AnswerAgent(model="anthropic:dummy")
+    answerer._agent.run = AsyncMock()  # would error if called
+    result = await answerer.answer("Q", [])
+    assert result.cited_sources == []

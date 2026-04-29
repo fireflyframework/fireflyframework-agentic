@@ -32,11 +32,29 @@ _INSTRUCTIONS = (
 )
 
 
+class CitedSource(BaseModel):
+    """A chunk that the LLM cited, enriched with source-path metadata so
+    callers can show users a human-readable filename instead of the opaque
+    chunk_id alone.
+    """
+
+    chunk_id: str
+    source_path: str
+    snippet: str
+
+
 class Answer(BaseModel):
-    """Structured answer with inline citations."""
+    """Structured answer with inline citations.
+
+    The LLM populates ``text`` and ``citations`` (chunk_ids it referenced).
+    ``cited_sources`` is enriched by :class:`AnswerAgent` *after* the LLM
+    call from the hits passed in — gives the caller chunk_id → source_path
+    mapping without forcing the LLM to handle paths in its output schema.
+    """
 
     text: str
     citations: list[str] = Field(default_factory=list)
+    cited_sources: list[CitedSource] = Field(default_factory=list)
 
 
 def format_chunks_for_prompt(hits: Sequence[ChunkHit]) -> str:
@@ -53,10 +71,39 @@ def format_chunks_for_prompt(hits: Sequence[ChunkHit]) -> str:
     return "\n\n".join(parts)
 
 
+def _build_cited_sources(
+    citations: Sequence[str], hits: Sequence[ChunkHit], *, snippet_chars: int = 200
+) -> list[CitedSource]:
+    """Map cited chunk_ids back to their hit metadata.
+
+    Citations the LLM hallucinated (chunk_ids not in `hits`) are dropped;
+    the snippet is the first ``snippet_chars`` characters of the chunk's
+    actual content.
+    """
+    by_id = {h.chunk_id: h for h in hits}
+    sources: list[CitedSource] = []
+    seen: set[str] = set()
+    for cid in citations:
+        if cid in seen or cid not in by_id:
+            continue
+        seen.add(cid)
+        h = by_id[cid]
+        sources.append(
+            CitedSource(
+                chunk_id=cid,
+                source_path=h.source_path,
+                snippet=h.content[:snippet_chars].strip(),
+            )
+        )
+    return sources
+
+
 class AnswerAgent:
     """Synthesise an answer from retrieved chunks via an LLM (Sonnet by default).
 
     Empty hits short-circuit to a fixed 'no info' answer without an LLM call.
+    Cited chunk_ids are enriched post-call into :class:`CitedSource` records
+    so callers can present source paths alongside the inline citations.
     """
 
     def __init__(self, model: str) -> None:
@@ -69,8 +116,12 @@ class AnswerAgent:
 
     async def answer(self, question: str, hits: Sequence[ChunkHit]) -> Answer:
         if not hits:
-            return Answer(text=_NO_INFO_TEXT, citations=[])
+            return Answer(text=_NO_INFO_TEXT, citations=[], cited_sources=[])
         formatted = format_chunks_for_prompt(hits)
         prompt = f"Question: {question}\n\nSource chunks:\n\n{formatted}"
         result = await self._agent.run(prompt)
-        return result.output
+        answer = result.output
+        # Enrich with source-path metadata so callers (CLI, API consumers)
+        # can show users a filename rather than just an opaque chunk_id.
+        answer.cited_sources = _build_cited_sources(answer.citations, hits)
+        return answer

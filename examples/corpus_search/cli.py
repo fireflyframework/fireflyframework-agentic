@@ -132,7 +132,17 @@ async def _run_query(args: argparse.Namespace) -> int:
     try:
         result = await agent.query(args.question, top_k=args.top_k)
         print(result.text)
-        if result.citations:
+        if result.cited_sources:
+            print()
+            print("Sources:")
+            for src in result.cited_sources:
+                # Show the chunk_id (so the user can match it to the inline
+                # [chunk_id] markers in the answer text) plus the filename
+                # of the source document.
+                print(f"  [{src.chunk_id}] {Path(src.source_path).name}")
+        elif result.citations:
+            # Fallback: LLM cited chunk_ids that didn't appear in the hits
+            # (rare; usually a hallucinated id). Show the raw citations.
             print()
             print("Citations:", ", ".join(result.citations))
     finally:
