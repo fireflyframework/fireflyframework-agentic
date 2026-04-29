@@ -34,6 +34,7 @@ from fireflyframework_agentic.agents.base import FireflyAgent
 class TestStreamingLatencyBenchmarks:
     """Benchmark streaming latency for different modes."""
 
+    @pytest.mark.nightly
     @pytest.mark.asyncio
     async def test_bench_buffered_streaming_latency(self, benchmark):
         """Benchmark buffered streaming mode latency."""
@@ -55,6 +56,7 @@ class TestStreamingLatencyBenchmarks:
 
         benchmark(lambda: pytest.asyncio.fixture(stream_buffered))
 
+    @pytest.mark.nightly
     @pytest.mark.asyncio
     async def test_bench_incremental_streaming_latency(self, benchmark):
         """Benchmark incremental streaming mode latency."""
@@ -76,6 +78,7 @@ class TestStreamingLatencyBenchmarks:
 
         benchmark(lambda: pytest.asyncio.fixture(stream_incremental))
 
+    @pytest.mark.nightly
     @pytest.mark.asyncio
     async def test_bench_incremental_with_debounce(self, benchmark):
         """Benchmark incremental streaming with debouncing."""
@@ -96,6 +99,7 @@ class TestStreamingLatencyBenchmarks:
 
         benchmark(lambda: pytest.asyncio.fixture(stream_with_debounce))
 
+    @pytest.mark.nightly
     @pytest.mark.asyncio
     async def test_bench_full_response_buffered(self, benchmark):
         """Benchmark full response streaming in buffered mode."""
@@ -113,6 +117,7 @@ class TestStreamingLatencyBenchmarks:
 
         benchmark(lambda: pytest.asyncio.fixture(stream_full_buffered))
 
+    @pytest.mark.nightly
     @pytest.mark.asyncio
     async def test_bench_full_response_incremental(self, benchmark):
         """Benchmark full response streaming in incremental mode."""
@@ -130,6 +135,7 @@ class TestStreamingLatencyBenchmarks:
 
         benchmark(lambda: pytest.asyncio.fixture(stream_full_incremental))
 
+    @pytest.mark.nightly
     @pytest.mark.asyncio
     async def test_bench_stream_context_manager_overhead(self, benchmark):
         """Benchmark overhead of stream context manager creation."""
@@ -148,6 +154,7 @@ class TestStreamingLatencyBenchmarks:
 class TestStreamingModeComparison:
     """Compare buffered vs incremental streaming performance."""
 
+    @pytest.mark.nightly
     @pytest.mark.asyncio
     async def test_bench_time_to_first_token_comparison(self, benchmark):
         """Compare time-to-first-token between modes."""
@@ -155,6 +162,7 @@ class TestStreamingModeComparison:
         # Expected: Incremental mode should have lower TTFT
         pass
 
+    @pytest.mark.nightly
     @pytest.mark.asyncio
     async def test_bench_throughput_comparison(self, benchmark):
         """Compare overall throughput between modes."""
