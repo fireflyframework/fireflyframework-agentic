@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from examples.corpus_search.corpus import ChunkHit, SqliteCorpus, StoredChunk
+from examples.corpus_search.corpus import SqliteCorpus, StoredChunk
 
 
 @pytest.fixture

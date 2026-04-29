@@ -6,16 +6,15 @@ from typing import Any
 
 import pytest
 
-from fireflyframework_agentic.content.chunking import TextChunker
-from fireflyframework_agentic.content.loaders import MarkitdownLoader
-from fireflyframework_agentic.embeddings.types import EmbeddingResult
 from examples.corpus_search.corpus import SqliteCorpus
 from examples.corpus_search.ingest.ledger import IngestLedger
 from examples.corpus_search.ingest.pipeline import (
     IngestionResult,
     ingest_one,
 )
-
+from fireflyframework_agentic.content.chunking import TextChunker
+from fireflyframework_agentic.content.loaders import MarkitdownLoader
+from fireflyframework_agentic.embeddings.types import EmbeddingResult
 
 # --- Stubs ----------------------------------------------------------------
 
@@ -144,7 +143,6 @@ async def test_re_ingest_changed_hash_replaces_chunks(setup):
     path = _write_md(setup["tmp_path"], "doc.txt", "Original content.")
     first = await ingest_one(path=path, **{k: setup[k] for k in ("corpus", "vector_store", "embedder", "ledger", "chunker", "loader")})
     assert first.status == "success"
-    n_first = first.n_chunks
 
     # Change file -> different hash
     path.write_text("Brand new content that is much longer to produce different chunks.")
@@ -194,3 +192,60 @@ async def test_embed_failure_marks_failed_and_cleans_up(setup):
     assert setup["vector_store"].docs == {}
     rows = await setup["corpus"].query("SELECT status FROM ingestions WHERE doc_id = :id", {"id": result.doc_id})
     assert rows[0]["status"] == "failed"
+
+
+# --- Regression: vector-store delete failure during re-ingest -----------
+
+
+class _FlakyDeleteVectorStore(_StubVectorStore):
+    """Vector store whose ``delete`` raises the first time but lets ``upsert``
+    succeed. Simulates a transient vector-store failure during re-ingest
+    cleanup of prior chunks (Issue 8 from the code review)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.delete_failures = 1
+
+    async def delete(self, ids, namespace: str = "default") -> None:
+        if self.delete_failures > 0:
+            self.delete_failures -= 1
+            raise RuntimeError("simulated vector-store delete blip")
+        await super().delete(ids, namespace)
+
+
+async def test_re_ingest_proceeds_when_prior_vector_delete_fails(tmp_path):
+    """If the vector store's delete-of-prior-chunks blips during re-ingest,
+    the corpus should still be reset and re-ingest should still complete.
+    Orphan vectors are acceptable (they get overwritten by the new upsert)."""
+    corpus = SqliteCorpus(tmp_path / "corpus.sqlite")
+    await corpus.initialise()
+    try:
+        ledger = IngestLedger(corpus)
+        embedder = _StubEmbedder()
+        vector_store = _FlakyDeleteVectorStore()
+        chunker = TextChunker(chunk_size=80, chunk_overlap=10)
+        loader = MarkitdownLoader()
+
+        path = tmp_path / "doc.txt"
+        path.write_text("Original content.")
+        first = await ingest_one(
+            path=path, corpus=corpus, vector_store=vector_store,
+            embedder=embedder, ledger=ledger, chunker=chunker, loader=loader,
+        )
+        assert first.status == "success"
+
+        # Re-ingest with changed content. The flaky delete will raise once,
+        # but the pipeline should log and proceed, not propagate.
+        path.write_text("Brand new content here.")
+        second = await ingest_one(
+            path=path, corpus=corpus, vector_store=vector_store,
+            embedder=embedder, ledger=ledger, chunker=chunker, loader=loader,
+        )
+        assert second.status == "success"
+
+        # Corpus reflects the new content (no leftover from the original).
+        rows = await corpus.query("SELECT content FROM chunks WHERE doc_id = :id", {"id": second.doc_id})
+        assert len(rows) >= 1
+        assert "Brand new content" in rows[0]["content"]
+    finally:
+        await corpus.close()

@@ -30,7 +30,6 @@ from examples.corpus_search.ingest.retry import (
 )
 from fireflyframework_agentic.embeddings.types import EmbeddingResult
 
-
 # --- Mocked exception types simulating openai SDK errors ---------------
 
 
@@ -119,15 +118,15 @@ def test_is_retryable_detects_connection_error_class():
 
 
 def test_is_retryable_detects_429_status_code():
-    class _Custom(Exception):
+    class _CustomError(Exception):
         status_code = 429
-    assert is_retryable(_Custom("rate limit")) is True
+    assert is_retryable(_CustomError("rate limit")) is True
 
 
 def test_is_retryable_detects_5xx_status_code():
-    class _Custom(Exception):
+    class _CustomError(Exception):
         status_code = 503
-    assert is_retryable(_Custom("service unavailable")) is True
+    assert is_retryable(_CustomError("service unavailable")) is True
 
 
 def test_is_retryable_detects_429_in_message():

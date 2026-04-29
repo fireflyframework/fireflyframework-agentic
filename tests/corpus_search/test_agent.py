@@ -20,11 +20,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from fireflyframework_agentic.embeddings.types import EmbeddingResult
 from examples.corpus_search.agent import CorpusAgent
-from examples.corpus_search.corpus import ChunkHit
 from examples.corpus_search.retrieval.answerer import Answer
-
+from fireflyframework_agentic.embeddings.types import EmbeddingResult
 
 # --- Stubs --------------------------------------------------------------
 

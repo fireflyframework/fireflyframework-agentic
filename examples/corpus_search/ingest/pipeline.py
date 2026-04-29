@@ -131,9 +131,21 @@ async def ingest_one(
             {"id": doc_id},
         )
         prior_ids = [r["chunk_id"] for r in prior]
-        if prior_ids:
-            await vector_store.delete(prior_ids)
+        # The corpus is the source of truth: delete its chunks first, then
+        # best-effort the vector store. If the vector store delete blips,
+        # we log a warning and proceed — orphan vectors are harmless (they
+        # get overwritten on the next successful re-ingest of this doc),
+        # whereas leaving the corpus in the prior state would block
+        # re-extraction.
         await corpus.delete_by_doc_id(doc_id)
+        if prior_ids:
+            try:
+                await vector_store.delete(prior_ids)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "vector store cleanup failed for prior chunks of doc %s: %s",
+                    doc_id, exc,
+                )
 
         if not stored_chunks:
             # No content -> still succeed but with zero chunks.

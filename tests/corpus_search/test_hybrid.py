@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import Any
 
 import pytest
@@ -10,7 +9,6 @@ from examples.corpus_search.retrieval.hybrid import (
     HybridRetriever,
     reciprocal_rank_fusion,
 )
-
 
 # --- RRF helper -----------------------------------------------------------
 
