@@ -48,7 +48,8 @@ class _StubVectorStore:
 
     async def upsert(self, documents: Sequence[Any], namespace: str = "default") -> None:
         for d in documents:
-            self.docs[d.id] = {"embedding": d.embedding, "content": d.content, "metadata": d.metadata}
+            # Match the framework's VectorDocument shape — `.text`, not `.content`.
+            self.docs[d.id] = {"embedding": d.embedding, "text": d.text, "metadata": d.metadata}
 
     async def delete(self, ids: Sequence[str], namespace: str = "default") -> None:
         for i in ids:

@@ -125,3 +125,7 @@ docs/plans/
 # Distribution / packaging
 *.tar.gz
 *.zip
+
+# corpus_search local working directories
+/drop/
+/kg/

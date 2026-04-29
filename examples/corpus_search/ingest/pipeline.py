@@ -27,6 +27,7 @@ from examples.corpus_search.ingest.ledger import IngestLedger
 from fireflyframework_agentic.content.chunking import TextChunker
 from fireflyframework_agentic.content.loaders import Document, MarkitdownLoader
 from fireflyframework_agentic.embeddings.types import EmbeddingResult
+from fireflyframework_agentic.vectorstores.types import VectorDocument
 
 log = logging.getLogger(__name__)
 
@@ -34,16 +35,6 @@ log = logging.getLogger(__name__)
 @runtime_checkable
 class _Embedder(Protocol):
     async def embed(self, texts: list[str], **kwargs: Any) -> EmbeddingResult: ...
-
-
-class _VectorDoc:
-    """Minimal duck-type for VectorDocument; the framework's class is also accepted."""
-
-    def __init__(self, id: str, embedding: list[float], content: str, metadata: dict[str, Any]):
-        self.id = id
-        self.embedding = embedding
-        self.content = content
-        self.metadata = metadata
 
 
 @runtime_checkable
@@ -152,10 +143,10 @@ async def ingest_one(
         await corpus.upsert_chunks(stored_chunks)
 
         vector_docs = [
-            _VectorDoc(
+            VectorDocument(
                 id=c.chunk_id,
+                text=c.content,
                 embedding=embeddings[i],
-                content=c.content,
                 metadata={
                     "doc_id": c.doc_id,
                     "chunk_id": c.chunk_id,

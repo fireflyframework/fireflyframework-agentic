@@ -53,9 +53,10 @@ class _StubVectorStore:
     async def upsert(self, documents: Sequence[Any], namespace: str = "default") -> None:
         ids = []
         for d in documents:
+            # Match the framework's VectorDocument shape — `.text`, not `.content`.
             self.docs[d.id] = {
                 "embedding": d.embedding,
-                "content": d.content,
+                "text": d.text,
                 "metadata": d.metadata,
             }
             ids.append(d.id)
