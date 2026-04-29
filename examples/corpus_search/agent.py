@@ -33,6 +33,15 @@ from fireflyframework_agentic.pipeline.triggers import FolderWatcher
 log = logging.getLogger(__name__)
 
 
+def _is_hidden(path: Path, root: Path) -> bool:
+    """True if any path component (relative to root) starts with '.'."""
+    try:
+        rel = path.relative_to(root)
+    except ValueError:
+        rel = path
+    return any(part.startswith(".") for part in rel.parts)
+
+
 class CorpusAgent:
     """High-level facade for ingest + query.
 
@@ -186,11 +195,18 @@ class CorpusAgent:
         )
 
     async def ingest_folder(self, folder: Path) -> list[IngestionResult]:
+        """Recursively ingest every file under ``folder``.
+
+        Hidden files (anything starting with ``.``) are skipped — that includes
+        macOS ``.DS_Store`` metadata and editor swap files.
+        """
         await self._ensure_corpus_ready()
+        root = Path(folder)
         results: list[IngestionResult] = []
-        for path in sorted(Path(folder).iterdir()):
-            if path.is_file():
-                results.append(await self.ingest_one(path))
+        candidates = sorted(p for p in root.rglob("*") if p.is_file() and not _is_hidden(p, root))
+        log.info("found %d file(s) under %s", len(candidates), root)
+        for path in candidates:
+            results.append(await self.ingest_one(path))
         return results
 
     async def watch(self, folder: Path) -> AsyncIterator[IngestionResult]:

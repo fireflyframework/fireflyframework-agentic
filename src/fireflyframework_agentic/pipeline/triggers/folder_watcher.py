@@ -36,9 +36,21 @@ class FolderWatcher:
     stability_interval_ms: int = 200
 
     async def startup_scan(self) -> AsyncIterator[Path]:
-        for p in sorted(self.folder.iterdir()):
-            if p.is_file():
-                yield p
+        """Yield every existing file under ``folder`` (recursive).
+
+        Hidden files (anything starting with ``.`` in any path component
+        relative to ``folder``) are skipped.
+        """
+        for p in sorted(self.folder.rglob("*")):
+            if not p.is_file():
+                continue
+            try:
+                rel_parts = p.relative_to(self.folder).parts
+            except ValueError:
+                rel_parts = p.parts
+            if any(part.startswith(".") for part in rel_parts):
+                continue
+            yield p
 
     async def wait_for_stability(self, path: Path, *, max_wait_ms: int = 5000) -> bool:
         deadline = asyncio.get_event_loop().time() + max_wait_ms / 1000.0
