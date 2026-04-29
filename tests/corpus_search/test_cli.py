@@ -33,7 +33,10 @@ def test_query_subcommand_parses_question():
     assert ns.embed_model.startswith("azure:text-embedding")
     assert ns.expansion_model.startswith("anthropic:claude-haiku")
     assert ns.answer_model.startswith("anthropic:claude-sonnet")
-    assert ns.top_k == 10
+    assert ns.rerank_model.startswith("anthropic:claude-haiku")
+    assert ns.rerank_pool == 20
+    # Default top_k is 5 — the *post-rerank* count fed to the answer agent.
+    assert ns.top_k == 5
 
 
 def test_query_subcommand_with_overrides():
@@ -42,10 +45,13 @@ def test_query_subcommand_with_overrides():
         "query", "what?",
         "--root", "./mykg",
         "--top-k", "20",
+        "--rerank-pool", "40",
+        "--rerank-model", "anthropic:claude-haiku-4-5-20251001",
         "--embed-model", "openai:text-embedding-3-large",
         "--answer-model", "anthropic:claude-opus-4-7",
     ])
     assert ns.top_k == 20
+    assert ns.rerank_pool == 40
     assert ns.embed_model == "openai:text-embedding-3-large"
     assert ns.answer_model == "anthropic:claude-opus-4-7"
 

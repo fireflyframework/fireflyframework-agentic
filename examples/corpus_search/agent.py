@@ -26,6 +26,7 @@ from examples.corpus_search.ingest.pipeline import IngestionResult, ingest_one
 from examples.corpus_search.retrieval.answerer import Answer, AnswerAgent
 from examples.corpus_search.retrieval.expander import QueryExpander
 from examples.corpus_search.retrieval.hybrid import HybridRetriever
+from examples.corpus_search.retrieval.reranker import HaikuReranker
 from fireflyframework_agentic.content.chunking import TextChunker
 from fireflyframework_agentic.content.loaders import MarkitdownLoader
 from fireflyframework_agentic.pipeline.triggers import FolderWatcher
@@ -55,6 +56,8 @@ class CorpusAgent:
         embed_model: str,
         expansion_model: str,
         answer_model: str,
+        rerank_model: str,
+        rerank_pool: int = 20,
         # test injection — bypass the framework's real backends
         _embedder: Any | None = None,
         _vector_store: Any | None = None,
@@ -69,6 +72,8 @@ class CorpusAgent:
         self._embed_model = embed_model
         self._expansion_model = expansion_model
         self._answer_model = answer_model
+        self._rerank_model = rerank_model
+        self._rerank_pool = rerank_pool
         self._chunker = TextChunker(chunk_size=600, chunk_overlap=80)
         self._loader = MarkitdownLoader()
 
@@ -77,6 +82,7 @@ class CorpusAgent:
         self._expander: QueryExpander | None = None
         self._answerer: AnswerAgent | None = None
         self._retriever: HybridRetriever | None = None
+        self._reranker: HaikuReranker | None = None
 
         self._corpus_ready = False
         self._query_ready = False
@@ -102,6 +108,8 @@ class CorpusAgent:
             self._expander = QueryExpander(model=self._expansion_model)
         if self._answerer is None:
             self._answerer = AnswerAgent(model=self._answer_model)
+        if self._reranker is None:
+            self._reranker = HaikuReranker(model=self._rerank_model)
         if self._retriever is None:
             self._retriever = HybridRetriever(
                 corpus=self._corpus,
@@ -213,20 +221,31 @@ class CorpusAgent:
         async for path in watcher.watch():
             yield await self.ingest_one(path)
 
-    async def query(self, question: str, *, top_k: int = 10) -> Answer:
-        """Run a hybrid-search + answer-synthesis pipeline.
+    async def query(self, question: str, *, top_k: int = 5) -> Answer:
+        """Run the full query pipeline: expand → retrieve → rerank → answer.
 
-        ``top_k`` is the number of fused chunks fed into the answer agent.
+        ``top_k`` is the number of chunks fed into the answer agent
+        *after* reranking. Retrieval pulls a wider pool (``rerank_pool``,
+        default 20) so the reranker has enough candidates to choose
+        from. Reducing ``top_k`` from 10 to 5 typically halves Sonnet's
+        wall-clock time without hurting answer quality, because the
+        reranker filters out low-relevance chunks first.
         """
         await self._ensure_query_ready()
         assert self._expander is not None
         assert self._retriever is not None
+        assert self._reranker is not None
         assert self._answerer is not None
+
         queries = await self._expander.expand(question)
-        hits = await self._retriever.retrieve(
-            queries, top_k_per_query=30, top_k_final=top_k,
+        # Cast a wider net for the reranker to choose from. The reranker
+        # then narrows to top_k by judged relevance — better precision
+        # than RRF-positional alone.
+        candidates = await self._retriever.retrieve(
+            queries, top_k_per_query=30, top_k_final=self._rerank_pool,
         )
-        return await self._answerer.answer(question, hits)
+        top_hits = await self._reranker.rerank(question, candidates, top_k=top_k)
+        return await self._answerer.answer(question, top_hits)
 
     async def close(self) -> None:
         await self._corpus.close()

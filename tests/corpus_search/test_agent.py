@@ -78,18 +78,21 @@ async def agent(tmp_path):
     with (
         patch("examples.corpus_search.retrieval.expander.FireflyAgent", return_value=mock_agent_instance),
         patch("examples.corpus_search.retrieval.answerer.FireflyAgent", return_value=mock_agent_instance),
+        patch("examples.corpus_search.retrieval.reranker.FireflyAgent", return_value=mock_agent_instance),
     ):
         a = CorpusAgent(
             root=tmp_path / "kg",
             embed_model="openai:text-embedding-3-small",
             expansion_model="anthropic:dummy",
             answer_model="anthropic:dummy",
+            rerank_model="anthropic:dummy",
+            rerank_pool=20,
             # Inject stubs to avoid real network calls
             _embedder=_StubEmbedder(),
             _vector_store=_StubVectorStore(),
         )
-        # _ensure_started constructs QueryExpander + AnswerAgent (lazy);
-        # keep the FireflyAgent patches active during this call.
+        # _ensure_started constructs QueryExpander + AnswerAgent + HaikuReranker
+        # (lazy); keep the FireflyAgent patches active during this call.
         await a._ensure_started()
     yield a
     await a.close()
@@ -120,6 +123,11 @@ async def test_ingest_folder_processes_each_file(agent, tmp_path):
     assert all(r.status == "success" for r in results)
 
 
+async def _passthrough_reranker(question, hits, *, top_k):
+    """Stub reranker that just keeps the first ``top_k`` hits in input order."""
+    return list(hits[:top_k])
+
+
 async def test_query_returns_answer_with_citations(agent, tmp_path):
     src = tmp_path / "drop"
     src.mkdir()
@@ -127,8 +135,9 @@ async def test_query_returns_answer_with_citations(agent, tmp_path):
     f.write_text("Sam Altman is the CEO of OpenAI.")
     await agent.ingest_one(f)
 
-    # Stub the expander and answerer to avoid LLM calls.
+    # Stub each stage of the query pipeline to avoid real LLM calls.
     agent._expander.expand = AsyncMock(return_value=["sam altman"])
+    agent._reranker.rerank = _passthrough_reranker
     canned = Answer(text="Sam Altman is the CEO. [d-0]", citations=["d-0"])
     class _RR:
         def __init__(self, a: Answer) -> None:
@@ -144,6 +153,7 @@ async def test_query_returns_answer_with_citations(agent, tmp_path):
 async def test_query_with_no_corpus_returns_no_info(agent):
     # Don't ingest anything.
     agent._expander.expand = AsyncMock(return_value=["nothing here"])
+    agent._reranker.rerank = _passthrough_reranker
     # The answerer agent's .run shouldn't even be called since hits will be empty.
     agent._answerer._agent.run = AsyncMock()  # would error if called
     result = await agent.query("anything?")

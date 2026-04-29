@@ -14,14 +14,18 @@
 
 from __future__ import annotations
 
-from examples.corpus_search.retrieval.answerer import Answer, AnswerAgent
+from examples.corpus_search.retrieval.answerer import Answer, AnswerAgent, CitedSource
 from examples.corpus_search.retrieval.expander import QueryExpander
 from examples.corpus_search.retrieval.hybrid import HybridRetriever, reciprocal_rank_fusion
+from examples.corpus_search.retrieval.reranker import HaikuReranker, RerankerResult
 
 __all__ = [
     "Answer",
     "AnswerAgent",
+    "CitedSource",
+    "HaikuReranker",
     "HybridRetriever",
     "QueryExpander",
+    "RerankerResult",
     "reciprocal_rank_fusion",
 ]

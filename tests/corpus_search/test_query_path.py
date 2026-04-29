@@ -239,16 +239,25 @@ async def agent(tmp_path):
     with (
         patch("examples.corpus_search.retrieval.expander.FireflyAgent", return_value=mock_agent_instance),
         patch("examples.corpus_search.retrieval.answerer.FireflyAgent", return_value=mock_agent_instance),
+        patch("examples.corpus_search.retrieval.reranker.FireflyAgent", return_value=mock_agent_instance),
     ):
         a = CorpusAgent(
             root=tmp_path / "kg",
             embed_model="openai:text-embedding-3-small",
             expansion_model="anthropic:dummy",
             answer_model="anthropic:dummy",
+            rerank_model="anthropic:dummy",
+            rerank_pool=20,
             _embedder=_StubEmbedder(),
             _vector_store=_StubVectorStore(),
         )
         await a._ensure_started()
+        # Default the reranker to a passthrough so query-path tests focus
+        # on the surrounding pipeline. Individual tests override when they
+        # want to exercise reranker semantics.
+        async def _passthrough(question, hits, *, top_k):
+            return list(hits[:top_k])
+        a._reranker.rerank = _passthrough
     yield a
     await a.close()
 
@@ -303,8 +312,10 @@ async def test_query_with_punctuation_only_question_returns_no_info(agent):
     agent._answerer._agent.run.assert_not_awaited()
 
 
-async def test_query_passes_top_k_through_to_retriever(agent, tmp_path):
-    """Wired-through ``top_k`` parameter should override the default of 10."""
+async def test_query_routes_top_k_to_reranker_not_retriever(agent, tmp_path):
+    """``query(top_k=N)`` is the *post-rerank* count: retriever pulls the
+    wider ``rerank_pool`` (default 20), then the reranker narrows to ``N``.
+    """
     src = tmp_path / "drop"
     src.mkdir()
     for i in range(5):
@@ -315,17 +326,27 @@ async def test_query_passes_top_k_through_to_retriever(agent, tmp_path):
     canned = Answer(text="ok", citations=[])
     agent._answerer._agent.run = AsyncMock(return_value=_stub_run_result(canned))
 
-    # Spy on retriever to inspect top_k_final
+    # Spy on retriever — should see the rerank_pool, not the user's top_k.
     original_retrieve = agent._retriever.retrieve
-    seen_top_k: list[int] = []
+    seen_retrieve_top_k: list[int] = []
 
-    async def _spy(queries, *, top_k_per_query, top_k_final):
-        seen_top_k.append(top_k_final)
+    async def _retrieve_spy(queries, *, top_k_per_query, top_k_final):
+        seen_retrieve_top_k.append(top_k_final)
         return await original_retrieve(queries, top_k_per_query=top_k_per_query, top_k_final=top_k_final)
+    agent._retriever.retrieve = _retrieve_spy
 
-    agent._retriever.retrieve = _spy
+    # Spy on reranker — should see the user's top_k.
+    seen_rerank_top_k: list[int] = []
+
+    async def _rerank_spy(question, hits, *, top_k):
+        seen_rerank_top_k.append(top_k)
+        return list(hits[:top_k])
+    agent._reranker.rerank = _rerank_spy
+
     await agent.query("sales", top_k=3)
-    assert seen_top_k == [3]
+
+    assert seen_retrieve_top_k == [agent._rerank_pool]  # default 20
+    assert seen_rerank_top_k == [3]
 
 
 async def test_query_with_unicode_question_does_not_blow_up(agent, tmp_path):

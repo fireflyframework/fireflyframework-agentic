@@ -26,6 +26,9 @@ from dotenv import load_dotenv
 _DEFAULT_EMBED_MODEL = "azure:text-embedding-3-small"
 _DEFAULT_EXPANSION_MODEL = "anthropic:claude-haiku-4-5-20251001"
 _DEFAULT_ANSWER_MODEL = "anthropic:claude-sonnet-4-6"
+_DEFAULT_RERANK_MODEL = "anthropic:claude-haiku-4-5-20251001"
+_DEFAULT_RERANK_POOL = 20
+_DEFAULT_TOP_K = 5
 _DEFAULT_ROOT = Path("./kg")
 
 
@@ -57,8 +60,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
                          help="LLM for query expansion.")
     p_query.add_argument("--answer-model", default=_DEFAULT_ANSWER_MODEL,
                          help="LLM for answer synthesis.")
-    p_query.add_argument("--top-k", type=int, default=10,
-                         help="Number of fused chunks to feed the answer agent.")
+    p_query.add_argument("--rerank-model", default=_DEFAULT_RERANK_MODEL,
+                         help="LLM for listwise reranking of retrieved candidates.")
+    p_query.add_argument("--rerank-pool", type=int, default=_DEFAULT_RERANK_POOL,
+                         help="Number of candidates pulled by hybrid retrieval before reranking.")
+    p_query.add_argument("--top-k", type=int, default=_DEFAULT_TOP_K,
+                         help="Number of chunks fed to the answer agent after reranking.")
     p_query.add_argument("--verbose", action="store_true")
 
     return parser
@@ -106,6 +113,8 @@ async def _run_ingest(args: argparse.Namespace) -> int:
         embed_model=args.embed_model,
         expansion_model=_DEFAULT_EXPANSION_MODEL,
         answer_model=_DEFAULT_ANSWER_MODEL,
+        rerank_model=_DEFAULT_RERANK_MODEL,
+        rerank_pool=_DEFAULT_RERANK_POOL,
     )
     try:
         if args.watch:
@@ -128,6 +137,8 @@ async def _run_query(args: argparse.Namespace) -> int:
         embed_model=args.embed_model,
         expansion_model=args.expansion_model,
         answer_model=args.answer_model,
+        rerank_model=args.rerank_model,
+        rerank_pool=args.rerank_pool,
     )
     try:
         result = await agent.query(args.question, top_k=args.top_k)

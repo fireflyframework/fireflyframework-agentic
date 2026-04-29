@@ -80,7 +80,7 @@ Network calls in V1 are limited to:
 | Re-ingestion | Doc-id replace (delete chunks for `doc_id`, then re-chunk and re-embed) |
 | Query expansion | Haiku, 3–5 reformulations per question |
 | Hybrid retrieval | BM25 (FTS5) + vector (Chroma) per reformulation, fused via RRF (k=60) |
-| Reranker | **None** in V1 — RRF + Sonnet's context handling are sufficient |
+| Reranker | **Haiku listwise reranker** between retrieval and answer — wider initial pool (default 20) → top-K (default 5) by judged relevance, halving Sonnet's input and improving precision |
 | Answer synthesis | Sonnet 4.6 with retrieved chunks as context, `[chunk_id]` citations |
 | LLM (expansion) | `anthropic:claude-haiku-4-5-20251001`; env `ANTHROPIC_API_KEY` |
 | LLM (answer) | `anthropic:claude-sonnet-4-6` |
