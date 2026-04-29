@@ -241,9 +241,7 @@ class SQLiteStore:
         wal: bool = False,
     ) -> None:
         if not _SAFE_IDENTIFIER.match(table_name):
-            raise ValueError(
-                f"Invalid table_name: {table_name!r}. Must be a valid SQL identifier."
-            )
+            raise ValueError(f"Invalid table_name: {table_name!r}. Must be a valid SQL identifier.")
         self._path = Path(path)
         self._table_name = table_name
         self._wal = wal
@@ -261,9 +259,7 @@ class SQLiteStore:
                 isolation_level=None,  # autocommit
             )
         except Exception as exc:
-            raise DatabaseConnectionError(
-                f"Failed to open SQLite database at {self._path}: {exc}"
-            ) from exc
+            raise DatabaseConnectionError(f"Failed to open SQLite database at {self._path}: {exc}") from exc
 
         try:
             with self._lock:
@@ -285,8 +281,7 @@ class SQLiteStore:
                     """
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._table_name}_namespace "
-                    f"ON {self._table_name}(namespace)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._table_name}_namespace ON {self._table_name}(namespace)"
                 )
                 cur.execute(
                     f"CREATE INDEX IF NOT EXISTS idx_{self._table_name}_namespace_key "
@@ -348,15 +343,19 @@ class SQLiteStore:
         try:
             now = datetime.now(UTC).isoformat()
             with self._lock:
-                rows = self._require_conn().execute(
-                    f"""
+                rows = (
+                    self._require_conn()
+                    .execute(
+                        f"""
                     SELECT content FROM {self._table_name}
                     WHERE namespace = ?
                       AND (expires_at IS NULL OR expires_at > ?)
                     ORDER BY created_at ASC
                     """,
-                    (namespace, now),
-                ).fetchall()
+                        (namespace, now),
+                    )
+                    .fetchall()
+                )
             return [MemoryEntry.model_validate_json(r[0]) for r in rows]
         except Exception as exc:
             raise DatabaseStoreError(f"Failed to load entries: {exc}") from exc
@@ -366,8 +365,10 @@ class SQLiteStore:
         try:
             now = datetime.now(UTC).isoformat()
             with self._lock:
-                row = self._require_conn().execute(
-                    f"""
+                row = (
+                    self._require_conn()
+                    .execute(
+                        f"""
                     SELECT content FROM {self._table_name}
                     WHERE namespace = ?
                       AND key = ?
@@ -375,8 +376,10 @@ class SQLiteStore:
                     ORDER BY created_at DESC
                     LIMIT 1
                     """,
-                    (namespace, key, now),
-                ).fetchone()
+                        (namespace, key, now),
+                    )
+                    .fetchone()
+                )
             if row is None:
                 return None
             return MemoryEntry.model_validate_json(row[0])

@@ -16,11 +16,7 @@
 
 This module provides production-grade persistence backends using PostgreSQL
 and MongoDB. Both implementations support connection pooling, automatic
-schema migration, and namespace-scoped isolation, and require an optional
-dependency group plus an external database service.
-
-Stdlib-only backends (in-memory, JSON file, SQLite) live in
-:mod:`fireflyframework_agentic.memory.store`.
+schema migration, and namespace-scoped isolation.
 
 Examples:
     PostgreSQL backend::
@@ -612,4 +608,3 @@ class MongoDBStore:
             self._client.close()
             logger.info("MongoDB connection closed")
             self._initialized = False
-
