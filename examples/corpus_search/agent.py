@@ -37,7 +37,7 @@ log = logging.getLogger(__name__)
 class CorpusAgent:
     """High-level facade for ingest + query.
 
-    Owns the lifecycles of ``SqliteCorpus``, the Chroma vector store, the
+    Owns the lifecycles of ``SqliteCorpus``, the vector store, the
     embedder (Azure OpenAI or OpenAI), the ledger, and the three retrieval
     components (expander, retriever, answerer). The retrieval components are
     constructed lazily on the first ``query()`` call so that pure-ingest usage
@@ -238,6 +238,8 @@ class CorpusAgent:
 
     async def close(self) -> None:
         await self._corpus.close()
+        if self._vector_store is not None and hasattr(self._vector_store, "close"):
+            await self._vector_store.close()
         self._corpus_ready = False
         self._query_ready = False
 

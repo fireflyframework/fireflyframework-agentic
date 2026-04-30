@@ -157,6 +157,8 @@ class SqliteVecVectorStore(BaseVectorStore):
         namespace: str,
     ) -> list[SearchResult]:
         assert self._conn is not None
+        # Namespace filter is applied after LIMIT — with a single namespace (the RAG default)
+        # this is correct; with multiple namespaces, results may be fewer than top_k.
         rows = self._conn.execute(
             f"""
             SELECT s.id, v.distance

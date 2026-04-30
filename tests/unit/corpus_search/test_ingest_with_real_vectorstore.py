@@ -74,7 +74,7 @@ async def deps(tmp_path):
     await corpus.close()
 
 
-async def test_ingest_one_works_against_real_inmemory_vectorstore(deps, tmp_path):
+async def test_ingest_one_works_against_real_sqlitevec_vectorstore(deps, tmp_path):
     """Regression test: VectorDocument upsert through BaseVectorStore.
 
     Previously the pipeline produced a duck-typed object with a `.content`
