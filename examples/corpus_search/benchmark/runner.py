@@ -496,6 +496,45 @@ def _print_summary(agg: BenchmarkResult) -> None:
     print()
 
 
+_REGRESSION_CHECKS: list[tuple[str, str]] = [
+    ("hit_at_5_rate", "Hit@5"),
+    ("mean_reciprocal_rank", "MRR"),
+    ("doc_match_rate", "Doc-match rate"),
+    ("substring_match_rate", "Substring match rate"),
+]
+
+
+def _compare_against_baseline(
+    current: BenchmarkResult,
+    baseline_path: Path,
+    tolerance: float,
+) -> list[str] | None:
+    """Compare *current* against a previously saved JSON baseline.
+
+    Returns:
+        ``None``        — baseline file not found; comparison skipped.
+        ``[]``          — no regressions within *tolerance*.
+        ``[msg, ...]``  — one message per metric that regressed.
+    """
+    if not baseline_path.exists():
+        print(f"\nBaseline file not found: {baseline_path} — skipping comparison.")
+        return None
+
+    baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+    regressions: list[str] = []
+    for attr, label in _REGRESSION_CHECKS:
+        cur = getattr(current, attr)
+        base = baseline.get(attr)
+        if base is None:
+            continue
+        if cur < base - tolerance:
+            regressions.append(
+                f"  {label}: {cur:.4f} < baseline {base:.4f} "
+                f"(delta {cur - base:+.4f}, tolerance ±{tolerance:.4f})"
+            )
+    return regressions
+
+
 def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     parser = argparse.ArgumentParser(
@@ -544,6 +583,28 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Write machine-readable results to this path.",
     )
+    parser.add_argument(
+        "--baseline",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "JSON file produced by a previous run to compare against. "
+            "If the file does not exist the comparison is skipped (first-run friendly). "
+            "Exits 1 when any tracked metric drops below the baseline minus the tolerance."
+        ),
+    )
+    parser.add_argument(
+        "--regression-tolerance",
+        type=float,
+        default=0.02,
+        metavar="DELTA",
+        help=(
+            "Absolute drop allowed below the baseline before the run is considered a "
+            "regression (default: 0.02 = 2 percentage points). Use 0.0 for mechanics "
+            "mode where results are fully deterministic."
+        ),
+    )
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
 
@@ -565,7 +626,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write("--rerank and --expand require ANTHROPIC_API_KEY\n")
         return 2
 
-    asyncio.run(
+    result = asyncio.run(
         run_benchmark(
             mode=args.mode,
             embed_dimension=args.embed_dimension,
@@ -579,6 +640,19 @@ def main(argv: list[str] | None = None) -> int:
             print_summary=not args.quiet,
         )
     )
+
+    if args.baseline is not None:
+        regressions = _compare_against_baseline(result, args.baseline, args.regression_tolerance)
+        if regressions is None:
+            pass  # baseline file absent — skipped
+        elif regressions:
+            print("\nREGRESSION DETECTED vs", args.baseline)
+            for line in regressions:
+                print(line)
+            return 1
+        else:
+            print(f"\nNo regressions vs {args.baseline} (tolerance {args.regression_tolerance:.3f}).")
+
     return 0
 
 
