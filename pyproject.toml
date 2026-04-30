@@ -84,7 +84,10 @@ google-embeddings = [
 mistral-embeddings = [
     "mistralai>=1.0.0",
 ]
-markitdown = ["markitdown[pdf,docx,pptx,xlsx]>=0.0.1a3"]
+markitdown = [
+    "markitdown[pdf,docx,pptx,xlsx]>=0.0.1a3",
+    "markdown-it-py>=3.0",
+]
 voyage-embeddings = [
     "voyageai>=0.3.0",
 ]
