@@ -60,7 +60,6 @@ def bench_loop() -> Iterator[asyncio.AbstractEventLoop]:
 
 
 @pytest.mark.nightly
-@pytest.mark.benchmark(group="http-pool")
 def test_bench_with_connection_pool(benchmark, bench_loop, mock_http_response):
     """Benchmark HTTP requests with connection pooling."""
     tool = HttpTool(use_pool=True, pool_size=100)
@@ -78,7 +77,6 @@ def test_bench_with_connection_pool(benchmark, bench_loop, mock_http_response):
 
 
 @pytest.mark.nightly
-@pytest.mark.benchmark(group="http-pool")
 def test_bench_without_connection_pool(benchmark, mock_http_response):
     """Benchmark HTTP requests without connection pooling (urllib fallback)."""
     tool = HttpTool(use_pool=False)
@@ -96,7 +94,6 @@ def test_bench_without_connection_pool(benchmark, mock_http_response):
 
 
 @pytest.mark.nightly
-@pytest.mark.benchmark(group="http-pool")
 def test_bench_concurrent_requests_with_pool(benchmark, bench_loop, mock_http_response):
     """Benchmark concurrent requests with connection pooling."""
     tool = HttpTool(use_pool=True, pool_size=50)
@@ -117,7 +114,6 @@ def test_bench_concurrent_requests_with_pool(benchmark, bench_loop, mock_http_re
 
 
 @pytest.mark.nightly
-@pytest.mark.benchmark(group="http-pool")
 def test_bench_sequential_requests_with_pool(benchmark, bench_loop, mock_http_response):
     """Benchmark sequential requests with connection pooling."""
     tool = HttpTool(use_pool=True, pool_size=100)
@@ -137,7 +133,6 @@ def test_bench_sequential_requests_with_pool(benchmark, bench_loop, mock_http_re
 
 
 @pytest.mark.nightly
-@pytest.mark.benchmark(group="http-pool")
 def test_bench_pool_size_small(benchmark, bench_loop, mock_http_response):
     """Benchmark with small pool size (10 connections)."""
     tool = HttpTool(use_pool=True, pool_size=10, pool_max_keepalive=5)
@@ -155,7 +150,6 @@ def test_bench_pool_size_small(benchmark, bench_loop, mock_http_response):
 
 
 @pytest.mark.nightly
-@pytest.mark.benchmark(group="http-pool")
 def test_bench_pool_size_large(benchmark, bench_loop, mock_http_response):
     """Benchmark with large pool size (200 connections)."""
     tool = HttpTool(use_pool=True, pool_size=200, pool_max_keepalive=100)
@@ -173,7 +167,6 @@ def test_bench_pool_size_large(benchmark, bench_loop, mock_http_response):
 
 
 @pytest.mark.nightly
-@pytest.mark.benchmark(group="http-pool")
 def test_bench_with_request_body(benchmark, bench_loop, mock_http_response):
     """Benchmark POST requests with body and connection pooling."""
     tool = HttpTool(use_pool=True, pool_size=100)
@@ -193,7 +186,6 @@ def test_bench_with_request_body(benchmark, bench_loop, mock_http_response):
 
 
 @pytest.mark.nightly
-@pytest.mark.benchmark(group="http-pool")
 def test_bench_different_urls_with_pool(benchmark, bench_loop, mock_http_response):
     """Benchmark requests to different URLs with connection pooling."""
     tool = HttpTool(use_pool=True, pool_size=100)
@@ -218,7 +210,6 @@ def test_bench_different_urls_with_pool(benchmark, bench_loop, mock_http_respons
 
 
 @pytest.mark.nightly
-@pytest.mark.benchmark(group="http-pool-comparison")
 def test_bench_pool_vs_no_pool_single_request():
     """Compare pooled vs non-pooled for single request.
 

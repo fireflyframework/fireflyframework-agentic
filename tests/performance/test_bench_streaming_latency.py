@@ -47,7 +47,6 @@ def bench_loop() -> Iterator[asyncio.AbstractEventLoop]:
 
 
 @pytest.mark.nightly
-@pytest.mark.benchmark(group="streaming-latency")
 def test_bench_buffered_streaming_latency(benchmark, bench_loop):
     """Benchmark buffered streaming mode latency."""
     agent = FireflyAgent("bench-buffered", model="test", auto_register=False)
@@ -69,7 +68,6 @@ def test_bench_buffered_streaming_latency(benchmark, bench_loop):
 
 
 @pytest.mark.nightly
-@pytest.mark.benchmark(group="streaming-latency")
 def test_bench_incremental_streaming_latency(benchmark, bench_loop):
     """Benchmark incremental streaming mode latency."""
     agent = FireflyAgent("bench-incremental", model="test", auto_register=False)
@@ -91,7 +89,6 @@ def test_bench_incremental_streaming_latency(benchmark, bench_loop):
 
 
 @pytest.mark.nightly
-@pytest.mark.benchmark(group="streaming-latency")
 def test_bench_incremental_with_debounce(benchmark, bench_loop):
     """Benchmark incremental streaming with debouncing."""
     agent = FireflyAgent("bench-debounce", model="test", auto_register=False)
@@ -113,7 +110,6 @@ def test_bench_incremental_with_debounce(benchmark, bench_loop):
 
 
 @pytest.mark.nightly
-@pytest.mark.benchmark(group="streaming-latency")
 def test_bench_full_response_buffered(benchmark, bench_loop):
     """Benchmark full response streaming in buffered mode."""
     agent = FireflyAgent("bench-full-buf", model="test", auto_register=False)
@@ -132,7 +128,6 @@ def test_bench_full_response_buffered(benchmark, bench_loop):
 
 
 @pytest.mark.nightly
-@pytest.mark.benchmark(group="streaming-latency")
 def test_bench_full_response_incremental(benchmark, bench_loop):
     """Benchmark full response streaming in incremental mode."""
     agent = FireflyAgent("bench-full-inc", model="test", auto_register=False)
@@ -151,7 +146,6 @@ def test_bench_full_response_incremental(benchmark, bench_loop):
 
 
 @pytest.mark.nightly
-@pytest.mark.benchmark(group="streaming-latency")
 def test_bench_stream_context_manager_overhead(benchmark, bench_loop):
     """Benchmark overhead of stream context manager creation."""
     agent = FireflyAgent("bench-ctx", model="test", auto_register=False)
@@ -165,7 +159,6 @@ def test_bench_stream_context_manager_overhead(benchmark, bench_loop):
 
 
 @pytest.mark.nightly
-@pytest.mark.benchmark(group="streaming-comparison")
 def test_bench_time_to_first_token_comparison():
     """Compare time-to-first-token between modes.
 
@@ -176,7 +169,6 @@ def test_bench_time_to_first_token_comparison():
 
 
 @pytest.mark.nightly
-@pytest.mark.benchmark(group="streaming-comparison")
 def test_bench_throughput_comparison():
     """Compare overall throughput between modes.
 
