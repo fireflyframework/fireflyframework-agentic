@@ -93,7 +93,10 @@ google-embeddings = [
 mistral-embeddings = [
     "mistralai>=1.0.0",
 ]
-markitdown = ["markitdown[pdf,docx,pptx,xlsx]>=0.0.1a3"]
+markitdown = [
+    "markitdown[pdf,docx,pptx,xlsx]>=0.0.1a3",
+    "markdown-it-py>=3.0",
+]
 voyage-embeddings = [
     "voyageai>=0.3.0",
 ]
@@ -141,7 +144,7 @@ dev = [
     "pdfplumber>=0.11.0",
     "pre-commit>=3.8.0",
     "python-dotenv>=1.0.0",
-    "markitdown[pdf,docx,pptx,xlsx]>=0.0.1a3",
+    "fireflyframework-agentic[markitdown]",
     "sqlite-vec>=0.1.6",
 ]
 

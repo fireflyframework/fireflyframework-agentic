@@ -48,6 +48,7 @@ __all__ = [
     "ImageTiler",
     "MarkdownChunker",
     "MapReduceStrategy",
+    "MarkdownChunker",
     "SlidingWindowManager",
     "SummarizationStrategy",
     "TextChunker",
