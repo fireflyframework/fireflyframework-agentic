@@ -6,6 +6,7 @@ from fireflyframework_agentic.vectorstores.memory_store import InMemoryVectorSto
 from fireflyframework_agentic.vectorstores.pinecone_store import PineconeVectorStore
 from fireflyframework_agentic.vectorstores.qdrant_store import QdrantVectorStore
 from fireflyframework_agentic.vectorstores.registry import VectorStoreRegistry
+from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
 from fireflyframework_agentic.vectorstores.types import SearchFilter, SearchResult, VectorDocument
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     "QdrantVectorStore",
     "SearchFilter",
     "SearchResult",
+    "SqliteVecVectorStore",
     "VectorDocument",
     "VectorStoreProtocol",
     "VectorStoreRegistry",

@@ -1,6 +1,6 @@
 [project]
 name = "fireflyframework-agentic"
-version = "26.04.28"
+version = "26.04.30"
 description = "A GenAI metaframework built on Pydantic AI for building production-grade GenAI applications with agents, reasoning patterns, prompt engineering, observability, and more."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -93,6 +93,7 @@ google-embeddings = [
 mistral-embeddings = [
     "mistralai>=1.0.0",
 ]
+markitdown = ["markitdown[pdf,docx,pptx,xlsx]>=0.0.1a3"]
 voyage-embeddings = [
     "voyageai>=0.3.0",
 ]
@@ -105,8 +106,18 @@ bedrock-embeddings = [
 ollama-embeddings = [
     "httpx>=0.28.0",
 ]
+rag = [
+    "fireflyframework-agentic[markitdown,watch,openai-embeddings]",
+]
+corpus-search = [
+    "fireflyframework-agentic[rag,vectorstores-sqlite-vec]",
+    "python-dotenv>=1.0.0",
+]
 vectorstores-chroma = [
     "chromadb>=0.5.0",
+]
+vectorstores-sqlite-vec = [
+    "sqlite-vec>=0.1.6",
 ]
 vectorstores-pinecone = [
     "pinecone>=5.0.0",
@@ -114,8 +125,9 @@ vectorstores-pinecone = [
 vectorstores-qdrant = [
     "qdrant-client>=1.12.0",
 ]
+watch = ["watchfiles>=0.24.0"]
 all = [
-    "fireflyframework-agentic[rest,queues,postgres,mongodb,security,http,costs,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant]",
+    "fireflyframework-agentic[rest,queues,postgres,mongodb,security,http,costs,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,corpus-search,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,vectorstores-sqlite-vec,markitdown,watch]",
 ]
 dev = [
     "pytest>=8.3.0",
@@ -129,6 +141,8 @@ dev = [
     "pdfplumber>=0.11.0",
     "pre-commit>=3.8.0",
     "python-dotenv>=1.0.0",
+    "markitdown[pdf,docx,pptx,xlsx]>=0.0.1a3",
+    "sqlite-vec>=0.1.6",
 ]
 
 [project.scripts]
@@ -166,7 +180,7 @@ exclude = ["tests/**", "examples/**"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 markers = [
     "nightly: runs only in nightly CI. Long-running tests: benchmarks, real LLM/DB/HTTP, or anything not suitable for the PR gate.",
 ]

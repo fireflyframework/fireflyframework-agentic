@@ -23,153 +23,160 @@ Run with:
 
 from __future__ import annotations
 
+import asyncio
 import time
+from collections.abc import Iterator
 
 import pytest
 
 from fireflyframework_agentic.agents.base import FireflyAgent
 
 
-@pytest.mark.benchmark(group="streaming-latency")
-class TestStreamingLatencyBenchmarks:
-    """Benchmark streaming latency for different modes."""
+@pytest.fixture
+def bench_loop() -> Iterator[asyncio.AbstractEventLoop]:
+    """Single event loop reused across benchmark iterations.
 
-    @pytest.mark.nightly
-    @pytest.mark.asyncio
-    async def test_bench_buffered_streaming_latency(self, benchmark):
-        """Benchmark buffered streaming mode latency."""
-        agent = FireflyAgent("bench-buffered", model="test", auto_register=False)
+    `pytest-benchmark` runs the benchmarked callable many times. Sharing one
+    loop avoids per-iteration setup cost from dominating the measurement.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        yield loop
+    finally:
+        loop.close()
 
-        async def stream_buffered():
-            start = time.perf_counter()
-            first_token_time = None
 
-            stream_ctx = await agent.run_stream("hello", streaming_mode="buffered")
-            async with stream_ctx as stream:
-                async for _chunk in stream.stream_text():
-                    if first_token_time is None:
-                        first_token_time = time.perf_counter() - start
-                    # Only consume first few chunks for benchmarking
+@pytest.mark.nightly
+def test_bench_buffered_streaming_latency(benchmark, bench_loop):
+    """Benchmark buffered streaming mode latency."""
+    agent = FireflyAgent("bench-buffered", model="test", auto_register=False)
+
+    async def stream_buffered():
+        start = time.perf_counter()
+        first_token_time = None
+
+        stream_ctx = await agent.run_stream("hello", streaming_mode="buffered")
+        async with stream_ctx as stream:
+            async for _chunk in stream.stream_text():
+                if first_token_time is None:
+                    first_token_time = time.perf_counter() - start
+                break
+
+        return first_token_time
+
+    benchmark(lambda: bench_loop.run_until_complete(stream_buffered()))
+
+
+@pytest.mark.nightly
+def test_bench_incremental_streaming_latency(benchmark, bench_loop):
+    """Benchmark incremental streaming mode latency."""
+    agent = FireflyAgent("bench-incremental", model="test", auto_register=False)
+
+    async def stream_incremental():
+        start = time.perf_counter()
+        first_token_time = None
+
+        stream_ctx = await agent.run_stream("hello", streaming_mode="incremental")
+        async with stream_ctx as stream:
+            async for _token in stream.stream_tokens():
+                if first_token_time is None:
+                    first_token_time = time.perf_counter() - start
+                break
+
+        return first_token_time
+
+    benchmark(lambda: bench_loop.run_until_complete(stream_incremental()))
+
+
+@pytest.mark.nightly
+def test_bench_incremental_with_debounce(benchmark, bench_loop):
+    """Benchmark incremental streaming with debouncing."""
+    agent = FireflyAgent("bench-debounce", model="test", auto_register=False)
+
+    async def stream_with_debounce():
+        start = time.perf_counter()
+        first_token_time = None
+
+        stream_ctx = await agent.run_stream("hello", streaming_mode="incremental")
+        async with stream_ctx as stream:
+            async for _token in stream.stream_tokens(debounce_ms=10.0):
+                if first_token_time is None:
+                    first_token_time = time.perf_counter() - start
+                break
+
+        return first_token_time
+
+    benchmark(lambda: bench_loop.run_until_complete(stream_with_debounce()))
+
+
+@pytest.mark.nightly
+def test_bench_full_response_buffered(benchmark, bench_loop):
+    """Benchmark full response streaming in buffered mode."""
+    agent = FireflyAgent("bench-full-buf", model="test", auto_register=False)
+
+    async def stream_full_buffered():
+        chunks = []
+        stream_ctx = await agent.run_stream("Count to 10", streaming_mode="buffered")
+        async with stream_ctx as stream:
+            async for chunk in stream.stream_text():
+                chunks.append(chunk)
+                if len(chunks) >= 5:
                     break
+        return len(chunks)
 
-            return first_token_time
+    benchmark(lambda: bench_loop.run_until_complete(stream_full_buffered()))
 
-        benchmark(lambda: pytest.asyncio.fixture(stream_buffered))
 
-    @pytest.mark.nightly
-    @pytest.mark.asyncio
-    async def test_bench_incremental_streaming_latency(self, benchmark):
-        """Benchmark incremental streaming mode latency."""
-        agent = FireflyAgent("bench-incremental", model="test", auto_register=False)
+@pytest.mark.nightly
+def test_bench_full_response_incremental(benchmark, bench_loop):
+    """Benchmark full response streaming in incremental mode."""
+    agent = FireflyAgent("bench-full-inc", model="test", auto_register=False)
 
-        async def stream_incremental():
-            start = time.perf_counter()
-            first_token_time = None
-
-            stream_ctx = await agent.run_stream("hello", streaming_mode="incremental")
-            async with stream_ctx as stream:
-                async for _token in stream.stream_tokens():
-                    if first_token_time is None:
-                        first_token_time = time.perf_counter() - start
-                    # Only consume first few tokens for benchmarking
+    async def stream_full_incremental():
+        tokens = []
+        stream_ctx = await agent.run_stream("Count to 10", streaming_mode="incremental")
+        async with stream_ctx as stream:
+            async for token in stream.stream_tokens():
+                tokens.append(token)
+                if len(tokens) >= 5:
                     break
+        return len(tokens)
 
-            return first_token_time
-
-        benchmark(lambda: pytest.asyncio.fixture(stream_incremental))
-
-    @pytest.mark.nightly
-    @pytest.mark.asyncio
-    async def test_bench_incremental_with_debounce(self, benchmark):
-        """Benchmark incremental streaming with debouncing."""
-        agent = FireflyAgent("bench-debounce", model="test", auto_register=False)
-
-        async def stream_with_debounce():
-            start = time.perf_counter()
-            first_token_time = None
-
-            stream_ctx = await agent.run_stream("hello", streaming_mode="incremental")
-            async with stream_ctx as stream:
-                async for _token in stream.stream_tokens(debounce_ms=10.0):
-                    if first_token_time is None:
-                        first_token_time = time.perf_counter() - start
-                    break
-
-            return first_token_time
-
-        benchmark(lambda: pytest.asyncio.fixture(stream_with_debounce))
-
-    @pytest.mark.nightly
-    @pytest.mark.asyncio
-    async def test_bench_full_response_buffered(self, benchmark):
-        """Benchmark full response streaming in buffered mode."""
-        agent = FireflyAgent("bench-full-buf", model="test", auto_register=False)
-
-        async def stream_full_buffered():
-            chunks = []
-            stream_ctx = await agent.run_stream("Count to 10", streaming_mode="buffered")
-            async with stream_ctx as stream:
-                async for chunk in stream.stream_text():
-                    chunks.append(chunk)
-                    if len(chunks) >= 5:  # Limit for benchmarking
-                        break
-            return len(chunks)
-
-        benchmark(lambda: pytest.asyncio.fixture(stream_full_buffered))
-
-    @pytest.mark.nightly
-    @pytest.mark.asyncio
-    async def test_bench_full_response_incremental(self, benchmark):
-        """Benchmark full response streaming in incremental mode."""
-        agent = FireflyAgent("bench-full-inc", model="test", auto_register=False)
-
-        async def stream_full_incremental():
-            tokens = []
-            stream_ctx = await agent.run_stream("Count to 10", streaming_mode="incremental")
-            async with stream_ctx as stream:
-                async for token in stream.stream_tokens():
-                    tokens.append(token)
-                    if len(tokens) >= 5:  # Limit for benchmarking
-                        break
-            return len(tokens)
-
-        benchmark(lambda: pytest.asyncio.fixture(stream_full_incremental))
-
-    @pytest.mark.nightly
-    @pytest.mark.asyncio
-    async def test_bench_stream_context_manager_overhead(self, benchmark):
-        """Benchmark overhead of stream context manager creation."""
-        agent = FireflyAgent("bench-ctx", model="test", auto_register=False)
-
-        async def create_stream_context():
-            stream_ctx = await agent.run_stream("hello", streaming_mode="incremental")
-            async with stream_ctx:
-                # Just enter/exit without consuming
-                pass
-
-        benchmark(lambda: pytest.asyncio.fixture(create_stream_context))
+    benchmark(lambda: bench_loop.run_until_complete(stream_full_incremental()))
 
 
-@pytest.mark.benchmark(group="streaming-comparison")
-class TestStreamingModeComparison:
-    """Compare buffered vs incremental streaming performance."""
+@pytest.mark.nightly
+def test_bench_stream_context_manager_overhead(benchmark, bench_loop):
+    """Benchmark overhead of stream context manager creation."""
+    agent = FireflyAgent("bench-ctx", model="test", auto_register=False)
 
-    @pytest.mark.nightly
-    @pytest.mark.asyncio
-    async def test_bench_time_to_first_token_comparison(self, benchmark):
-        """Compare time-to-first-token between modes."""
-        # This is a meta-benchmark to document expected differences
-        # Expected: Incremental mode should have lower TTFT
-        pass
+    async def create_stream_context():
+        stream_ctx = await agent.run_stream("hello", streaming_mode="incremental")
+        async with stream_ctx:
+            pass
 
-    @pytest.mark.nightly
-    @pytest.mark.asyncio
-    async def test_bench_throughput_comparison(self, benchmark):
-        """Compare overall throughput between modes."""
-        # This is a meta-benchmark to document expected differences
-        # Expected: Buffered mode may have slightly higher throughput
-        # but incremental mode provides better perceived performance
-        pass
+    benchmark(lambda: bench_loop.run_until_complete(create_stream_context()))
+
+
+@pytest.mark.nightly
+def test_bench_time_to_first_token_comparison():
+    """Compare time-to-first-token between modes.
+
+    Meta-benchmark stub: actual comparison is done by inspecting the results of
+    the `streaming-latency` group benchmarks above. Expected: incremental mode
+    should have lower TTFT.
+    """
+
+
+@pytest.mark.nightly
+def test_bench_throughput_comparison():
+    """Compare overall throughput between modes.
+
+    Meta-benchmark stub: actual comparison is done by inspecting the results of
+    the `streaming-latency` group benchmarks above. Expected: buffered mode may
+    have slightly higher throughput, but incremental provides better perceived
+    performance.
+    """
 
 
 # Performance expectations (documented for regression detection):

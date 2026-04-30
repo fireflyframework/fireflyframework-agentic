@@ -16,5 +16,5 @@ class EmbeddingResult(BaseModel):
 
     embeddings: list[list[float]]
     model: str
-    usage: EmbeddingUsage
+    usage: EmbeddingUsage | None = None
     dimensions: int

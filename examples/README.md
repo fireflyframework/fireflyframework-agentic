@@ -76,6 +76,33 @@ If `OPENAI_API_KEY` is not set, each script will prompt you interactively.
 
   Requires `pdfplumber` (included in dev dependencies).
 
+- **`corpus_search/`** — Drop a folder, get a queryable corpus. Hybrid retrieval over local files: `markitdown` converts each document, chunks land in SQLite (FTS5/BM25) plus a Chroma vector store. Query with natural language → Haiku expands the question into reformulations → BM25 + vector search per variant → Reciprocal Rank Fusion merges rankings → Sonnet synthesises an answer with `[chunk_id]` citations. No knowledge graph, no extractors, no reranker — just qmd-style hybrid search.
+
+  ```bash
+  # Ingest (Azure OpenAI for embeddings — no Anthropic key needed)
+  EMBEDDING_BINDING_HOST=https://...openai.azure.com EMBEDDING_BINDING_API_KEY=... \
+    uv run python -m examples.corpus_search ingest --folder ./drop
+
+  # Watch a folder for new files
+  uv run python -m examples.corpus_search ingest --folder ./drop --watch
+
+  # Ask questions (needs ANTHROPIC_API_KEY for expansion / rerank / answer)
+  uv run python -m examples.corpus_search query "Who is the CEO of OpenAI?"
+
+  # Inspect a chunk by id (no API keys needed)
+  uv run python -m examples.corpus_search show-chunk <chunk-id>
+  ```
+
+  Outputs land under `./kg/`:
+
+  ```
+  ./kg/
+  ├── corpus.sqlite     # chunks, chunks_fts (BM25), ingestions
+  └── chroma/           # OpenAI chunk vectors
+  ```
+
+  See [`docs/use-case-corpus-search.md`](../docs/use-case-corpus-search.md) for the full design.
+
 ## Reasoning Pattern Examples
 
 - **`reasoning_cot.py`** — Chain of Thought: step-by-step reasoning with `ReasoningThought` and trace inspection.
