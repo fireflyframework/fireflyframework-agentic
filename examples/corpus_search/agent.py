@@ -21,8 +21,8 @@ from pathlib import Path
 from typing import Any
 
 from examples.corpus_search.retrieval.answerer import Answer, AnswerAgent
-from fireflyframework_agentic.content.chunking import TextChunker
 from fireflyframework_agentic.content.loaders import MarkitdownLoader
+from fireflyframework_agentic.content.markdown_chunker import MarkdownChunker
 from fireflyframework_agentic.pipeline.triggers import FolderWatcher
 from fireflyframework_agentic.rag.corpus import SqliteCorpus
 from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
@@ -76,7 +76,7 @@ class CorpusAgent:
         self._answer_model = answer_model
         self._rerank_model = rerank_model
         self._rerank_pool = rerank_pool
-        self._chunker = TextChunker(chunk_size=600, chunk_overlap=80)
+        self._chunker = MarkdownChunker(max_chunk_tokens=600, chunk_overlap=80, min_body_tokens=1)
         self._loader = MarkitdownLoader()
 
         # Retrieval stack — lazy-constructed on first query() so ingest doesn't
