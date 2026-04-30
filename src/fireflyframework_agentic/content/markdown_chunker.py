@@ -44,7 +44,7 @@ class MarkdownChunker:
         *,
         max_chunk_tokens: int = 600,
         chunk_overlap: int = 80,
-        min_body_tokens: int = 1,
+        min_body_tokens: int = 10,
         breadcrumb_separator: str = " > ",
     ) -> None:
         self._max_chunk_tokens = max_chunk_tokens

@@ -25,27 +25,27 @@ def test_chunker_protocol():
 
 
 def test_single_h1_section():
-    content = "# Title\n\nSome body text here."
+    content = "# Title\n\nSome body text here that is long enough."
     chunker = MarkdownChunker()
     chunks = chunker.chunk(content)
     assert len(chunks) == 1
     assert chunks[0].metadata["breadcrumb"] == "Title"
-    assert chunks[0].content == "Title\n\nSome body text here."
+    assert chunks[0].content == "Title\n\nSome body text here that is long enough."
 
 
 def test_nested_headings_breadcrumb():
-    content = "# H1\n\n## H2\n\n### H3\n\nBody text here."
+    content = "# H1\n\n## H2\n\n### H3\n\nBody text here that is long enough to pass."
     chunker = MarkdownChunker()
     chunks = chunker.chunk(content)
     # H1 and H2 have no body text so they produce no chunks.
     # H3 breadcrumb still includes the full ancestor path.
     assert len(chunks) == 1
     assert chunks[0].metadata["breadcrumb"] == "H1 > H2 > H3"
-    assert chunks[0].content.startswith("H1 > H2 > H3\n\nBody text here.")
+    assert chunks[0].content.startswith("H1 > H2 > H3\n\nBody text here that is long enough to pass.")
 
 
 def test_heading_resets_lower_levels():
-    content = "# H1\n\nH1 body.\n\n## H2-A\n\nBody A.\n\n## H2-B\n\nBody B."
+    content = "# H1\n\nH1 body text here that is long enough.\n\n## H2-A\n\nBody A text here that is long enough.\n\n## H2-B\n\nBody B text here that is long enough."
     chunker = MarkdownChunker()
     chunks = chunker.chunk(content)
     chunk_a = next(c for c in chunks if "Body A" in c.content)
@@ -55,12 +55,12 @@ def test_heading_resets_lower_levels():
 
 
 def test_preamble_no_breadcrumb():
-    content = "Intro text before any heading.\n\n# Title\n\nBody text."
+    content = "Intro text before any heading that is long enough.\n\n# Title\n\nBody text that is long enough here."
     chunker = MarkdownChunker()
     chunks = chunker.chunk(content)
     preamble = next(c for c in chunks if "Intro text" in c.content)
     assert preamble.metadata["breadcrumb"] == ""
-    assert preamble.content == "Intro text before any heading."
+    assert preamble.content == "Intro text before any heading that is long enough."
 
 
 def test_code_block_not_split():
@@ -85,7 +85,7 @@ def test_oversized_section_fallback():
 
 
 def test_empty_section_skipped():
-    content = "# Empty heading\n\n# Non-empty heading\n\nSome body text here."
+    content = "# Empty heading\n\n# Non-empty heading\n\nSome body text here that is long enough."
     chunker = MarkdownChunker()
     chunks = chunker.chunk(content)
     assert len(chunks) == 1
@@ -93,12 +93,12 @@ def test_empty_section_skipped():
 
 
 def test_metadata_breadcrumb_field():
-    content = "# Section\n\nContent text."
+    content = "# Section\n\nContent text that is long enough to pass here."
     chunker = MarkdownChunker()
     chunks = chunker.chunk(content)
     assert len(chunks) == 1
     assert chunks[0].metadata["breadcrumb"] == "Section"
-    assert chunks[0].content == "Section\n\nContent text."
+    assert chunks[0].content == "Section\n\nContent text that is long enough to pass here."
 
 
 def test_no_headings_plain_text():
