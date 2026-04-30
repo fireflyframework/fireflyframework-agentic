@@ -80,7 +80,7 @@ class MarkdownChunker:
                 line_number = tok.map[0]
                 title = tokens[i + 1].content if i + 1 < len(tokens) and tokens[i + 1].type == "inline" else ""
                 heading_locs.append((line_number, level, title))
-                i += 2
+                i += 2  # skip the inline token; heading_close follows and will be skipped by the else branch
             else:
                 i += 1
 
@@ -95,6 +95,7 @@ class MarkdownChunker:
         for idx, (line_no, level, title) in enumerate(heading_locs):
             next_line = heading_locs[idx + 1][0] if idx + 1 < len(heading_locs) else len(lines)
             body = "\n".join(lines[line_no + 1 : next_line]).strip()
+            # Drop entries at the same depth or deeper, then push the new heading.
             heading_stack = [(lvl, ttl) for lvl, ttl in heading_stack if lvl < level]
             heading_stack.append((level, title))
             sections.append(_Section(heading_stack=list(heading_stack), body=body))
