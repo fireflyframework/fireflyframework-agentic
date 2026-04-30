@@ -110,6 +110,9 @@ dmypy.json
 *.log
 logs/
 
+# Claude Code
+.claude/
+
 # AntiGravity / misc tools
 .antigravity/
 
@@ -125,3 +128,9 @@ docs/plans/
 # Distribution / packaging
 *.tar.gz
 *.zip
+
+# corpus_search local working directories
+/drop/
+/kg/
+/runs/
+.worktrees

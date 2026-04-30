@@ -36,6 +36,7 @@ from fireflyframework_agentic.content.compression import (
     TokenEstimator,
     TruncationStrategy,
 )
+from fireflyframework_agentic.content.markdown_chunker import MarkdownChunker
 
 __all__ = [
     "BatchProcessor",
@@ -45,6 +46,7 @@ __all__ = [
     "ContextCompressor",
     "DocumentSplitter",
     "ImageTiler",
+    "MarkdownChunker",
     "MapReduceStrategy",
     "SlidingWindowManager",
     "SummarizationStrategy",

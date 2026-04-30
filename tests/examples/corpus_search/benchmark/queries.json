@@ -1,0 +1,327 @@
+{
+  "version": "1.0",
+  "description": "Ground-truth query suite for the corpus_search benchmark.",
+  "corpus_dir": "corpus",
+  "queries": [
+    {
+      "id": "ceo_lookup",
+      "query": "Who is the CEO of Acme Corp?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "easy",
+      "expected_doc_basenames": ["01_company_overview.md"],
+      "expected_substrings": ["Sam Patel"],
+      "negative": false
+    },
+    {
+      "id": "founding_year",
+      "query": "When was Acme Corp founded?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "easy",
+      "expected_doc_basenames": ["01_company_overview.md"],
+      "expected_substrings": ["2014"],
+      "negative": false
+    },
+    {
+      "id": "q4_revenue",
+      "query": "What was Acme's Q4 2025 revenue?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "easy",
+      "expected_doc_basenames": ["02_q4_financials.md"],
+      "expected_substrings": ["42.3"],
+      "negative": false
+    },
+    {
+      "id": "best_region",
+      "query": "What was the best region in terms of sales?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "medium",
+      "expected_doc_basenames": ["02_q4_financials.md"],
+      "expected_substrings": ["EMEA"],
+      "negative": false
+    },
+    {
+      "id": "iso_certification",
+      "query": "What ISO certification does Acme hold?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "medium",
+      "expected_doc_basenames": ["05_security_standards.md"],
+      "expected_substrings": ["ISO/IEC 27001", "27001"],
+      "negative": false
+    },
+    {
+      "id": "series_c_lead",
+      "query": "Who led Acme's Series C funding round?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "medium",
+      "expected_doc_basenames": ["09_press_release.md", "06_meeting_minutes_q1.md"],
+      "expected_substrings": ["Sequoia"],
+      "negative": false
+    },
+    {
+      "id": "api_rate_limit",
+      "query": "What is the API rate limit for the /sign endpoints in v2?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "medium",
+      "expected_doc_basenames": ["07_product_specs.md"],
+      "expected_substrings": ["500 RPS"],
+      "negative": false
+    },
+    {
+      "id": "sla_target",
+      "query": "What is the SLA for Acme Bolt?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "easy",
+      "expected_doc_basenames": ["07_product_specs.md", "03_engineering_roadmap.md"],
+      "expected_substrings": ["99.95"],
+      "negative": false
+    },
+    {
+      "id": "vacation_days",
+      "query": "How many vacation days do Acme employees get?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "easy",
+      "expected_doc_basenames": ["08_employee_handbook.md"],
+      "expected_substrings": ["30"],
+      "negative": false
+    },
+    {
+      "id": "dpo_es",
+      "query": "¿Quién es la Delegada de Protección de Datos de Acme?",
+      "category": "multilingual_es",
+      "language": "es",
+      "difficulty": "medium",
+      "expected_doc_basenames": ["04_privacy_policy_es.md"],
+      "expected_substrings": ["María García"],
+      "negative": false
+    },
+    {
+      "id": "data_retention_es",
+      "query": "¿Cuántos días se conservan los datos de la cuenta tras la cancelación?",
+      "category": "multilingual_es",
+      "language": "es",
+      "difficulty": "medium",
+      "expected_doc_basenames": ["04_privacy_policy_es.md"],
+      "expected_substrings": ["90 días"],
+      "negative": false
+    },
+    {
+      "id": "dpo_en_query_es_doc",
+      "query": "Who is Acme's data protection officer?",
+      "category": "cross_language",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["04_privacy_policy_es.md", "01_company_overview.md"],
+      "expected_substrings": ["María García"],
+      "negative": false
+    },
+    {
+      "id": "lgpd_pt",
+      "query": "O que significa LGPD?",
+      "category": "multilingual_pt",
+      "language": "pt",
+      "difficulty": "medium",
+      "expected_doc_basenames": ["10_glossary_pt.md"],
+      "expected_substrings": ["Lei Geral de Proteção de Dados"],
+      "negative": false
+    },
+    {
+      "id": "rust_migration",
+      "query": "What languages and runtimes is the engineering team migrating to?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "medium",
+      "expected_doc_basenames": ["03_engineering_roadmap.md"],
+      "expected_substrings": ["Rust"],
+      "negative": false
+    },
+    {
+      "id": "madrid_office",
+      "query": "When does the new Madrid office open?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "medium",
+      "expected_doc_basenames": ["06_meeting_minutes_q1.md"],
+      "expected_substrings": ["Madrid", "June"],
+      "negative": false
+    },
+    {
+      "id": "layoffs_2026",
+      "query": "What workforce changes were announced in Q1 2026?",
+      "category": "cross_doc_synthesis",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["06_meeting_minutes_q1.md"],
+      "expected_substrings": ["5%", "24"],
+      "negative": false
+    },
+    {
+      "id": "401k_match",
+      "query": "What is the 401k match for US employees?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "medium",
+      "expected_doc_basenames": ["08_employee_handbook.md"],
+      "expected_substrings": ["6%"],
+      "negative": false
+    },
+    {
+      "id": "negative_microsoft_ceo",
+      "query": "Who is the CEO of Microsoft?",
+      "category": "negative",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": [],
+      "expected_substrings": [],
+      "negative": true
+    },
+    {
+      "id": "negative_acme_ticker",
+      "query": "What is Acme's stock ticker symbol?",
+      "category": "negative",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": [],
+      "expected_substrings": [],
+      "negative": true
+    },
+    {
+      "id": "founders",
+      "query": "Who founded Acme Corp?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "medium",
+      "expected_doc_basenames": ["01_company_overview.md"],
+      "expected_substrings": ["Sam Patel", "Inès Laurent"],
+      "negative": false
+    },
+    {
+      "id": "paraphrase_ceo_idiomatic",
+      "query": "Who runs the show at Acme?",
+      "category": "paraphrase",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["01_company_overview.md"],
+      "expected_substrings": ["Sam Patel"],
+      "negative": false
+    },
+    {
+      "id": "paraphrase_parental_leave",
+      "query": "How long is maternity or paternity leave at Acme?",
+      "category": "paraphrase",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["08_employee_handbook.md"],
+      "expected_substrings": ["16 weeks"],
+      "negative": false
+    },
+    {
+      "id": "paraphrase_hq_city",
+      "query": "In which city is Acme's main office?",
+      "category": "paraphrase",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["01_company_overview.md"],
+      "expected_substrings": ["Lisbon"],
+      "negative": false
+    },
+    {
+      "id": "multihop_v3_sign_rate_limit",
+      "query": "What will the /sign endpoint rate limit be in the upcoming API v3?",
+      "category": "multi_hop",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["03_engineering_roadmap.md", "07_product_specs.md"],
+      "expected_substrings": ["1,000 RPS"],
+      "negative": false
+    },
+    {
+      "id": "multihop_rust_phase1_perf",
+      "query": "What throughput improvement does Acme expect from the first phase of the Rust migration?",
+      "category": "multi_hop",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["03_engineering_roadmap.md"],
+      "expected_substrings": ["3×"],
+      "negative": false
+    },
+    {
+      "id": "multihop_emea_p99_latency",
+      "query": "What is the p99 latency target for the EMEA sign endpoint?",
+      "category": "multi_hop",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["03_engineering_roadmap.md"],
+      "expected_substrings": ["150ms"],
+      "negative": false
+    },
+    {
+      "id": "distractor_acme_sla_not_competitor",
+      "query": "What is the uptime SLA for Acme Bolt?",
+      "category": "distractor",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["07_product_specs.md", "03_engineering_roadmap.md"],
+      "expected_substrings": ["99.95%"],
+      "negative": false
+    },
+    {
+      "id": "distractor_current_sign_rps",
+      "query": "What is the current rate limit for the /sign endpoint?",
+      "category": "distractor",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["07_product_specs.md"],
+      "expected_substrings": ["500 RPS"],
+      "negative": false
+    },
+    {
+      "id": "distractor_competitor_ceo",
+      "query": "Who is the CEO of DocuStream?",
+      "category": "distractor",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["11_competitor_overview.md"],
+      "expected_substrings": ["Jordan Kim"],
+      "negative": false
+    },
+    {
+      "id": "cross_doc_series_c_valuation",
+      "query": "What is Acme's valuation after the Series C round?",
+      "category": "cross_doc_synthesis",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": ["01_company_overview.md", "09_press_release.md"],
+      "expected_substrings": ["640 million", "$640"],
+      "negative": false
+    },
+    {
+      "id": "negative_ipo_plans",
+      "query": "When is Acme Corp planning its IPO?",
+      "category": "negative",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": [],
+      "expected_substrings": [],
+      "negative": true
+    },
+    {
+      "id": "negative_mobile_app",
+      "query": "Does Acme have a mobile app for signing documents?",
+      "category": "negative",
+      "language": "en",
+      "difficulty": "hard",
+      "expected_doc_basenames": [],
+      "expected_substrings": [],
+      "negative": true
+    }
+  ]
+}

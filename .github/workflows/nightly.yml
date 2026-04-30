@@ -22,3 +22,44 @@ jobs:
           python-version: '3.13'
       - run: uv sync --extra dev
       - run: uv run pytest --cov --cov-report=term-missing --durations=50
+
+  benchmark:
+    name: Benchmark (corpus-search, real mode)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: uv sync --extra corpus-search
+
+      # Detect whether the embedding secrets are present without printing their
+      # values. Secrets are mapped to env vars first so they never appear in
+      # the if-expression itself.
+      - name: Check embedding secrets
+        id: secrets
+        run: |
+          if [[ -n "$EMBEDDING_HOST" && -n "$EMBEDDING_KEY" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "EMBEDDING_BINDING_HOST / EMBEDDING_BINDING_API_KEY not configured -- skipping real-mode benchmark."
+          fi
+        env:
+          EMBEDDING_HOST: ${{ secrets.EMBEDDING_BINDING_HOST }}
+          EMBEDDING_KEY: ${{ secrets.EMBEDDING_BINDING_API_KEY }}
+
+      - name: Run real-mode benchmark
+        if: steps.secrets.outputs.available == 'true'
+        env:
+          EMBEDDING_BINDING_HOST: ${{ secrets.EMBEDDING_BINDING_HOST }}
+          EMBEDDING_BINDING_API_KEY: ${{ secrets.EMBEDDING_BINDING_API_KEY }}
+        run: |
+          uv run python tests/examples/corpus_search/benchmark/runner.py \
+            --mode real \
+            --json tests/examples/corpus_search/benchmark/runs/nightly_real.json \
+            --baseline tests/examples/corpus_search/benchmark/runs/baseline_real.json \
+            --regression-tolerance 0.02
