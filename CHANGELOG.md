@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
 
+## [26.04.30] - 2026-04-30
+
+### Added
+
+- **Entra ID security.** Token verification and on-behalf-of (OBO) exchange
+  for Azure AD authentication flows. New `[azure]` extra installs the
+  required dependencies (#92).
+- **MCP server.** New exposure module ships an MCP server and the
+  `firefly-mcp` CLI for exposing agents over the Model Context Protocol
+  (#93).
+- **Hexagonal ingestion module.** New `fireflyframework_agentic/ingestion/`
+  with domain models (`RawFile`, `TypedRecord`, `IngestionResult`,
+  `TargetSchema`), three ports (`DataSourcePort`, `MapperPort`,
+  `StructuredSinkPort`), a `SharePointSource` (Microsoft Graph, app-only
+  OAuth2, deltaLink incremental sync), a `ScriptMapper`, a `DuckDBSink`,
+  and a linear `IngestionService`. Adds `EnvSecretsProvider` and an
+  optional `AzureKeyVaultSecretsProvider`, an `ingestion.yaml` config
+  model, and a `firefly-ingest` CLI. New extras:
+  `[ingestion-sharepoint]`, `[ingestion-duckdb]`,
+  `[ingestion-keyvault]`, and umbrella `[ingestion]` (#84).
+- **Corpus-search example agent.** New `examples/corpus_search/` ships a
+  folder-ingestion + hybrid-search agent: `markitdown` → chunk → embed
+  (Azure OpenAI by default) → SQLite FTS5 + Chroma. Query pipeline is
+  expand (Haiku) → BM25 + vector → RRF fuse → rerank (Haiku) → answer
+  (Sonnet) with inline citations. Framework additions:
+  `content/loaders/MarkitdownLoader` and
+  `pipeline/triggers/FolderWatcher`. New extras: `[markitdown]`,
+  `[watch]`, `[corpus-search]` (#82).
+- **SQLite memory store.** New `SQLiteStore` provides stdlib-backed local
+  persistence for memory, sitting alongside `FileStore` with the same
+  surface (#87).
+- **Refactored prompt manager.** New prompt implementation with template
+  scheme, registry, and explicit `Prompt` type used by reasoning prompts
+  (#85).
+- **Nightly CI workflow.** Full test suite runs once per day under the
+  `nightly` pytest marker, separated from the per-PR `pr-gate`. On
+  failure, the workflow opens (or comments on) a `nightly-failure`
+  tracking issue; a subsequent green run auto-closes it. README gains a
+  Nightly badge alongside PR gate (#89).
+
+### Changed
+
+- **Security extra renamed.** `entra.py` → `azure.py`; the security manager
+  now inherits from `RBACManager`. Extra `[entra]` → `[azure]` and is
+  installed in the PR gate.
+- **Memory store layout.** `SQLiteStore` lives in `store.py` and is aligned
+  with the other stdlib backends.
+- **`EmbeddingResult.usage` is now `Optional`.** Backward-compatible change
+  to support embedding backends that do not report usage (#82).
+- **Examples simplified.** Use bare `load_dotenv()` and source `MODEL` from
+  `.env`; removed `examples/_common.py` (#81).
+- **CI rename.** Workflow `ci` → `pr-gate`; triggers only on
+  `pull_request`, not on `push`.
+
+### Fixed
+
+- **Nightly perf benchmarks.** Replaced the broken
+  `benchmark(lambda: pytest.asyncio.fixture(coro))` pattern with sync
+  tests driven by a shared `bench_loop` event-loop fixture (required so
+  `HttpTool`'s `httpx.AsyncClient` stays bound to a single loop across
+  iterations). Test classes dropped per project convention; `skipif` and
+  `benchmark(group=...)` decorators moved onto each function (#91).
+
+### Tests
+
+- **Test tree reorganized** under `tests/unit/` for agents, memory,
+  observability, pipeline, tools, resilience, and core (#88).
+- **Responsible AI category** (`tests/responsible_ai/`) groups
+  `output_guard` and `prompt_guard`.
+- **Benchmarks moved** to `tests/performance/`, marked `nightly`, and
+  renamed to `test_bench_*.py` for pytest collection.
+- **Tests README** documents per-category descriptions and the nightly
+  marker.
+
 ## [26.04.28] - 2026-04-28
 
 ### Changed (BREAKING)
