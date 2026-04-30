@@ -47,8 +47,8 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-from fireflyframework_agentic.content.chunking import TextChunker
 from fireflyframework_agentic.content.loaders import MarkitdownLoader
+from fireflyframework_agentic.content.markdown_chunker import MarkdownChunker
 from fireflyframework_agentic.embeddings.types import EmbeddingResult
 from fireflyframework_agentic.rag.corpus import ChunkHit, SqliteCorpus
 from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
@@ -191,7 +191,7 @@ async def _ingest_corpus(
     embedder: Any,
     ledger: IngestLedger,
 ) -> int:
-    chunker = TextChunker(chunk_size=200, chunk_overlap=30)
+    chunker = MarkdownChunker(max_chunk_tokens=200, chunk_overlap=30)
     loader = MarkitdownLoader()
     n_chunks = 0
     for path in sorted(_CORPUS_DIR.iterdir()):
