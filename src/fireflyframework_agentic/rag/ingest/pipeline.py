@@ -20,7 +20,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from fireflyframework_agentic.content.chunking import Chunker, TextChunker
+from fireflyframework_agentic.content.chunking import Chunker
 from fireflyframework_agentic.content.loaders import Document, MarkitdownLoader
 from fireflyframework_agentic.embeddings.base import EmbeddingProtocol
 from fireflyframework_agentic.rag.corpus import SqliteCorpus, StoredChunk
