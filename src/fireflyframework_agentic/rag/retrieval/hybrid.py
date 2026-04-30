@@ -97,8 +97,7 @@ class HybridRetriever:
             try:
                 qvec = await self._embedder.embed_one(text)
                 vec_hits = await self._vector_store.search(qvec, top_k=top_k_per_query)
-                vec_ids = [getattr(h, "id", None) for h in vec_hits]
-                rankings.append([i for i in vec_ids if i])
+                rankings.append([h.document.id for h in vec_hits])
             except Exception as exc:  # noqa: BLE001
                 log.warning("vector search failed for query %r: %s", text, exc)
 

@@ -11,6 +11,7 @@ from fireflyframework_agentic.rag.retrieval.hybrid import (
     HybridRetriever,
     reciprocal_rank_fusion,
 )
+from fireflyframework_agentic.vectorstores.types import SearchResult, VectorDocument
 
 # --- RRF helper -----------------------------------------------------------
 
@@ -57,14 +58,6 @@ class _StubEmbedder:
         return [float(len(text)), 0.0, 0.0, 0.0]
 
 
-class _StubSearchResult:
-    def __init__(self, doc_id: str, score: float = 0.0) -> None:
-        self.id = doc_id
-        self.score = score
-        self.metadata: dict[str, Any] = {}
-        self.content: str = ""
-
-
 class _StubVectorStore:
     """Returns canned ranked ids per query embedding magnitude."""
 
@@ -77,11 +70,14 @@ class _StubVectorStore:
         top_k: int = 5,
         namespace: str = "default",
         filters: list[Any] | None = None,
-    ) -> list[Any]:
+    ) -> list[SearchResult]:
         # Use first dim as the lookup key.
         key = query_embedding[0]
         ids = self._results.get(key, [])
-        return [_StubSearchResult(i) for i in ids[:top_k]]
+        return [
+            SearchResult(document=VectorDocument(id=i, text="", metadata={}), score=0.0)
+            for i in ids[:top_k]
+        ]
 
 
 @pytest.fixture
