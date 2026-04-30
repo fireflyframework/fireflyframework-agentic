@@ -20,7 +20,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from fireflyframework_agentic.content.chunking import TextChunker
+from fireflyframework_agentic.content.chunking import Chunker, TextChunker
 from fireflyframework_agentic.content.loaders import Document, MarkitdownLoader
 from fireflyframework_agentic.embeddings.base import EmbeddingProtocol
 from fireflyframework_agentic.rag.corpus import SqliteCorpus, StoredChunk
@@ -59,7 +59,7 @@ async def ingest_one(
     vector_store: VectorStoreProtocol,
     embedder: EmbeddingProtocol,
     ledger: IngestLedger,
-    chunker: TextChunker,
+    chunker: Chunker,
     loader: MarkitdownLoader,
 ) -> IngestionResult:
     """Ingest one document into the corpus + vector store.
