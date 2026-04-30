@@ -529,8 +529,7 @@ def _compare_against_baseline(
             continue
         if cur < base - tolerance:
             regressions.append(
-                f"  {label}: {cur:.4f} < baseline {base:.4f} "
-                f"(delta {cur - base:+.4f}, tolerance ±{tolerance:.4f})"
+                f"  {label}: {cur:.4f} < baseline {base:.4f} (delta {cur - base:+.4f}, tolerance ±{tolerance:.4f})"
             )
     return regressions
 
