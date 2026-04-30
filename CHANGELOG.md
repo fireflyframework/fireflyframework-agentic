@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
 
+## [26.04.30] - 2026-04-30
+
+### Added
+
+- **Entra ID security.** Token verification and on-behalf-of (OBO) exchange
+  for Azure AD authentication flows. New `[azure]` extra installs the
+  required dependencies (#92).
+- **MCP server.** New exposure module ships an MCP server and the
+  `firefly-mcp` CLI for exposing agents over the Model Context Protocol
+  (#93).
+- **SQLite memory store.** New `SQLiteStore` provides stdlib-backed local
+  persistence for memory, sitting alongside `FileStore` with the same
+  surface (#87).
+- **Refactored prompt manager.** New prompt implementation with template
+  scheme, registry, and explicit `Prompt` type used by reasoning prompts
+  (#85).
+- **Nightly CI workflow.** Full test suite runs once per day under the
+  `nightly` pytest marker, separated from the per-PR `pr-gate`.
+
+### Changed
+
+- **Security extra renamed.** `entra.py` → `azure.py`; the security manager
+  now inherits from `RBACManager`. Extra `[entra]` → `[azure]` and is
+  installed in the PR gate.
+- **Memory store layout.** `SQLiteStore` lives in `store.py` and is aligned
+  with the other stdlib backends.
+- **Examples simplified.** Use bare `load_dotenv()` and source `MODEL` from
+  `.env`; removed `examples/_common.py` (#81).
+- **CI rename.** Workflow `ci` → `pr-gate`; triggers only on
+  `pull_request`, not on `push`.
+
+### Tests
+
+- **Test tree reorganized** under `tests/unit/` for agents, memory,
+  observability, pipeline, tools, resilience, and core (#88).
+- **Responsible AI category** (`tests/responsible_ai/`) groups
+  `output_guard` and `prompt_guard`.
+- **Benchmarks moved** to `tests/performance/`, marked `nightly`, and
+  renamed to `test_bench_*.py` for pytest collection.
+- **Tests README** documents per-category descriptions and the nightly
+  marker.
+
 ## [26.04.28] - 2026-04-28
 
 ### Changed (BREAKING)
