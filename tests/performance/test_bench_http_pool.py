@@ -28,7 +28,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from fireflyframework_agentic.tools.builtins.http import HTTPX_AVAILABLE, HttpTool
+from fireflyframework_agentic.tools.builtins.http import HttpTool
 
 
 @pytest.fixture
@@ -60,7 +60,6 @@ def bench_loop() -> Iterator[asyncio.AbstractEventLoop]:
 
 
 @pytest.mark.nightly
-@pytest.mark.skipif(not HTTPX_AVAILABLE, reason="httpx not installed")
 @pytest.mark.benchmark(group="http-pool")
 def test_bench_with_connection_pool(benchmark, bench_loop, mock_http_response):
     """Benchmark HTTP requests with connection pooling."""
@@ -79,7 +78,6 @@ def test_bench_with_connection_pool(benchmark, bench_loop, mock_http_response):
 
 
 @pytest.mark.nightly
-@pytest.mark.skipif(not HTTPX_AVAILABLE, reason="httpx not installed")
 @pytest.mark.benchmark(group="http-pool")
 def test_bench_without_connection_pool(benchmark, mock_http_response):
     """Benchmark HTTP requests without connection pooling (urllib fallback)."""
@@ -98,7 +96,6 @@ def test_bench_without_connection_pool(benchmark, mock_http_response):
 
 
 @pytest.mark.nightly
-@pytest.mark.skipif(not HTTPX_AVAILABLE, reason="httpx not installed")
 @pytest.mark.benchmark(group="http-pool")
 def test_bench_concurrent_requests_with_pool(benchmark, bench_loop, mock_http_response):
     """Benchmark concurrent requests with connection pooling."""
@@ -120,7 +117,6 @@ def test_bench_concurrent_requests_with_pool(benchmark, bench_loop, mock_http_re
 
 
 @pytest.mark.nightly
-@pytest.mark.skipif(not HTTPX_AVAILABLE, reason="httpx not installed")
 @pytest.mark.benchmark(group="http-pool")
 def test_bench_sequential_requests_with_pool(benchmark, bench_loop, mock_http_response):
     """Benchmark sequential requests with connection pooling."""
@@ -141,7 +137,6 @@ def test_bench_sequential_requests_with_pool(benchmark, bench_loop, mock_http_re
 
 
 @pytest.mark.nightly
-@pytest.mark.skipif(not HTTPX_AVAILABLE, reason="httpx not installed")
 @pytest.mark.benchmark(group="http-pool")
 def test_bench_pool_size_small(benchmark, bench_loop, mock_http_response):
     """Benchmark with small pool size (10 connections)."""
@@ -160,7 +155,6 @@ def test_bench_pool_size_small(benchmark, bench_loop, mock_http_response):
 
 
 @pytest.mark.nightly
-@pytest.mark.skipif(not HTTPX_AVAILABLE, reason="httpx not installed")
 @pytest.mark.benchmark(group="http-pool")
 def test_bench_pool_size_large(benchmark, bench_loop, mock_http_response):
     """Benchmark with large pool size (200 connections)."""
@@ -179,7 +173,6 @@ def test_bench_pool_size_large(benchmark, bench_loop, mock_http_response):
 
 
 @pytest.mark.nightly
-@pytest.mark.skipif(not HTTPX_AVAILABLE, reason="httpx not installed")
 @pytest.mark.benchmark(group="http-pool")
 def test_bench_with_request_body(benchmark, bench_loop, mock_http_response):
     """Benchmark POST requests with body and connection pooling."""
@@ -200,7 +193,6 @@ def test_bench_with_request_body(benchmark, bench_loop, mock_http_response):
 
 
 @pytest.mark.nightly
-@pytest.mark.skipif(not HTTPX_AVAILABLE, reason="httpx not installed")
 @pytest.mark.benchmark(group="http-pool")
 def test_bench_different_urls_with_pool(benchmark, bench_loop, mock_http_response):
     """Benchmark requests to different URLs with connection pooling."""
@@ -226,7 +218,6 @@ def test_bench_different_urls_with_pool(benchmark, bench_loop, mock_http_respons
 
 
 @pytest.mark.nightly
-@pytest.mark.skipif(not HTTPX_AVAILABLE, reason="httpx not installed")
 @pytest.mark.benchmark(group="http-pool-comparison")
 def test_bench_pool_vs_no_pool_single_request():
     """Compare pooled vs non-pooled for single request.
