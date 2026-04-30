@@ -21,7 +21,7 @@ Two modes:
   retrieval pipeline mechanics. Vector signal is essentially noise here;
   metrics primarily reflect BM25 quality.
 
-- ``real`` — real Azure OpenAI embeddings + Chroma `PersistentClient`.
+- ``real`` — real Azure OpenAI embeddings + sqlite-vec vector store.
   Optional Haiku reranker via ``--rerank``. Requires
   ``EMBEDDING_BINDING_HOST`` + ``EMBEDDING_BINDING_API_KEY`` (and
   ``ANTHROPIC_API_KEY`` if reranking). Measures actual semantic quality.
@@ -230,20 +230,17 @@ def _build_embedder(mode: str) -> Any:
     raise ValueError(f"Unknown mode: {mode!r}")
 
 
-def _build_vector_store(mode: str, root: Path) -> Any:
+def _build_vector_store(mode: str, root: Path, embed_dimension: int = 1536) -> Any:
     if mode == "mechanics":
         return InMemoryVectorStore()
     if mode == "real":
-        import chromadb
-        from chromadb.config import Settings
+        from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
 
-        from fireflyframework_agentic.vectorstores.chroma_store import ChromaVectorStore
-
-        client = chromadb.PersistentClient(
-            path=str(root / "chroma"),
-            settings=Settings(anonymized_telemetry=False),
+        return SqliteVecVectorStore(
+            db_path=root / "corpus.sqlite",
+            dimension=embed_dimension,
+            table_name="benchmark_chunks",
         )
-        return ChromaVectorStore(collection_name="benchmark_chunks", client=client)
     raise ValueError(f"Unknown mode: {mode!r}")
 
 
@@ -253,6 +250,7 @@ def _build_vector_store(mode: str, root: Path) -> Any:
 async def run_benchmark(
     *,
     mode: str = "mechanics",
+    embed_dimension: int = 1536,
     use_rerank: bool = False,
     use_expansion: bool = False,
     expansion_model: str = "anthropic:claude-haiku-4-5-20251001",
@@ -271,7 +269,7 @@ async def run_benchmark(
         await corpus.initialise()
         try:
             embedder = _build_embedder(mode)
-            vector_store = _build_vector_store(mode, tdir)
+            vector_store = _build_vector_store(mode, tdir, embed_dimension)
             ledger = IngestLedger(corpus)
 
             n_chunks = await _ingest_corpus(corpus, vector_store, embedder, ledger)
@@ -524,6 +522,12 @@ def main(argv: list[str] | None = None) -> int:
             "Requires ANTHROPIC_API_KEY."
         ),
     )
+    parser.add_argument(
+        "--embed-dimension",
+        type=int,
+        default=1536,
+        help="Embedding dimension for real mode (default: 1536 for text-embedding-3-small).",
+    )
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--rerank-pool", type=int, default=20)
     parser.add_argument(
@@ -564,6 +568,7 @@ def main(argv: list[str] | None = None) -> int:
     asyncio.run(
         run_benchmark(
             mode=args.mode,
+            embed_dimension=args.embed_dimension,
             use_rerank=args.rerank,
             use_expansion=args.expand,
             expansion_model=args.expansion_model,
