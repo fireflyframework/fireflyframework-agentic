@@ -6,15 +6,15 @@ from typing import Any
 
 import pytest
 
+from fireflyframework_agentic.content.chunking import TextChunker
+from fireflyframework_agentic.content.loaders import MarkitdownLoader
+from fireflyframework_agentic.embeddings.types import EmbeddingResult
 from fireflyframework_agentic.rag.corpus import SqliteCorpus
 from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
 from fireflyframework_agentic.rag.ingest.pipeline import (
     IngestionResult,
     ingest_one,
 )
-from fireflyframework_agentic.content.chunking import TextChunker
-from fireflyframework_agentic.content.loaders import MarkitdownLoader
-from fireflyframework_agentic.embeddings.types import EmbeddingResult
 
 # --- Stubs ----------------------------------------------------------------
 

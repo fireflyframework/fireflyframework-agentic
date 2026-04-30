@@ -23,12 +23,12 @@ from typing import Any
 
 import pytest
 
+from fireflyframework_agentic.embeddings.types import EmbeddingResult
 from fireflyframework_agentic.rag.ingest.retry import (
     embed_with_retry,
     is_retryable,
     retry_after_seconds,
 )
-from fireflyframework_agentic.embeddings.types import EmbeddingResult
 
 # --- Mocked exception types simulating openai SDK errors ---------------
 

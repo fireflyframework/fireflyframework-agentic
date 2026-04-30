@@ -30,12 +30,12 @@ from typing import Any
 
 import pytest
 
-from fireflyframework_agentic.rag.corpus import SqliteCorpus
-from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
-from fireflyframework_agentic.rag.ingest.pipeline import ingest_one
 from fireflyframework_agentic.content.chunking import TextChunker
 from fireflyframework_agentic.content.loaders import MarkitdownLoader
 from fireflyframework_agentic.embeddings.types import EmbeddingResult
+from fireflyframework_agentic.rag.corpus import SqliteCorpus
+from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
+from fireflyframework_agentic.rag.ingest.pipeline import ingest_one
 from fireflyframework_agentic.vectorstores.memory_store import InMemoryVectorStore
 
 

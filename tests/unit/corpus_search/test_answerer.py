@@ -17,12 +17,12 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fireflyframework_agentic.rag.corpus import ChunkHit
 from examples.corpus_search.retrieval.answerer import (
     Answer,
     AnswerAgent,
     format_chunks_for_prompt,
 )
+from fireflyframework_agentic.rag.corpus import ChunkHit
 
 
 def _stub_run_result(answer: Answer) -> Any:

@@ -31,13 +31,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from examples.corpus_search.agent import CorpusAgent
+from examples.corpus_search.retrieval.answerer import Answer
+from fireflyframework_agentic.embeddings.types import EmbeddingResult
 from fireflyframework_agentic.rag.corpus import (
     SqliteCorpus,
     StoredChunk,
     sanitize_fts_query,
 )
-from examples.corpus_search.retrieval.answerer import Answer
-from fireflyframework_agentic.embeddings.types import EmbeddingResult
 
 # --- sanitize_fts_query unit tests --------------------------------------
 
