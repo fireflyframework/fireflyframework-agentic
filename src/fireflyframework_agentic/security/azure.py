@@ -12,10 +12,12 @@ Validates RS256 JWTs issued by Entra ID against the published JWKS, and
 exchanges incoming user tokens for downstream Graph/SharePoint tokens via the
 OAuth 2.0 On-Behalf-Of flow.
 
-The framework's existing
-:class:`fireflyframework_agentic.security.rbac.RBACManager` covers HS256 with a
-shared secret; this module is the parallel for asymmetric, externally-issued
-tokens (Entra ID).
+:class:`EntraTokenVerifier` extends :class:`~fireflyframework_agentic.security.rbac.RBACManager`,
+overriding :meth:`~fireflyframework_agentic.security.rbac.RBACManager.validate_token`
+with RS256 + JWKS validation. All permission/role/tenant methods
+(``has_permission``, ``get_user_id``, ``check_tenant_access``, …) are inherited
+unchanged, so Entra-issued claims plug directly into the existing authorization
+machinery.
 """
 
 from __future__ import annotations
@@ -28,6 +30,8 @@ import jwt
 from azure.identity import DefaultAzureCredential
 from jwt import PyJWKClient
 from msal import ConfidentialClientApplication
+
+from fireflyframework_agentic.security.rbac import RBACManager
 
 logger = logging.getLogger(__name__)
 
@@ -43,20 +47,32 @@ class _SigningKeyResolver(Protocol):
     def get_signing_key_from_jwt(self, token: str) -> Any: ...
 
 
-class EntraTokenVerifier:
+class EntraTokenVerifier(RBACManager):
     """Verify Entra ID-issued RS256 JWTs against the tenant's JWKS.
 
-    The verifier validates signature, expiry, audience, and issuer. JWKS keys
-    are fetched from the v2.0 OIDC discovery endpoint and cached by the
-    underlying :class:`jwt.PyJWKClient`.
+    Subclass of :class:`RBACManager` — replaces HS256 + shared secret
+    validation with RS256 + JWKS. Inherits ``has_permission``,
+    ``check_tenant_access``, ``get_user_id``, ``get_roles``, ``get_permissions``
+    so callers can compose verification and authorization in one object::
+
+        verifier = EntraTokenVerifier(tenant_id="…", audience="api://app",
+                                      roles={"admin": ["*"]})
+        claims = verifier.validate_token(bearer_token)
+        if not verifier.has_permission(claims, "tools.execute"):
+            raise PermissionError
 
     Parameters:
         tenant_id: Entra tenant (directory) GUID.
         audience: Expected ``aud`` claim — typically ``api://{client_id}`` of
-            the resource (i.e. this MCP server's app registration).
+            the resource (i.e. this server's app registration).
         jwk_client: Override the default :class:`jwt.PyJWKClient`. Tests inject
             a fake; production deployments may inject one with custom HTTP
             settings.
+        roles: Role-to-permissions mapping, forwarded to
+            :class:`RBACManager`. The roles used here typically come from
+            Entra group / app role claims.
+        multi_tenant: Forwarded to :class:`RBACManager` for tenant-isolation
+            checks via ``check_tenant_access``.
     """
 
     def __init__(
@@ -65,7 +81,10 @@ class EntraTokenVerifier:
         audience: str,
         *,
         jwk_client: _SigningKeyResolver | None = None,
+        roles: dict[str, list[str]] | None = None,
+        multi_tenant: bool = False,
     ) -> None:
+        super().__init__(jwt_secret=None, multi_tenant=multi_tenant, roles=roles)
         self._tenant_id = tenant_id
         self._audience = audience
         self._issuer = f"https://login.microsoftonline.com/{tenant_id}/v2.0"
@@ -75,11 +94,12 @@ class EntraTokenVerifier:
             lifespan=3600,
         )
 
-    def verify(self, token: str) -> dict[str, Any]:
+    def validate_token(self, token: str) -> dict[str, Any]:
         """Validate ``token`` and return its claims.
 
-        Raises ``ValueError`` on any failure (bad signature, expired, wrong
-        audience/issuer, malformed token, JWKS lookup failure).
+        Overrides :meth:`RBACManager.validate_token` with RS256 + JWKS
+        verification (signature, expiry, audience, issuer). Raises
+        ``ValueError`` on any failure.
         """
         try:
             signing_key = self._jwk_client.get_signing_key_from_jwt(token)
@@ -106,6 +126,11 @@ class EntraTokenVerifier:
         except jwt.InvalidTokenError as exc:
             raise ValueError(f"Invalid token: {exc}") from exc
 
+    # Entra-friendly alias.
+    def verify(self, token: str) -> dict[str, Any]:
+        """Alias for :meth:`validate_token` — matches Entra/OAuth nomenclature."""
+        return self.validate_token(token)
+
 
 def _default_assertion_provider() -> str:
     """Mint a federated client assertion via the local Managed Identity.
@@ -121,13 +146,13 @@ def _default_assertion_provider() -> str:
 class EntraOBOClient:
     """Exchange incoming user tokens for downstream Graph/SharePoint tokens.
 
-    Uses the OAuth 2.0 On-Behalf-Of flow. The MCP server's identity to Entra
-    is established via **federated client assertion** (workload identity
+    Uses the OAuth 2.0 On-Behalf-Of flow. The server's identity to Entra is
+    established via **federated client assertion** (workload identity
     federation) — there is no client secret anywhere in the call path.
 
     Parameters:
         tenant_id: Entra tenant (directory) GUID.
-        client_id: The MCP server's app registration client ID.
+        client_id: This server's app registration client ID.
         assertion_provider: Returns a federated client assertion JWT. Defaults
             to :func:`_default_assertion_provider` which uses
             :class:`azure.identity.DefaultAzureCredential`. Tests inject a

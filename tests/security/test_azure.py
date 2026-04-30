@@ -18,7 +18,8 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from fireflyframework_agentic.config import FireflyAgenticConfig
-from fireflyframework_agentic.security.entra import EntraOBOClient, EntraTokenVerifier
+from fireflyframework_agentic.security.azure import EntraOBOClient, EntraTokenVerifier
+from fireflyframework_agentic.security.rbac import RBACManager
 
 
 @pytest.fixture
@@ -142,6 +143,73 @@ def test_verifier_rejects_wrong_issuer(rsa_keypair: rsa.RSAPrivateKey, fake_jwk_
     )
     with pytest.raises(ValueError, match="issuer"):
         verifier.verify(token)
+
+
+def test_verifier_inherits_rbac_permission_methods(rsa_keypair: rsa.RSAPrivateKey, fake_jwk_client: Any) -> None:
+    """EntraTokenVerifier extends RBACManager — verify+authorize in one object."""
+    verifier = EntraTokenVerifier(
+        tenant_id="t",
+        audience="api://app",
+        jwk_client=fake_jwk_client,
+        roles={"admin": ["*"], "viewer": ["agents.list"]},
+    )
+    assert isinstance(verifier, RBACManager)
+
+    now = int(time.time())
+    token = _sign(
+        rsa_keypair,
+        {
+            "iss": _entra_v2_iss("t"),
+            "aud": "api://app",
+            "sub": "user-1",
+            "roles": ["admin"],
+            "exp": now + 60,
+            "iat": now,
+        },
+    )
+    claims = verifier.validate_token(token)
+    assert verifier.has_permission(claims, "anything.at.all") is True
+    assert verifier.get_user_id(claims) == "user-1"
+    assert verifier.get_roles(claims) == ["admin"]
+
+
+def test_verify_alias_matches_validate_token(rsa_keypair: rsa.RSAPrivateKey, fake_jwk_client: Any) -> None:
+    verifier = EntraTokenVerifier(
+        tenant_id="t",
+        audience="api://app",
+        jwk_client=fake_jwk_client,
+    )
+    now = int(time.time())
+    token = _sign(
+        rsa_keypair,
+        {
+            "iss": _entra_v2_iss("t"),
+            "aud": "api://app",
+            "sub": "user-1",
+            "exp": now + 60,
+            "iat": now,
+        },
+    )
+    assert verifier.verify(token) == verifier.validate_token(token)
+
+
+def test_rbac_manager_without_secret_rejects_create_token() -> None:
+    rbac = RBACManager()
+    with pytest.raises(ValueError, match="jwt_secret"):
+        rbac.create_token(user_id="u", roles=["admin"])
+
+
+def test_rbac_manager_without_secret_rejects_validate_token() -> None:
+    rbac = RBACManager()
+    with pytest.raises(ValueError, match="jwt_secret"):
+        rbac.validate_token("any.token")
+
+
+def test_rbac_manager_without_secret_still_checks_permissions() -> None:
+    """Permission checking is decoupled from token validation."""
+    rbac = RBACManager(roles={"admin": ["*"]})
+    assert rbac.has_permission({"roles": ["admin"]}, "tools.execute") is True
+    assert rbac.has_permission({"roles": ["viewer"]}, "tools.execute") is False
 
 
 def test_verifier_rejects_token_signed_by_wrong_key(fake_jwk_client: Any) -> None:
