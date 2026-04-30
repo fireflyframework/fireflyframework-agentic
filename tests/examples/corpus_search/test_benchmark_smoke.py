@@ -23,9 +23,12 @@ the ingest/retrieval pipeline without requiring API keys.
 
 from __future__ import annotations
 
+import pytest
+
 from tests.examples.corpus_search.benchmark.runner import run_benchmark
 
 
+@pytest.mark.nightly
 async def test_benchmark_mechanics_mode_completes_with_reasonable_floor():
     """Run the full benchmark in mechanics mode and assert quality floors."""
     result = await run_benchmark(

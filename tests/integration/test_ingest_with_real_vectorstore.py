@@ -74,6 +74,7 @@ async def deps(tmp_path):
     await corpus.close()
 
 
+@pytest.mark.nightly
 async def test_ingest_one_works_against_real_sqlitevec_vectorstore(deps, tmp_path):
     """Regression test: VectorDocument upsert through BaseVectorStore.
 
