@@ -41,20 +41,32 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     p_ingest = sub.add_parser("ingest", help="Ingest a folder of documents.")
     p_ingest.add_argument("--folder", type=Path, required=True, help="Folder of source documents to ingest.")
-    p_ingest.add_argument("--root", type=Path, default=_DEFAULT_ROOT, help="Output root for corpus.sqlite + chroma/.")
+    p_ingest.add_argument("--root", type=Path, default=_DEFAULT_ROOT, help="Output root for corpus.sqlite.")
     p_ingest.add_argument("--embed-model", default=_DEFAULT_EMBED_MODEL, help="Embedding model.")
+    p_ingest.add_argument(
+        "--embed-dimension",
+        type=int,
+        default=1536,
+        help="Embedding dimension — must match the chosen model (text-embedding-3-small=1536, text-embedding-3-large=3072).",
+    )
     p_ingest.add_argument("--watch", action="store_true", help="After processing existing files, watch for new ones.")
     p_ingest.add_argument("--verbose", action="store_true")
 
     p_query = sub.add_parser("query", help="Query the corpus.")
     p_query.add_argument("question", help="Natural-language question.")
     p_query.add_argument(
-        "--root", type=Path, default=_DEFAULT_ROOT, help="Corpus root (must contain corpus.sqlite + chroma/)."
+        "--root", type=Path, default=_DEFAULT_ROOT, help="Corpus root (must contain corpus.sqlite)."
     )
     p_query.add_argument(
         "--embed-model",
         default=_DEFAULT_EMBED_MODEL,
         help="Embedding model — must match the model used at ingest time.",
+    )
+    p_query.add_argument(
+        "--embed-dimension",
+        type=int,
+        default=1536,
+        help="Embedding dimension — must match the model used at ingest time.",
     )
     p_query.add_argument("--expansion-model", default=_DEFAULT_EXPANSION_MODEL, help="LLM for query expansion.")
     p_query.add_argument("--answer-model", default=_DEFAULT_ANSWER_MODEL, help="LLM for answer synthesis.")
@@ -123,6 +135,7 @@ async def _run_ingest(args: argparse.Namespace) -> int:
     agent = CorpusAgent(
         root=args.root,
         embed_model=args.embed_model,
+        embed_dimension=args.embed_dimension,
         expansion_model=_DEFAULT_EXPANSION_MODEL,
         answer_model=_DEFAULT_ANSWER_MODEL,
         rerank_model=_DEFAULT_RERANK_MODEL,
@@ -147,6 +160,7 @@ async def _run_query(args: argparse.Namespace) -> int:
     agent = CorpusAgent(
         root=args.root,
         embed_model=args.embed_model,
+        embed_dimension=args.embed_dimension,
         expansion_model=args.expansion_model,
         answer_model=args.answer_model,
         rerank_model=args.rerank_model,

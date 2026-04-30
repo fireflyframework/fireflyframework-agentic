@@ -54,6 +54,7 @@ class CorpusAgent:
         *,
         root: Path,
         embed_model: str,
+        embed_dimension: int = 1536,
         expansion_model: str,
         answer_model: str,
         rerank_model: str,
@@ -70,6 +71,7 @@ class CorpusAgent:
         self._embedder: Any = _embedder
         self._vector_store: Any = _vector_store
         self._embed_model = embed_model
+        self._embed_dimension = embed_dimension
         self._expansion_model = expansion_model
         self._answer_model = answer_model
         self._rerank_model = rerank_model
@@ -158,18 +160,11 @@ class CorpusAgent:
         raise ValueError(f"Unknown embedding provider {provider!r} (use 'azure:<deployment>' or 'openai:<model>').")
 
     def _build_vector_store(self) -> Any:
-        import chromadb
-        from chromadb.config import Settings
+        from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
 
-        from fireflyframework_agentic.vectorstores.chroma_store import ChromaVectorStore
-
-        client = chromadb.PersistentClient(
-            path=str(self.root / "chroma"),
-            settings=Settings(anonymized_telemetry=False),
-        )
-        return ChromaVectorStore(
-            collection_name="corpus_chunks",
-            client=client,
+        return SqliteVecVectorStore(
+            db_path=self.root / "corpus.sqlite",
+            dimension=self._embed_dimension,
         )
 
     # ----- public API ----------------------------------------------------
