@@ -49,6 +49,25 @@ Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License
 - **Tests README** documents per-category descriptions and the nightly
   marker.
 
+### In Progress
+
+The following work is open in PRs at release time and is **not** included
+in `26.04.30`. Listed here for visibility:
+
+- **Hexagonal ingestion module** with SharePoint source, ScriptMapper, and
+  DuckDB sink (#84, draft). Adds `fireflyframework_agentic/ingestion/`,
+  `firefly-ingest` CLI, and the `[ingestion-sharepoint]`,
+  `[ingestion-duckdb]`, `[ingestion-keyvault]`, `[ingestion]` extras.
+- **Corpus-search example agent** with folder ingestion + hybrid search
+  (#82). `examples/corpus_search/` plus framework additions:
+  `MarkitdownLoader`, `FolderWatcher`, optional `[markitdown]`, `[watch]`,
+  `[corpus-search]` extras.
+- **Nightly auto-tracking issue** (#89). On nightly failure, opens or
+  comments on a `nightly-failure` issue; auto-closes on green.
+- **Nightly perf-benchmark fix** (#91). Repairs the broken
+  `pytest.asyncio` pattern in HTTP perf benchmarks; switches to plain
+  functions with a shared `bench_loop` event loop.
+
 ## [26.04.28] - 2026-04-28
 
 ### Changed (BREAKING)
