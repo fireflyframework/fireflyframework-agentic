@@ -26,10 +26,15 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import os
 
-from _common import MODEL, ensure_api_key
+from dotenv import load_dotenv
 
-from fireflyframework_genai.agents.templates import create_summarizer_agent
+from fireflyframework_agentic.agents.templates import create_summarizer_agent
+
+load_dotenv()
+
+MODEL = os.environ["MODEL"]
 
 ARTICLE = """\
 Artificial intelligence has undergone a dramatic transformation over the past
@@ -48,7 +53,6 @@ AI toward more reliable, grounded, and transparent behaviour.
 
 
 async def main() -> None:
-    ensure_api_key()
 
     agent = create_summarizer_agent(
         model=MODEL,

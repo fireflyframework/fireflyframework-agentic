@@ -38,9 +38,9 @@ import asyncio
 import os
 import time
 
-from fireflyframework_genai.agents.base import FireflyAgent
-from fireflyframework_genai.pipeline.builder import PipelineBuilder
-from fireflyframework_genai.pipeline.steps import BatchLLMStep
+from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.pipeline.builder import PipelineBuilder
+from fireflyframework_agentic.pipeline.steps import BatchLLMStep
 
 
 async def demo_basic_batch_processing():
@@ -72,7 +72,7 @@ async def demo_basic_batch_processing():
         batch_size=10,  # Process up to 10 at once
     )
 
-    from fireflyframework_genai.pipeline.context import PipelineContext
+    from fireflyframework_agentic.pipeline.context import PipelineContext
 
     context = PipelineContext(inputs={}, correlation_id="batch-demo")
     inputs = {"reviews": reviews}
@@ -116,7 +116,7 @@ async def demo_large_scale_batch():
         batch_size=5,  # Process 5 at a time
     )
 
-    from fireflyframework_genai.pipeline.context import PipelineContext
+    from fireflyframework_agentic.pipeline.context import PipelineContext
 
     context = PipelineContext(inputs={}, correlation_id="large-batch")
     inputs = {"documents": documents}
@@ -165,7 +165,7 @@ async def demo_batch_with_callback():
         on_batch_complete=on_batch_complete,
     )
 
-    from fireflyframework_genai.pipeline.context import PipelineContext
+    from fireflyframework_agentic.pipeline.context import PipelineContext
 
     context = PipelineContext(inputs={}, correlation_id="callback-demo")
     inputs = {"texts": texts}
@@ -253,7 +253,7 @@ async def demo_cost_comparison():
         print("⚠️  Skipping cost comparison (requires OPENAI_API_KEY)")
         return
 
-    from fireflyframework_genai.observability.usage import default_usage_tracker
+    from fireflyframework_agentic.observability.usage import default_usage_tracker
 
     agent = FireflyAgent(
         "cost-test",
@@ -278,7 +278,7 @@ async def demo_cost_comparison():
     initial_cost = default_usage_tracker.get_summary().total_cost_usd
 
     step = BatchLLMStep(agent, prompts_key="prompts")
-    from fireflyframework_genai.pipeline.context import PipelineContext
+    from fireflyframework_agentic.pipeline.context import PipelineContext
 
     context = PipelineContext(inputs={}, correlation_id="cost-test")
     await step.execute(context, {"prompts": prompts})

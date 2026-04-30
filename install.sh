@@ -16,13 +16,13 @@
 set -euo pipefail
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  fireflyframework-genai — Interactive Installer
+#  fireflyframework-agentic — Interactive Installer
 # ══════════════════════════════════════════════════════════════════════════════
 
 readonly VERSION="26.01.01"
-readonly PACKAGE="fireflyframework-genai"
-readonly PACKAGE_IMPORT="fireflyframework_genai"
-readonly REPO_URL="https://github.com/fireflyframework/fireflyframework-genai.git"
+readonly PACKAGE="fireflyframework-agentic"
+readonly PACKAGE_IMPORT="fireflyframework_agentic"
+readonly REPO_URL="https://github.com/fireflyframework/fireflyframework-agentic.git"
 readonly MIN_PYTHON_MAJOR=3
 readonly MIN_PYTHON_MINOR=13
 readonly TOTAL_STEPS=6
@@ -711,19 +711,19 @@ print_summary() {
 
     printf "  %s# %d. Configure your model provider%s\n" "$DIM" "$step_num" "$RESET"
     printf "  export OPENAI_API_KEY=sk-...\n"
-    printf "  export FIREFLY_GENAI_DEFAULT_MODEL=openai:gpt-4o\n\n"
+    printf "  export FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o\n\n"
     step_num=$((step_num + 1))
 
     printf "  %s# %d. Create your first agent%s\n" "$DIM" "$step_num" "$RESET"
-    printf "  from fireflyframework_genai.agents import firefly_agent\n\n"
+    printf "  from fireflyframework_agentic.agents import firefly_agent\n\n"
     printf "  @firefly_agent(name=\"assistant\", model=\"openai:gpt-4o\")\n"
     printf "  def instructions(ctx):\n"
     printf "      return \"You are a helpful assistant.\"\n\n"
 
     printf "  %s%sResources:%s\n\n" "$BOLD" "$WHITE" "$RESET"
-    printf "  %sDocs      :%s  https://github.com/fireflyframework/fireflyframework-genai/tree/main/docs\n" "$DIM" "$RESET"
-    printf "  %sTutorial  :%s  https://github.com/fireflyframework/fireflyframework-genai/blob/main/docs/tutorial.md\n" "$DIM" "$RESET"
-    printf "  %sRepository:%s  https://github.com/fireflyframework/fireflyframework-genai\n\n" "$DIM" "$RESET"
+    printf "  %sDocs      :%s  https://github.com/fireflyframework/fireflyframework-agentic/tree/main/docs\n" "$DIM" "$RESET"
+    printf "  %sTutorial  :%s  https://github.com/fireflyframework/fireflyframework-agentic/blob/main/docs/tutorial.md\n" "$DIM" "$RESET"
+    printf "  %sRepository:%s  https://github.com/fireflyframework/fireflyframework-agentic\n\n" "$DIM" "$RESET"
 }
 
 # ══════════════════════════════════════════════════════════════════════════════

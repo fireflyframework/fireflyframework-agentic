@@ -29,20 +29,24 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import os
 
-from _common import MODEL, ensure_api_key
+from dotenv import load_dotenv
 
-from fireflyframework_genai import configure_logging
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.reasoning import PlanAndExecutePattern
+from fireflyframework_agentic import configure_logging
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.reasoning import PlanAndExecutePattern
+
+load_dotenv()
+
+MODEL = os.environ["MODEL"]
 
 # Enable INFO-level logging so that plan generation and step execution
-# progress is printed in real time — only for fireflyframework_genai loggers.
+# progress is printed in real time — only for fireflyframework_agentic loggers.
 configure_logging("INFO")
 
 
 async def main() -> None:
-    ensure_api_key()
 
     agent = FireflyAgent(name="planner", model=MODEL)
     pattern = PlanAndExecutePattern(

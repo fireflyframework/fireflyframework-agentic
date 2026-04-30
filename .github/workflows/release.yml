@@ -13,17 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: studio-frontend/package-lock.json
-      - run: npm ci
-        working-directory: studio-frontend
-      - run: npm run build
-        working-directory: studio-frontend
-
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
         with:
           enable-cache: true
@@ -31,7 +20,6 @@ jobs:
         with:
           python-version: '3.13'
 
-      - run: uv run python scripts/build_studio.py
       - run: uv build
 
       - name: Create GitHub Release

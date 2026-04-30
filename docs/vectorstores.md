@@ -31,8 +31,8 @@ graph TD
 ## Quick Start
 
 ```python
-from fireflyframework_genai.embeddings.providers import OpenAIEmbedder
-from fireflyframework_genai.vectorstores import InMemoryVectorStore, VectorDocument
+from fireflyframework_agentic.embeddings.providers import OpenAIEmbedder
+from fireflyframework_agentic.vectorstores import InMemoryVectorStore, VectorDocument
 
 # Create a store with auto-embedding
 embedder = OpenAIEmbedder()
@@ -61,7 +61,7 @@ for r in results:
 Zero-dependency, brute-force cosine similarity. Ideal for development and testing.
 
 ```python
-from fireflyframework_genai.vectorstores import InMemoryVectorStore
+from fireflyframework_agentic.vectorstores import InMemoryVectorStore
 
 store = InMemoryVectorStore(embedder=my_embedder)
 ```
@@ -71,7 +71,7 @@ No extra install required.
 ### ChromaDB
 
 ```python
-from fireflyframework_genai.vectorstores import ChromaVectorStore
+from fireflyframework_agentic.vectorstores import ChromaVectorStore
 
 # Ephemeral (in-process)
 store = ChromaVectorStore(collection_name="my_docs", embedder=my_embedder)
@@ -82,12 +82,12 @@ client = chromadb.HttpClient(host="localhost", port=8000)
 store = ChromaVectorStore(collection_name="my_docs", client=client, embedder=my_embedder)
 ```
 
-Install: `pip install fireflyframework-genai[vectorstores-chroma]`
+Install: `pip install fireflyframework-agentic[vectorstores-chroma]`
 
 ### Pinecone
 
 ```python
-from fireflyframework_genai.vectorstores import PineconeVectorStore
+from fireflyframework_agentic.vectorstores import PineconeVectorStore
 
 store = PineconeVectorStore(
     index_name="my-index",
@@ -96,12 +96,12 @@ store = PineconeVectorStore(
 )
 ```
 
-Install: `pip install fireflyframework-genai[vectorstores-pinecone]`
+Install: `pip install fireflyframework-agentic[vectorstores-pinecone]`
 
 ### Qdrant
 
 ```python
-from fireflyframework_genai.vectorstores import QdrantVectorStore
+from fireflyframework_agentic.vectorstores import QdrantVectorStore
 
 store = QdrantVectorStore(
     collection_name="my_collection",
@@ -112,7 +112,7 @@ store = QdrantVectorStore(
 )
 ```
 
-Install: `pip install fireflyframework-genai[vectorstores-qdrant]`
+Install: `pip install fireflyframework-agentic[vectorstores-qdrant]`
 
 ---
 
@@ -121,7 +121,7 @@ Install: `pip install fireflyframework-genai[vectorstores-qdrant]`
 ### VectorDocument
 
 ```python
-from fireflyframework_genai.vectorstores import VectorDocument
+from fireflyframework_agentic.vectorstores import VectorDocument
 
 doc = VectorDocument(
     id="unique-id",              # required
@@ -135,7 +135,7 @@ doc = VectorDocument(
 ### SearchResult
 
 ```python
-from fireflyframework_genai.vectorstores import SearchResult
+from fireflyframework_agentic.vectorstores import SearchResult
 
 # Returned by search() and search_text()
 result.document   # VectorDocument
@@ -145,7 +145,7 @@ result.score      # float (0.0 to 1.0, higher = more similar)
 ### SearchFilter
 
 ```python
-from fireflyframework_genai.vectorstores import SearchFilter
+from fireflyframework_agentic.vectorstores import SearchFilter
 
 # Supported operators: eq, ne, gt, lt, gte, lte, in
 filters = [
@@ -202,7 +202,7 @@ results = await store.search_text("my query")
 ## Registry
 
 ```python
-from fireflyframework_genai.vectorstores import VectorStoreRegistry, InMemoryVectorStore
+from fireflyframework_agentic.vectorstores import VectorStoreRegistry, InMemoryVectorStore
 
 registry = VectorStoreRegistry()
 registry.register("memory", InMemoryVectorStore(embedder=my_embedder))
@@ -215,12 +215,12 @@ await store.upsert(docs)
 
 ## Configuration
 
-Global defaults via environment variables (prefix `FIREFLY_GENAI_`):
+Global defaults via environment variables (prefix `FIREFLY_AGENTIC_`):
 
 | Setting | Env Variable | Default |
 |---------|-------------|---------|
-| `default_vector_store` | `FIREFLY_GENAI_DEFAULT_VECTOR_STORE` | `memory` |
-| `vector_store_namespace` | `FIREFLY_GENAI_VECTOR_STORE_NAMESPACE` | `default` |
+| `default_vector_store` | `FIREFLY_AGENTIC_DEFAULT_VECTOR_STORE` | `memory` |
+| `vector_store_namespace` | `FIREFLY_AGENTIC_VECTOR_STORE_NAMESPACE` | `default` |
 
 ---
 
@@ -229,7 +229,7 @@ Global defaults via environment variables (prefix `FIREFLY_GENAI_`):
 Build retrieval-augmented generation workflows using pipeline steps:
 
 ```python
-from fireflyframework_genai.pipeline import Pipeline, PipelineStep, RetrievalStep
+from fireflyframework_agentic.pipeline import Pipeline, PipelineStep, RetrievalStep
 
 # RetrievalStep embeds the query and searches the store
 retrieval = RetrievalStep(
@@ -254,8 +254,8 @@ result = await pipeline.execute("What is RAG?")
 Subclass `BaseVectorStore` and implement three methods:
 
 ```python
-from fireflyframework_genai.vectorstores.base import BaseVectorStore
-from fireflyframework_genai.vectorstores.types import SearchFilter, SearchResult, VectorDocument
+from fireflyframework_agentic.vectorstores.base import BaseVectorStore
+from fireflyframework_agentic.vectorstores.types import SearchFilter, SearchResult, VectorDocument
 
 class MyVectorStore(BaseVectorStore):
     async def _upsert(self, documents: list[VectorDocument], namespace: str) -> None:

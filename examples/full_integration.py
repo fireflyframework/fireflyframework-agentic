@@ -36,27 +36,27 @@ import asyncio
 import os
 
 # Core framework
-from fireflyframework_genai.agents.base import FireflyAgent
+from fireflyframework_agentic.agents.base import FireflyAgent
 
 # Middleware (all production features)
-from fireflyframework_genai.agents.builtin_middleware import (
+from fireflyframework_agentic.agents.builtin_middleware import (
     CostGuardMiddleware,
     LoggingMiddleware,
     ObservabilityMiddleware,
 )
-from fireflyframework_genai.agents.prompt_cache import PromptCacheMiddleware
-from fireflyframework_genai.config import get_config
+from fireflyframework_agentic.agents.prompt_cache import PromptCacheMiddleware
+from fireflyframework_agentic.config import get_config
 
 # Database persistence
-from fireflyframework_genai.memory.manager import MemoryManager
+from fireflyframework_agentic.memory.manager import MemoryManager
 
 # Observability
-from fireflyframework_genai.observability.usage import default_usage_tracker
+from fireflyframework_agentic.observability.usage import default_usage_tracker
 
 # Pipeline with batch processing
-from fireflyframework_genai.pipeline.builder import PipelineBuilder
-from fireflyframework_genai.pipeline.steps import BatchLLMStep
-from fireflyframework_genai.resilience.circuit_breaker import CircuitBreakerMiddleware
+from fireflyframework_agentic.pipeline.builder import PipelineBuilder
+from fireflyframework_agentic.pipeline.steps import BatchLLMStep
+from fireflyframework_agentic.resilience.circuit_breaker import CircuitBreakerMiddleware
 
 
 async def demo_full_stack_agent():
@@ -75,8 +75,8 @@ async def demo_full_stack_agent():
     # Create memory manager (supports in-memory, file, PostgreSQL, MongoDB)
     memory = MemoryManager(
         working_scope_id="production-app",
-        # To use PostgreSQL: Uncomment and set FIREFLY_GENAI_MEMORY_BACKEND=postgres
-        # To use MongoDB: Uncomment and set FIREFLY_GENAI_MEMORY_BACKEND=mongodb
+        # To use PostgreSQL: Uncomment and set FIREFLY_AGENTIC_MEMORY_BACKEND=postgres
+        # To use MongoDB: Uncomment and set FIREFLY_AGENTIC_MEMORY_BACKEND=mongodb
     )
 
     # Create production-ready agent with all features
@@ -222,7 +222,7 @@ async def demo_pipeline_with_batch():
     builder.add_edge("classify", "aggregate")
 
     # Run pipeline
-    from fireflyframework_genai.pipeline.context import PipelineContext
+    from fireflyframework_agentic.pipeline.context import PipelineContext
 
     pipeline = builder.build()
 
@@ -247,15 +247,15 @@ async def demo_security_features():
 
     # RBAC (if enabled)
     print("1. RBAC (Role-Based Access Control):")
-    print("   Configure with: FIREFLY_GENAI_RBAC_ENABLED=true")
-    print("   Set JWT secret: FIREFLY_GENAI_RBAC_JWT_SECRET=your-secret")
+    print("   Configure with: FIREFLY_AGENTIC_RBAC_ENABLED=true")
+    print("   Set JWT secret: FIREFLY_AGENTIC_RBAC_JWT_SECRET=your-secret")
     print("   Use @require_permission decorator on agent endpoints")
     print()
 
     # Encryption (if enabled)
     print("2. Data Encryption:")
-    print("   Configure with: FIREFLY_GENAI_ENCRYPTION_ENABLED=true")
-    print("   Set encryption key: FIREFLY_GENAI_ENCRYPTION_KEY=your-key-32-bytes")
+    print("   Configure with: FIREFLY_AGENTIC_ENCRYPTION_ENABLED=true")
+    print("   Set encryption key: FIREFLY_AGENTIC_ENCRYPTION_KEY=your-key-32-bytes")
     print("   Use EncryptedMemoryStore wrapper for sensitive data")
     print()
 
@@ -269,7 +269,7 @@ async def demo_security_features():
     # CORS Security
     print("4. CORS Security:")
     print("   Default: No origins allowed (secure)")
-    print("   Configure: FIREFLY_GENAI_CORS_ALLOWED_ORIGINS=['https://app.example.com']")
+    print("   Configure: FIREFLY_AGENTIC_CORS_ALLOWED_ORIGINS=['https://app.example.com']")
     print()
 
 
@@ -307,46 +307,46 @@ async def demo_configuration_integration():
     print()
 
     print("# Database Persistence")
-    print("export FIREFLY_GENAI_MEMORY_BACKEND=postgres  # or mongodb, file, in_memory")
-    print("export FIREFLY_GENAI_MEMORY_POSTGRES_URL=postgresql://user:pass@localhost/db")
-    print("export FIREFLY_GENAI_MEMORY_MONGODB_URL=mongodb://localhost:27017/")
+    print("export FIREFLY_AGENTIC_MEMORY_BACKEND=postgres  # or mongodb, file, in_memory")
+    print("export FIREFLY_AGENTIC_MEMORY_POSTGRES_URL=postgresql://user:pass@localhost/db")
+    print("export FIREFLY_AGENTIC_MEMORY_MONGODB_URL=mongodb://localhost:27017/")
     print()
 
     print("# Distributed Tracing")
-    print("export FIREFLY_GENAI_OBSERVABILITY_ENABLED=true")
-    print("export FIREFLY_GENAI_OTLP_ENDPOINT=http://localhost:4317")
-    print("export FIREFLY_GENAI_SERVICE_NAME=my-genai-app")
+    print("export FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true")
+    print("export FIREFLY_AGENTIC_OTLP_ENDPOINT=http://localhost:4317")
+    print("export FIREFLY_AGENTIC_SERVICE_NAME=my-genai-app")
     print()
 
     print("# Quota Management")
-    print("export FIREFLY_GENAI_QUOTA_ENABLED=true")
-    print("export FIREFLY_GENAI_QUOTA_BUDGET_DAILY_USD=100.0")
-    print("export FIREFLY_GENAI_QUOTA_RATE_LIMITS='{\"openai:gpt-4o\": 60}'")
+    print("export FIREFLY_AGENTIC_QUOTA_ENABLED=true")
+    print("export FIREFLY_AGENTIC_QUOTA_BUDGET_DAILY_USD=100.0")
+    print("export FIREFLY_AGENTIC_QUOTA_RATE_LIMITS='{\"openai:gpt-4o\": 60}'")
     print()
 
     print("# Security")
-    print("export FIREFLY_GENAI_RBAC_ENABLED=true")
-    print("export FIREFLY_GENAI_RBAC_JWT_SECRET=your-secret-key")
-    print("export FIREFLY_GENAI_ENCRYPTION_ENABLED=true")
-    print("export FIREFLY_GENAI_ENCRYPTION_KEY=your-32-byte-key")
-    print("export FIREFLY_GENAI_CORS_ALLOWED_ORIGINS=['https://app.example.com']")
+    print("export FIREFLY_AGENTIC_RBAC_ENABLED=true")
+    print("export FIREFLY_AGENTIC_RBAC_JWT_SECRET=your-secret-key")
+    print("export FIREFLY_AGENTIC_ENCRYPTION_ENABLED=true")
+    print("export FIREFLY_AGENTIC_ENCRYPTION_KEY=your-32-byte-key")
+    print("export FIREFLY_AGENTIC_CORS_ALLOWED_ORIGINS=['https://app.example.com']")
     print()
 
     print("# HTTP Connection Pooling")
-    print("export FIREFLY_GENAI_HTTP_POOL_ENABLED=true")
-    print("export FIREFLY_GENAI_HTTP_POOL_SIZE=100")
+    print("export FIREFLY_AGENTIC_HTTP_POOL_ENABLED=true")
+    print("export FIREFLY_AGENTIC_HTTP_POOL_SIZE=100")
     print()
 
     print("# Cost Optimization")
-    print("export FIREFLY_GENAI_BUDGET_LIMIT_USD=500.0")
-    print("export FIREFLY_GENAI_BUDGET_ALERT_THRESHOLD_USD=400.0")
+    print("export FIREFLY_AGENTIC_BUDGET_LIMIT_USD=500.0")
+    print("export FIREFLY_AGENTIC_BUDGET_ALERT_THRESHOLD_USD=400.0")
     print()
 
 
 async def main():
     """Run all integration demonstrations."""
     print("=" * 70)
-    print("FireflyFramework GenAI - Full Integration Demonstration")
+    print("FireflyFramework Agentic - Full Integration Demonstration")
     print("=" * 70)
     print()
     print("This example demonstrates all production-ready features working together:")

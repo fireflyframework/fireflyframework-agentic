@@ -27,15 +27,19 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import os
 
-from _common import MODEL, ensure_api_key
+from dotenv import load_dotenv
 
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.reasoning import ChainOfThoughtPattern
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.reasoning import ChainOfThoughtPattern
+
+load_dotenv()
+
+MODEL = os.environ["MODEL"]
 
 
 async def main() -> None:
-    ensure_api_key()
 
     agent = FireflyAgent(name="cot-thinker", model=MODEL)
     pattern = ChainOfThoughtPattern(max_steps=10, model=MODEL)

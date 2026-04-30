@@ -16,10 +16,10 @@
 
 <#
 .SYNOPSIS
-    Interactive installer for fireflyframework-genai.
+    Interactive installer for fireflyframework-agentic.
 
 .DESCRIPTION
-    Installs fireflyframework-genai from source with interactive TUI, requirement
+    Installs fireflyframework-agentic from source with interactive TUI, requirement
     detection, and progress indicators.
 
 .PARAMETER NonInteractive
@@ -31,7 +31,7 @@
 .EXAMPLE
     .\install.ps1
     .\install.ps1 -NonInteractive -Extras all
-    irm https://raw.githubusercontent.com/fireflyframework/fireflyframework-genai/main/install.ps1 | iex
+    irm https://raw.githubusercontent.com/fireflyframework/fireflyframework-agentic/main/install.ps1 | iex
 #>
 
 [CmdletBinding()]
@@ -46,8 +46,8 @@ $ErrorActionPreference = "Stop"
 # ── Constants ────────────────────────────────────────────────────────────────
 
 $script:VERSION = "26.01.01"
-$script:PACKAGE = "fireflyframework-genai"
-$script:REPO_URL = "https://github.com/fireflyframework/fireflyframework-genai.git"
+$script:PACKAGE = "fireflyframework-agentic"
+$script:REPO_URL = "https://github.com/fireflyframework/fireflyframework-agentic.git"
 $script:MIN_PYTHON_MAJOR = 3
 $script:MIN_PYTHON_MINOR = 13
 $script:SPINNER_FRAMES = @("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
@@ -88,7 +88,7 @@ function Show-Banner {
     Write-Host " \______  /\___  >___|  /\____|__  /__|" -ForegroundColor Cyan
     Write-Host "        \/     \/     \/         \/" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  fireflyframework-genai" -ForegroundColor White -NoNewline
+    Write-Host "  fireflyframework-agentic" -ForegroundColor White -NoNewline
     Write-Host " v$script:VERSION" -ForegroundColor DarkGray
     Write-Host "  The production-grade GenAI metaframework built on Pydantic AI" -ForegroundColor DarkGray
     Write-Host "  Copyright 2026 Firefly Software Solutions Inc. Apache License 2.0." -ForegroundColor DarkGray
@@ -386,9 +386,9 @@ function Test-Installation {
 
     Write-Info "Verifying package import..."
     try {
-        $ver = & $script:PythonCmd -c "import fireflyframework_genai; print(fireflyframework_genai.__version__)" 2>&1
+        $ver = & $script:PythonCmd -c "import fireflyframework_agentic; print(fireflyframework_agentic.__version__)" 2>&1
         if ($LASTEXITCODE -eq 0) {
-            Write-Ok "fireflyframework-genai v$ver is ready"
+            Write-Ok "fireflyframework-agentic v$ver is ready"
             return $true
         }
     } catch { }
@@ -402,7 +402,7 @@ function Show-Summary {
 
     Write-Host "  ╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Green
     Write-Host "  ║" -ForegroundColor Green -NoNewline
-    Write-Host "  fireflyframework-genai v$($script:VERSION)" -ForegroundColor White -NoNewline
+    Write-Host "  fireflyframework-agentic v$($script:VERSION)" -ForegroundColor White -NoNewline
     Write-Host " installed successfully!       " -NoNewline
     Write-Host "║" -ForegroundColor Green
     Write-Host "  ╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Green
@@ -412,19 +412,19 @@ function Show-Summary {
     Write-Host ""
     Write-Host "  # Configure your model provider" -ForegroundColor DarkGray
     Write-Host '  $env:OPENAI_API_KEY = "sk-..."' -ForegroundColor White
-    Write-Host '  $env:FIREFLY_GENAI_DEFAULT_MODEL = "openai:gpt-4o"' -ForegroundColor White
+    Write-Host '  $env:FIREFLY_AGENTIC_DEFAULT_MODEL = "openai:gpt-4o"' -ForegroundColor White
     Write-Host ""
     Write-Host "  # Create your first agent" -ForegroundColor DarkGray
-    Write-Host "  from fireflyframework_genai.agents import firefly_agent" -ForegroundColor White
+    Write-Host "  from fireflyframework_agentic.agents import firefly_agent" -ForegroundColor White
     Write-Host ""
     Write-Host '  @firefly_agent(name="assistant", model="openai:gpt-4o")' -ForegroundColor White
     Write-Host "  def instructions(ctx):" -ForegroundColor White
     Write-Host '      return "You are a helpful assistant."' -ForegroundColor White
     Write-Host ""
     Write-Info "Resources:"
-    Write-Host "  Documentation:  https://github.com/fireflyframework/fireflyframework-genai/tree/main/docs" -ForegroundColor DarkGray
-    Write-Host "  Tutorial:       https://github.com/fireflyframework/fireflyframework-genai/blob/main/docs/tutorial.md" -ForegroundColor DarkGray
-    Write-Host "  Repository:     https://github.com/fireflyframework/fireflyframework-genai" -ForegroundColor DarkGray
+    Write-Host "  Documentation:  https://github.com/fireflyframework/fireflyframework-agentic/tree/main/docs" -ForegroundColor DarkGray
+    Write-Host "  Tutorial:       https://github.com/fireflyframework/fireflyframework-agentic/blob/main/docs/tutorial.md" -ForegroundColor DarkGray
+    Write-Host "  Repository:     https://github.com/fireflyframework/fireflyframework-agentic" -ForegroundColor DarkGray
     Write-Host ""
 }
 

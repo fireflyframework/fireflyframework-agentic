@@ -26,10 +26,15 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import os
 
-from _common import MODEL, ensure_api_key
+from dotenv import load_dotenv
 
-from fireflyframework_genai.agents.templates import create_classifier_agent
+from fireflyframework_agentic.agents.templates import create_classifier_agent
+
+load_dotenv()
+
+MODEL = os.environ["MODEL"]
 
 SAMPLES = [
     "My invoice shows an incorrect charge for last month's subscription.",
@@ -40,7 +45,6 @@ SAMPLES = [
 
 
 async def main() -> None:
-    ensure_api_key()
 
     agent = create_classifier_agent(
         categories=["billing", "technical_support", "sales", "feedback"],

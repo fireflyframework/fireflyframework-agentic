@@ -28,16 +28,20 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import os
 
-from _common import MODEL, ensure_api_key
+from dotenv import load_dotenv
 
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.memory import MemoryManager
-from fireflyframework_genai.reasoning import ReActPattern
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.memory import MemoryManager
+from fireflyframework_agentic.reasoning import ReActPattern
+
+load_dotenv()
+
+MODEL = os.environ["MODEL"]
 
 
 async def main() -> None:
-    ensure_api_key()
 
     memory = MemoryManager()
     agent = FireflyAgent(name="memory-react", model=MODEL, memory=memory)

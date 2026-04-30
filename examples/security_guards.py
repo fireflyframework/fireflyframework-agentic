@@ -37,7 +37,7 @@ def main() -> None:
     # ── 1. PromptGuard: detect prompt injection ─────────────────────────
     print("=== PromptGuard: Input Scanning ===\n")
 
-    from fireflyframework_genai.security.prompt_guard import PromptGuard
+    from fireflyframework_agentic.security.prompt_guard import PromptGuard
 
     guard = PromptGuard()
 
@@ -67,7 +67,7 @@ def main() -> None:
     # ── 3. OutputGuard: detect PII and secrets ──────────────────────────
     print("\n=== OutputGuard: Output Scanning ===\n")
 
-    from fireflyframework_genai.security.output_guard import OutputGuard, default_output_guard
+    from fireflyframework_agentic.security.output_guard import OutputGuard, default_output_guard
 
     test_outputs = [
         "The meeting is at 3pm tomorrow.",

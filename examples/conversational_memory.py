@@ -28,15 +28,19 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import os
 
-from _common import MODEL, ensure_api_key
+from dotenv import load_dotenv
 
-from fireflyframework_genai.agents.templates import create_conversational_agent
-from fireflyframework_genai.memory import MemoryManager
+from fireflyframework_agentic.agents.templates import create_conversational_agent
+from fireflyframework_agentic.memory import MemoryManager
+
+load_dotenv()
+
+MODEL = os.environ["MODEL"]
 
 
 async def main() -> None:
-    ensure_api_key()
 
     memory = MemoryManager()
     agent = create_conversational_agent(

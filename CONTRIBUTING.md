@@ -1,4 +1,4 @@
-# Contributing to fireflyframework-genai
+# Contributing to fireflyframework-agentic
 
 Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
 
@@ -15,17 +15,37 @@ for submitting changes.
 - Python 3.13 or later
 - [UV](https://docs.astral.sh/uv/) for dependency and virtual-environment management
 - Git
+- Node.js 20+ and npm — only required if you intend to run or modify Firefly Studio
+  from source (the published wheel ships with a pre-built frontend)
 
 ### Setup
 
 ```bash
-git clone https://github.com/fireflyframework/fireflyframework-genai.git
-cd fireflyframework-genai
+git clone https://github.com/fireflyframework/fireflyframework-agentic.git
+cd fireflyframework-agentic
 uv sync --all-extras
 ```
 
 This installs all runtime and development dependencies, including optional extras
 for REST, Kafka, RabbitMQ, and Redis.
+
+### Building the Studio Frontend (source installs only)
+
+The Studio frontend is a SvelteKit SPA that lives in `studio-frontend/` and is
+served by FastAPI from `src/fireflyframework_agentic/studio/static/`. The published
+wheel includes a pre-built bundle, but a fresh `git clone` does **not** — running
+`firefly studio` against an unbuilt source tree returns `{"detail":"Not Found"}`
+on every page.
+
+Build the frontend once after cloning (and again after pulling frontend changes):
+
+```bash
+uv run python scripts/build_studio.py
+```
+
+The script runs `npm install` (if needed), `npm run build`, and copies the output
+into the package's `static/` directory. After it completes, `firefly studio` will
+serve the UI normally.
 
 ### Running Tests
 
@@ -36,7 +56,7 @@ uv run pytest
 To generate a coverage report:
 
 ```bash
-uv run pytest --cov=fireflyframework_genai --cov-report=term-missing
+uv run pytest --cov=fireflyframework_agentic --cov-report=term-missing
 ```
 
 ### Linting
@@ -94,7 +114,7 @@ Imports are organised into three groups, separated by blank lines:
 
 1. Standard library
 2. Third-party packages
-3. Internal (`fireflyframework_genai`) modules
+3. Internal (`fireflyframework_agentic`) modules
 
 Ruff isort rules enforce this automatically.
 

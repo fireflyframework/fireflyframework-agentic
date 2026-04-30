@@ -11,7 +11,7 @@ immediate use, while accepting keyword arguments for customisation.
 ## Quick Start
 
 ```python
-from fireflyframework_genai.agents.templates import (
+from fireflyframework_agentic.agents.templates import (
     create_summarizer_agent,
     create_classifier_agent,
     create_extractor_agent,
@@ -40,7 +40,7 @@ Every factory function supports the following common keyword arguments:
 Summarizes text and documents with tuneable length, style, and output format.
 
 ```python
-from fireflyframework_genai.agents.templates import create_summarizer_agent
+from fireflyframework_agentic.agents.templates import create_summarizer_agent
 
 agent = create_summarizer_agent(
     max_length="short", # concise | short | medium | detailed
@@ -70,7 +70,7 @@ Classifies text into user-defined categories and returns a structured
 `ClassificationResult` with category, confidence, and reasoning.
 
 ```python
-from fireflyframework_genai.agents.templates import create_classifier_agent
+from fireflyframework_agentic.agents.templates import create_classifier_agent
 
 agent = create_classifier_agent(
     categories=["bug", "feature", "question"],
@@ -94,7 +94,7 @@ result = await agent.run("The app crashes when I click save.")
 ### Output Type
 
 ```python
-from fireflyframework_genai.agents.templates.classifier import ClassificationResult
+from fireflyframework_agentic.agents.templates.classifier import ClassificationResult
 
 class ClassificationResult(BaseModel):
     category: str
@@ -110,7 +110,7 @@ Extracts structured data from text into a user-provided Pydantic model.
 
 ```python
 from pydantic import BaseModel
-from fireflyframework_genai.agents.templates import create_extractor_agent
+from fireflyframework_agentic.agents.templates import create_extractor_agent
 
 class Invoice(BaseModel):
     vendor: str
@@ -147,8 +147,8 @@ When no `tools` are provided, the extractor is equipped with **JsonTool** and
 A memory-enabled multi-turn assistant with configurable personality and domain focus.
 
 ```python
-from fireflyframework_genai.agents.templates import create_conversational_agent
-from fireflyframework_genai.memory import MemoryManager
+from fireflyframework_agentic.agents.templates import create_conversational_agent
+from fireflyframework_agentic.memory import MemoryManager
 
 memory = MemoryManager(max_conversation_tokens=32_000)
 agent = create_conversational_agent(
@@ -183,7 +183,7 @@ An intent-routing supervisor that analyses user messages and returns a
 `RoutingDecision` indicating which child agent should handle the request.
 
 ```python
-from fireflyframework_genai.agents.templates import create_router_agent
+from fireflyframework_agentic.agents.templates import create_router_agent
 
 agent = create_router_agent(
     agent_map={
@@ -206,7 +206,7 @@ result = await agent.run("I was charged twice for my subscription.")
 ### Output Type
 
 ```python
-from fireflyframework_genai.agents.templates.router import RoutingDecision
+from fireflyframework_agentic.agents.templates.router import RoutingDecision
 
 class RoutingDecision(BaseModel):
     target_agent: str
@@ -222,7 +222,7 @@ Template agents are standard `FireflyAgent` instances, so they integrate with ev
 framework feature: delegation, pipelines, REST exposure, experiments, and more.
 
 ```python
-from fireflyframework_genai.agents.templates import (
+from fireflyframework_agentic.agents.templates import (
     create_router_agent,
     create_summarizer_agent,
     create_classifier_agent,

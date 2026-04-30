@@ -41,7 +41,7 @@ from __future__ import annotations
 import asyncio
 import random
 
-from fireflyframework_genai.resilience.circuit_breaker import (
+from fireflyframework_agentic.resilience.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerOpenError,
 )
@@ -310,7 +310,7 @@ async def main():
     print("✓ Automatically transitions based on failures and successes")
     print("✓ Use with fallback strategies for resilient applications")
     print("\nUsage:")
-    print("  from fireflyframework_genai.resilience import CircuitBreaker")
+    print("  from fireflyframework_agentic.resilience import CircuitBreaker")
     print()
     print("  breaker = CircuitBreaker(")
     print("      failure_threshold=5,")
@@ -322,7 +322,7 @@ async def main():
     print("      result = await external_api_call()")
     print()
     print("With agent middleware:")
-    print("  from fireflyframework_genai.resilience import CircuitBreakerMiddleware")
+    print("  from fireflyframework_agentic.resilience import CircuitBreakerMiddleware")
     print()
     print("  agent = FireflyAgent(")
     print("      'resilient-agent',")

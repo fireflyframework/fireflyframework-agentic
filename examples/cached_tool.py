@@ -35,7 +35,7 @@ import time
 
 
 async def main() -> None:
-    from fireflyframework_genai.tools.cached import CachedTool
+    from fireflyframework_agentic.tools.cached import CachedTool
 
     # -- Define a "slow" tool that simulates network latency ------------------
 

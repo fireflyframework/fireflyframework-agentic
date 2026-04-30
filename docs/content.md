@@ -19,7 +19,7 @@ images, and other artefacts that exceed a model's context window.
 - **paragraph** -- Splits at paragraph boundaries (double newlines).
 
 ```python
-from fireflyframework_genai.content.chunking import TextChunker
+from fireflyframework_agentic.content.chunking import TextChunker
 
 chunker = TextChunker(chunk_size=4000, chunk_overlap=200, strategy="token")
 chunks = chunker.chunk(long_text)
@@ -36,7 +36,7 @@ and an open `metadata` dictionary.
 rules (`---`). Segments shorter than `min_length` are discarded.
 
 ```python
-from fireflyframework_genai.content.chunking import DocumentSplitter
+from fireflyframework_agentic.content.chunking import DocumentSplitter
 
 splitter = DocumentSplitter(min_length=50)
 segments = splitter.split(raw_text)
@@ -48,7 +48,7 @@ segments = splitter.split(raw_text)
 of high-resolution images that exceed the model's pixel budget.
 
 ```python
-from fireflyframework_genai.content.chunking import ImageTiler
+from fireflyframework_agentic.content.chunking import ImageTiler
 
 tiler = ImageTiler(tile_width=1024, tile_height=1024, overlap=128)
 tiles = tiler.compute_tiles(image_width=4096, image_height=3072)
@@ -63,7 +63,7 @@ and `col` fields.
 parallelism and an optional result aggregator.
 
 ```python
-from fireflyframework_genai.content.chunking import BatchProcessor
+from fireflyframework_agentic.content.chunking import BatchProcessor
 
 processor = BatchProcessor(concurrency=4)
 results = await processor.process(agent, chunks)
@@ -79,7 +79,7 @@ results = await processor.process(agent, chunks)
 words-to-tokens ratio (default: `1.33`).
 
 ```python
-from fireflyframework_genai.content.compression import TokenEstimator
+from fireflyframework_agentic.content.compression import TokenEstimator
 
 estimator = TokenEstimator()
 tokens = estimator.estimate("Hello world, this is a test.")
@@ -95,7 +95,7 @@ pluggable strategies:
 - **MapReduceStrategy** -- Chunks the text, summarises each chunk, then merges.
 
 ```python
-from fireflyframework_genai.content.compression import (
+from fireflyframework_agentic.content.compression import (
     ContextCompressor,
     TruncationStrategy,
 )
@@ -110,7 +110,7 @@ compressed = await compressor.compress(long_text, max_tokens=2000)
 keeping total token usage within a budget by evicting the oldest items.
 
 ```python
-from fireflyframework_genai.content.compression import SlidingWindowManager
+from fireflyframework_agentic.content.compression import SlidingWindowManager
 
 window = SlidingWindowManager(max_tokens=8000)
 window.add("First message")

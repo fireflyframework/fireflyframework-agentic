@@ -37,8 +37,8 @@ graph TD
 ## Quick Start
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.memory import MemoryManager
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.memory import MemoryManager
 
 # Create a memory manager
 memory = MemoryManager(max_conversation_tokens=32_000)
@@ -67,7 +67,7 @@ result2 = await agent.run("What about its type system?", conversation_id=conv_id
 automatically enforces a token budget by dropping oldest turns (FIFO).
 
 ```python
-from fireflyframework_genai.memory import ConversationMemory
+from fireflyframework_agentic.memory import ConversationMemory
 
 conv_mem = ConversationMemory(max_tokens=16_000)
 cid = conv_mem.new_conversation()
@@ -108,7 +108,7 @@ Pass a `summarizer` callable that takes a list of `ConversationTurn` objects
 and returns a summary string:
 
 ```python
-from fireflyframework_genai.memory import ConversationMemory
+from fireflyframework_agentic.memory import ConversationMemory
 
 def my_summarizer(turns):
     texts = [f"{t.user_prompt} -> {t.assistant_response}" for t in turns]
@@ -135,7 +135,7 @@ into a concise paragraph, preserving key facts while staying within budget.
 Configure the threshold via environment variable:
 
 ```bash
-export FIREFLY_GENAI_MEMORY_SUMMARIZE_THRESHOLD=10
+export FIREFLY_AGENTIC_MEMORY_SUMMARIZE_THRESHOLD=10
 ```
 
 ---
@@ -147,7 +147,7 @@ It is useful for passing context between pipeline steps, storing extraction
 results for validation, or maintaining entities across reasoning iterations.
 
 ```python
-from fireflyframework_genai.memory import WorkingMemory
+from fireflyframework_agentic.memory import WorkingMemory
 
 wm = WorkingMemory(scope_id="idp-session-42")
 wm.set("doc_type", "invoice")
@@ -169,7 +169,7 @@ Multiple `WorkingMemory` instances can share the same store backend while
 maintaining independent namespaces:
 
 ```python
-from fireflyframework_genai.memory import InMemoryStore, WorkingMemory
+from fireflyframework_agentic.memory import InMemoryStore, WorkingMemory
 
 store = InMemoryStore()
 agent_a_mem = WorkingMemory(store=store, scope_id="agent_a")
@@ -190,7 +190,7 @@ assert agent_b_mem.get("key") == "from B"
 Dict-backed, fast, non-persistent. Suitable for testing and short-lived sessions.
 
 ```python
-from fireflyframework_genai.memory import InMemoryStore
+from fireflyframework_agentic.memory import InMemoryStore
 store = InMemoryStore()
 ```
 
@@ -199,7 +199,7 @@ store = InMemoryStore()
 JSON file persistence. Each namespace is a separate file.
 
 ```python
-from fireflyframework_genai.memory import FileStore
+from fireflyframework_agentic.memory import FileStore
 store = FileStore(base_dir=".firefly_memory")
 ```
 
@@ -216,10 +216,10 @@ entries = await store.load_async("conversations")
 ### PostgreSQLStore
 
 Production-grade PostgreSQL persistence with connection pooling. Requires
-`asyncpg` (install via `pip install fireflyframework-genai[postgres]`).
+`asyncpg` (install via `pip install fireflyframework-agentic[postgres]`).
 
 ```python
-from fireflyframework_genai.memory.database_store import PostgreSQLStore
+from fireflyframework_agentic.memory.database_store import PostgreSQLStore
 
 store = PostgreSQLStore(
     url="postgresql://user:pass@localhost/firefly",
@@ -233,9 +233,9 @@ memory = MemoryManager(store=store)
 **Environment Configuration:**
 
 ```bash
-export FIREFLY_GENAI_MEMORY_BACKEND=postgres
-export FIREFLY_GENAI_MEMORY_POSTGRES_URL=postgresql://user:pass@localhost/firefly
-export FIREFLY_GENAI_MEMORY_POSTGRES_POOL_SIZE=10
+export FIREFLY_AGENTIC_MEMORY_BACKEND=postgres
+export FIREFLY_AGENTIC_MEMORY_POSTGRES_URL=postgresql://user:pass@localhost/firefly
+export FIREFLY_AGENTIC_MEMORY_POSTGRES_POOL_SIZE=10
 ```
 
 The store automatically creates required tables on first use. All operations
@@ -262,10 +262,10 @@ CREATE INDEX idx_created_at ON firefly_memory(created_at);
 ### MongoDBStore
 
 Scalable MongoDB persistence with connection pooling. Requires `motor` and
-`pymongo` (install via `pip install fireflyframework-genai[mongodb]`).
+`pymongo` (install via `pip install fireflyframework-agentic[mongodb]`).
 
 ```python
-from fireflyframework_genai.memory.database_store import MongoDBStore
+from fireflyframework_agentic.memory.database_store import MongoDBStore
 
 store = MongoDBStore(
     url="mongodb://localhost:27017/",
@@ -279,10 +279,10 @@ memory = MemoryManager(store=store)
 **Environment Configuration:**
 
 ```bash
-export FIREFLY_GENAI_MEMORY_BACKEND=mongodb
-export FIREFLY_GENAI_MEMORY_MONGODB_URL=mongodb://localhost:27017/
-export FIREFLY_GENAI_MEMORY_MONGODB_DATABASE=firefly
-export FIREFLY_GENAI_MEMORY_MONGODB_POOL_SIZE=10
+export FIREFLY_AGENTIC_MEMORY_BACKEND=mongodb
+export FIREFLY_AGENTIC_MEMORY_MONGODB_URL=mongodb://localhost:27017/
+export FIREFLY_AGENTIC_MEMORY_MONGODB_DATABASE=firefly
+export FIREFLY_AGENTIC_MEMORY_MONGODB_POOL_SIZE=10
 ```
 
 The store automatically creates required collections and indexes:
@@ -310,7 +310,7 @@ db.firefly_memory.createIndex({ created_at: 1 })
 Implement the `MemoryStore` protocol for Redis, SQL, or any other backend:
 
 ```python
-from fireflyframework_genai.memory import MemoryStore, MemoryEntry
+from fireflyframework_agentic.memory import MemoryStore, MemoryEntry
 
 class RedisStore:
     def save(self, namespace: str, entry: MemoryEntry) -> None: ...
@@ -352,7 +352,7 @@ suitable for `ConversationMemory`'s `summarizer` parameter. It uses an
 ephemeral Pydantic AI agent to compress evicted turns into a concise summary.
 
 ```python
-from fireflyframework_genai.memory.summarization import create_llm_summarizer
+from fireflyframework_agentic.memory.summarization import create_llm_summarizer
 
 summarizer = create_llm_summarizer(model="openai:gpt-4o-mini")
 conv_mem = ConversationMemory(
@@ -382,7 +382,7 @@ strategy that extracts key sentences from the most recent turns.
 memory. It is the object you attach to agents, delegation routers, and pipelines.
 
 ```python
-from fireflyframework_genai.memory import MemoryManager
+from fireflyframework_agentic.memory import MemoryManager
 
 mgr = MemoryManager(
     max_conversation_tokens=32_000,
@@ -425,7 +425,7 @@ result = await agent.run("Hi", conversation_id=cid)
 ### Multi-Agent Delegation
 
 ```python
-from fireflyframework_genai.agents.delegation import DelegationRouter, RoundRobinStrategy
+from fireflyframework_agentic.agents.delegation import DelegationRouter, RoundRobinStrategy
 
 router = DelegationRouter([agent_a, agent_b], RoundRobinStrategy(), memory=mgr)
 result = await router.route("Translate this text.")
@@ -435,7 +435,7 @@ result = await router.route("Translate this text.")
 ### Pipelines
 
 ```python
-from fireflyframework_genai.pipeline.context import PipelineContext
+from fireflyframework_agentic.pipeline.context import PipelineContext
 
 ctx = PipelineContext(inputs=data, memory=mgr)
 result = await engine.run(context=ctx)
@@ -469,8 +469,8 @@ Pass `conversation_id` in the request body for multi-turn conversations:
 Memory settings are configured via environment variables:
 
 ```bash
-export FIREFLY_GENAI_MEMORY_BACKEND=in_memory # or "file"
-export FIREFLY_GENAI_MEMORY_MAX_CONVERSATION_TOKENS=128000
-export FIREFLY_GENAI_MEMORY_SUMMARIZE_THRESHOLD=10
-export FIREFLY_GENAI_MEMORY_FILE_DIR=.firefly_memory
+export FIREFLY_AGENTIC_MEMORY_BACKEND=in_memory # or "file"
+export FIREFLY_AGENTIC_MEMORY_MAX_CONVERSATION_TOKENS=128000
+export FIREFLY_AGENTIC_MEMORY_SUMMARIZE_THRESHOLD=10
+export FIREFLY_AGENTIC_MEMORY_FILE_DIR=.firefly_memory
 ```

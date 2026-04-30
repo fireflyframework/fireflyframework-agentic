@@ -28,7 +28,7 @@ The `TraceRecorder` captures every decision an agent makes during execution: whi
 tool it chose, what reasoning path it followed, what alternatives it considered.
 
 ```python
-from fireflyframework_genai.explainability import TraceRecorder
+from fireflyframework_agentic.explainability import TraceRecorder
 
 recorder = TraceRecorder()
 recorder.record_decision(
@@ -51,7 +51,7 @@ The `ExplanationGenerator` transforms raw decision records into natural-language
 explanations suitable for end users or auditors.
 
 ```python
-from fireflyframework_genai.explainability import ExplanationGenerator
+from fireflyframework_agentic.explainability import ExplanationGenerator
 
 generator = ExplanationGenerator()
 explanation = generator.generate(recorder.decisions)
@@ -73,7 +73,7 @@ flowchart LR
 ```
 
 ```python
-from fireflyframework_genai.explainability import AuditTrail
+from fireflyframework_agentic.explainability import AuditTrail
 
 trail = AuditTrail()
 trail.append(decision_record)
@@ -88,7 +88,7 @@ The `ReportBuilder` compiles decisions, explanations, and audit entries into a
 structured report in Markdown or JSON format.
 
 ```python
-from fireflyframework_genai.explainability import ReportBuilder
+from fireflyframework_agentic.explainability import ReportBuilder
 
 builder = ReportBuilder()
 builder.add_decisions(recorder.decisions)

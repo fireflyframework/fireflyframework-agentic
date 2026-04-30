@@ -33,8 +33,8 @@ graph LR
 The `PipelineBuilder` provides a chainable API for constructing pipelines:
 
 ```python
-from fireflyframework_genai.pipeline.builder import PipelineBuilder
-from fireflyframework_genai.pipeline.steps import AgentStep, CallableStep
+from fireflyframework_agentic.pipeline.builder import PipelineBuilder
+from fireflyframework_agentic.pipeline.steps import AgentStep, CallableStep
 
 engine = (
     PipelineBuilder("invoice-pipeline")
@@ -57,8 +57,8 @@ The builder auto-wraps compatible objects:
 For full control, construct the DAG directly:
 
 ```python
-from fireflyframework_genai.pipeline.dag import DAG, DAGNode, DAGEdge
-from fireflyframework_genai.pipeline.engine import PipelineEngine
+from fireflyframework_agentic.pipeline.dag import DAG, DAGNode, DAGEdge
+from fireflyframework_agentic.pipeline.engine import PipelineEngine
 
 dag = DAG("my-pipeline")
 dag.add_node(DAGNode(node_id="step_a", step=my_step))
@@ -108,7 +108,7 @@ graph TD
 ```
 
 ```python
-from fireflyframework_genai.pipeline.steps import FanOutStep, FanInStep
+from fireflyframework_agentic.pipeline.steps import FanOutStep, FanInStep
 
 engine = (
     PipelineBuilder("parallel")
@@ -133,8 +133,8 @@ for cost and throughput. It's ideal for bulk classification, extraction, or
 summarization tasks.
 
 ```python
-from fireflyframework_genai.pipeline.steps import BatchLLMStep
-from fireflyframework_genai.pipeline.builder import PipelineBuilder
+from fireflyframework_agentic.pipeline.steps import BatchLLMStep
+from fireflyframework_agentic.pipeline.builder import PipelineBuilder
 
 classifier = FireflyAgent(
     name="sentiment-classifier",
@@ -199,8 +199,8 @@ BatchLLMStep respects all agent middleware including caching, circuit breakers,
 and cost guards:
 
 ```python
-from fireflyframework_genai.agents.prompt_cache import PromptCacheMiddleware
-from fireflyframework_genai.resilience.circuit_breaker import CircuitBreakerMiddleware
+from fireflyframework_agentic.agents.prompt_cache import PromptCacheMiddleware
+from fireflyframework_agentic.resilience.circuit_breaker import CircuitBreakerMiddleware
 
 classifier = FireflyAgent(
     name="batch-classifier",
@@ -253,7 +253,7 @@ receives the node's input and returns a string key. Downstream nodes use
 condition gates to check the branch key and execute only the matching path.
 
 ```python
-from fireflyframework_genai.pipeline.steps import BranchStep, CallableStep
+from fireflyframework_agentic.pipeline.steps import BranchStep, CallableStep
 
 def classify_intent(inputs):
     text = inputs.get("input", "")
@@ -292,7 +292,7 @@ pipeline behaves when the node fails:
 - **`FAIL_PIPELINE`** -- Abort the entire pipeline immediately.
 
 ```python
-from fireflyframework_genai.pipeline.dag import DAGNode, FailureStrategy
+from fireflyframework_agentic.pipeline.dag import DAGNode, FailureStrategy
 
 dag.add_node(DAGNode(
     node_id="critical_step",
@@ -335,8 +335,8 @@ marked as failed and the pipeline reports `success=False`.
 You can attach a `MemoryManager` to the `PipelineContext` so that all steps share conversation and working memory. `AgentStep` injects the memory into downstream agent runs; `ReasoningStep` passes it to patterns via the `memory` kwarg.
 
 ```python
-from fireflyframework_genai.memory import MemoryManager
-from fireflyframework_genai.pipeline.context import PipelineContext
+from fireflyframework_agentic.memory import MemoryManager
+from fireflyframework_agentic.pipeline.context import PipelineContext
 
 memory = MemoryManager(working_scope_id="invoice-run-42")
 ctx = PipelineContext(inputs=document_bytes, metadata={"source": "email"}, memory=memory)
@@ -351,7 +351,7 @@ result = await engine.run(context=ctx)
 - Node results from completed upstream nodes.
 
 ```python
-from fireflyframework_genai.pipeline.context import PipelineContext
+from fireflyframework_agentic.pipeline.context import PipelineContext
 
 ctx = PipelineContext(
     inputs=document_bytes,
@@ -405,7 +405,7 @@ nodes start, complete, fail, or get skipped. Implement any subset of the
 five hooks:
 
 ```python
-from fireflyframework_genai.pipeline.engine import PipelineEventHandler
+from fireflyframework_agentic.pipeline.engine import PipelineEventHandler
 
 class MyHandler:
     async def on_node_start(self, node_id: str, pipeline_name: str) -> None:
@@ -427,7 +427,7 @@ class MyHandler:
 Pass the handler when constructing the engine:
 
 ```python
-from fireflyframework_genai.pipeline.engine import PipelineEngine
+from fireflyframework_agentic.pipeline.engine import PipelineEngine
 
 engine = PipelineEngine(dag, event_handler=MyHandler())
 result = await engine.run(inputs="test")
@@ -440,37 +440,9 @@ failure, or feeding events to an observability pipeline.
 
 ## Boundary Nodes (Input / Output)
 
-When building pipelines in Studio, you can use **Input** and **Output**
-boundary nodes to define pipeline entry and exit points. These nodes are
-compiled to pass-through `CallableStep` instances but carry configuration
-metadata that enables the `ProjectRuntime` to auto-generate REST endpoints,
-start queue consumers, or run cron schedulers.
-
-- **Input node** -- Defines trigger type (`manual`, `http`, `queue`,
-  `schedule`, `file_upload`) and an optional input schema.
-- **Output node** -- Defines destination type (`response`, `queue`,
-  `webhook`, `store`, `multi`) and an optional response schema.
-
-The compiler enforces that a pipeline has exactly one Input node and at
-least one Output node when boundary nodes are present.
-
-```python
-from fireflyframework_genai.studio.execution.io_nodes import (
-    InputNodeConfig,
-    OutputNodeConfig,
-    QueueConfig,
-)
-
-# Queue-triggered pipeline
-input_cfg = InputNodeConfig(
-    trigger_type="queue",
-    queue_config=QueueConfig(broker="kafka", topic_or_queue="events"),
-)
-
-# Response destination
-output_cfg = OutputNodeConfig(destination_type="response")
-```
-
-See the [Input/Output Nodes Guide](input-output-nodes.md) for full
-configuration details and the [Project API Guide](project-api.md) for the
-auto-generated REST endpoints.
+Boundary nodes (`Input`, `Output`) for declaring pipeline entry and exit
+points -- with auto-generated REST endpoints, queue consumers, and
+scheduled triggers -- are provided by the
+[fireflyframework-agentic-studio](https://github.com/fireflyframework/fireflyframework-agentic-studio)
+package. See its docs for configuration details and the auto-generated
+project API.

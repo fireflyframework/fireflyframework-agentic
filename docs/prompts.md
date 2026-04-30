@@ -47,7 +47,7 @@ classDiagram
 ## Creating a Template
 
 ```python
-from fireflyframework_genai.prompts import PromptTemplate
+from fireflyframework_agentic.prompts import PromptTemplate
 
 template = PromptTemplate(
     "greeting",
@@ -66,7 +66,7 @@ The `PromptRegistry` supports multiple versions of the same template. When retri
 a template, you can request a specific version or get the latest one.
 
 ```python
-from fireflyframework_genai.prompts import PromptRegistry
+from fireflyframework_agentic.prompts import PromptRegistry
 
 registry = PromptRegistry()
 registry.register(template_v1)
@@ -113,7 +113,7 @@ types match the expected schema before rendering. This prevents runtime errors i
 production.
 
 ```python
-from fireflyframework_genai.prompts import PromptValidator
+from fireflyframework_agentic.prompts import PromptValidator
 
 validator = PromptValidator(max_tokens=4000, required_sections=["You are a"])
 rendered = template.render(name="Alice", role="developer")
@@ -131,7 +131,7 @@ infers the template name from the filename and supports `.txt`, `.md`, and `.jin
 extensions.
 
 ```python
-from fireflyframework_genai.prompts import PromptLoader
+from fireflyframework_agentic.prompts import PromptLoader
 
 loader = PromptLoader()
 template = loader.load_file("prompts/greeting.jinja2")

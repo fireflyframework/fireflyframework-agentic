@@ -25,7 +25,7 @@ and working memory storage. MongoDB offers:
 
 Prerequisites:
     1. Install MongoDB dependencies:
-       pip install fireflyframework-genai[mongodb]
+       pip install fireflyframework-agentic[mongodb]
 
     2. Start MongoDB (using Docker):
        docker run -d \\
@@ -35,8 +35,8 @@ Prerequisites:
          mongo:8
 
     3. Set environment variables:
-       export FIREFLY_GENAI_MEMORY_BACKEND=mongodb
-       export FIREFLY_GENAI_MEMORY_MONGODB_URL=mongodb://localhost:27017/
+       export FIREFLY_AGENTIC_MEMORY_BACKEND=mongodb
+       export FIREFLY_AGENTIC_MEMORY_MONGODB_URL=mongodb://localhost:27017/
        export OPENAI_API_KEY=sk-...
 
 Usage:
@@ -45,10 +45,10 @@ Usage:
 
 import asyncio
 
-from fireflyframework_genai.agents.base import FireflyAgent
-from fireflyframework_genai.config import get_config
-from fireflyframework_genai.memory.database_store import MongoDBStore
-from fireflyframework_genai.memory.manager import MemoryManager
+from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.config import get_config
+from fireflyframework_agentic.memory.database_store import MongoDBStore
+from fireflyframework_agentic.memory.manager import MemoryManager
 
 
 async def main() -> None:

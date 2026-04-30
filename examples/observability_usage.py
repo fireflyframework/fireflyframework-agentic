@@ -31,7 +31,7 @@ from __future__ import annotations
 
 
 def main() -> None:
-    from fireflyframework_genai.observability.usage import UsageRecord, UsageTracker
+    from fireflyframework_agentic.observability.usage import UsageRecord, UsageTracker
 
     # ── 1. Basic usage recording ────────────────────────────────────────
     print("=== Basic Usage Tracking ===\n")

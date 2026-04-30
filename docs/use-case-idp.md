@@ -3,7 +3,7 @@
 Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
 
 This guide demonstrates how to build a production-grade Intelligent Document Processing
-pipeline using fireflyframework-genai. The pipeline takes a raw document (PDF, image,
+pipeline using fireflyframework-agentic. The pipeline takes a raw document (PDF, image,
 or scanned file), splits it into logical sub-documents, classifies each one, extracts
 structured data, validates the results, assembles a final output, and generates an
 LLM-powered explainability narrative -- all orchestrated as a 7-node DAG pipeline with
@@ -41,8 +41,8 @@ the raw text with page markers. The extracted text is then chunked and compresse
 if needed.
 
 ```python
-from fireflyframework_genai.content.chunking import TextChunker
-from fireflyframework_genai.content.compression import ContextCompressor, TruncationStrategy
+from fireflyframework_agentic.content.chunking import TextChunker
+from fireflyframework_agentic.content.compression import ContextCompressor, TruncationStrategy
 
 # Chunk the extracted text
 chunker = TextChunker(chunk_size=20_000, chunk_overlap=200, strategy="token")
@@ -62,7 +62,7 @@ incorporation followed by bylaws). The splitting phase uses a `FireflyAgent` to
 analyse page-level summaries and detect document boundaries.
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
+from fireflyframework_agentic.agents import FireflyAgent
 
 splitter_agent = FireflyAgent(
     name="document_splitter",
@@ -89,7 +89,7 @@ bylaws, corporate filing, etc.) using `create_classifier_agent` with category
 descriptions and a Plan-and-Execute reasoning pattern for systematic analysis.
 
 ```python
-from fireflyframework_genai.agents.templates import create_classifier_agent
+from fireflyframework_agentic.agents.templates import create_classifier_agent
 
 DOCUMENT_TYPES = ["certificate_of_incorporation", "bylaws", "corporate_filing", "amendment", "other"]
 DOCUMENT_TYPE_DESCRIPTIONS = {
@@ -114,7 +114,7 @@ result = await classifier_agent.run_with_reasoning(
 For multi-page documents, use `ImageTiler` to split large scans:
 
 ```python
-from fireflyframework_genai.content.chunking import ImageTiler
+from fireflyframework_agentic.content.chunking import ImageTiler
 
 tiler = ImageTiler(tile_width=1024, tile_height=1024, overlap=64)
 tiles = tiler.compute_tiles(image_width=4096, image_height=6144)
@@ -130,9 +130,9 @@ validation failures. A custom retry prompt avoids resending the full document te
 on each retry, focusing only on the errors.
 
 ```python
-from fireflyframework_genai.agents.templates import create_extractor_agent
-from fireflyframework_genai.validation import OutputReviewer, OutputValidator
-from fireflyframework_genai.validation.rules import RegexRule, FormatRule, EnumRule
+from fireflyframework_agentic.agents.templates import create_extractor_agent
+from fireflyframework_agentic.validation import OutputReviewer, OutputValidator
+from fireflyframework_agentic.validation.rules import RegexRule, FormatRule, EnumRule
 
 extractor_agent = create_extractor_agent(
     CorporateDocumentData, # Pydantic model
@@ -166,14 +166,14 @@ to ensure extracted fields conform to business rules and are grounded in the sou
 text. If validation fails, the `ReflexionPattern` drives self-correction.
 
 ```python
-from fireflyframework_genai.validation.rules import (
+from fireflyframework_agentic.validation.rules import (
     OutputValidator,
     RegexRule,
     FormatRule,
     EnumRule,
 )
-from fireflyframework_genai.validation.qos import GroundingChecker
-from fireflyframework_genai.reasoning import ReflexionPattern
+from fireflyframework_agentic.validation.qos import GroundingChecker
+from fireflyframework_agentic.reasoning import ReflexionPattern
 
 # -- Structural validation --
 validator = OutputValidator({
@@ -240,8 +240,8 @@ audit report. A `FireflyAgent` reads the trace records, audit trail, and assembl
 output to generate a human-readable narrative covering the full pipeline run.
 
 ```python
-from fireflyframework_genai.agents import FireflyAgent
-from fireflyframework_genai.explainability import TraceRecorder, AuditTrail, ReportBuilder
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.explainability import TraceRecorder, AuditTrail, ReportBuilder
 
 # The trace recorder and audit trail have been collecting data throughout the pipeline
 recorder = TraceRecorder()
@@ -277,7 +277,7 @@ Add memory to persist conversation across phases and carry facts like classifica
 results into later steps.
 
 ```python
-from fireflyframework_genai.memory import MemoryManager
+from fireflyframework_agentic.memory import MemoryManager
 memory = MemoryManager(working_scope_id="idp-session")
 ```
 
@@ -286,9 +286,9 @@ This gives you parallel execution, retries, timeouts, condition gates, and a ful
 execution trace for observability.
 
 ```python
-from fireflyframework_genai.pipeline.builder import PipelineBuilder
-from fireflyframework_genai.pipeline.steps import CallableStep
-from fireflyframework_genai.pipeline.context import PipelineContext
+from fireflyframework_agentic.pipeline.builder import PipelineBuilder
+from fireflyframework_agentic.pipeline.steps import CallableStep
+from fireflyframework_agentic.pipeline.context import PipelineContext
 
 # -- Build the 7-node pipeline DAG --
 
@@ -329,11 +329,11 @@ else:
 Register the pipeline as a REST endpoint so it can be called from external systems:
 
 ```python
-from fireflyframework_genai.exposure.rest import create_genai_app
+from fireflyframework_agentic.exposure.rest import create_agentic_app
 
 # The IDP agents are already registered in the AgentRegistry.
 # The REST app auto-generates endpoints for each agent.
-app = create_genai_app()
+app = create_agentic_app()
 
 # The pipeline itself can be exposed as a custom endpoint:
 from fastapi import UploadFile

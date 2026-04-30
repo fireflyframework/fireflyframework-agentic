@@ -20,8 +20,8 @@ from typing import Any
 
 import pytest
 
-from fireflyframework_genai.exceptions import ToolError
-from fireflyframework_genai.tools.builtins.database import DatabaseTool
+from fireflyframework_agentic.exceptions import ToolError
+from fireflyframework_agentic.tools.builtins.database import DatabaseTool
 
 
 class TestDatabaseTool(DatabaseTool):

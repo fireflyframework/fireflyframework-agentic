@@ -40,7 +40,7 @@ A `LabSession` provides a conversational interface for testing an agent interact
 Each exchange is recorded with timestamps and metadata.
 
 ```python
-from fireflyframework_genai.lab import LabSession
+from fireflyframework_agentic.lab import LabSession
 
 session = LabSession(name="writing-test", agent=writer_agent)
 response = await session.interact("Write a haiku about testing.")
@@ -59,7 +59,7 @@ The `Benchmark` runs an agent against a list of prompts and measures latency met
 (average, min, max, p95).
 
 ```python
-from fireflyframework_genai.lab import Benchmark
+from fireflyframework_agentic.lab import Benchmark
 
 bench = Benchmark(inputs=[
     "Translate 'hello' to French.",
@@ -94,7 +94,7 @@ The `ModelComparison` class runs the same prompts through multiple agents and co
 their outputs side by side.
 
 ```python
-from fireflyframework_genai.lab import ModelComparison
+from fireflyframework_agentic.lab import ModelComparison
 
 comparison = ModelComparison(prompts=[
     "Write a haiku about Python.",
@@ -115,7 +115,7 @@ The `EvalDataset` class manages collections of `EvalCase` test inputs and option
 expected outputs. Datasets can be loaded from JSON files or built programmatically.
 
 ```python
-from fireflyframework_genai.lab import EvalDataset, EvalCase
+from fireflyframework_agentic.lab import EvalDataset, EvalCase
 
 # Programmatically
 dataset = EvalDataset(cases=[
@@ -136,7 +136,7 @@ function. A `Scorer` is any callable `(expected: str, actual: str) -> float`. Th
 framework ships with `exact_match_scorer` as a default.
 
 ```python
-from fireflyframework_genai.lab import EvalOrchestrator, EvalDataset, EvalCase
+from fireflyframework_agentic.lab import EvalOrchestrator, EvalDataset, EvalCase
 
 # Custom scorer
 def fuzzy_scorer(expected: str, actual: str) -> float:
