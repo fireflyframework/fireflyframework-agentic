@@ -26,15 +26,12 @@ import pytest
 
 from examples.corpus_search.agent import CorpusAgent
 
-pytestmark = [
-    pytest.mark.nightly,
-    pytest.mark.skipif(
-        not (os.environ.get("ANTHROPIC_API_KEY") and os.environ.get("OPENAI_API_KEY")),
-        reason="Real LLM keys not present (need ANTHROPIC_API_KEY + OPENAI_API_KEY).",
-    ),
-]
 
-
+@pytest.mark.nightly
+@pytest.mark.skipif(
+    not (os.environ.get("ANTHROPIC_API_KEY") and os.environ.get("OPENAI_API_KEY")),
+    reason="Real LLM keys not present (need ANTHROPIC_API_KEY + OPENAI_API_KEY).",
+)
 async def test_ingest_then_query_with_real_llms(tmp_path):
     drop = tmp_path / "drop"
     drop.mkdir()
@@ -51,6 +48,7 @@ async def test_ingest_then_query_with_real_llms(tmp_path):
         embed_model="openai:text-embedding-3-small",
         expansion_model="anthropic:claude-haiku-4-5-20251001",
         answer_model="anthropic:claude-sonnet-4-6",
+        rerank_model="anthropic:claude-haiku-4-5-20251001",
     )
     try:
         results = await agent.ingest_folder(drop)
@@ -66,6 +64,11 @@ async def test_ingest_then_query_with_real_llms(tmp_path):
         await agent.close()
 
 
+@pytest.mark.nightly
+@pytest.mark.skipif(
+    not os.environ.get("OPENAI_API_KEY"),
+    reason="Real embedding key not present (need OPENAI_API_KEY).",
+)
 async def test_ingest_skips_unchanged_file_on_second_run(tmp_path):
     drop = tmp_path / "drop"
     drop.mkdir()
@@ -76,6 +79,7 @@ async def test_ingest_skips_unchanged_file_on_second_run(tmp_path):
         embed_model="openai:text-embedding-3-small",
         expansion_model="anthropic:claude-haiku-4-5-20251001",
         answer_model="anthropic:claude-sonnet-4-6",
+        rerank_model="anthropic:claude-haiku-4-5-20251001",
     )
     try:
         first = await agent.ingest_folder(drop)

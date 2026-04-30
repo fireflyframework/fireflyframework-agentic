@@ -205,7 +205,7 @@ retriever's ability to distinguish the correct source.
 2. Add a query entry to `queries.json` with `expected_doc_basenames` /
    `expected_substrings`.
 3. If the query is structurally novel (new category), add it to the table above.
-4. Re-run to confirm the floor assertions in `tests/unit/corpus_search/test_benchmark_smoke.py`
+4. Re-run to confirm the floor assertions in `tests/unit/rag/test_benchmark_smoke.py`
    still hold.
 
 ---

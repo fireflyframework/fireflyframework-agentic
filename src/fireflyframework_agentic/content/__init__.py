@@ -46,6 +46,7 @@ __all__ = [
     "ContextCompressor",
     "DocumentSplitter",
     "ImageTiler",
+    "MarkdownChunker",
     "MapReduceStrategy",
     "MarkdownChunker",
     "SlidingWindowManager",

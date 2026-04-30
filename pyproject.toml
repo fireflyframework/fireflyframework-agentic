@@ -63,6 +63,15 @@ security = [
     "pyjwt>=2.10.0",
     "cryptography>=44.0.0",
 ]
+azure = [
+    "azure-identity>=1.19",
+    "msal>=1.31",
+    "pyjwt[crypto]>=2.10.0",
+    "httpx>=0.28.0",
+]
+mcp = [
+    "fastmcp>=3.2",
+]
 http = [
     "httpx>=0.28.0",
 ]
@@ -138,6 +147,9 @@ dev = [
     "fireflyframework-agentic[markitdown]",
     "sqlite-vec>=0.1.6",
 ]
+
+[project.scripts]
+firefly-mcp = "fireflyframework_agentic.cli.mcp_server:main"
 
 [project.urls]
 Homepage = "https://fireflyframework.org/"

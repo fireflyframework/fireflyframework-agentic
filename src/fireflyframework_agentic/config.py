@@ -198,6 +198,23 @@ class FireflyAgenticConfig(BaseSettings):
     rbac_multi_tenant: bool = False
     """Whether to enforce tenant isolation in RBAC."""
 
+    # -- Entra ID (Azure AD) -------------------------------------------------
+    entra_tenant_id: str | None = None
+    """Entra tenant (directory) GUID. When set, enables Entra OAuth verification
+    on REST/MCP exposure layers."""
+
+    entra_client_id: str | None = None
+    """App registration client ID for this server. Used as the resource being
+    accessed (token audience defaults to ``api://{entra_client_id}``) and as the
+    OBO confidential-client identity."""
+
+    entra_audience: str | None = None
+    """Override the expected ``aud`` claim. Defaults to ``api://{entra_client_id}``
+    when unset."""
+
+    entra_obo_scopes: list[str] = []
+    """Default downstream scopes for OBO exchanges (e.g. Graph/SharePoint)."""
+
     encryption_enabled: bool = False
     """Whether data encryption at rest is active."""
 

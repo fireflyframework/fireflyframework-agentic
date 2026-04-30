@@ -110,6 +110,9 @@ dmypy.json
 *.log
 logs/
 
+# Claude Code
+.claude/
+
 # AntiGravity / misc tools
 .antigravity/
 
