@@ -31,7 +31,7 @@ async def test_skips_files_not_yet_stable(tmp_path):
 
     writer = asyncio.create_task(keep_writing())
     stable = await watcher.wait_for_stability(target, max_wait_ms=120)
-    await writer
+    _ = await writer
     # If size kept changing within the wait window, stability should be False
     assert stable is False or target.stat().st_size > 0
 

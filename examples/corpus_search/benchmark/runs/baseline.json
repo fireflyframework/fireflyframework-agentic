@@ -1,0 +1,1220 @@
+{
+  "mode": "mechanics",
+  "use_rerank": false,
+  "use_expansion": false,
+  "n_queries": 32,
+  "n_corpus_docs": 12,
+  "n_corpus_chunks": 34,
+  "queries": [
+    {
+      "id": "ceo_lookup",
+      "query": "Who is the CEO of Acme Corp?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "easy",
+      "negative": false,
+      "expected_doc_basenames": [
+        "01_company_overview.md"
+      ],
+      "expected_substrings": [
+        "Sam Patel"
+      ],
+      "retrieved_chunk_ids": [
+        "1c230803028302e4-0",
+        "77cfad22c741db90-0",
+        "77cfad22c741db90-1",
+        "5e6929c668dbf272-0",
+        "811149db81ac447f-2"
+      ],
+      "retrieved_doc_basenames": [
+        "11_competitor_overview.md",
+        "02_q4_financials.md",
+        "02_q4_financials.md",
+        "04_privacy_policy_es.md",
+        "09_press_release.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": false,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": false,
+      "rank_of_first_match": 7,
+      "rejected_correctly": null
+    },
+    {
+      "id": "founding_year",
+      "query": "When was Acme Corp founded?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "easy",
+      "negative": false,
+      "expected_doc_basenames": [
+        "01_company_overview.md"
+      ],
+      "expected_substrings": [
+        "2014"
+      ],
+      "retrieved_chunk_ids": [
+        "dfd8a3a6fa498d1f-0",
+        "5e6929c668dbf272-0",
+        "1c230803028302e4-0",
+        "6f47d6c6a98e9c03-0",
+        "9c3a97a9a6492c1a-0"
+      ],
+      "retrieved_doc_basenames": [
+        "01_company_overview.md",
+        "04_privacy_policy_es.md",
+        "11_competitor_overview.md",
+        "10_glossary_pt.md",
+        "03_engineering_roadmap.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 1,
+      "rejected_correctly": null
+    },
+    {
+      "id": "q4_revenue",
+      "query": "What was Acme's Q4 2025 revenue?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "easy",
+      "negative": false,
+      "expected_doc_basenames": [
+        "02_q4_financials.md"
+      ],
+      "expected_substrings": [
+        "42.3"
+      ],
+      "retrieved_chunk_ids": [
+        "6f47d6c6a98e9c03-2",
+        "9c3a97a9a6492c1a-0",
+        "1c230803028302e4-0",
+        "9c3a97a9a6492c1a-1",
+        "dfd8a3a6fa498d1f-1"
+      ],
+      "retrieved_doc_basenames": [
+        "10_glossary_pt.md",
+        "03_engineering_roadmap.md",
+        "11_competitor_overview.md",
+        "03_engineering_roadmap.md",
+        "01_company_overview.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": false,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": false,
+      "rank_of_first_match": 10,
+      "rejected_correctly": null
+    },
+    {
+      "id": "best_region",
+      "query": "What was the best region in terms of sales?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "medium",
+      "negative": false,
+      "expected_doc_basenames": [
+        "02_q4_financials.md"
+      ],
+      "expected_substrings": [
+        "EMEA"
+      ],
+      "retrieved_chunk_ids": [
+        "dfd8a3a6fa498d1f-0",
+        "43e8a6536b9deed4-1",
+        "dfd8a3a6fa498d1f-1",
+        "5e6929c668dbf272-1",
+        "cc75f5cf8c613ead-1"
+      ],
+      "retrieved_doc_basenames": [
+        "01_company_overview.md",
+        "06_meeting_minutes_q1.md",
+        "01_company_overview.md",
+        "04_privacy_policy_es.md",
+        "07_product_specs.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": false,
+      "hit_at_20": false,
+      "doc_match": false,
+      "substring_match": false,
+      "rank_of_first_match": null,
+      "rejected_correctly": null
+    },
+    {
+      "id": "iso_certification",
+      "query": "What ISO certification does Acme hold?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "medium",
+      "negative": false,
+      "expected_doc_basenames": [
+        "05_security_standards.md"
+      ],
+      "expected_substrings": [
+        "ISO/IEC 27001",
+        "27001"
+      ],
+      "retrieved_chunk_ids": [
+        "811149db81ac447f-0",
+        "dfd8a3a6fa498d1f-0",
+        "6f47d6c6a98e9c03-3",
+        "811149db81ac447f-2",
+        "5e6929c668dbf272-0"
+      ],
+      "retrieved_doc_basenames": [
+        "09_press_release.md",
+        "01_company_overview.md",
+        "10_glossary_pt.md",
+        "09_press_release.md",
+        "04_privacy_policy_es.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": false,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 10,
+      "rejected_correctly": null
+    },
+    {
+      "id": "series_c_lead",
+      "query": "Who led Acme's Series C funding round?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "medium",
+      "negative": false,
+      "expected_doc_basenames": [
+        "09_press_release.md",
+        "06_meeting_minutes_q1.md"
+      ],
+      "expected_substrings": [
+        "Sequoia"
+      ],
+      "retrieved_chunk_ids": [
+        "811149db81ac447f-0",
+        "dfd8a3a6fa498d1f-1",
+        "43e8a6536b9deed4-0",
+        "77cfad22c741db90-1",
+        "1c230803028302e4-1"
+      ],
+      "retrieved_doc_basenames": [
+        "09_press_release.md",
+        "01_company_overview.md",
+        "06_meeting_minutes_q1.md",
+        "02_q4_financials.md",
+        "11_competitor_overview.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 1,
+      "rejected_correctly": null
+    },
+    {
+      "id": "api_rate_limit",
+      "query": "What is the API rate limit for the /sign endpoints in v2?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "medium",
+      "negative": false,
+      "expected_doc_basenames": [
+        "07_product_specs.md"
+      ],
+      "expected_substrings": [
+        "500 RPS"
+      ],
+      "retrieved_chunk_ids": [
+        "1c230803028302e4-1",
+        "bde280785b005901-0",
+        "6f47d6c6a98e9c03-0",
+        "43e8a6536b9deed4-2",
+        "811149db81ac447f-1"
+      ],
+      "retrieved_doc_basenames": [
+        "11_competitor_overview.md",
+        "12_archived_bolt_v1_specs.md",
+        "10_glossary_pt.md",
+        "06_meeting_minutes_q1.md",
+        "09_press_release.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": false,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 9,
+      "rejected_correctly": null
+    },
+    {
+      "id": "sla_target",
+      "query": "What is the SLA for Acme Bolt?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "easy",
+      "negative": false,
+      "expected_doc_basenames": [
+        "07_product_specs.md",
+        "03_engineering_roadmap.md"
+      ],
+      "expected_substrings": [
+        "99.95"
+      ],
+      "retrieved_chunk_ids": [
+        "6f47d6c6a98e9c03-3",
+        "6f47d6c6a98e9c03-2",
+        "1c230803028302e4-0",
+        "9c3a97a9a6492c1a-1",
+        "89686648e29dbe4b-2"
+      ],
+      "retrieved_doc_basenames": [
+        "10_glossary_pt.md",
+        "10_glossary_pt.md",
+        "11_competitor_overview.md",
+        "03_engineering_roadmap.md",
+        "05_security_standards.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 4,
+      "rejected_correctly": null
+    },
+    {
+      "id": "vacation_days",
+      "query": "How many vacation days do Acme employees get?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "easy",
+      "negative": false,
+      "expected_doc_basenames": [
+        "08_employee_handbook.md"
+      ],
+      "expected_substrings": [
+        "30"
+      ],
+      "retrieved_chunk_ids": [
+        "1c230803028302e4-0",
+        "6f47d6c6a98e9c03-2",
+        "6f47d6c6a98e9c03-3",
+        "dfd8a3a6fa498d1f-1",
+        "cc75f5cf8c613ead-0"
+      ],
+      "retrieved_doc_basenames": [
+        "11_competitor_overview.md",
+        "10_glossary_pt.md",
+        "10_glossary_pt.md",
+        "01_company_overview.md",
+        "07_product_specs.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": false,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 15,
+      "rejected_correctly": null
+    },
+    {
+      "id": "dpo_es",
+      "query": "\u00bfQui\u00e9n es la Delegada de Protecci\u00f3n de Datos de Acme?",
+      "category": "multilingual_es",
+      "language": "es",
+      "difficulty": "medium",
+      "negative": false,
+      "expected_doc_basenames": [
+        "04_privacy_policy_es.md"
+      ],
+      "expected_substrings": [
+        "Mar\u00eda Garc\u00eda"
+      ],
+      "retrieved_chunk_ids": [
+        "5e6929c668dbf272-0",
+        "43e8a6536b9deed4-1",
+        "6f47d6c6a98e9c03-2",
+        "5e6929c668dbf272-1",
+        "89686648e29dbe4b-0"
+      ],
+      "retrieved_doc_basenames": [
+        "04_privacy_policy_es.md",
+        "06_meeting_minutes_q1.md",
+        "10_glossary_pt.md",
+        "04_privacy_policy_es.md",
+        "05_security_standards.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 1,
+      "rejected_correctly": null
+    },
+    {
+      "id": "data_retention_es",
+      "query": "\u00bfCu\u00e1ntos d\u00edas se conservan los datos de la cuenta tras la cancelaci\u00f3n?",
+      "category": "multilingual_es",
+      "language": "es",
+      "difficulty": "medium",
+      "negative": false,
+      "expected_doc_basenames": [
+        "04_privacy_policy_es.md"
+      ],
+      "expected_substrings": [
+        "90 d\u00edas"
+      ],
+      "retrieved_chunk_ids": [
+        "5e6929c668dbf272-0",
+        "6f47d6c6a98e9c03-2",
+        "6f47d6c6a98e9c03-3",
+        "43e8a6536b9deed4-1",
+        "5e6929c668dbf272-1"
+      ],
+      "retrieved_doc_basenames": [
+        "04_privacy_policy_es.md",
+        "10_glossary_pt.md",
+        "10_glossary_pt.md",
+        "06_meeting_minutes_q1.md",
+        "04_privacy_policy_es.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 1,
+      "rejected_correctly": null
+    },
+    {
+      "id": "dpo_en_query_es_doc",
+      "query": "Who is Acme's data protection officer?",
+      "category": "cross_language",
+      "language": "en",
+      "difficulty": "hard",
+      "negative": false,
+      "expected_doc_basenames": [
+        "04_privacy_policy_es.md",
+        "01_company_overview.md"
+      ],
+      "expected_substrings": [
+        "Mar\u00eda Garc\u00eda"
+      ],
+      "retrieved_chunk_ids": [
+        "cc75f5cf8c613ead-1",
+        "dfd8a3a6fa498d1f-1",
+        "dfd8a3a6fa498d1f-0",
+        "89686648e29dbe4b-1",
+        "811149db81ac447f-2"
+      ],
+      "retrieved_doc_basenames": [
+        "07_product_specs.md",
+        "01_company_overview.md",
+        "01_company_overview.md",
+        "05_security_standards.md",
+        "09_press_release.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 2,
+      "rejected_correctly": null
+    },
+    {
+      "id": "lgpd_pt",
+      "query": "O que significa LGPD?",
+      "category": "multilingual_pt",
+      "language": "pt",
+      "difficulty": "medium",
+      "negative": false,
+      "expected_doc_basenames": [
+        "10_glossary_pt.md"
+      ],
+      "expected_substrings": [
+        "Lei Geral de Prote\u00e7\u00e3o de Dados"
+      ],
+      "retrieved_chunk_ids": [
+        "5e6929c668dbf272-0",
+        "811149db81ac447f-2",
+        "5e6929c668dbf272-1",
+        "6f47d6c6a98e9c03-3",
+        "6f47d6c6a98e9c03-2"
+      ],
+      "retrieved_doc_basenames": [
+        "04_privacy_policy_es.md",
+        "09_press_release.md",
+        "04_privacy_policy_es.md",
+        "10_glossary_pt.md",
+        "10_glossary_pt.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 4,
+      "rejected_correctly": null
+    },
+    {
+      "id": "rust_migration",
+      "query": "What languages and runtimes is the engineering team migrating to?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "medium",
+      "negative": false,
+      "expected_doc_basenames": [
+        "03_engineering_roadmap.md"
+      ],
+      "expected_substrings": [
+        "Rust"
+      ],
+      "retrieved_chunk_ids": [
+        "9c3a97a9a6492c1a-0",
+        "811149db81ac447f-1",
+        "aa8c5be86e3b2ba0-3",
+        "43e8a6536b9deed4-2",
+        "dfd8a3a6fa498d1f-0"
+      ],
+      "retrieved_doc_basenames": [
+        "03_engineering_roadmap.md",
+        "09_press_release.md",
+        "08_employee_handbook.md",
+        "06_meeting_minutes_q1.md",
+        "01_company_overview.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 1,
+      "rejected_correctly": null
+    },
+    {
+      "id": "madrid_office",
+      "query": "When does the new Madrid office open?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "medium",
+      "negative": false,
+      "expected_doc_basenames": [
+        "06_meeting_minutes_q1.md"
+      ],
+      "expected_substrings": [
+        "Madrid",
+        "June"
+      ],
+      "retrieved_chunk_ids": [
+        "43e8a6536b9deed4-1",
+        "811149db81ac447f-0",
+        "9c3a97a9a6492c1a-2",
+        "811149db81ac447f-1",
+        "aa8c5be86e3b2ba0-2"
+      ],
+      "retrieved_doc_basenames": [
+        "06_meeting_minutes_q1.md",
+        "09_press_release.md",
+        "03_engineering_roadmap.md",
+        "09_press_release.md",
+        "08_employee_handbook.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 1,
+      "rejected_correctly": null
+    },
+    {
+      "id": "layoffs_2026",
+      "query": "What workforce changes were announced in Q1 2026?",
+      "category": "cross_doc_synthesis",
+      "language": "en",
+      "difficulty": "hard",
+      "negative": false,
+      "expected_doc_basenames": [
+        "06_meeting_minutes_q1.md"
+      ],
+      "expected_substrings": [
+        "5%",
+        "24"
+      ],
+      "retrieved_chunk_ids": [
+        "43e8a6536b9deed4-1",
+        "811149db81ac447f-0",
+        "43e8a6536b9deed4-0",
+        "89686648e29dbe4b-2",
+        "77cfad22c741db90-1"
+      ],
+      "retrieved_doc_basenames": [
+        "06_meeting_minutes_q1.md",
+        "09_press_release.md",
+        "06_meeting_minutes_q1.md",
+        "05_security_standards.md",
+        "02_q4_financials.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 1,
+      "rejected_correctly": null
+    },
+    {
+      "id": "401k_match",
+      "query": "What is the 401k match for US employees?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "medium",
+      "negative": false,
+      "expected_doc_basenames": [
+        "08_employee_handbook.md"
+      ],
+      "expected_substrings": [
+        "6%"
+      ],
+      "retrieved_chunk_ids": [
+        "1c230803028302e4-1",
+        "9c3a97a9a6492c1a-1",
+        "89686648e29dbe4b-2",
+        "aa8c5be86e3b2ba0-1",
+        "1c230803028302e4-0"
+      ],
+      "retrieved_doc_basenames": [
+        "11_competitor_overview.md",
+        "03_engineering_roadmap.md",
+        "05_security_standards.md",
+        "08_employee_handbook.md",
+        "11_competitor_overview.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 4,
+      "rejected_correctly": null
+    },
+    {
+      "id": "negative_microsoft_ceo",
+      "query": "Who is the CEO of Microsoft?",
+      "category": "negative",
+      "language": "en",
+      "difficulty": "hard",
+      "negative": true,
+      "expected_doc_basenames": [],
+      "expected_substrings": [],
+      "retrieved_chunk_ids": [
+        "1c230803028302e4-0",
+        "77cfad22c741db90-0",
+        "77cfad22c741db90-1",
+        "6f47d6c6a98e9c03-3",
+        "43e8a6536b9deed4-0"
+      ],
+      "retrieved_doc_basenames": [
+        "11_competitor_overview.md",
+        "02_q4_financials.md",
+        "02_q4_financials.md",
+        "10_glossary_pt.md",
+        "06_meeting_minutes_q1.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": false,
+      "hit_at_20": false,
+      "doc_match": false,
+      "substring_match": false,
+      "rank_of_first_match": null,
+      "rejected_correctly": true
+    },
+    {
+      "id": "negative_acme_ticker",
+      "query": "What is Acme's stock ticker symbol?",
+      "category": "negative",
+      "language": "en",
+      "difficulty": "hard",
+      "negative": true,
+      "expected_doc_basenames": [],
+      "expected_substrings": [],
+      "retrieved_chunk_ids": [
+        "811149db81ac447f-0",
+        "bde280785b005901-0",
+        "dfd8a3a6fa498d1f-1",
+        "77cfad22c741db90-1",
+        "89686648e29dbe4b-2"
+      ],
+      "retrieved_doc_basenames": [
+        "09_press_release.md",
+        "12_archived_bolt_v1_specs.md",
+        "01_company_overview.md",
+        "02_q4_financials.md",
+        "05_security_standards.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": false,
+      "hit_at_20": false,
+      "doc_match": false,
+      "substring_match": false,
+      "rank_of_first_match": null,
+      "rejected_correctly": true
+    },
+    {
+      "id": "founders",
+      "query": "Who founded Acme Corp?",
+      "category": "factual_lookup",
+      "language": "en",
+      "difficulty": "medium",
+      "negative": false,
+      "expected_doc_basenames": [
+        "01_company_overview.md"
+      ],
+      "expected_substrings": [
+        "Sam Patel",
+        "In\u00e8s Laurent"
+      ],
+      "retrieved_chunk_ids": [
+        "5e6929c668dbf272-0",
+        "dfd8a3a6fa498d1f-0",
+        "811149db81ac447f-2",
+        "811149db81ac447f-0",
+        "6f47d6c6a98e9c03-3"
+      ],
+      "retrieved_doc_basenames": [
+        "04_privacy_policy_es.md",
+        "01_company_overview.md",
+        "09_press_release.md",
+        "09_press_release.md",
+        "10_glossary_pt.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 2,
+      "rejected_correctly": null
+    },
+    {
+      "id": "paraphrase_ceo_idiomatic",
+      "query": "Who runs the show at Acme?",
+      "category": "paraphrase",
+      "language": "en",
+      "difficulty": "hard",
+      "negative": false,
+      "expected_doc_basenames": [
+        "01_company_overview.md"
+      ],
+      "expected_substrings": [
+        "Sam Patel"
+      ],
+      "retrieved_chunk_ids": [
+        "811149db81ac447f-2",
+        "1c230803028302e4-1",
+        "1c230803028302e4-0",
+        "43e8a6536b9deed4-1",
+        "811149db81ac447f-0"
+      ],
+      "retrieved_doc_basenames": [
+        "09_press_release.md",
+        "11_competitor_overview.md",
+        "11_competitor_overview.md",
+        "06_meeting_minutes_q1.md",
+        "09_press_release.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": false,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": false,
+      "rank_of_first_match": 8,
+      "rejected_correctly": null
+    },
+    {
+      "id": "paraphrase_parental_leave",
+      "query": "How long is maternity or paternity leave at Acme?",
+      "category": "paraphrase",
+      "language": "en",
+      "difficulty": "hard",
+      "negative": false,
+      "expected_doc_basenames": [
+        "08_employee_handbook.md"
+      ],
+      "expected_substrings": [
+        "16 weeks"
+      ],
+      "retrieved_chunk_ids": [
+        "aa8c5be86e3b2ba0-0",
+        "89686648e29dbe4b-0",
+        "43e8a6536b9deed4-2",
+        "89686648e29dbe4b-2",
+        "bde280785b005901-0"
+      ],
+      "retrieved_doc_basenames": [
+        "08_employee_handbook.md",
+        "05_security_standards.md",
+        "06_meeting_minutes_q1.md",
+        "05_security_standards.md",
+        "12_archived_bolt_v1_specs.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 1,
+      "rejected_correctly": null
+    },
+    {
+      "id": "paraphrase_hq_city",
+      "query": "In which city is Acme's main office?",
+      "category": "paraphrase",
+      "language": "en",
+      "difficulty": "hard",
+      "negative": false,
+      "expected_doc_basenames": [
+        "01_company_overview.md"
+      ],
+      "expected_substrings": [
+        "Lisbon"
+      ],
+      "retrieved_chunk_ids": [
+        "dfd8a3a6fa498d1f-1",
+        "77cfad22c741db90-1",
+        "43e8a6536b9deed4-1",
+        "811149db81ac447f-1",
+        "811149db81ac447f-0"
+      ],
+      "retrieved_doc_basenames": [
+        "01_company_overview.md",
+        "02_q4_financials.md",
+        "06_meeting_minutes_q1.md",
+        "09_press_release.md",
+        "09_press_release.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 1,
+      "rejected_correctly": null
+    },
+    {
+      "id": "multihop_v3_sign_rate_limit",
+      "query": "What will the /sign endpoint rate limit be in the upcoming API v3?",
+      "category": "multi_hop",
+      "language": "en",
+      "difficulty": "hard",
+      "negative": false,
+      "expected_doc_basenames": [
+        "03_engineering_roadmap.md",
+        "07_product_specs.md"
+      ],
+      "expected_substrings": [
+        "1,000 RPS"
+      ],
+      "retrieved_chunk_ids": [
+        "cc75f5cf8c613ead-0",
+        "43e8a6536b9deed4-1",
+        "9c3a97a9a6492c1a-2",
+        "9c3a97a9a6492c1a-1",
+        "dfd8a3a6fa498d1f-0"
+      ],
+      "retrieved_doc_basenames": [
+        "07_product_specs.md",
+        "06_meeting_minutes_q1.md",
+        "03_engineering_roadmap.md",
+        "03_engineering_roadmap.md",
+        "01_company_overview.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 1,
+      "rejected_correctly": null
+    },
+    {
+      "id": "multihop_rust_phase1_perf",
+      "query": "What throughput improvement does Acme expect from the first phase of the Rust migration?",
+      "category": "multi_hop",
+      "language": "en",
+      "difficulty": "hard",
+      "negative": false,
+      "expected_doc_basenames": [
+        "03_engineering_roadmap.md"
+      ],
+      "expected_substrings": [
+        "3\u00d7"
+      ],
+      "retrieved_chunk_ids": [
+        "9c3a97a9a6492c1a-2",
+        "811149db81ac447f-0",
+        "9c3a97a9a6492c1a-0",
+        "dfd8a3a6fa498d1f-0",
+        "6f47d6c6a98e9c03-3"
+      ],
+      "retrieved_doc_basenames": [
+        "03_engineering_roadmap.md",
+        "09_press_release.md",
+        "03_engineering_roadmap.md",
+        "01_company_overview.md",
+        "10_glossary_pt.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": false,
+      "rank_of_first_match": 1,
+      "rejected_correctly": null
+    },
+    {
+      "id": "multihop_emea_p99_latency",
+      "query": "What is the p99 latency target for the EMEA sign endpoint?",
+      "category": "multi_hop",
+      "language": "en",
+      "difficulty": "hard",
+      "negative": false,
+      "expected_doc_basenames": [
+        "03_engineering_roadmap.md"
+      ],
+      "expected_substrings": [
+        "150ms"
+      ],
+      "retrieved_chunk_ids": [
+        "1c230803028302e4-1",
+        "9c3a97a9a6492c1a-1",
+        "89686648e29dbe4b-2",
+        "bde280785b005901-0",
+        "811149db81ac447f-0"
+      ],
+      "retrieved_doc_basenames": [
+        "11_competitor_overview.md",
+        "03_engineering_roadmap.md",
+        "05_security_standards.md",
+        "12_archived_bolt_v1_specs.md",
+        "09_press_release.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 2,
+      "rejected_correctly": null
+    },
+    {
+      "id": "distractor_acme_sla_not_competitor",
+      "query": "What is the uptime SLA for Acme Bolt?",
+      "category": "distractor",
+      "language": "en",
+      "difficulty": "hard",
+      "negative": false,
+      "expected_doc_basenames": [
+        "07_product_specs.md",
+        "03_engineering_roadmap.md"
+      ],
+      "expected_substrings": [
+        "99.95%"
+      ],
+      "retrieved_chunk_ids": [
+        "6f47d6c6a98e9c03-3",
+        "6f47d6c6a98e9c03-2",
+        "bde280785b005901-0",
+        "811149db81ac447f-2",
+        "6f47d6c6a98e9c03-0"
+      ],
+      "retrieved_doc_basenames": [
+        "10_glossary_pt.md",
+        "10_glossary_pt.md",
+        "12_archived_bolt_v1_specs.md",
+        "09_press_release.md",
+        "10_glossary_pt.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": false,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": false,
+      "rank_of_first_match": 6,
+      "rejected_correctly": null
+    },
+    {
+      "id": "distractor_current_sign_rps",
+      "query": "What is the current rate limit for the /sign endpoint?",
+      "category": "distractor",
+      "language": "en",
+      "difficulty": "hard",
+      "negative": false,
+      "expected_doc_basenames": [
+        "07_product_specs.md"
+      ],
+      "expected_substrings": [
+        "500 RPS"
+      ],
+      "retrieved_chunk_ids": [
+        "bde280785b005901-1",
+        "1c230803028302e4-1",
+        "6f47d6c6a98e9c03-1",
+        "cc75f5cf8c613ead-2",
+        "9c3a97a9a6492c1a-1"
+      ],
+      "retrieved_doc_basenames": [
+        "12_archived_bolt_v1_specs.md",
+        "11_competitor_overview.md",
+        "10_glossary_pt.md",
+        "07_product_specs.md",
+        "03_engineering_roadmap.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 4,
+      "rejected_correctly": null
+    },
+    {
+      "id": "distractor_competitor_ceo",
+      "query": "Who is the CEO of DocuStream?",
+      "category": "distractor",
+      "language": "en",
+      "difficulty": "hard",
+      "negative": false,
+      "expected_doc_basenames": [
+        "11_competitor_overview.md"
+      ],
+      "expected_substrings": [
+        "Jordan Kim"
+      ],
+      "retrieved_chunk_ids": [
+        "1c230803028302e4-1",
+        "dfd8a3a6fa498d1f-0",
+        "1c230803028302e4-0",
+        "dfd8a3a6fa498d1f-1",
+        "89686648e29dbe4b-2"
+      ],
+      "retrieved_doc_basenames": [
+        "11_competitor_overview.md",
+        "01_company_overview.md",
+        "11_competitor_overview.md",
+        "01_company_overview.md",
+        "05_security_standards.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 1,
+      "rejected_correctly": null
+    },
+    {
+      "id": "cross_doc_series_c_valuation",
+      "query": "What is Acme's valuation after the Series C round?",
+      "category": "cross_doc_synthesis",
+      "language": "en",
+      "difficulty": "hard",
+      "negative": false,
+      "expected_doc_basenames": [
+        "01_company_overview.md",
+        "09_press_release.md"
+      ],
+      "expected_substrings": [
+        "640 million",
+        "$640"
+      ],
+      "retrieved_chunk_ids": [
+        "89686648e29dbe4b-2",
+        "dfd8a3a6fa498d1f-0",
+        "1c230803028302e4-0",
+        "dfd8a3a6fa498d1f-1",
+        "77cfad22c741db90-0"
+      ],
+      "retrieved_doc_basenames": [
+        "05_security_standards.md",
+        "01_company_overview.md",
+        "11_competitor_overview.md",
+        "01_company_overview.md",
+        "02_q4_financials.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": true,
+      "hit_at_20": true,
+      "doc_match": true,
+      "substring_match": true,
+      "rank_of_first_match": 2,
+      "rejected_correctly": null
+    },
+    {
+      "id": "negative_ipo_plans",
+      "query": "When is Acme Corp planning its IPO?",
+      "category": "negative",
+      "language": "en",
+      "difficulty": "hard",
+      "negative": true,
+      "expected_doc_basenames": [],
+      "expected_substrings": [],
+      "retrieved_chunk_ids": [
+        "dfd8a3a6fa498d1f-0",
+        "5e6929c668dbf272-0",
+        "aa8c5be86e3b2ba0-1",
+        "1c230803028302e4-0",
+        "811149db81ac447f-2"
+      ],
+      "retrieved_doc_basenames": [
+        "01_company_overview.md",
+        "04_privacy_policy_es.md",
+        "08_employee_handbook.md",
+        "11_competitor_overview.md",
+        "09_press_release.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": false,
+      "hit_at_20": false,
+      "doc_match": false,
+      "substring_match": false,
+      "rank_of_first_match": null,
+      "rejected_correctly": true
+    },
+    {
+      "id": "negative_mobile_app",
+      "query": "Does Acme have a mobile app for signing documents?",
+      "category": "negative",
+      "language": "en",
+      "difficulty": "hard",
+      "negative": true,
+      "expected_doc_basenames": [],
+      "expected_substrings": [],
+      "retrieved_chunk_ids": [
+        "89686648e29dbe4b-1",
+        "1c230803028302e4-0",
+        "bde280785b005901-0",
+        "cc75f5cf8c613ead-1",
+        "811149db81ac447f-1"
+      ],
+      "retrieved_doc_basenames": [
+        "05_security_standards.md",
+        "11_competitor_overview.md",
+        "12_archived_bolt_v1_specs.md",
+        "07_product_specs.md",
+        "09_press_release.md"
+      ],
+      "expanded_queries": [],
+      "hit_at_1": false,
+      "hit_at_5": false,
+      "hit_at_20": false,
+      "doc_match": false,
+      "substring_match": false,
+      "rank_of_first_match": null,
+      "rejected_correctly": true
+    }
+  ],
+  "hit_at_1_rate": 0.42857142857142855,
+  "hit_at_5_rate": 0.7142857142857143,
+  "hit_at_20_rate": 0.9642857142857143,
+  "mean_reciprocal_rank": 0.5647250566893424,
+  "doc_match_rate": 0.9642857142857143,
+  "substring_match_rate": 0.7857142857142857,
+  "correct_rejection_rate": 1.0,
+  "by_category": {
+    "cross_doc_synthesis": {
+      "n": 2.0,
+      "hit_at_5": 1.0,
+      "doc_match": 1.0,
+      "substring_match": 1.0
+    },
+    "cross_language": {
+      "n": 1.0,
+      "hit_at_5": 1.0,
+      "doc_match": 1.0,
+      "substring_match": 1.0
+    },
+    "distractor": {
+      "n": 3.0,
+      "hit_at_5": 0.6666666666666666,
+      "doc_match": 1.0,
+      "substring_match": 0.6666666666666666
+    },
+    "factual_lookup": {
+      "n": 13.0,
+      "hit_at_5": 0.5384615384615384,
+      "doc_match": 0.9230769230769231,
+      "substring_match": 0.7692307692307693
+    },
+    "multi_hop": {
+      "n": 3.0,
+      "hit_at_5": 1.0,
+      "doc_match": 1.0,
+      "substring_match": 0.6666666666666666
+    },
+    "multilingual_es": {
+      "n": 2.0,
+      "hit_at_5": 1.0,
+      "doc_match": 1.0,
+      "substring_match": 1.0
+    },
+    "multilingual_pt": {
+      "n": 1.0,
+      "hit_at_5": 1.0,
+      "doc_match": 1.0,
+      "substring_match": 1.0
+    },
+    "negative": {
+      "n": 4.0,
+      "hit_at_5": 0.0,
+      "doc_match": 0.0,
+      "substring_match": 0.0
+    },
+    "paraphrase": {
+      "n": 3.0,
+      "hit_at_5": 0.6666666666666666,
+      "doc_match": 1.0,
+      "substring_match": 0.6666666666666666
+    }
+  }
+}
