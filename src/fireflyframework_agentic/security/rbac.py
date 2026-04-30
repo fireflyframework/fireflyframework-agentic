@@ -94,13 +94,17 @@ class RBACManager:
 
     def __init__(
         self,
-        jwt_secret: str,
+        jwt_secret: str | None = None,
         *,
         jwt_algorithm: str = "HS256",
         token_expiry_hours: int = 24,
         multi_tenant: bool = False,
         roles: dict[str, list[str]] | None = None,
     ) -> None:
+        # ``jwt_secret`` is optional so that subclasses or callers that only need
+        # the permission/role machinery (e.g. with externally-issued tokens like
+        # Entra ID) can construct an RBACManager without a symmetric secret.
+        # ``create_token``/``validate_token`` raise if invoked without one.
         self._jwt_secret = jwt_secret
         self._jwt_algorithm = jwt_algorithm
         self._token_expiry_hours = token_expiry_hours
@@ -143,6 +147,9 @@ class RBACManager:
                 "JWT support requires 'pyjwt'. Install with: pip install fireflyframework-agentic[security]"
             ) from exc
 
+        if self._jwt_secret is None:
+            raise ValueError("RBACManager has no jwt_secret; cannot create_token")
+
         now = datetime.now(UTC)
         expiry = now + timedelta(hours=self._token_expiry_hours)
 
@@ -183,6 +190,9 @@ class RBACManager:
             raise ImportError(
                 "JWT support requires 'pyjwt'. Install with: pip install fireflyframework-agentic[security]"
             ) from exc
+
+        if self._jwt_secret is None:
+            raise ValueError("RBACManager has no jwt_secret; cannot validate HS256 tokens")
 
         try:
             payload = jwt.decode(
