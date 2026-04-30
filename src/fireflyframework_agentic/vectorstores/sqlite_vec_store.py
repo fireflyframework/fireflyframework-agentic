@@ -27,7 +27,10 @@ try:
     from sqlite_vec import serialize_float32
 except ImportError:
     sqlite_vec = None  # type: ignore[assignment]
-    serialize_float32 = None  # type: ignore[assignment]
+
+    def serialize_float32(vector: list[float]) -> bytes:  # type: ignore[misc]
+        raise ImportError("sqlite-vec is not installed")
+
 
 from fireflyframework_agentic.vectorstores.base import BaseVectorStore
 from fireflyframework_agentic.vectorstores.types import SearchFilter, SearchResult, VectorDocument
@@ -119,16 +122,14 @@ class SqliteVecVectorStore(BaseVectorStore):
         try:
             for doc in documents:
                 conn.execute(
-                    f"INSERT INTO {self._shadow}(id, ns) VALUES(?, ?)"
-                    f" ON CONFLICT(id) DO UPDATE SET ns=excluded.ns",
+                    f"INSERT INTO {self._shadow}(id, ns) VALUES(?, ?) ON CONFLICT(id) DO UPDATE SET ns=excluded.ns",
                     (doc.id, namespace),
                 )
-                row = conn.execute(
-                    f"SELECT rowid FROM {self._shadow} WHERE id = ?", (doc.id,)
-                ).fetchone()
+                row = conn.execute(f"SELECT rowid FROM {self._shadow} WHERE id = ?", (doc.id,)).fetchone()
                 rowid = row[0]
                 # vec0 does not support UPDATE — delete the old vector then re-insert.
                 conn.execute(f"DELETE FROM {self._tbl} WHERE rowid = ?", (rowid,))
+                assert doc.embedding is not None
                 conn.execute(
                     f"INSERT INTO {self._tbl}(rowid, embedding) VALUES(?, ?)",
                     (rowid, serialize_float32(doc.embedding)),

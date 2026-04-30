@@ -1,4 +1,5 @@
 """Tests for SqliteVecVectorStore (sqlite-vec backend)."""
+
 from __future__ import annotations
 
 import pytest

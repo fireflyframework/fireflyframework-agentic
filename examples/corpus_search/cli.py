@@ -54,9 +54,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     p_query = sub.add_parser("query", help="Query the corpus.")
     p_query.add_argument("question", help="Natural-language question.")
-    p_query.add_argument(
-        "--root", type=Path, default=_DEFAULT_ROOT, help="Corpus root (must contain corpus.sqlite)."
-    )
+    p_query.add_argument("--root", type=Path, default=_DEFAULT_ROOT, help="Corpus root (must contain corpus.sqlite).")
     p_query.add_argument(
         "--embed-model",
         default=_DEFAULT_EMBED_MODEL,

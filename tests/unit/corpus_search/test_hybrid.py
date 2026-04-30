@@ -74,10 +74,7 @@ class _StubVectorStore:
         # Use first dim as the lookup key.
         key = query_embedding[0]
         ids = self._results.get(key, [])
-        return [
-            SearchResult(document=VectorDocument(id=i, text="", metadata={}), score=0.0)
-            for i in ids[:top_k]
-        ]
+        return [SearchResult(document=VectorDocument(id=i, text="", metadata={}), score=0.0) for i in ids[:top_k]]
 
 
 @pytest.fixture
