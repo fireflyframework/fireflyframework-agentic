@@ -44,7 +44,8 @@ class _SigningKeyResolver(Protocol):
     PyJWKClient implements this; tests inject a fake.
     """
 
-    def get_signing_key_from_jwt(self, token: str) -> Any: ...
+    def get_signing_key_from_jwt(self, token: str) -> Any:
+        raise NotImplementedError
 
 
 class EntraTokenVerifier(RBACManager):
