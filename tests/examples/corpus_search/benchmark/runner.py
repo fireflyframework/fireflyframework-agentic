@@ -535,7 +535,7 @@ def _compare_against_baseline(
 
 
 def main(argv: list[str] | None = None) -> int:
-    load_dotenv(Path(__file__).parents[4] / "examples" / ".env")
+    load_dotenv(Path(__file__).parents[4] / ".env")
     parser = argparse.ArgumentParser(
         prog="python tests/examples/corpus_search/benchmark/runner.py",
         description="Run the corpus_search retrieval benchmark.",
