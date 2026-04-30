@@ -37,8 +37,7 @@ log = logging.getLogger(__name__)
 
 
 class _EmbedFn(Protocol):
-    async def embed(self, texts: list[str], **kwargs: Any) -> EmbeddingResult:
-        pass
+    async def embed(self, texts: list[str], **kwargs: Any) -> EmbeddingResult: ...
 
 
 _RETRYABLE_TYPE_NAMES: frozenset[str] = frozenset(
