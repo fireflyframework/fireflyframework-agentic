@@ -55,6 +55,7 @@ class MarkdownChunker:
             chunk_size=max_chunk_tokens,
             chunk_overlap=chunk_overlap,
         )
+        self._md = MarkdownIt()
 
     def chunk(self, content: str) -> list[Chunk]:
         """Split *content* into :class:`Chunk` objects at heading boundaries."""
@@ -68,7 +69,7 @@ class MarkdownChunker:
         return chunks
 
     def _parse_sections(self, content: str) -> list[_Section]:
-        tokens = MarkdownIt().parse(content)
+        tokens = self._md.parse(content)
         lines = content.splitlines()
 
         heading_locs: list[tuple[int, int, str]] = []

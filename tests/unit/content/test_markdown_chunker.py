@@ -14,7 +14,6 @@
 
 """Unit tests for MarkdownChunker."""
 
-import pytest
 
 from fireflyframework_agentic.content.chunking import Chunker
 from fireflyframework_agentic.content.markdown_chunker import MarkdownChunker
