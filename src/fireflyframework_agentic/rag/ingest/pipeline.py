@@ -20,12 +20,12 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from examples.corpus_search.corpus import SqliteCorpus, StoredChunk
-from examples.corpus_search.ingest.ledger import IngestLedger
-from examples.corpus_search.ingest.retry import embed_with_retry
 from fireflyframework_agentic.content.chunking import TextChunker
 from fireflyframework_agentic.content.loaders import Document, MarkitdownLoader
 from fireflyframework_agentic.embeddings.base import EmbeddingProtocol
+from fireflyframework_agentic.rag.corpus import SqliteCorpus, StoredChunk
+from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
+from fireflyframework_agentic.rag.ingest.retry import embed_with_retry
 from fireflyframework_agentic.vectorstores.base import VectorStoreProtocol
 from fireflyframework_agentic.vectorstores.types import VectorDocument
 

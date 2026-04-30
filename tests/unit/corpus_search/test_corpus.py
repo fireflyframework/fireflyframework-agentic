@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from examples.corpus_search.corpus import SqliteCorpus, StoredChunk
+from fireflyframework_agentic.rag.corpus import SqliteCorpus, StoredChunk
 
 
 @pytest.fixture

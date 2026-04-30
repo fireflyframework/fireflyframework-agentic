@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
-from examples.corpus_search.corpus import SqliteCorpus
-from examples.corpus_search.ingest.ledger import IngestLedger
-from examples.corpus_search.ingest.pipeline import (
+from fireflyframework_agentic.rag.corpus import SqliteCorpus
+from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
+from fireflyframework_agentic.rag.ingest.pipeline import (
     IngestionResult,
     ingest_one,
 )

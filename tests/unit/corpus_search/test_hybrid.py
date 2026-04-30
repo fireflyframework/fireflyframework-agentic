@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from examples.corpus_search.corpus import ChunkHit, SqliteCorpus, StoredChunk
-from examples.corpus_search.retrieval.expander import ExpandedQuery
-from examples.corpus_search.retrieval.hybrid import (
+from fireflyframework_agentic.rag.corpus import ChunkHit, SqliteCorpus, StoredChunk
+from fireflyframework_agentic.rag.retrieval.expander import ExpandedQuery
+from fireflyframework_agentic.rag.retrieval.hybrid import (
     HybridRetriever,
     reciprocal_rank_fusion,
 )

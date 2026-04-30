@@ -18,8 +18,8 @@ from collections.abc import Sequence
 
 from pydantic import BaseModel, Field
 
-from examples.corpus_search.corpus import ChunkHit
 from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.rag.corpus import ChunkHit
 
 _NO_INFO_TEXT = "I don't have enough information."
 

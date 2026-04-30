@@ -17,9 +17,9 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 
-from examples.corpus_search.corpus import ChunkHit, SqliteCorpus
-from examples.corpus_search.retrieval.expander import ExpandedQuery
 from fireflyframework_agentic.embeddings.base import EmbeddingProtocol
+from fireflyframework_agentic.rag.corpus import ChunkHit, SqliteCorpus
+from fireflyframework_agentic.rag.retrieval.expander import ExpandedQuery
 from fireflyframework_agentic.vectorstores.base import VectorStoreProtocol
 
 log = logging.getLogger(__name__)

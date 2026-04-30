@@ -20,16 +20,16 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from examples.corpus_search.corpus import SqliteCorpus
-from examples.corpus_search.ingest.ledger import IngestLedger
-from examples.corpus_search.ingest.pipeline import IngestionResult, ingest_one
 from examples.corpus_search.retrieval.answerer import Answer, AnswerAgent
-from examples.corpus_search.retrieval.expander import QueryExpander
-from examples.corpus_search.retrieval.hybrid import HybridRetriever
-from examples.corpus_search.retrieval.reranker import HaikuReranker
 from fireflyframework_agentic.content.chunking import TextChunker
 from fireflyframework_agentic.content.loaders import MarkitdownLoader
 from fireflyframework_agentic.pipeline.triggers import FolderWatcher
+from fireflyframework_agentic.rag.corpus import SqliteCorpus
+from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
+from fireflyframework_agentic.rag.ingest.pipeline import IngestionResult, ingest_one
+from fireflyframework_agentic.rag.retrieval.expander import QueryExpander
+from fireflyframework_agentic.rag.retrieval.hybrid import HybridRetriever
+from fireflyframework_agentic.rag.retrieval.reranker import HaikuReranker
 
 log = logging.getLogger(__name__)
 

@@ -30,11 +30,17 @@ from collections.abc import Sequence
 
 from pydantic import BaseModel, Field
 
-from examples.corpus_search.corpus import ChunkHit
-from examples.corpus_search.retrieval.answerer import format_chunks_for_prompt
 from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.rag.corpus import ChunkHit
 
 log = logging.getLogger(__name__)
+
+
+def format_chunks_for_prompt(hits: Sequence[ChunkHit]) -> str:
+    """Format chunk hits as labelled context blocks for an LLM prompt."""
+    if not hits:
+        return ""
+    return "\n\n".join(f"[{h.chunk_id}] (source: {h.source_path})\n{h.content}" for h in hits)
 
 
 _INSTRUCTIONS = (

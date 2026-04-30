@@ -79,9 +79,9 @@ async def agent(tmp_path):
     """CorpusAgent wired with stub embedder + stub vector store + stub LLM agents."""
     mock_agent_instance = MagicMock()
     with (
-        patch("examples.corpus_search.retrieval.expander.FireflyAgent", return_value=mock_agent_instance),
+        patch("fireflyframework_agentic.rag.retrieval.expander.FireflyAgent", return_value=mock_agent_instance),
         patch("examples.corpus_search.retrieval.answerer.FireflyAgent", return_value=mock_agent_instance),
-        patch("examples.corpus_search.retrieval.reranker.FireflyAgent", return_value=mock_agent_instance),
+        patch("fireflyframework_agentic.rag.retrieval.reranker.FireflyAgent", return_value=mock_agent_instance),
     ):
         a = CorpusAgent(
             root=tmp_path / "kg",

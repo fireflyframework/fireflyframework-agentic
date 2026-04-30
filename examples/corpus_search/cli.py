@@ -178,7 +178,7 @@ def _print_ingest_result(result) -> None:
 
 
 async def _run_show_chunk(args: argparse.Namespace) -> int:
-    from examples.corpus_search.corpus import SqliteCorpus
+    from fireflyframework_agentic.rag.corpus import SqliteCorpus
 
     corpus_path = args.root / "corpus.sqlite"
     if not corpus_path.exists():

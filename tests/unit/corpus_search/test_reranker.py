@@ -33,8 +33,8 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from examples.corpus_search.corpus import ChunkHit
-from examples.corpus_search.retrieval.reranker import (
+from fireflyframework_agentic.rag.corpus import ChunkHit
+from fireflyframework_agentic.rag.retrieval.reranker import (
     HaikuReranker,
     RerankerResult,
 )
@@ -63,7 +63,7 @@ def _stub_run_result(top_chunk_ids: list[str]) -> Any:
 # --- Happy paths --------------------------------------------------------
 
 
-@patch("examples.corpus_search.retrieval.reranker.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.reranker.FireflyAgent")
 async def test_rerank_returns_llms_top_k_in_order(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -78,7 +78,7 @@ async def test_rerank_returns_llms_top_k_in_order(mock_agent_cls):
     assert [h.chunk_id for h in out] == ["c-3", "c-1"]
 
 
-@patch("examples.corpus_search.retrieval.reranker.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.reranker.FireflyAgent")
 async def test_rerank_drops_hallucinated_chunk_ids(mock_agent_cls):
     """LLM returns chunk_ids that don't appear in the input — drop them.
 
@@ -98,7 +98,7 @@ async def test_rerank_drops_hallucinated_chunk_ids(mock_agent_cls):
     assert [h.chunk_id for h in out] == ["c-2", "c-0"]
 
 
-@patch("examples.corpus_search.retrieval.reranker.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.reranker.FireflyAgent")
 async def test_rerank_dedupes_repeated_chunk_ids(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -113,7 +113,7 @@ async def test_rerank_dedupes_repeated_chunk_ids(mock_agent_cls):
     assert [h.chunk_id for h in out] == ["c-1"]
 
 
-@patch("examples.corpus_search.retrieval.reranker.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.reranker.FireflyAgent")
 async def test_rerank_caps_at_top_k_even_if_llm_returns_more(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -128,7 +128,7 @@ async def test_rerank_caps_at_top_k_even_if_llm_returns_more(mock_agent_cls):
     assert [h.chunk_id for h in out] == ["c-0", "c-1"]
 
 
-@patch("examples.corpus_search.retrieval.reranker.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.reranker.FireflyAgent")
 async def test_rerank_returns_fewer_than_top_k_when_llm_says_so(mock_agent_cls):
     """LLM is allowed to return fewer ids than requested when only some
     chunks are actually relevant. The reranker trusts that judgment.
@@ -151,7 +151,7 @@ async def test_rerank_returns_fewer_than_top_k_when_llm_says_so(mock_agent_cls):
 # --- Short-circuits (no LLM call) --------------------------------------
 
 
-@patch("examples.corpus_search.retrieval.reranker.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.reranker.FireflyAgent")
 async def test_empty_hits_returns_empty_without_llm_call(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -164,7 +164,7 @@ async def test_empty_hits_returns_empty_without_llm_call(mock_agent_cls):
     reranker._agent.run.assert_not_awaited()
 
 
-@patch("examples.corpus_search.retrieval.reranker.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.reranker.FireflyAgent")
 async def test_top_k_zero_returns_empty_without_llm_call(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -178,7 +178,7 @@ async def test_top_k_zero_returns_empty_without_llm_call(mock_agent_cls):
     reranker._agent.run.assert_not_awaited()
 
 
-@patch("examples.corpus_search.retrieval.reranker.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.reranker.FireflyAgent")
 async def test_top_k_geq_len_hits_returns_hits_without_llm_call(mock_agent_cls):
     """When the user asks for at least as many chunks as we have
     candidates, there's nothing to rerank away — skip the LLM.
@@ -201,7 +201,7 @@ async def test_top_k_geq_len_hits_returns_hits_without_llm_call(mock_agent_cls):
 # --- Failure paths ------------------------------------------------------
 
 
-@patch("examples.corpus_search.retrieval.reranker.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.reranker.FireflyAgent")
 async def test_llm_error_falls_back_to_retrieval_order(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -217,7 +217,7 @@ async def test_llm_error_falls_back_to_retrieval_order(mock_agent_cls):
     assert [h.chunk_id for h in out] == ["c-0", "c-1", "c-2"]
 
 
-@patch("examples.corpus_search.retrieval.reranker.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.reranker.FireflyAgent")
 async def test_llm_returns_empty_list_returns_empty(mock_agent_cls):
     """LLM ran successfully but found nothing relevant. Trust it — empty
     is the right answer (downstream answerer will return 'no info').
@@ -238,7 +238,7 @@ async def test_llm_returns_empty_list_returns_empty(mock_agent_cls):
 # --- Visibility logging -------------------------------------------------
 
 
-@patch("examples.corpus_search.retrieval.reranker.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.reranker.FireflyAgent")
 async def test_rerank_logs_kept_chunks(mock_agent_cls, caplog):
     """Reranker should log the kept chunk_ids + source_paths at INFO
     so users can see which candidates survived and which were dropped.
@@ -260,7 +260,7 @@ async def test_rerank_logs_kept_chunks(mock_agent_cls, caplog):
         _hit("c-3", source="/tmp/B.pdf"),
     ]
 
-    with caplog.at_level(logging.INFO, logger="examples.corpus_search.retrieval.reranker"):
+    with caplog.at_level(logging.INFO, logger="fireflyframework_agentic.rag.retrieval.reranker"):
         await reranker.rerank("Q", hits, top_k=2)
 
     messages = [r.getMessage() for r in caplog.records]
@@ -274,7 +274,7 @@ async def test_rerank_logs_kept_chunks(mock_agent_cls, caplog):
 # --- Constructor sanity -------------------------------------------------
 
 
-@patch("examples.corpus_search.retrieval.reranker.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.reranker.FireflyAgent")
 async def test_passes_question_and_top_k_into_prompt(mock_agent_cls):
     """The LLM prompt should mention the question and the requested top_k."""
     mock_agent = MagicMock()

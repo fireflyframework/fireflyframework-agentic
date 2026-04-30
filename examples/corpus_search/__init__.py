@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from examples.corpus_search.agent import CorpusAgent
-from examples.corpus_search.ingest.pipeline import IngestionResult
 from examples.corpus_search.retrieval.answerer import Answer
+from fireflyframework_agentic.rag.ingest.pipeline import IngestionResult
 
 __all__ = ["Answer", "CorpusAgent", "IngestionResult"]

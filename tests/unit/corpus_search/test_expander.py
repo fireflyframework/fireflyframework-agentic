@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from examples.corpus_search.retrieval.expander import ExpandedQuery, QueryExpander
+from fireflyframework_agentic.rag.retrieval.expander import ExpandedQuery, QueryExpander
 
 
 def _stub_run_result(variants: list[str], hyde: str = "") -> Any:
@@ -36,7 +36,7 @@ def _stub_run_result(variants: list[str], hyde: str = "") -> Any:
     return r
 
 
-@patch("examples.corpus_search.retrieval.expander.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.expander.FireflyAgent")
 async def test_expand_returns_original_first_then_variants(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -53,7 +53,7 @@ async def test_expand_returns_original_first_then_variants(mock_agent_cls):
     assert all(isinstance(q, ExpandedQuery) for q in out)
 
 
-@patch("examples.corpus_search.retrieval.expander.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.expander.FireflyAgent")
 async def test_expand_original_is_always_hybrid(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -64,7 +64,7 @@ async def test_expand_original_is_always_hybrid(mock_agent_cls):
     assert out[0].route == "hybrid"
 
 
-@patch("examples.corpus_search.retrieval.expander.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.expander.FireflyAgent")
 async def test_expand_hyde_has_vec_only_route(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -82,7 +82,7 @@ async def test_expand_hyde_has_vec_only_route(mock_agent_cls):
     assert "Jane Doe" in hyde_queries[0].text
 
 
-@patch("examples.corpus_search.retrieval.expander.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.expander.FireflyAgent")
 async def test_expand_dedupes_when_variant_equals_original(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -97,7 +97,7 @@ async def test_expand_dedupes_when_variant_equals_original(mock_agent_cls):
     assert "Tell me about X" in texts
 
 
-@patch("examples.corpus_search.retrieval.expander.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.expander.FireflyAgent")
 async def test_expand_caps_paraphrase_variants(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -117,7 +117,7 @@ async def test_expand_caps_paraphrase_variants(mock_agent_cls):
     assert any(q.route == "vec_only" for q in out)
 
 
-@patch("examples.corpus_search.retrieval.expander.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.expander.FireflyAgent")
 async def test_expand_falls_back_to_original_on_llm_error(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -130,7 +130,7 @@ async def test_expand_falls_back_to_original_on_llm_error(mock_agent_cls):
     assert out[0].route == "hybrid"
 
 
-@patch("examples.corpus_search.retrieval.expander.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.expander.FireflyAgent")
 async def test_expand_drops_empty_strings_from_variants(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -145,7 +145,7 @@ async def test_expand_drops_empty_strings_from_variants(mock_agent_cls):
     assert out[0].text == "orig"
 
 
-@patch("examples.corpus_search.retrieval.expander.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.expander.FireflyAgent")
 async def test_expand_logs_each_generated_query(mock_agent_cls, caplog):
     """The expander should log every query (original, variants, hyde) at INFO."""
     import logging
@@ -161,7 +161,7 @@ async def test_expand_logs_each_generated_query(mock_agent_cls, caplog):
         ),
     )
 
-    with caplog.at_level(logging.INFO, logger="examples.corpus_search.retrieval.expander"):
+    with caplog.at_level(logging.INFO, logger="fireflyframework_agentic.rag.retrieval.expander"):
         out = await expander.expand("original question", n_variants=3)
 
     texts = [q.text for q in out]

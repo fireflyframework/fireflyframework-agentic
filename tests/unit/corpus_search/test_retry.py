@@ -23,7 +23,7 @@ from typing import Any
 
 import pytest
 
-from examples.corpus_search.ingest.retry import (
+from fireflyframework_agentic.rag.ingest.retry import (
     embed_with_retry,
     is_retryable,
     retry_after_seconds,

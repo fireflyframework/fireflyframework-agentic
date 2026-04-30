@@ -97,8 +97,11 @@ bedrock-embeddings = [
 ollama-embeddings = [
     "httpx>=0.28.0",
 ]
+rag = [
+    "fireflyframework-agentic[markitdown,watch,openai-embeddings]",
+]
 corpus-search = [
-    "fireflyframework-agentic[markitdown,watch,vectorstores-chroma,openai-embeddings]",
+    "fireflyframework-agentic[rag,vectorstores-chroma]",
     "python-dotenv>=1.0.0",
 ]
 vectorstores-chroma = [

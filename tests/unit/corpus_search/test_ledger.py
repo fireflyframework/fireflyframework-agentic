@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import pytest
 
-from examples.corpus_search.corpus import SqliteCorpus
-from examples.corpus_search.ingest.ledger import IngestLedger
+from fireflyframework_agentic.rag.corpus import SqliteCorpus
+from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
 
 
 @pytest.fixture

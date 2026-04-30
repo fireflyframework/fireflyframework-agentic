@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from examples.corpus_search.corpus import SqliteCorpus
+from fireflyframework_agentic.rag.corpus import SqliteCorpus
 
 
 class IngestLedger:
