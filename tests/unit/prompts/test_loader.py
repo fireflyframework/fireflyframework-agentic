@@ -5,7 +5,7 @@ from fireflyframework_agentic.prompts import PromptLoader
 
 
 def test_register_success():
-    template = PromptLoader.from_file("tests/test_prompts/assets/valid/valid.yaml.j2")
+    template = PromptLoader.from_file("tests/unit/prompts/assets/valid/valid.yaml.j2")
 
     assert template.name == "TestTemplate"
     assert template.version == "1.0.0"
@@ -33,7 +33,7 @@ def test_from_string():
 
 
 def test_from_directory():
-    templates = PromptLoader.from_directory("tests/test_prompts/assets/valid", glob_pattern="*.yaml.j2")
+    templates = PromptLoader.from_directory("tests/unit/prompts/assets/valid", glob_pattern="*.yaml.j2")
 
     names = {t.name for t in templates}
     assert "TestTemplate" in names
@@ -42,7 +42,7 @@ def test_from_directory():
 
 def test_from_file_invalid_yaml():
     with pytest.raises((yaml.YAMLError, Exception)):
-        PromptLoader.from_file("tests/test_prompts/assets/invalid.yaml.j2")
+        PromptLoader.from_file("tests/unit/prompts/assets/invalid.yaml.j2")
 
 
 # def test_register_fail_nonexistent_directory():

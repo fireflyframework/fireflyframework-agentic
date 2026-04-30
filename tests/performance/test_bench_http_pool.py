@@ -17,11 +17,12 @@
 These benchmarks compare performance with and without connection pooling.
 
 Run with:
-    pytest tests/benchmarks/bench_http_pool.py --benchmark-only
+    pytest tests/performance/test_bench_http_pool.py --benchmark-only
 """
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -46,6 +47,7 @@ def mock_http_response():
 class TestHttpConnectionPoolBenchmarks:
     """Benchmark HTTP connection pooling performance."""
 
+    @pytest.mark.nightly
     @pytest.mark.asyncio
     async def test_bench_with_connection_pool(self, benchmark, mock_http_response):
         """Benchmark HTTP requests with connection pooling."""
@@ -62,6 +64,7 @@ class TestHttpConnectionPoolBenchmarks:
         benchmark(lambda: pytest.asyncio.fixture(make_request))
         await tool.close()
 
+    @pytest.mark.nightly
     @pytest.mark.asyncio
     async def test_bench_without_connection_pool(self, benchmark, mock_http_response):
         """Benchmark HTTP requests without connection pooling (urllib fallback)."""
@@ -78,14 +81,13 @@ class TestHttpConnectionPoolBenchmarks:
 
         benchmark(lambda: pytest.asyncio.fixture(make_request))
 
+    @pytest.mark.nightly
     @pytest.mark.asyncio
     async def test_bench_concurrent_requests_with_pool(self, benchmark, mock_http_response):
         """Benchmark concurrent requests with connection pooling."""
         tool = HttpTool(use_pool=True, pool_size=50)
 
         async def make_concurrent_requests():
-            import asyncio
-
             async def single_request():
                 with patch.object(tool._client, "request", new_callable=AsyncMock) as mock_request:
                     mock_request.return_value = mock_http_response
@@ -100,6 +102,7 @@ class TestHttpConnectionPoolBenchmarks:
         benchmark(lambda: pytest.asyncio.fixture(make_concurrent_requests))
         await tool.close()
 
+    @pytest.mark.nightly
     @pytest.mark.asyncio
     async def test_bench_sequential_requests_with_pool(self, benchmark, mock_http_response):
         """Benchmark sequential requests with connection pooling."""
@@ -119,6 +122,7 @@ class TestHttpConnectionPoolBenchmarks:
         benchmark(lambda: pytest.asyncio.fixture(make_sequential_requests))
         await tool.close()
 
+    @pytest.mark.nightly
     @pytest.mark.asyncio
     async def test_bench_pool_size_small(self, benchmark, mock_http_response):
         """Benchmark with small pool size (10 connections)."""
@@ -135,6 +139,7 @@ class TestHttpConnectionPoolBenchmarks:
         benchmark(lambda: pytest.asyncio.fixture(make_request))
         await tool.close()
 
+    @pytest.mark.nightly
     @pytest.mark.asyncio
     async def test_bench_pool_size_large(self, benchmark, mock_http_response):
         """Benchmark with large pool size (200 connections)."""
@@ -151,6 +156,7 @@ class TestHttpConnectionPoolBenchmarks:
         benchmark(lambda: pytest.asyncio.fixture(make_request))
         await tool.close()
 
+    @pytest.mark.nightly
     @pytest.mark.asyncio
     async def test_bench_with_request_body(self, benchmark, mock_http_response):
         """Benchmark POST requests with body and connection pooling."""
@@ -169,6 +175,7 @@ class TestHttpConnectionPoolBenchmarks:
         benchmark(lambda: pytest.asyncio.fixture(make_post_request))
         await tool.close()
 
+    @pytest.mark.nightly
     @pytest.mark.asyncio
     async def test_bench_different_urls_with_pool(self, benchmark, mock_http_response):
         """Benchmark requests to different URLs with connection pooling."""
@@ -198,6 +205,7 @@ class TestHttpConnectionPoolBenchmarks:
 class TestHttpPoolComparisonBenchmarks:
     """Benchmark comparison between pooled and non-pooled requests."""
 
+    @pytest.mark.nightly
     @pytest.mark.asyncio
     @pytest.mark.skipif(not HTTPX_AVAILABLE, reason="httpx not installed")
     async def test_bench_pool_vs_no_pool_single_request(self, benchmark):
