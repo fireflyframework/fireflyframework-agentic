@@ -76,7 +76,7 @@ class CorpusAgent:
         self._answer_model = answer_model
         self._rerank_model = rerank_model
         self._rerank_pool = rerank_pool
-        self._chunker = MarkdownChunker(max_chunk_tokens=600, chunk_overlap=80, min_body_tokens=1)
+        self._chunker = MarkdownChunker(max_chunk_tokens=600, chunk_overlap=80)
         self._loader = MarkitdownLoader()
 
         # Retrieval stack — lazy-constructed on first query() so ingest doesn't

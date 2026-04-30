@@ -108,7 +108,7 @@ async def test_ingest_one_writes_chunks_and_returns_result(agent, tmp_path):
     src = tmp_path / "drop"
     src.mkdir()
     f = src / "doc.txt"
-    f.write_text("Hello world. Sam Altman runs OpenAI.")
+    f.write_text("Hello world. Sam Altman runs OpenAI in San Francisco.")
     result = await agent.ingest_one(f)
     assert result.status == "success"
     assert result.n_chunks >= 1
@@ -119,8 +119,8 @@ async def test_ingest_one_writes_chunks_and_returns_result(agent, tmp_path):
 async def test_ingest_folder_processes_each_file(agent, tmp_path):
     src = tmp_path / "drop"
     src.mkdir()
-    (src / "a.txt").write_text("content a")
-    (src / "b.txt").write_text("content b")
+    (src / "a.txt").write_text("Content for section A with enough text to pass filter.")
+    (src / "b.txt").write_text("Content for section B with enough text to pass filter.")
     results = await agent.ingest_folder(src)
     assert len(results) == 2
     assert all(r.status == "success" for r in results)
@@ -135,7 +135,7 @@ async def test_query_returns_answer_with_citations(agent, tmp_path):
     src = tmp_path / "drop"
     src.mkdir()
     f = src / "doc.txt"
-    f.write_text("Sam Altman is the CEO of OpenAI.")
+    f.write_text("Sam Altman is the CEO of OpenAI based in San Francisco.")
     await agent.ingest_one(f)
 
     # Stub each stage of the query pipeline to avoid real LLM calls.
