@@ -37,7 +37,8 @@ def test_nested_headings_breadcrumb():
     content = "# H1\n\n## H2\n\n### H3\n\nBody text here."
     chunker = MarkdownChunker()
     chunks = chunker.chunk(content)
-    # H1 and H2 sections have empty bodies; only H3 produces a chunk
+    # H1 and H2 have no body text so they produce no chunks.
+    # H3 breadcrumb still includes the full ancestor path.
     assert len(chunks) == 1
     assert chunks[0].metadata["breadcrumb"] == "H1 > H2 > H3"
     assert chunks[0].content.startswith("H1 > H2 > H3\n\nBody text here.")
