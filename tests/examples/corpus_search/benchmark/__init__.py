@@ -23,13 +23,13 @@ queries.
 Usage::
 
     # Mechanics-only (deterministic embeddings, no API): fast CI run.
-    python -m examples.corpus_search.benchmark.runner --mode mechanics
+    python tests/examples/corpus_search/benchmark/runner.py --mode mechanics
 
     # Real Azure OpenAI embeddings (needs EMBEDDING_BINDING_*) — actual quality.
-    python -m examples.corpus_search.benchmark.runner --mode real
+    python tests/examples/corpus_search/benchmark/runner.py --mode real
 
     # Real-mode plus Haiku reranker (needs ANTHROPIC_API_KEY too).
-    python -m examples.corpus_search.benchmark.runner --mode real --rerank
+    python tests/examples/corpus_search/benchmark/runner.py --mode real --rerank
 
 The benchmark deliberately stops short of the answer agent — measuring
 retrieval quality is reproducible; LLM-generated answer quality is not.

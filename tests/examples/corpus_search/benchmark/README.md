@@ -34,7 +34,7 @@ Deterministic SHA-256 hash embeddings + in-memory vector store. Vector signal
 is noise; metrics primarily reflect BM25 quality. Use this in CI.
 
 ```bash
-uv run python -m examples.corpus_search.benchmark.runner --mode mechanics
+uv run python tests/examples/corpus_search/benchmark/runner.py --mode mechanics
 ```
 
 ### 2. Real embeddings (Azure OpenAI)
@@ -42,7 +42,7 @@ uv run python -m examples.corpus_search.benchmark.runner --mode mechanics
 Requires `EMBEDDING_BINDING_HOST` + `EMBEDDING_BINDING_API_KEY`.
 
 ```bash
-uv run python -m examples.corpus_search.benchmark.runner --mode real
+uv run python tests/examples/corpus_search/benchmark/runner.py --mode real
 ```
 
 Isolates raw hybrid retrieval (BM25 + semantic vectors, no expansion, no rerank).
@@ -52,7 +52,7 @@ Isolates raw hybrid retrieval (BM25 + semantic vectors, no expansion, no rerank)
 Adds the listwise Haiku reranker. Requires `ANTHROPIC_API_KEY`.
 
 ```bash
-uv run python -m examples.corpus_search.benchmark.runner --mode real --rerank
+uv run python tests/examples/corpus_search/benchmark/runner.py --mode real --rerank
 ```
 
 `substring_match` now reflects reranker quality; `Hit@K` / MRR still measure
@@ -65,7 +65,7 @@ Adds query expansion: paraphrase variants + one HyDE (Hypothetical Document
 Embedding) passage per query. Requires `ANTHROPIC_API_KEY`.
 
 ```bash
-uv run python -m examples.corpus_search.benchmark.runner --mode real --expand
+uv run python tests/examples/corpus_search/benchmark/runner.py --mode real --expand
 ```
 
 HyDE generates a short passage written *as if* it were an excerpt from the
@@ -77,7 +77,7 @@ the hyde passage, so you can inspect what the expander generated.
 ### 5. Full pipeline (expansion + reranker)
 
 ```bash
-uv run python -m examples.corpus_search.benchmark.runner --mode real --expand --rerank
+uv run python tests/examples/corpus_search/benchmark/runner.py --mode real --expand --rerank
 ```
 
 Matches production query behaviour exactly.
@@ -90,16 +90,16 @@ Save each run to a JSON file with `--json`, then diff or summarise.
 
 ```bash
 # Record baselines
-uv run python -m examples.corpus_search.benchmark.runner \
+uv run python tests/examples/corpus_search/benchmark/runner.py \
     --mode real --json runs/01_real.json
 
-uv run python -m examples.corpus_search.benchmark.runner \
+uv run python tests/examples/corpus_search/benchmark/runner.py \
     --mode real --rerank --json runs/02_real_rerank.json
 
-uv run python -m examples.corpus_search.benchmark.runner \
+uv run python tests/examples/corpus_search/benchmark/runner.py \
     --mode real --expand --json runs/03_real_expand.json
 
-uv run python -m examples.corpus_search.benchmark.runner \
+uv run python tests/examples/corpus_search/benchmark/runner.py \
     --mode real --expand --rerank --json runs/04_real_expand_rerank.json
 ```
 
@@ -205,7 +205,7 @@ retriever's ability to distinguish the correct source.
 2. Add a query entry to `queries.json` with `expected_doc_basenames` /
    `expected_substrings`.
 3. If the query is structurally novel (new category), add it to the table above.
-4. Re-run to confirm the floor assertions in `tests/corpus_search/test_benchmark_smoke.py`
+4. Re-run to confirm the floor assertions in `tests/unit/corpus_search/test_benchmark_smoke.py`
    still hold.
 
 ---

@@ -58,8 +58,8 @@ jobs:
           EMBEDDING_BINDING_HOST: ${{ secrets.EMBEDDING_BINDING_HOST }}
           EMBEDDING_BINDING_API_KEY: ${{ secrets.EMBEDDING_BINDING_API_KEY }}
         run: |
-          uv run python -m examples.corpus_search.benchmark.runner \
+          uv run python tests/examples/corpus_search/benchmark/runner.py \
             --mode real \
-            --json examples/corpus_search/benchmark/runs/nightly_real.json \
-            --baseline examples/corpus_search/benchmark/runs/baseline_real.json \
+            --json tests/examples/corpus_search/benchmark/runs/nightly_real.json \
+            --baseline tests/examples/corpus_search/benchmark/runs/baseline_real.json \
             --regression-tolerance 0.02

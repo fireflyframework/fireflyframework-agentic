@@ -23,7 +23,7 @@ the ingest/retrieval pipeline without requiring API keys.
 
 from __future__ import annotations
 
-from examples.corpus_search.benchmark.runner import run_benchmark
+from tests.examples.corpus_search.benchmark.runner import run_benchmark
 
 
 async def test_benchmark_mechanics_mode_completes_with_reasonable_floor():
@@ -68,7 +68,7 @@ def test_benchmark_corpus_and_queries_are_in_sync():
     import json
     from pathlib import Path
 
-    bench_dir = Path(__file__).parents[3] / "examples" / "corpus_search" / "benchmark"
+    bench_dir = Path(__file__).parents[2] / "examples" / "corpus_search" / "benchmark"
     corpus_files = {p.name for p in (bench_dir / "corpus").iterdir() if p.is_file()}
     queries = json.loads((bench_dir / "queries.json").read_text(encoding="utf-8"))["queries"]
 
