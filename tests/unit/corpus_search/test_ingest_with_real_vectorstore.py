@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Integration test: ingest_one against the framework's InMemoryVectorStore.
+"""Integration test: ingest_one against the framework's SqliteVecVectorStore.
 
 This is the regression test for the `_VectorDoc.content` vs `VectorDocument.text`
 bug — the previous duck-type stub silently accepted whatever attribute name the
@@ -36,7 +36,7 @@ from fireflyframework_agentic.embeddings.types import EmbeddingResult
 from fireflyframework_agentic.rag.corpus import SqliteCorpus
 from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
 from fireflyframework_agentic.rag.ingest.pipeline import ingest_one
-from fireflyframework_agentic.vectorstores.memory_store import InMemoryVectorStore
+from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
 
 
 class _DeterministicEmbedder:
@@ -60,7 +60,7 @@ async def deps(tmp_path):
     await corpus.initialise()
     ledger = IngestLedger(corpus)
     embedder = _DeterministicEmbedder()
-    vector_store = InMemoryVectorStore()
+    vector_store = SqliteVecVectorStore(db_path=tmp_path / "corpus.sqlite", dimension=4)
     chunker = TextChunker(chunk_size=80, chunk_overlap=10)
     loader = MarkitdownLoader()
     yield {
@@ -105,12 +105,11 @@ async def test_ingest_one_works_against_real_inmemory_vectorstore(deps, tmp_path
     chunk_ids = sorted(r["chunk_id"] for r in chunk_rows)
     assert len(chunk_ids) == result.n_chunks
 
-    # Round-trip search to confirm the text stored in the vector store is
-    # the chunk content (not None, not empty, not the wrong attribute).
+    # Round-trip search confirms the vector store accepted the upsert and
+    # returns the correct chunk IDs. SqliteVecVectorStore stores only embeddings
+    # (text is re-fetched from SqliteCorpus in the RAG path), so we check IDs only.
     qvec = await deps["embedder"].embed_one("hello")
     hits = await deps["vector_store"].search(qvec, top_k=10)
     assert len(hits) >= 1
-    # Each hit's stored document carries .text matching the chunk content.
     for hit in hits:
-        assert hit.document.text  # non-empty
         assert hit.document.id in chunk_ids
