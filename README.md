@@ -2,6 +2,7 @@
 **The production-grade GenAI metaframework built on [Pydantic AI](https://ai.pydantic.dev/).**
 
 [![PR gate](https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/pr-gate.yml/badge.svg?branch=main)](https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/pr-gate.yml)
+[![Nightly](https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/nightly.yml/badge.svg?branch=main)](https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/nightly.yml)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-1383%20passing-brightgreen.svg)]()
