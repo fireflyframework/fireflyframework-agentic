@@ -38,6 +38,16 @@ Example::
 
 from __future__ import annotations
 
-__all__ = ["CircuitBreaker", "CircuitBreakerMiddleware"]
+__all__ = [
+    "CircuitBreaker",
+    "CircuitBreakerMiddleware",
+    "CircuitBreakerOpenError",
+    "CircuitState",
+]
 
-from fireflyframework_agentic.resilience.circuit_breaker import CircuitBreaker, CircuitBreakerMiddleware
+from fireflyframework_agentic.resilience.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerMiddleware,
+    CircuitBreakerOpenError,
+    CircuitState,
+)

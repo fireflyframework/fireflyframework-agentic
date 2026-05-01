@@ -17,16 +17,14 @@ Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License
 - **MCP server.** New exposure module ships an MCP server and the
   `firefly-mcp` CLI for exposing agents over the Model Context Protocol
   (#93).
-- **Hexagonal ingestion module.** New `fireflyframework_agentic/ingestion/`
-  with domain models (`RawFile`, `TypedRecord`, `IngestionResult`,
-  `TargetSchema`), three ports (`DataSourcePort`, `MapperPort`,
-  `StructuredSinkPort`), a `SharePointSource` (Microsoft Graph, app-only
-  OAuth2, deltaLink incremental sync), a `ScriptMapper`, a `DuckDBSink`,
-  and a linear `IngestionService`. Adds `EnvSecretsProvider` and an
-  optional `AzureKeyVaultSecretsProvider`, an `ingestion.yaml` config
-  model, and a `firefly-ingest` CLI. New extras:
-  `[ingestion-sharepoint]`, `[ingestion-duckdb]`,
-  `[ingestion-keyvault]`, and umbrella `[ingestion]` (#84).
+<!--
+The hexagonal ingestion module described in #84 (RawFile/TypedRecord
+ports, SharePointSource, DuckDBSink, firefly-ingest CLI, [ingestion-*]
+extras) did not ship in v26.04.30 -- the source tree at HEAD has no
+`fireflyframework_agentic/ingestion/` package and `pyproject.toml` does
+not register `firefly-ingest` as a script. Track in a follow-up release.
+-->
+
 - **Corpus-search example agent.** New `examples/corpus_search/` ships a
   folder-ingestion + hybrid-search agent: `markitdown` → chunk → embed
   (Azure OpenAI by default) → SQLite FTS5 + Chroma. Query pipeline is
