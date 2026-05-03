@@ -1,6 +1,6 @@
 # Security Guide
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The Security module provides prompt injection detection, input sanitisation,
 and output scanning to protect agents from adversarial user input **and**

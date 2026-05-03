@@ -1,6 +1,6 @@
 # Experiments Guide
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The Experiments module provides A/B testing for agent variants, metric tracking,
 and statistical comparison.

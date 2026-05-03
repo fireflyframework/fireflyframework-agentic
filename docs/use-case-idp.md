@@ -1,6 +1,6 @@
 # Use Case: Intelligent Document Processing (IDP)
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 This guide demonstrates how to build a production-grade Intelligent Document Processing
 pipeline using fireflyframework-agentic. The pipeline takes a raw document (PDF, image,
