@@ -4,7 +4,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](../LICENSE)
 [![Version](https://img.shields.io/badge/version-26.01.01-blueviolet.svg)]()
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 ---
 
@@ -139,4 +139,4 @@ standards, testing, and the pull request process.
 
 ---
 
-*Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.*
+*Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.*

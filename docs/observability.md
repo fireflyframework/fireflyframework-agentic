@@ -1,6 +1,6 @@
 # Observability Guide
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The Observability module provides OpenTelemetry-native tracing, custom metrics, and
 event recording for GenAI workloads.

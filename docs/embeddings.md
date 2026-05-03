@@ -1,6 +1,6 @@
 # Embeddings Guide
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The Embeddings module provides provider-agnostic text embedding generation with
 auto-batching, token estimation, and a pluggable provider registry. It supports

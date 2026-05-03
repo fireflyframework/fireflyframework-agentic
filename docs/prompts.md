@@ -1,6 +1,6 @@
 # Prompts Guide
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The Prompts module provides a Jinja2-based template engine with versioning, composition
 strategies, variable validation, and file-based loaders.

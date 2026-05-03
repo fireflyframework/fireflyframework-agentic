@@ -1,6 +1,6 @@
 # Content Processing Guide
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The Content module provides utilities for splitting, chunking, and compressing large
 inputs before they are sent to LLM agents. This is essential for processing documents,

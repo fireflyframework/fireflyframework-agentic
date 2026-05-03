@@ -1,6 +1,6 @@
 # Contributing to fireflyframework-agentic
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 Thank you for considering a contribution. This document explains how to set up
 your development environment, the coding standards we follow, and the process
@@ -93,7 +93,7 @@ uv run pyright src/
 Every Python source file must begin with the Apache 2.0 copyright header:
 
 ```python
-# Copyright 2026 Firefly Software Solutions Inc
+# Copyright 2026 Firefly Software Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
