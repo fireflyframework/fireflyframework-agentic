@@ -30,28 +30,17 @@ import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+import httpx
 from pydantic import BaseModel, Field
 
 from fireflyframework_agentic.content.sources.base import RawFile
-
-if TYPE_CHECKING:
-    import httpx
-
-try:
-    import httpx as _httpx
-except ImportError as _httpx_import_error:  # pragma: no cover
-    _httpx = None  # type: ignore[assignment]
-    _HTTPX_IMPORT_ERROR: ImportError | None = _httpx_import_error
-else:
-    _HTTPX_IMPORT_ERROR = None
 
 logger = logging.getLogger(__name__)
 
 GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
 TOKEN_LEEWAY_SECONDS = 60
-_AZURE_EXTRA_HINT = "SharePointSource requires the [azure] extra: pip install fireflyframework-agentic[azure]"
 
 
 class SharePointSourceConfig(BaseModel):
@@ -95,14 +84,11 @@ class SharePointSource:
         client_secret: str,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
-        if _HTTPX_IMPORT_ERROR is not None or _httpx is None:
-            raise ImportError(_AZURE_EXTRA_HINT) from _HTTPX_IMPORT_ERROR
-
         self._config = config
         self._tenant_id = tenant_id
         self._client_id = client_id
         self._client_secret = client_secret
-        self._client = http_client or _httpx.AsyncClient(
+        self._client = http_client or httpx.AsyncClient(
             timeout=config.request_timeout_seconds,
         )
         self._owns_client = http_client is None
