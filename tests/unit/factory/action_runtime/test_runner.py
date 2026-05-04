@@ -1,6 +1,7 @@
 # Copyright 2026 Firefly Software Foundation
 # Licensed under the Apache License, Version 2.0
 """End-to-end test for runner.run_agent using a built-in TestModel-backed agent."""
+
 from __future__ import annotations
 
 import asyncio
@@ -72,9 +73,7 @@ def test_run_agent_loads_feedback_when_iteration_gt_one(
     stub_agent: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    (tmp_runner_temp / "qa_report.json").write_text(
-        json.dumps({"passed": False, "summary": "the test failed"})
-    )
+    (tmp_runner_temp / "qa_report.json").write_text(json.dumps({"passed": False, "summary": "the test failed"}))
     monkeypatch.setenv("INPUT_INTENT", "fix it")
     monkeypatch.setenv("INPUT_ITERATION", "2")
 

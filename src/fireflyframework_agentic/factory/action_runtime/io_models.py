@@ -17,6 +17,7 @@
 Per-agent Input/Output schemas (PRD, ADR, QAReport, ...) live with the
 specialized agents (Spec 3). Only the runtime-shared `RunResult` is here.
 """
+
 from __future__ import annotations
 
 from pydantic import BaseModel, Field

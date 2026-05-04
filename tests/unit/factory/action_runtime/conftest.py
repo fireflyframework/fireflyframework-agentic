@@ -1,6 +1,7 @@
 # Copyright 2026 Firefly Software Foundation
 # Licensed under the Apache License, Version 2.0
 """Shared fixtures for action_runtime tests."""
+
 from __future__ import annotations
 
 from pathlib import Path

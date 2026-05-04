@@ -1,6 +1,7 @@
 # Copyright 2026 Firefly Software Foundation
 # Licensed under the Apache License, Version 2.0
 """Read and write artifact files in `$RUNNER_TEMP/factory/`."""
+
 from __future__ import annotations
 
 import json

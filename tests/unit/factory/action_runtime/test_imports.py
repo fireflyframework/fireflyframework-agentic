@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """Smoke import test for the factory action_runtime package."""
+
 from __future__ import annotations
 
 import fireflyframework_agentic.factory.action_runtime as rt

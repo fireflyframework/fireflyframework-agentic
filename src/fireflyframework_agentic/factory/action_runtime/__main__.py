@@ -1,6 +1,7 @@
 # Copyright 2026 Firefly Software Foundation
 # Licensed under the Apache License, Version 2.0
 """CLI entry point: `python -m fireflyframework_agentic.factory.action_runtime`."""
+
 from __future__ import annotations
 
 import argparse

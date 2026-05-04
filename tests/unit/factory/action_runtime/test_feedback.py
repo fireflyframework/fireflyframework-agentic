@@ -1,6 +1,7 @@
 # Copyright 2026 Firefly Software Foundation
 # Licensed under the Apache License, Version 2.0
 """Tests for the feedback module."""
+
 from __future__ import annotations
 
 import json

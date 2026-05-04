@@ -1,6 +1,7 @@
 # Copyright 2026 Firefly Software Foundation
 # Licensed under the Apache License, Version 2.0
 """Action runtime: turns a registered FireflyAgent into a GitHub Action run."""
+
 from __future__ import annotations
 
 from fireflyframework_agentic.factory.action_runtime.exceptions import (

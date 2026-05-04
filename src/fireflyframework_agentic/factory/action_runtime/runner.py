@@ -1,6 +1,7 @@
 # Copyright 2026 Firefly Software Foundation
 # Licensed under the Apache License, Version 2.0
 """Top-level entrypoint that runs a registered agent end-to-end inside an Action."""
+
 from __future__ import annotations
 
 import json

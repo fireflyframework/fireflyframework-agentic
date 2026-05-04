@@ -1,6 +1,7 @@
 # Copyright 2026 Firefly Software Foundation
 # Licensed under the Apache License, Version 2.0
 """Tests for github_outputs.write_output."""
+
 from __future__ import annotations
 
 from pathlib import Path

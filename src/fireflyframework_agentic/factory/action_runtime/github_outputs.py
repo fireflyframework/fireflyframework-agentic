@@ -7,6 +7,7 @@ by appending lines to this file. Multi-line values must use the heredoc form
 documented at:
 https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#setting-an-output-parameter
 """
+
 from __future__ import annotations
 
 import os

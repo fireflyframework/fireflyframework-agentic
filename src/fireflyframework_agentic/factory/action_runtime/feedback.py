@@ -7,6 +7,7 @@ module accepts the report as a free-form dict so the runtime stays
 agent-agnostic; agents that consume the feedback can validate it against
 their own model.
 """
+
 from __future__ import annotations
 
 from typing import Any

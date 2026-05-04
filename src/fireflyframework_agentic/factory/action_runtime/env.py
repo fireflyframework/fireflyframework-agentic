@@ -1,6 +1,7 @@
 # Copyright 2026 Firefly Software Foundation
 # Licensed under the Apache License, Version 2.0
 """Parse `INPUT_*` env vars set by GitHub Actions for Docker actions."""
+
 from __future__ import annotations
 
 import os
@@ -18,5 +19,5 @@ def read_action_inputs() -> dict[str, str]:
     for key, value in os.environ.items():
         if not key.startswith("INPUT_"):
             continue
-        out[key[len("INPUT_"):].lower()] = value
+        out[key[len("INPUT_") :].lower()] = value
     return out
