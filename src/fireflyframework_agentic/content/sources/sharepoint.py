@@ -51,10 +51,7 @@ logger = logging.getLogger(__name__)
 
 GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
 TOKEN_LEEWAY_SECONDS = 60
-_AZURE_EXTRA_HINT = (
-    "SharePointSource requires the [azure] extra: "
-    "pip install fireflyframework-agentic[azure]"
-)
+_AZURE_EXTRA_HINT = "SharePointSource requires the [azure] extra: pip install fireflyframework-agentic[azure]"
 
 
 class SharePointSourceConfig(BaseModel):
@@ -162,7 +159,9 @@ class SharePointSource:
             follow_redirects = kwargs.pop("follow_redirects", False)
             request = self._client.build_request(method, url, headers=headers, **kwargs)
             response = await self._client.send(
-                request, stream=True, follow_redirects=follow_redirects,
+                request,
+                stream=True,
+                follow_redirects=follow_redirects,
             )
         else:
             response = await self._client.request(method, url, headers=headers, **kwargs)
@@ -223,11 +222,7 @@ class SharePointSource:
         if not item_id:
             return None
         name = item.get("name", item_id)
-        etag = (
-            item.get("eTag")
-            or item.get("file", {}).get("hashes", {}).get("quickXorHash")
-            or ""
-        ).strip('"')
+        etag = (item.get("eTag") or item.get("file", {}).get("hashes", {}).get("quickXorHash") or "").strip('"')
         parent_path = (item.get("parentReference") or {}).get("path", "")
         return RawFile(
             source_id=f"sharepoint:{item_id}",
