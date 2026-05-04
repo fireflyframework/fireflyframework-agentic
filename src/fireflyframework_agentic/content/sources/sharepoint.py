@@ -156,9 +156,7 @@ class SharePointSource:
         headers["Authorization"] = f"Bearer {token}"
         # Never follow redirects with the Authorization header attached;
         # cross-origin redirect targets must be handled explicitly.
-        response = await self._client.request(
-            method, url, headers=headers, follow_redirects=False, **kwargs
-        )
+        response = await self._client.request(method, url, headers=headers, follow_redirects=False, **kwargs)
         response.raise_for_status()
         return response
 
@@ -179,9 +177,7 @@ class SharePointSource:
         try:
             _assert_graph_url(cursor)
         except ValueError:
-            logger.warning(
-                "ignoring persisted delta cursor that is not a Graph URL: %r", cursor
-            )
+            logger.warning("ignoring persisted delta cursor that is not a Graph URL: %r", cursor)
             return None
         return cursor
 
@@ -248,11 +244,7 @@ class SharePointSource:
         if not item_id:
             return None
         name = item.get("name", item_id)
-        etag = (
-            item.get("eTag")
-            or item.get("file", {}).get("hashes", {}).get("quickXorHash")
-            or ""
-        ).strip('"')
+        etag = (item.get("eTag") or item.get("file", {}).get("hashes", {}).get("quickXorHash") or "").strip('"')
         parent_path = (item.get("parentReference") or {}).get("path", "")
         return RawFile(
             source_id=f"sharepoint:{item_id}",
@@ -287,9 +279,7 @@ class SharePointSource:
 
         local_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = local_path.with_suffix(local_path.suffix + ".part")
-        async with self._client.stream(
-            "GET", download_url, headers=headers, follow_redirects=False
-        ) as response:
+        async with self._client.stream("GET", download_url, headers=headers, follow_redirects=False) as response:
             response.raise_for_status()
             with tmp.open("wb") as f:
                 async for chunk in response.aiter_bytes():
@@ -312,9 +302,7 @@ class SharePointSource:
         _assert_graph_url(url)
         token = await self._token_provider()
         auth_headers = {"Authorization": f"Bearer {token}"}
-        response = await self._client.request(
-            "GET", url, headers=auth_headers, follow_redirects=False
-        )
+        response = await self._client.request("GET", url, headers=auth_headers, follow_redirects=False)
         try:
             if response.status_code in (301, 302, 303, 307, 308):
                 location = response.headers.get("Location")
@@ -325,9 +313,7 @@ class SharePointSource:
                         response=response,
                     )
                 if not location.startswith("https://"):
-                    raise ValueError(
-                        f"refusing to follow non-https redirect target: {location!r}"
-                    )
+                    raise ValueError(f"refusing to follow non-https redirect target: {location!r}")
                 return location, {}
             response.raise_for_status()
         finally:
@@ -349,10 +335,7 @@ class SharePointSource:
         safe_name = _sanitise_segment(Path(name.replace("\\", "/")).name) or "file"
         candidate = (self._config.cache_dir / safe_id / safe_name).resolve()
         if not _is_relative_to(candidate, self._cache_root_resolved):
-            raise ValueError(
-                f"refusing to write outside cache_dir: {candidate} not under "
-                f"{self._cache_root_resolved}"
-            )
+            raise ValueError(f"refusing to write outside cache_dir: {candidate} not under {self._cache_root_resolved}")
         return candidate
 
     @staticmethod

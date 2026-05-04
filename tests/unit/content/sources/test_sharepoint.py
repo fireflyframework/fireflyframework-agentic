@@ -75,9 +75,7 @@ def _make_handler(routes: dict[str, httpx.Response]) -> httpx.MockTransport:
 async def test_sharepoint_source_satisfies_protocol(tmp_path: Path) -> None:
     transport = _make_handler({})
     async with httpx.AsyncClient(transport=transport) as client:
-        source = SharePointSource(
-            _config(tmp_path), token_provider=_token_provider(), http_client=client
-        )
+        source = SharePointSource(_config(tmp_path), token_provider=_token_provider(), http_client=client)
     assert isinstance(source, ContentSource)
 
 
@@ -89,9 +87,7 @@ async def test_token_provider_is_called_per_request(tmp_path: Path) -> None:
                 200,
                 json={
                     "value": [],
-                    "@odata.deltaLink": (
-                        f"{GRAPH_ROOT}/drives/{DRIVE_ID}/root/delta?token=cursor"
-                    ),
+                    "@odata.deltaLink": (f"{GRAPH_ROOT}/drives/{DRIVE_ID}/root/delta?token=cursor"),
                 },
             ),
         }
@@ -158,9 +154,7 @@ async def test_list_changed_yields_files_and_does_not_auto_commit(tmp_path: Path
         }
     )
     async with httpx.AsyncClient(transport=transport) as client:
-        source = SharePointSource(
-            _config(tmp_path), token_provider=_token_provider(), http_client=client
-        )
+        source = SharePointSource(_config(tmp_path), token_provider=_token_provider(), http_client=client)
         result = [f async for f in source.list_changed(None)]
 
         assert len(result) == 1
@@ -178,9 +172,7 @@ async def test_list_changed_yields_files_and_does_not_auto_commit(tmp_path: Path
 async def test_pending_cursor_returns_none_before_iteration(tmp_path: Path) -> None:
     transport = _make_handler({})
     async with httpx.AsyncClient(transport=transport) as client:
-        source = SharePointSource(
-            _config(tmp_path), token_provider=_token_provider(), http_client=client
-        )
+        source = SharePointSource(_config(tmp_path), token_provider=_token_provider(), http_client=client)
         assert await source.pending_cursor() is None
 
 
@@ -229,9 +221,7 @@ async def test_list_changed_paginates_via_next_link(tmp_path: Path) -> None:
 
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as client:
-        source = SharePointSource(
-            _config(tmp_path), token_provider=_token_provider(), http_client=client
-        )
+        source = SharePointSource(_config(tmp_path), token_provider=_token_provider(), http_client=client)
         result = [f async for f in source.list_changed(None)]
     assert [r.name for r in result] == ["a.csv", "b.csv"]
     assert await source.pending_cursor() == final_cursor
@@ -260,9 +250,7 @@ async def test_list_changed_filters_by_root_folder(tmp_path: Path) -> None:
                             "parentReference": {"path": "/drives/x/root:/Other"},
                         },
                     ],
-                    "@odata.deltaLink": (
-                        f"{GRAPH_ROOT}/drives/{DRIVE_ID}/root/delta?token=d"
-                    ),
+                    "@odata.deltaLink": (f"{GRAPH_ROOT}/drives/{DRIVE_ID}/root/delta?token=d"),
                 },
             ),
         }
@@ -297,9 +285,7 @@ async def test_list_changed_filters_by_mime_type(tmp_path: Path) -> None:
                             "parentReference": {"path": "/x"},
                         },
                     ],
-                    "@odata.deltaLink": (
-                        f"{GRAPH_ROOT}/drives/{DRIVE_ID}/root/delta?token=d"
-                    ),
+                    "@odata.deltaLink": (f"{GRAPH_ROOT}/drives/{DRIVE_ID}/root/delta?token=d"),
                 },
             ),
         }
@@ -330,17 +316,13 @@ async def test_etag_falls_back_to_quick_xor_hash(tmp_path: Path) -> None:
                             "parentReference": {"path": "/x"},
                         }
                     ],
-                    "@odata.deltaLink": (
-                        f"{GRAPH_ROOT}/drives/{DRIVE_ID}/root/delta?token=d"
-                    ),
+                    "@odata.deltaLink": (f"{GRAPH_ROOT}/drives/{DRIVE_ID}/root/delta?token=d"),
                 },
             ),
         }
     )
     async with httpx.AsyncClient(transport=transport) as client:
-        source = SharePointSource(
-            _config(tmp_path), token_provider=_token_provider(), http_client=client
-        )
+        source = SharePointSource(_config(tmp_path), token_provider=_token_provider(), http_client=client)
         result = [f async for f in source.list_changed(None)]
     assert result[0].etag == "fallback-hash"
 
@@ -353,9 +335,7 @@ async def test_fetch_downloads_directly_when_graph_returns_200(tmp_path: Path) -
         }
     )
     async with httpx.AsyncClient(transport=transport) as client:
-        source = SharePointSource(
-            _config(tmp_path), token_provider=_token_provider(), http_client=client
-        )
+        source = SharePointSource(_config(tmp_path), token_provider=_token_provider(), http_client=client)
         raw = RawFile(
             source_id="sharepoint:item-1",
             name="Q1.csv",
@@ -387,9 +367,7 @@ async def test_fetch_strips_authorization_on_redirect(tmp_path: Path) -> None:
 
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as client:
-        source = SharePointSource(
-            _config(tmp_path), token_provider=_token_provider(), http_client=client
-        )
+        source = SharePointSource(_config(tmp_path), token_provider=_token_provider(), http_client=client)
         raw = RawFile(
             source_id="sharepoint:item-1",
             name="Q1.csv",
@@ -411,15 +389,11 @@ async def test_fetch_refuses_non_https_redirect(tmp_path: Path) -> None:
     content_url = f"{GRAPH_ROOT}/drives/{DRIVE_ID}/items/item-1/content"
     transport = _make_handler(
         {
-            content_url: httpx.Response(
-                302, headers={"Location": "http://attacker.example.com/leak"}
-            ),
+            content_url: httpx.Response(302, headers={"Location": "http://attacker.example.com/leak"}),
         }
     )
     async with httpx.AsyncClient(transport=transport) as client:
-        source = SharePointSource(
-            _config(tmp_path), token_provider=_token_provider(), http_client=client
-        )
+        source = SharePointSource(_config(tmp_path), token_provider=_token_provider(), http_client=client)
         raw = RawFile(
             source_id="sharepoint:item-1",
             name="Q1.csv",
@@ -465,9 +439,7 @@ async def test_fetch_uses_cache_on_etag_match(tmp_path: Path) -> None:
 async def test_fetch_rejects_unprefixed_source_id(tmp_path: Path) -> None:
     transport = _make_handler({})
     async with httpx.AsyncClient(transport=transport) as client:
-        source = SharePointSource(
-            _config(tmp_path), token_provider=_token_provider(), http_client=client
-        )
+        source = SharePointSource(_config(tmp_path), token_provider=_token_provider(), http_client=client)
         raw = RawFile(
             source_id="s3:foo",
             name="x",
@@ -483,9 +455,7 @@ async def test_fetch_rejects_unprefixed_source_id(tmp_path: Path) -> None:
 async def test_current_cursor_returns_none_when_missing(tmp_path: Path) -> None:
     transport = _make_handler({})
     async with httpx.AsyncClient(transport=transport) as client:
-        source = SharePointSource(
-            _config(tmp_path), token_provider=_token_provider(), http_client=client
-        )
+        source = SharePointSource(_config(tmp_path), token_provider=_token_provider(), http_client=client)
         assert await source.current_cursor() is None
 
 
@@ -504,9 +474,7 @@ async def test_current_cursor_rejects_non_graph_url(tmp_path: Path) -> None:
     """Tampered delta file pointing at attacker host must NOT be returned."""
     cfg = _config(tmp_path)
     cfg.delta_file.parent.mkdir(parents=True, exist_ok=True)
-    cfg.delta_file.write_text(
-        json.dumps({"delta_link": "https://attacker.example.com/steal-token"})
-    )
+    cfg.delta_file.write_text(json.dumps({"delta_link": "https://attacker.example.com/steal-token"}))
     transport = _make_handler({})
     async with httpx.AsyncClient(transport=transport) as client:
         source = SharePointSource(cfg, token_provider=_token_provider(), http_client=client)
@@ -516,9 +484,7 @@ async def test_current_cursor_rejects_non_graph_url(tmp_path: Path) -> None:
 async def test_list_changed_rejects_non_graph_since_cursor(tmp_path: Path) -> None:
     transport = _make_handler({})
     async with httpx.AsyncClient(transport=transport) as client:
-        source = SharePointSource(
-            _config(tmp_path), token_provider=_token_provider(), http_client=client
-        )
+        source = SharePointSource(_config(tmp_path), token_provider=_token_provider(), http_client=client)
         with pytest.raises(ValueError, match="non-Graph URL"):
             async for _ in source.list_changed("https://attacker.example.com/page"):
                 pass
@@ -538,9 +504,7 @@ async def test_list_changed_rejects_non_graph_next_link(tmp_path: Path) -> None:
         }
     )
     async with httpx.AsyncClient(transport=transport) as client:
-        source = SharePointSource(
-            _config(tmp_path), token_provider=_token_provider(), http_client=client
-        )
+        source = SharePointSource(_config(tmp_path), token_provider=_token_provider(), http_client=client)
         with pytest.raises(ValueError, match="non-Graph URL"):
             async for _ in source.list_changed(None):
                 pass
@@ -549,9 +513,7 @@ async def test_list_changed_rejects_non_graph_next_link(tmp_path: Path) -> None:
 async def test_commit_delta_rejects_non_graph_cursor(tmp_path: Path) -> None:
     transport = _make_handler({})
     async with httpx.AsyncClient(transport=transport) as client:
-        source = SharePointSource(
-            _config(tmp_path), token_provider=_token_provider(), http_client=client
-        )
+        source = SharePointSource(_config(tmp_path), token_provider=_token_provider(), http_client=client)
         with pytest.raises(ValueError, match="non-Graph URL"):
             await source.commit_delta("https://attacker.example.com/cursor")
 
