@@ -32,5 +32,3 @@ def test_mcp_is_mounted() -> None:
     app = build_app()
     mounted_paths = {route.path for route in app.routes}
     assert any(path.startswith("/mcp") for path in mounted_paths)
-
-
