@@ -429,7 +429,8 @@ async def test_raises_for_status_on_token_failure(tmp_path: Path) -> None:
     transport = _make_handler(
         {
             "https://login.microsoftonline.com/": httpx.Response(
-                401, json={"error": "unauthorized"},
+                401,
+                json={"error": "unauthorized"},
             ),
         }
     )
