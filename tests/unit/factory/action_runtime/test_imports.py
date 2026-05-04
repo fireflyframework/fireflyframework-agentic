@@ -21,6 +21,7 @@ from fireflyframework_agentic.factory.action_runtime.exceptions import (
     ActionRuntimeError,
     MissingArtifactError,
 )
+from fireflyframework_agentic.factory.action_runtime.io_models import RunResult
 
 
 def test_action_runtime_package_imports() -> None:
@@ -31,3 +32,9 @@ def test_exceptions_import() -> None:
     assert issubclass(MissingArtifactError, ActionRuntimeError)
     assert MissingArtifactError.exit_code == 78
     assert ActionInputError.exit_code == 1
+
+
+def test_run_result_model() -> None:
+    r = RunResult(agent="product_owner", outputs={"pr_number": "42"}, cost_usd=0.1, tokens_in=10, tokens_out=20)
+    assert r.agent == "product_owner"
+    assert r.outputs == {"pr_number": "42"}
