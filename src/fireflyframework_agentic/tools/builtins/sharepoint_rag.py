@@ -41,7 +41,7 @@ from fireflyframework_agentic.tools.decorators import firefly_tool
 from fireflyframework_agentic.vectorstores.memory_store import InMemoryVectorStore
 
 try:
-    from fireflyframework_agentic.content.sources.sharepoint import (
+    from fireflyframework_agentic.content.sources.sharepoint import (  # pyright: ignore[reportMissingImports]
         SharePointSource,
         SharePointSourceConfig,
     )
