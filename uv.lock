@@ -1064,9 +1064,10 @@ wheels = [
 
 [[package]]
 name = "fireflyframework-agentic"
-version = "26.4.28"
+version = "26.4.30"
 source = { editable = "." }
 dependencies = [
+    { name = "httpx" },
     { name = "jinja2" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-sdk" },
@@ -1109,7 +1110,6 @@ all = [
 ]
 azure = [
     { name = "azure-identity" },
-    { name = "httpx" },
     { name = "msal" },
     { name = "pyjwt", extra = ["crypto"] },
 ]
@@ -1154,9 +1154,6 @@ embeddings = [
 ]
 google-embeddings = [
     { name = "google-generativeai" },
-]
-http = [
-    { name = "httpx" },
 ]
 kafka = [
     { name = "aiokafka" },
@@ -1249,9 +1246,8 @@ requires-dist = [
     { name = "fireflyframework-agentic", extras = ["rest", "queues", "postgres", "mongodb", "security", "http", "costs", "embeddings", "openai-embeddings", "cohere-embeddings", "google-embeddings", "mistral-embeddings", "voyage-embeddings", "azure-embeddings", "bedrock-embeddings", "ollama-embeddings", "corpus-search", "vectorstores-chroma", "vectorstores-pinecone", "vectorstores-qdrant", "vectorstores-sqlite-vec", "markitdown", "watch"], marker = "extra == 'all'" },
     { name = "genai-prices", marker = "extra == 'costs'", specifier = ">=0.0.1" },
     { name = "google-generativeai", marker = "extra == 'google-embeddings'", specifier = ">=0.8.0" },
-    { name = "httpx", marker = "extra == 'azure'", specifier = ">=0.28.0" },
+    { name = "httpx", specifier = ">=0.28.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.0" },
-    { name = "httpx", marker = "extra == 'http'", specifier = ">=0.28.0" },
     { name = "httpx", marker = "extra == 'ollama-embeddings'", specifier = ">=0.28.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "markdown-it-py", marker = "extra == 'markitdown'", specifier = ">=3.0" },
@@ -1292,7 +1288,7 @@ requires-dist = [
     { name = "voyageai", marker = "extra == 'voyage-embeddings'", specifier = ">=0.3.0" },
     { name = "watchfiles", marker = "extra == 'watch'", specifier = ">=0.24.0" },
 ]
-provides-extras = ["rest", "kafka", "rabbitmq", "redis", "queues", "postgres", "mongodb", "security", "azure", "mcp", "http", "costs", "embeddings", "openai-embeddings", "cohere-embeddings", "google-embeddings", "mistral-embeddings", "markitdown", "voyage-embeddings", "azure-embeddings", "bedrock-embeddings", "ollama-embeddings", "rag", "corpus-search", "vectorstores-chroma", "vectorstores-sqlite-vec", "vectorstores-pinecone", "vectorstores-qdrant", "watch", "all", "dev"]
+provides-extras = ["rest", "kafka", "rabbitmq", "redis", "queues", "postgres", "mongodb", "security", "azure", "mcp", "costs", "embeddings", "openai-embeddings", "cohere-embeddings", "google-embeddings", "mistral-embeddings", "markitdown", "voyage-embeddings", "azure-embeddings", "bedrock-embeddings", "ollama-embeddings", "rag", "corpus-search", "vectorstores-chroma", "vectorstores-sqlite-vec", "vectorstores-pinecone", "vectorstores-qdrant", "watch", "all", "dev"]
 
 [[package]]
 name = "flatbuffers"
