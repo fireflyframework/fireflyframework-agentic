@@ -12,22 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Smoke import test for the factory action_runtime package."""
+"""Typed errors raised by the action runtime."""
 from __future__ import annotations
 
-import fireflyframework_agentic.factory.action_runtime as rt
-from fireflyframework_agentic.factory.action_runtime.exceptions import (
-    ActionInputError,
-    ActionRuntimeError,
-    MissingArtifactError,
-)
+from fireflyframework_agentic.exceptions import FireflyAgenticError
 
 
-def test_action_runtime_package_imports() -> None:
-    assert rt is not None
+class ActionRuntimeError(FireflyAgenticError):
+    """Base class for action-runtime errors."""
+
+    exit_code: int = 1
 
 
-def test_exceptions_import() -> None:
-    assert issubclass(MissingArtifactError, ActionRuntimeError)
-    assert MissingArtifactError.exit_code == 78
-    assert ActionInputError.exit_code == 1
+class MissingArtifactError(ActionRuntimeError):
+    """A required artifact was not found in `$RUNNER_TEMP/factory/`."""
+
+    exit_code: int = 78  # GitHub Actions "skipped" exit code
+
+
+class ActionInputError(ActionRuntimeError):
+    """An `INPUT_*` env var was missing or could not be parsed."""
+
+    exit_code: int = 1
