@@ -270,7 +270,7 @@ class SharePointSource:
                     logger.debug("cache hit for %s (etag %s)", file.source_id, file.etag)
                     return local_path
             except (OSError, json.JSONDecodeError):
-                pass
+                logger.debug("cache metadata unreadable for %s; refetching content", file.source_id, exc_info=True)
 
         url = f"{GRAPH_ROOT}/drives/{self._config.drive_id}/items/{item_id}/content"
         # Manual redirect handling: Graph 302s /content to a storage URL.
