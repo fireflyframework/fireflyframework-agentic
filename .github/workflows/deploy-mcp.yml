@@ -17,7 +17,6 @@ permissions:
   contents: read
 
 env:
-  AZURE_SUBSCRIPTION_ID: e8b8063e-f842-4a59-9754-427ddb7bfb63
   RESOURCE_GROUP: rg-firefly
   ACR_NAME: fireflysignature
   CONTAINER_APP: firefly-mcp
@@ -34,7 +33,7 @@ jobs:
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: ACR login
         run: az acr login --name ${{ env.ACR_NAME }}
