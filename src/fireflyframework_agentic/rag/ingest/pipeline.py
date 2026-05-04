@@ -14,14 +14,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import hashlib
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from fireflyframework_agentic.content.chunking import Chunker
 from fireflyframework_agentic.content.loaders import Document, MarkitdownLoader
+from fireflyframework_agentic.content.sources.base import ContentSource, RawFile
 from fireflyframework_agentic.embeddings.base import EmbeddingProtocol
 from fireflyframework_agentic.rag.corpus import SqliteCorpus, StoredChunk
 from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
@@ -185,3 +188,95 @@ async def ingest_one(
                 await vector_store.delete(ids_to_drop)
         await ledger.upsert(doc_id, source_path, content_hash, status="failed")
         return IngestionResult(doc_id=doc_id, source_path=source_path, status="failed", n_chunks=0)
+
+
+async def ingest_from_source(
+    *,
+    source: ContentSource,
+    corpus: SqliteCorpus,
+    vector_store: VectorStoreProtocol,
+    embedder: EmbeddingProtocol,
+    ledger: IngestLedger,
+    chunker: Chunker,
+    loader: MarkitdownLoader,
+    mode: Literal["incremental", "full"] = "incremental",
+    max_concurrency: int = 1,
+) -> list[IngestionResult]:
+    """Drain a :class:`ContentSource` and ingest each file via :func:`ingest_one`.
+
+    ``max_concurrency=1`` runs linearly (default). ``max_concurrency>1`` runs
+    bounded-concurrent ingestion via an :class:`asyncio.Semaphore`; tasks are
+    scheduled while the iterator is still pulling pages, so file *N+1* can
+    download while file *N* is still embedding.
+
+    The cursor is committed once, after the iterator has drained AND all
+    in-flight ingestions have completed. If either the iterator or any task
+    raises, the cursor is left untouched so the next run re-lists from the
+    previous position. Per-file failures (returned as
+    ``IngestionResult.status='failed'``) do not block the commit; they are
+    recorded in the ledger and re-tried via ledger replay, not delta replay.
+    """
+    if max_concurrency < 1:
+        raise ValueError(f"max_concurrency must be >= 1, got {max_concurrency}")
+
+    cursor = None if mode == "full" else await source.current_cursor()
+    iteration_completed = False
+    results: list[IngestionResult] = []
+    try:
+        if max_concurrency == 1:
+            async for raw in source.list_changed(cursor):
+                local_path = await source.fetch(raw)
+                results.append(
+                    await ingest_one(
+                        path=local_path,
+                        corpus=corpus,
+                        vector_store=vector_store,
+                        embedder=embedder,
+                        ledger=ledger,
+                        chunker=chunker,
+                        loader=loader,
+                    )
+                )
+            iteration_completed = True
+        else:
+            sem = asyncio.Semaphore(max_concurrency)
+
+            async def _process(raw: RawFile) -> IngestionResult:
+                try:
+                    local_path = await source.fetch(raw)
+                    return await ingest_one(
+                        path=local_path,
+                        corpus=corpus,
+                        vector_store=vector_store,
+                        embedder=embedder,
+                        ledger=ledger,
+                        chunker=chunker,
+                        loader=loader,
+                    )
+                finally:
+                    sem.release()
+
+            tasks: list[asyncio.Task[IngestionResult]] = []
+            try:
+                async for raw in source.list_changed(cursor):
+                    # Acquire the slot in the producer loop. This back-pressures
+                    # the iterator and bounds outstanding Task objects to
+                    # max_concurrency, regardless of how large the listing is.
+                    await sem.acquire()
+                    tasks.append(asyncio.create_task(_process(raw)))
+                results = await asyncio.gather(*tasks)
+                iteration_completed = True
+            except Exception:
+                for t in tasks:
+                    if not t.done():
+                        t.cancel()
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                raise
+    finally:
+        if iteration_completed:
+            pending = await source.pending_cursor()
+            if pending is not None:
+                await source.commit_delta(pending)
+
+    return results
