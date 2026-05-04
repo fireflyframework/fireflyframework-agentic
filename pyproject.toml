@@ -5,10 +5,10 @@ description = "A GenAI metaframework built on Pydantic AI for building productio
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [
-    { name = "Firefly Software Solutions Inc" }
+    { name = "Firefly Software Foundation" }
 ]
 maintainers = [
-    { name = "Firefly Software Solutions Inc" }
+    { name = "Firefly Software Foundation" }
 ]
 requires-python = ">=3.13"
 classifiers = [

@@ -1,6 +1,6 @@
 # Explainability Guide
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The Explainability module records agent decisions, generates human-readable explanations,
 maintains audit trails, and produces reports.

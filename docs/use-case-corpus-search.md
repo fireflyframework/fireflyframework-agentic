@@ -1,6 +1,6 @@
 # Use Case: Corpus Search (`CorpusAgent`)
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 | | |
 |---|---|
@@ -602,7 +602,7 @@ graph layer; the V2 extractors then become graph populators rather than one-shot
 1. **CLI subcommand naming**: `ingest` and `query`. If you prefer `index` instead of `ingest`, easy rename.
 2. **Default `--root` is `./kg/`** even though there is no graph in V1; the directory name is preserved for V2/V3 continuity.
 3. **Default embeddings are Azure OpenAI** (`EMBEDDING_BINDING_HOST` + `EMBEDDING_BINDING_API_KEY`). Plain OpenAI is supported via `--embed-model openai:<name>` (uses `OPENAI_API_KEY`). Embedding failures retry transparently up to 5 attempts; persistent failures are document-level failures.
-4. **License header** on each new file follows the existing repo convention (Apache 2.0, "Copyright 2026 Firefly Software Solutions Inc.").
+4. **License header** on each new file follows the existing repo convention (Apache 2.0, "Copyright 2026 Firefly Software Foundation.").
 5. **No conversation memory** in V1 query mode — each `query()` call is independent. Multi-turn / conversational mode is V2.
 
 ---

@@ -1,6 +1,6 @@
 # Pipeline Guide
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The Pipeline module provides a DAG-based orchestrator for composing multi-step GenAI
 workflows. It supports parallel execution, conditional branching, retries, timeouts,

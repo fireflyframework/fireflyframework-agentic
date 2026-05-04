@@ -1,6 +1,6 @@
 # Architecture Guide
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 This document describes the high-level architecture of fireflyframework-agentic, the
 relationships between its modules, and the design principles that guided its construction.

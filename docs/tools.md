@@ -1,6 +1,6 @@
 # Tools Guide
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The Tools module provides a protocol-driven system for defining, guarding, composing,
 and registering tools that agents can invoke.

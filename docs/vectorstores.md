@@ -1,6 +1,6 @@
 # Vector Stores Guide
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The Vector Stores module provides pluggable storage and retrieval backends for
 embedding vectors. It supports in-memory, ChromaDB, Pinecone, and Qdrant backends

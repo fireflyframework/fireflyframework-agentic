@@ -1,6 +1,6 @@
 # Template Agents Guide
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The `agents.templates` package provides pre-built, factory-function agents for common
 GenAI use cases. Each factory returns a fully configured `FireflyAgent` ready for

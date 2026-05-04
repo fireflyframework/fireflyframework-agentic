@@ -8,7 +8,7 @@
 [![Tests](https://img.shields.io/badge/tests-1383%20passing-brightgreen.svg)]()
 [![Ruff](https://img.shields.io/badge/linting-ruff-orange.svg)](https://docs.astral.sh/ruff/)
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 ---
 

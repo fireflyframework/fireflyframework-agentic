@@ -1,6 +1,6 @@
 # Exposure Queues Guide
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The Exposure Queues module provides an abstract consumer/producer model with concrete
 implementations for Apache Kafka, RabbitMQ, and Redis Pub/Sub, plus a pattern-based

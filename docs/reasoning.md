@@ -1,6 +1,6 @@
 # Reasoning Patterns Guide
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The Reasoning module provides pluggable reasoning strategies that structure how an
 agent thinks through a problem. Rather than sending a single prompt and hoping for

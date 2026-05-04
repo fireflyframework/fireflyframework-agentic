@@ -1,6 +1,6 @@
 # Memory Guide
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The Memory module provides conversation history, working memory, and pluggable
 storage backends for agents, multi-agent delegation, reasoning patterns, and

@@ -1,6 +1,6 @@
 # The Firefly Agentic Framework — Complete Tutorial
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 > **From Zero to Expert** — This tutorial walks you through every module in
 > fireflyframework-agentic by building a real project from scratch: an **Intelligent
