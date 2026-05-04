@@ -150,6 +150,7 @@ dev = [
 
 [project.scripts]
 firefly-mcp = "fireflyframework_agentic.cli.mcp_server:main"
+firefly-mcp-http = "fireflyframework_agentic.cli.mcp_http:main"
 
 [project.urls]
 Homepage = "https://fireflyframework.org/"

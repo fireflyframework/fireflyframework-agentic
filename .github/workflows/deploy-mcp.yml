@@ -1,0 +1,59 @@
+name: deploy-mcp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/deploy-mcp.yml"
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_SUBSCRIPTION_ID: e8b8063e-f842-4a59-9754-427ddb7bfb63
+  RESOURCE_GROUP: rg-firefly
+  ACR_NAME: fireflysignature
+  CONTAINER_APP: firefly-mcp
+  IMAGE: fireflysignature.azurecr.io/firefly-mcp
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR login
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push image
+        run: |
+          docker buildx build \
+            --push \
+            --platform linux/amd64 \
+            -t ${{ env.IMAGE }}:${{ github.sha }} \
+            -t ${{ env.IMAGE }}:latest \
+            .
+
+      - name: Update Container App
+        run: |
+          az containerapp update \
+            -g ${{ env.RESOURCE_GROUP }} \
+            -n ${{ env.CONTAINER_APP }} \
+            --image ${{ env.IMAGE }}:${{ github.sha }}
