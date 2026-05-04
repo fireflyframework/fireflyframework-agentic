@@ -126,6 +126,10 @@ vectorstores-qdrant = [
     "qdrant-client>=1.12.0",
 ]
 watch = ["watchfiles>=0.24.0"]
+factory = [
+    "fireflyframework-agentic[vectorstores-sqlite-vec]",
+    "pyyaml>=6.0",
+]
 all = [
     "fireflyframework-agentic[rest,queues,postgres,mongodb,security,http,costs,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,corpus-search,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,vectorstores-sqlite-vec,markitdown,watch]",
 ]
