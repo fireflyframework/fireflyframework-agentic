@@ -1,6 +1,6 @@
 # Agents Guide
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The Agents module wraps Pydantic AI's `Agent` class and adds lifecycle management,
 a global registry, multi-agent delegation, execution context, and a decorator API.

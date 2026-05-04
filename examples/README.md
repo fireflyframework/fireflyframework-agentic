@@ -1,6 +1,6 @@
 # Examples
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 Runnable example scripts demonstrating the major features of `fireflyframework-agentic`.
 

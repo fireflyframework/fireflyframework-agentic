@@ -1,4 +1,4 @@
-# Copyright 2026 Firefly Software Solutions Inc
+# Copyright 2026 Firefly Software Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -85,7 +85,7 @@ function Show-Banner {
     Write-Host ""
     Write-Host "  fireflyframework-agentic" -ForegroundColor White -NoNewline
     Write-Host " Uninstaller" -ForegroundColor DarkGray
-    Write-Host "  Copyright 2026 Firefly Software Solutions Inc. Apache License 2.0." -ForegroundColor DarkGray
+    Write-Host "  Copyright 2026 Firefly Software Foundation. Apache License 2.0." -ForegroundColor DarkGray
     Write-Host ""
 }
 

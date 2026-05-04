@@ -1,6 +1,6 @@
 # Exposure REST Guide
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The Exposure REST module provides a FastAPI application factory that auto-generates
 REST endpoints for registered agents, with health checks, SSE streaming, middleware,

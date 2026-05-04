@@ -1,6 +1,6 @@
 # Validation Guide
 
-Copyright 2026 Firefly Software Solutions Inc. Licensed under the Apache License 2.0.
+Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The Validation module provides structured output validation and quality-of-service
 (QoS) checks for LLM-generated results. It helps ensure that agent outputs conform
