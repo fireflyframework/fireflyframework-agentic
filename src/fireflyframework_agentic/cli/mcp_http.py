@@ -21,9 +21,12 @@ import uvicorn
 from fastapi import FastAPI
 
 from fireflyframework_agentic.exposure.mcp.server import create_mcp_app
+from fireflyframework_agentic.tools.builtins import sharepoint_rag  # noqa: F401 — registers tools
 
 
 def build_app() -> FastAPI:
+    # Importing sharepoint_rag above runs the @firefly_tool decorators, which
+    # add the tools to the global registry before create_mcp_app() reads it.
     mcp_app = create_mcp_app().http_app(path="/")
     app = FastAPI(title="firefly-mcp", version="0.1.0", lifespan=mcp_app.lifespan)
 

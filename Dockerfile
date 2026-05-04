@@ -11,7 +11,10 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 
-RUN uv sync --frozen --no-dev --extra rest --extra mcp
+RUN uv sync --frozen --no-dev \
+    --extra rest --extra mcp \
+    --extra rag --extra openai-embeddings --extra azure --extra markitdown \
+    --extra vectorstores-sqlite-vec
 
 FROM python:3.13-slim AS runtime
 
