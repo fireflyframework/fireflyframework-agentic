@@ -239,37 +239,45 @@ class CorpusAgent:
         await self._ensure_corpus_ready()
         assert self._ledger is not None
 
-        results: list[IngestionResult] = []
-        cursor = await source.current_cursor()
+        async with timed_span(
+            "firefly.rag.ingest_source",
+            attributes={"source": source.__class__.__name__},
+        ) as span:
+            results: list[IngestionResult] = []
+            cursor = await source.current_cursor()
 
-        async for raw in source.list_changed(cursor):
-            try:
-                local_path = await source.fetch(raw)
-            except Exception as exc:  # noqa: BLE001 — per-file isolation
-                # TODO: also record this failure in the IngestLedger so the file
-                # is replayable next run. Today the in-memory IngestionResult is
-                # only surfaced through the returned IngestSummary; the cursor
-                # advances past the file because the iterator drained, so a
-                # failed fetch is effectively dropped from operational replay.
-                # Tracked as part of Task 5 / follow-up.
-                log.warning("fetch failed for %s: %s", raw.source_id, exc)
-                results.append(
-                    IngestionResult(
-                        doc_id=raw.source_id,
-                        source_path=raw.source_id,
-                        status="failed",
-                        n_chunks=0,
+            async for raw in source.list_changed(cursor):
+                try:
+                    local_path = await source.fetch(raw)
+                except Exception as exc:  # noqa: BLE001 — per-file isolation
+                    # TODO: also record this failure in the IngestLedger so the file
+                    # is replayable next run. Today the in-memory IngestionResult is
+                    # only surfaced through the returned IngestSummary; the cursor
+                    # advances past the file because the iterator drained, so a
+                    # failed fetch is effectively dropped from operational replay.
+                    # Tracked as part of Task 5 / follow-up.
+                    log.warning("fetch failed for %s: %s", raw.source_id, exc)
+                    results.append(
+                        IngestionResult(
+                            doc_id=raw.source_id,
+                            source_path=raw.source_id,
+                            status="failed",
+                            n_chunks=0,
+                        )
                     )
-                )
-                continue
+                    continue
 
-            results.append(await self.ingest_one(local_path))
+                results.append(await self.ingest_one(local_path))
 
-        new_cursor = await source.pending_cursor()
-        if new_cursor:
-            await source.commit_delta(new_cursor)
+            new_cursor = await source.pending_cursor()
+            if new_cursor:
+                await source.commit_delta(new_cursor)
 
-        return IngestSummary(results=results, cursor=new_cursor)
+            summary = IngestSummary(results=results, cursor=new_cursor)
+            span.set_attribute("firefly.rag.terminal.success", summary.ingested)
+            span.set_attribute("firefly.rag.terminal.skipped", summary.skipped)
+            span.set_attribute("firefly.rag.terminal.failed", summary.failed)
+            return summary
 
     async def watch(self, folder: Path) -> AsyncIterator[IngestionResult]:
         await self._ensure_corpus_ready()
@@ -334,7 +342,7 @@ class CorpusAgent:
         assert self._reranker is not None
 
         async with timed_span(
-            "corpus_search.retrieve",
+            "firefly.rag.retrieve",
             attributes={"question": question, "top_k": top_k, "rerank": rerank},
         ):
             queries = await self._expander.expand(question)
@@ -359,7 +367,7 @@ class CorpusAgent:
 
         query_start = time.perf_counter()
         async with timed_span(
-            "corpus_search.query",
+            "firefly.rag.query",
             attributes={
                 "question": question,
                 "top_k": top_k,
