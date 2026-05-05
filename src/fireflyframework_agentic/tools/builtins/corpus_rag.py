@@ -20,7 +20,6 @@ provider against Microsoft Graph (zero-trust model — see
 
 from __future__ import annotations
 
-import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -31,8 +30,6 @@ from fireflyframework_agentic.content.sources.local_folder import (
 )
 from fireflyframework_agentic.rag import CorpusAgent, CorpusNotFoundError
 from fireflyframework_agentic.tools.decorators import firefly_tool
-
-log = logging.getLogger(__name__)
 
 _DEFAULT_CORPUS_ROOT = "/tmp/firefly/corpora"
 _GRAPH_SCOPE = "https://graph.microsoft.com/.default"
