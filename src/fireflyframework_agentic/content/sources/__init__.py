@@ -23,6 +23,10 @@ without changes to the Protocol or to consumer code.
 from __future__ import annotations
 
 from fireflyframework_agentic.content.sources.base import ContentSource, RawFile
+from fireflyframework_agentic.content.sources.local_folder import (
+    LocalFolderSource,
+    LocalFolderSourceConfig,
+)
 from fireflyframework_agentic.content.sources.s3 import S3Source, S3SourceConfig
 from fireflyframework_agentic.content.sources.sharepoint import (
     SharePointSource,
@@ -31,6 +35,8 @@ from fireflyframework_agentic.content.sources.sharepoint import (
 
 __all__ = [
     "ContentSource",
+    "LocalFolderSource",
+    "LocalFolderSourceConfig",
     "RawFile",
     "S3Source",
     "S3SourceConfig",
