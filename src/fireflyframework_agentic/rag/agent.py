@@ -18,11 +18,13 @@ import logging
 import os
 import time
 from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from fireflyframework_agentic.content.loaders import MarkitdownLoader
 from fireflyframework_agentic.content.markdown_chunker import MarkdownChunker
+from fireflyframework_agentic.content.sources import ContentSource
 from fireflyframework_agentic.pipeline.triggers import FolderWatcher
 from fireflyframework_agentic.rag._telemetry import (
     query_total_duration,
@@ -37,6 +39,26 @@ from fireflyframework_agentic.rag.retrieval.hybrid import HybridRetriever
 from fireflyframework_agentic.rag.retrieval.reranker import HaikuReranker
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class IngestSummary:
+    """Aggregate result of an ``ingest_source`` / ``ingest_folder`` run."""
+
+    results: list[IngestionResult] = field(default_factory=list)
+    cursor: str | None = None
+
+    @property
+    def ingested(self) -> int:
+        return sum(1 for r in self.results if r.status == "success")
+
+    @property
+    def skipped(self) -> int:
+        return sum(1 for r in self.results if r.status == "skipped")
+
+    @property
+    def failed(self) -> int:
+        return sum(1 for r in self.results if r.status not in {"success", "skipped"})
 
 
 class CorpusAgent:
@@ -228,6 +250,46 @@ class CorpusAgent:
             for status, count in counts.items():
                 span.set_attribute(f"firefly.rag.terminal.{status}", count)
             return results
+
+    async def ingest_source(self, source: ContentSource) -> IngestSummary:
+        """Pull every changed file from ``source`` and ingest it.
+
+        Drives the unified ContentSource loop:
+        ``list_changed`` → per item ``fetch`` → ``ingest_one`` → after the
+        iterator drains, ``commit_delta`` with the source's pending cursor.
+
+        Per-file fetch / ingest errors are logged and counted in the
+        returned :class:`IngestSummary`; they do not interrupt iteration.
+        Source-level errors (auth, network, malformed cursor) propagate.
+        """
+        await self._ensure_corpus_ready()
+        assert self._ledger is not None
+
+        results: list[IngestionResult] = []
+        cursor = await source.current_cursor()
+
+        async for raw in source.list_changed(cursor):
+            try:
+                local_path = await source.fetch(raw)
+            except Exception as exc:  # noqa: BLE001 — per-file isolation
+                log.warning("fetch failed for %s: %s", raw.source_id, exc)
+                results.append(
+                    IngestionResult(
+                        doc_id=raw.source_id,
+                        source_path=raw.source_id,
+                        status="failed",
+                        n_chunks=0,
+                    )
+                )
+                continue
+
+            results.append(await self.ingest_one(local_path))
+
+        new_cursor = await source.pending_cursor()
+        if new_cursor:
+            await source.commit_delta(new_cursor)
+
+        return IngestSummary(results=results, cursor=new_cursor)
 
     async def watch(self, folder: Path) -> AsyncIterator[IngestionResult]:
         await self._ensure_corpus_ready()
