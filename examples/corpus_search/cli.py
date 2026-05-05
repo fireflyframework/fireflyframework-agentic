@@ -23,6 +23,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from fireflyframework_agentic.observability import configure_exporters
+
 _DEFAULT_EMBED_MODEL = "azure:text-embedding-3-small"
 _DEFAULT_EXPANSION_MODEL = "anthropic:claude-haiku-4-5-20251001"
 _DEFAULT_ANSWER_MODEL = "anthropic:claude-sonnet-4-6"
@@ -90,7 +92,120 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p_show.add_argument("--root", type=Path, default=_DEFAULT_ROOT, help="Corpus root (must contain corpus.sqlite).")
     p_show.add_argument("--verbose", action="store_true")
 
+    p_pre = sub.add_parser(
+        "preflight",
+        help="Validate env, drop folder, and ./kg state before kicking off a real ingestion.",
+    )
+    p_pre.add_argument("--folder", type=Path, required=True, help="Drop folder that ingest will read from.")
+    p_pre.add_argument("--root", type=Path, default=_DEFAULT_ROOT, help="Corpus root (corpus.sqlite location).")
+    p_pre.add_argument("--embed-model", default=_DEFAULT_EMBED_MODEL, help="Embedding model.")
+    p_pre.add_argument(
+        "--force-clean",
+        action="store_true",
+        help=(
+            "Wipe ./kg/ before validating (deletes the directory and recreates it). "
+            "Interactive sessions get a 'yes'/abort confirmation prompt; non-interactive "
+            "(CI, scripts) skip the prompt because --force-clean itself is the consent."
+        ),
+    )
+
     return parser
+
+
+def _init_telemetry() -> None:
+    """Wire OTel providers based on environment variables.
+
+    Reads ``APPLICATIONINSIGHTS_CONNECTION_STRING`` for AppInsights,
+    ``FIREFLY_AGENTIC_OTLP_ENDPOINT`` for vendor-neutral OTLP, and
+    ``FIREFLY_AGENTIC_CONSOLE_TELEMETRY=1`` to mirror everything to stdout
+    for local debugging. Connection strings are not logged.
+
+    Idempotent — repeated calls with the same effective config are a no-op
+    via the guard inside :func:`configure_exporters`.
+    """
+    cs = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING")
+    otlp = os.environ.get("FIREFLY_AGENTIC_OTLP_ENDPOINT")
+    console = os.environ.get("FIREFLY_AGENTIC_CONSOLE_TELEMETRY") == "1"
+    configure_exporters(
+        service_name="corpus-search",
+        azure_monitor_connection_string=cs,
+        otlp_endpoint=otlp,
+        console=console,
+    )
+
+
+def _run_preflight(args: argparse.Namespace) -> int:
+    """Validate environment, drop folder, and ./kg state without running ingestion.
+
+    Failure conditions:
+      - missing AppInsights / embedding / Anthropic keys
+      - drop folder missing or empty
+      - ./kg already populated and ``--force-clean`` not passed
+      - sqlite-vec extension fails to load
+    """
+    folder: Path = args.folder
+    root: Path = args.root
+    print("[preflight] validating credentials and environment...")
+
+    rc = _check_keys(embed_model=args.embed_model, need_anthropic=True)
+    if rc:
+        return rc
+
+    cs = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING")
+    if not cs:
+        sys.stderr.write(
+            "[preflight] APPLICATIONINSIGHTS_CONNECTION_STRING is not set; telemetry will not reach Azure Monitor.\n"
+        )
+        return 2
+    if len(cs) < 40:  # sanity: real conn strings are ~150+ chars
+        sys.stderr.write("[preflight] APPLICATIONINSIGHTS_CONNECTION_STRING looks too short.\n")
+        return 2
+
+    if not folder.exists() or not folder.is_dir():
+        sys.stderr.write(f"[preflight] drop folder {folder} does not exist or is not a directory.\n")
+        return 2
+    n_files = sum(1 for p in folder.rglob("*") if p.is_file())
+    if n_files == 0:
+        sys.stderr.write(f"[preflight] drop folder {folder} contains no files.\n")
+        return 2
+
+    db = root / "corpus.sqlite"
+    if db.exists():
+        if not args.force_clean:
+            sys.stderr.write(f"[preflight] {db} already exists. Pass --force-clean to wipe ./kg before ingesting.\n")
+            return 2
+        # --force-clean is set: wipe ./kg and recreate the directory.
+        # Confirmation prompt suppressed when running non-interactively
+        # (CI, scripts) — --force-clean itself is the explicit consent.
+        if sys.stdin.isatty():
+            confirm = input(f"[preflight] About to delete {root} and all its contents. Type 'yes' to proceed: ")
+            if confirm.strip().lower() != "yes":
+                sys.stderr.write("[preflight] aborted by operator.\n")
+                return 2
+        import contextlib
+        import shutil
+
+        with contextlib.suppress(FileNotFoundError):
+            shutil.rmtree(root)
+        root.mkdir(parents=True, exist_ok=True)
+        print(f"[preflight] wiped {root} (--force-clean)")
+
+    # sqlite-vec smoke test — exercises the same load path the ingest code uses.
+    try:
+        import sqlite3
+
+        import sqlite_vec  # type: ignore[import-not-found]
+
+        conn = sqlite3.connect(":memory:")
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        conn.close()
+    except Exception as exc:  # noqa: BLE001
+        sys.stderr.write(f"[preflight] sqlite-vec extension failed to load: {exc}\n")
+        return 2
+
+    print(f"[preflight] OK. drop={folder} files={n_files} kg={root} clean={'yes' if args.force_clean else 'fresh'}")
+    return 0
 
 
 def _check_keys(*, embed_model: str, need_anthropic: bool) -> int:
@@ -129,6 +244,7 @@ def _check_keys(*, embed_model: str, need_anthropic: bool) -> int:
 
 async def _run_ingest(args: argparse.Namespace) -> int:
     from examples.corpus_search.agent import CorpusAgent
+    from fireflyframework_agentic.pipeline.triggers import FolderWatcher
 
     agent = CorpusAgent(
         root=args.root,
@@ -144,9 +260,26 @@ async def _run_ingest(args: argparse.Namespace) -> int:
             async for result in agent.watch(args.folder):
                 _print_ingest_result(result)
         else:
-            results = await agent.ingest_folder(args.folder)
-            for r in results:
-                _print_ingest_result(r)
+            # Walk the folder ourselves so we can stream per-file status
+            # to the operator's terminal as each file finishes (rather than
+            # buffering the whole batch via agent.ingest_folder). Filtering
+            # uses FolderWatcher.is_hidden to stay in sync with the watcher
+            # path. The framework-level corpus_search.ingest_folder span
+            # is sacrificed in favour of operator UX; per-file
+            # rag.ingest.document spans are still emitted as before.
+            root = Path(args.folder)
+            watcher = FolderWatcher(folder=root)
+            candidates = sorted(p for p in root.rglob("*") if p.is_file() and not watcher.is_hidden(p))
+            print(f"found {len(candidates)} file(s) under {root}", file=sys.stderr)
+            for i, path in enumerate(candidates, 1):
+                size_kb = path.stat().st_size / 1024 if path.exists() else 0
+                print(
+                    f"[{i}/{len(candidates)}] starting {path.relative_to(root)} ({size_kb:.0f} KB)",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                result = await agent.ingest_one(path)
+                _print_ingest_result(result)
     finally:
         await agent.close()
     return 0
@@ -218,7 +351,30 @@ async def _run_show_chunk(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     args = build_arg_parser().parse_args(argv)
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
+    verbose = bool(getattr(args, "verbose", False))
+    # Root stays at INFO. Only our own packages get DEBUG when --verbose
+    # is passed; everything else stays at the silenced level so pdfminer
+    # doesn't dump every PDF parser token (~10 GB/min for a mid-sized PDF).
+    logging.basicConfig(level=logging.INFO)
+    if verbose:
+        for name in ("examples.corpus_search", "fireflyframework_agentic"):
+            logging.getLogger(name).setLevel(logging.DEBUG)
+    # Default silenced loggers — operator can override the list via the
+    # FIREFLY_AGENTIC_VERBOSE_LOGGERS env var (CSV) when triaging a
+    # specific subsystem (e.g. set "azure" to leave Azure SDK at INFO
+    # while keeping pdfminer/pdfplumber muted).
+    default_silenced = ("pdfminer", "pdfplumber", "markdown_it", "azure", "urllib3", "httpx")
+    keep_verbose = {
+        name.strip() for name in os.environ.get("FIREFLY_AGENTIC_VERBOSE_LOGGERS", "").split(",") if name.strip()
+    }
+    for noisy in default_silenced:
+        if noisy not in keep_verbose:
+            logging.getLogger(noisy).setLevel(logging.WARNING)
+
+    # Telemetry init runs for every subcommand so that even show-chunk and
+    # preflight emit spans into AppInsights when a connection string is set.
+    # Idempotent across calls within the same process.
+    _init_telemetry()
 
     if args.command == "ingest":
         rc = _check_keys(embed_model=args.embed_model, need_anthropic=False)
@@ -233,6 +389,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "show-chunk":
         # No API keys needed — we're reading SQLite directly.
         return asyncio.run(_run_show_chunk(args))
+    if args.command == "preflight":
+        return _run_preflight(args)
 
     return 2  # unreachable thanks to required=True
 
