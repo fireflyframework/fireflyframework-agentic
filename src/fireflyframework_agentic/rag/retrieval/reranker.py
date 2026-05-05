@@ -31,6 +31,11 @@ from collections.abc import Sequence
 from pydantic import BaseModel, Field
 
 from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.rag._telemetry import (
+    query_stage_duration,
+    rerank_fallback,
+    timed_span,
+)
 from fireflyframework_agentic.rag.corpus import ChunkHit
 
 log = logging.getLogger(__name__)
@@ -72,6 +77,7 @@ class HaikuReranker:
     """
 
     def __init__(self, model: str) -> None:
+        self._model = model
         self._agent = FireflyAgent(
             name="reranker",
             model=model,
@@ -97,49 +103,71 @@ class HaikuReranker:
         Hallucinated chunk_ids in the LLM output (not present in
         ``hits``) are dropped silently.
         """
-        if not hits or top_k <= 0:
-            return []
-        if top_k >= len(hits):
-            return list(hits)
+        async with timed_span(
+            "rag.query.rerank",
+            histogram=query_stage_duration,
+            attributes={
+                "pool_size": len(hits),
+                "top_k": top_k,
+                "model": self._model,
+            },
+            metric_labels={"stage": "rerank"},
+        ) as span:
+            if not hits or top_k <= 0:
+                span.set_attribute("firefly.rag.rerank.shortcircuit", "true")
+                return []
+            if top_k >= len(hits):
+                span.set_attribute("firefly.rag.rerank.shortcircuit", "true")
+                return list(hits)
 
-        formatted = format_chunks_for_prompt(hits)
-        prompt = (
-            f"Question: {question}\n\n"
-            f"Return the top {top_k} chunk_ids by relevance to the question. "
-            f"Skip any chunks that don't contain relevant information.\n\n"
-            f"Candidates:\n\n{formatted}"
-        )
-        try:
-            result = await self._agent.run(prompt)
-            top_ids = list(getattr(result, "output", RerankerResult()).top_chunk_ids)
-        except Exception as exc:
-            log.warning(
-                "rerank failed (%s); falling back to retrieval order",
-                exc,
+            formatted = format_chunks_for_prompt(hits)
+            prompt = (
+                f"Question: {question}\n\n"
+                f"Return the top {top_k} chunk_ids by relevance to the question. "
+                f"Skip any chunks that don't contain relevant information.\n\n"
+                f"Candidates:\n\n{formatted}"
             )
-            return list(hits[:top_k])
+            try:
+                result = await self._agent.run(prompt)
+                top_ids = list(getattr(result, "output", RerankerResult()).top_chunk_ids)
+            except Exception as exc:
+                log.warning(
+                    "rerank failed (%s); falling back to retrieval order",
+                    exc,
+                )
+                rerank_fallback.add(1, {"reason": type(exc).__name__})
+                span.set_attribute("firefly.rag.rerank.fallback", "true")
+                return list(hits[:top_k])
 
-        # Resolve ids back to hits; drop hallucinated and duplicate ids.
-        by_id = {h.chunk_id: h for h in hits}
-        ranked: list[ChunkHit] = []
-        seen: set[str] = set()
-        for cid in top_ids:
-            if cid in seen or cid not in by_id:
-                continue
-            seen.add(cid)
-            ranked.append(by_id[cid])
-            if len(ranked) >= top_k:
-                break
+            # Resolve ids back to hits; drop hallucinated and duplicate ids.
+            by_id = {h.chunk_id: h for h in hits}
+            ranked: list[ChunkHit] = []
+            seen: set[str] = set()
+            dropped_hallucinated = 0
+            for cid in top_ids:
+                if cid in seen:
+                    continue
+                if cid not in by_id:
+                    dropped_hallucinated += 1
+                    continue
+                seen.add(cid)
+                ranked.append(by_id[cid])
+                if len(ranked) >= top_k:
+                    break
 
-        # Visibility — log the reranker's decision so users can see what
-        # it kept vs what was dropped.
-        log.info(
-            "rerank: %d candidates -> %d kept (model %s)",
-            len(hits),
-            len(ranked),
-            self._agent.name,
-        )
-        for i, h in enumerate(ranked, start=1):
-            log.info("  [%d] %s (%s)", i, h.chunk_id, h.source_path)
+            span.set_attribute("firefly.rag.dropped_hallucinated_count", dropped_hallucinated)
+            span.set_attribute(
+                "firefly.rag.kept_chunk_ids",
+                ",".join(h.chunk_id for h in ranked),
+            )
 
-        return ranked
+            log.info(
+                "rerank: %d candidates -> %d kept (model %s)",
+                len(hits),
+                len(ranked),
+                self._agent.name,
+            )
+            for i, h in enumerate(ranked, start=1):
+                log.info("  [%d] %s (%s)", i, h.chunk_id, h.source_path)
+
+            return ranked

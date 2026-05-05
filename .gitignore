@@ -134,3 +134,11 @@ docs/plans/
 /kg/
 /runs/
 .worktrees
+
+# corpus_search local-only test artifacts (operator's questions reveal
+# which corpus is being evaluated → keep out of version control;
+# `examples/corpus_search/test_queries.template.md` is the in-repo template)
+examples/corpus_search/test_queries.md
+examples/corpus_search/test_queries.local.md
+docs/superpowers/specs/*-run-report.md
+docs/superpowers/specs/*-query-results.json
