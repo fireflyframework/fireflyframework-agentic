@@ -131,6 +131,8 @@ vectorstores-qdrant = [
     "qdrant-client>=1.12.0",
 ]
 watch = ["watchfiles>=0.24.0"]
+ingestion = ["pyyaml>=6.0", "openpyxl>=3.1"]
+ingestion-keyvault = ["azure-identity>=1.19.0", "azure-keyvault-secrets>=4.9.0"]
 all = [
     "fireflyframework-agentic[rest,queues,postgres,mongodb,security,azure,http,costs,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,corpus-search,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,vectorstores-sqlite-vec,markitdown,watch]",
 ]
@@ -152,6 +154,7 @@ dev = [
 
 [project.scripts]
 firefly-mcp = "fireflyframework_agentic.cli.mcp_server:main"
+firefly-ingest = "fireflyframework_agentic.ingestion.cli:main"
 
 [project.urls]
 Homepage = "https://fireflyframework.org/"
