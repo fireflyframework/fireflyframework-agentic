@@ -18,6 +18,11 @@ import logging
 from collections.abc import Sequence
 
 from fireflyframework_agentic.embeddings.base import EmbeddingProtocol
+from fireflyframework_agentic.rag._telemetry import (
+    query_stage_duration,
+    retrieve_modality_duration,
+    timed_span,
+)
 from fireflyframework_agentic.rag.corpus import ChunkHit, SqliteCorpus
 from fireflyframework_agentic.rag.retrieval.expander import ExpandedQuery
 from fireflyframework_agentic.vectorstores.base import VectorStoreProtocol
@@ -78,56 +83,99 @@ class HybridRetriever:
         if not queries:
             return []
 
-        rankings: list[list[str]] = []
-        for raw_q in queries:
-            if isinstance(raw_q, ExpandedQuery):
-                text, route = raw_q.text, raw_q.route
-            else:
-                text, route = raw_q, "hybrid"
+        async with timed_span(
+            "rag.query.retrieve",
+            histogram=query_stage_duration,
+            attributes={
+                "n_queries": len(queries),
+                "top_k_per_query": top_k_per_query,
+                "top_k_final": top_k_final,
+            },
+            metric_labels={"stage": "retrieve"},
+        ) as outer:
+            rankings: list[list[str]] = []
+            bm25_hits_total = 0
+            vec_hits_total = 0
+            for variant_index, raw_q in enumerate(queries):
+                if isinstance(raw_q, ExpandedQuery):
+                    text, route = raw_q.text, raw_q.route
+                else:
+                    text, route = raw_q, "hybrid"
 
-            # BM25 — skipped for vec_only (HyDE) queries
-            if route != "vec_only":
+                # BM25 — skipped for vec_only (HyDE) queries
+                if route != "vec_only":
+                    try:
+                        async with timed_span(
+                            "rag.query.bm25",
+                            histogram=retrieve_modality_duration,
+                            attributes={
+                                "variant_index": variant_index,
+                                "route": route,
+                            },
+                            metric_labels={
+                                "modality": "bm25",
+                                "variant_index": str(variant_index),
+                            },
+                        ) as bm_span:
+                            bm25_hits = await self._corpus.bm25_search(text, top_k=top_k_per_query)
+                            rankings.append([h.chunk_id for h in bm25_hits])
+                            bm_span.set_attribute("firefly.rag.hits", len(bm25_hits))
+                            bm25_hits_total += len(bm25_hits)
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("bm25 failed for query %r: %s", text, exc)
+
+                # Vector — always
                 try:
-                    bm25_hits = await self._corpus.bm25_search(text, top_k=top_k_per_query)
-                    rankings.append([h.chunk_id for h in bm25_hits])
+                    async with timed_span(
+                        "rag.query.vector",
+                        histogram=retrieve_modality_duration,
+                        attributes={
+                            "variant_index": variant_index,
+                            "route": route,
+                        },
+                        metric_labels={
+                            "modality": "vector",
+                            "variant_index": str(variant_index),
+                        },
+                    ) as vec_span:
+                        qvec = await self._embedder.embed_one(text)
+                        vec_hits = await self._vector_store.search(qvec, top_k=top_k_per_query)
+                        rankings.append([h.document.id for h in vec_hits])
+                        vec_span.set_attribute("firefly.rag.hits", len(vec_hits))
+                        vec_hits_total += len(vec_hits)
                 except Exception as exc:  # noqa: BLE001
-                    log.warning("bm25 failed for query %r: %s", text, exc)
+                    log.warning("vector search failed for query %r: %s", text, exc)
 
-            # Vector — always
-            try:
-                qvec = await self._embedder.embed_one(text)
-                vec_hits = await self._vector_store.search(qvec, top_k=top_k_per_query)
-                rankings.append([h.document.id for h in vec_hits])
-            except Exception as exc:  # noqa: BLE001
-                log.warning("vector search failed for query %r: %s", text, exc)
+            outer.set_attribute("firefly.rag.bm25_hits", bm25_hits_total)
+            outer.set_attribute("firefly.rag.vec_hits", vec_hits_total)
 
-        if not any(rankings):
-            return []
+            if not any(rankings):
+                return []
 
-        fused = reciprocal_rank_fusion(rankings)
-        top_ids = [cid for cid, _ in fused[:top_k_final]]
-        if not top_ids:
-            return []
+            fused = reciprocal_rank_fusion(rankings)
+            top_ids = [cid for cid, _ in fused[:top_k_final]]
+            if not top_ids:
+                return []
 
-        # Materialise content from the corpus
-        score_by_id = dict(fused[:top_k_final])
-        stored = await self._corpus.get_chunks(top_ids)
-        stored_by_id = {c.chunk_id: c for c in stored}
+            # Materialise content from the corpus
+            score_by_id = dict(fused[:top_k_final])
+            stored = await self._corpus.get_chunks(top_ids)
+            stored_by_id = {c.chunk_id: c for c in stored}
 
-        results: list[ChunkHit] = []
-        for cid in top_ids:
-            chunk = stored_by_id.get(cid)
-            if chunk is None:
-                # ID came from vector store but isn't in the corpus — skip silently.
-                continue
-            results.append(
-                ChunkHit(
-                    chunk_id=chunk.chunk_id,
-                    score=score_by_id[cid],
-                    content=chunk.content,
-                    metadata=chunk.metadata,
-                    source_path=chunk.source_path,
-                    doc_id=chunk.doc_id,
+            results: list[ChunkHit] = []
+            for cid in top_ids:
+                chunk = stored_by_id.get(cid)
+                if chunk is None:
+                    continue
+                results.append(
+                    ChunkHit(
+                        chunk_id=chunk.chunk_id,
+                        score=score_by_id[cid],
+                        content=chunk.content,
+                        metadata=chunk.metadata,
+                        source_path=chunk.source_path,
+                        doc_id=chunk.doc_id,
+                    )
                 )
-            )
-        return results
+            outer.set_attribute("firefly.rag.fused_top_n", len(results))
+            return results

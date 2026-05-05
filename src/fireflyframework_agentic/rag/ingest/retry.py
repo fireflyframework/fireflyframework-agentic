@@ -29,9 +29,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any, Protocol
 
 from fireflyframework_agentic.embeddings.types import EmbeddingResult
+from fireflyframework_agentic.rag._telemetry import (
+    embed_attempt_duration,
+    embed_retries,
+)
 
 log = logging.getLogger(__name__)
 
@@ -105,6 +110,14 @@ def retry_after_seconds(exc: BaseException) -> float | None:
 
     Supports both numeric (``Retry-After: 30``) and HTTP-date forms; only
     numeric is parsed here — HTTP-date is rare for rate-limit responses.
+
+    Returns the **first** valid header value found while walking outward
+    through ``__cause__`` / ``__context__``. SDKs that wrap a single
+    ``Response`` (openai, anthropic) only carry one ``Retry-After``
+    anywhere in the chain so this is not a problem in practice. If a
+    future SDK chains multiple responses with different hints, the
+    outermost wrapper wins — which is also typically the closest to the
+    server's actual rate-limit signal.
     """
     for current in _walk_causes(exc):
         response = getattr(current, "response", None)
@@ -151,14 +164,23 @@ async def embed_with_retry(
     sleep_fn = sleep or asyncio.sleep
     delay = initial_delay
     last_exc: BaseException | None = None
+    provider = type(embedder).__name__
 
     for attempt in range(1, max_attempts + 1):
+        attempt_start = time.perf_counter()
         try:
-            return await embedder.embed(texts)
+            result = await embedder.embed(texts)
         except Exception as exc:
             last_exc = exc
-            if not is_retryable(exc) or attempt == max_attempts:
+            elapsed_ms = (time.perf_counter() - attempt_start) * 1000.0
+            retryable = is_retryable(exc)
+            if not retryable or attempt == max_attempts:
+                outcome = "fatal"
+                embed_attempt_duration.record(elapsed_ms, {"provider": provider, "outcome": outcome})
+                embed_retries.add(1, {"provider": provider, "outcome": outcome})
                 raise
+            embed_attempt_duration.record(elapsed_ms, {"provider": provider, "outcome": "retry"})
+            embed_retries.add(1, {"provider": provider, "outcome": "retry"})
             wait = retry_after_seconds(exc) or delay
             wait = min(wait, max_delay)
             log.warning(
@@ -170,6 +192,10 @@ async def embed_with_retry(
             )
             await sleep_fn(wait)
             delay = min(delay * backoff_factor, max_delay)
+        else:
+            elapsed_ms = (time.perf_counter() - attempt_start) * 1000.0
+            embed_attempt_duration.record(elapsed_ms, {"provider": provider, "outcome": "ok"})
+            return result
 
     # Unreachable: the loop either returns or raises.
     raise RuntimeError("retry loop terminated unexpectedly") from last_exc

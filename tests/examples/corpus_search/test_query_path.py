@@ -98,8 +98,9 @@ class TestSanitizeFtsQuery:
         assert sanitize_fts_query("?!.,;:") == ""
 
     def test_unicode_letters_preserved(self):
-        # Spanish characters survive (the Brazilian healthcare corpus has
-        # plenty of these).
+        # Non-ASCII letters (accents, ñ, ç, ü, …) must survive sanitisation
+        # so multilingual corpora can be searched without losing terms to
+        # the FTS5 punctuation strip.
         out = sanitize_fts_query("epidemiología y oncología")
         assert "epidemiología" in out
         assert "oncología" in out
