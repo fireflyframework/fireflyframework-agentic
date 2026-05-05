@@ -130,23 +130,23 @@ async def test_cited_sources_enriched_from_hits(mock_agent_cls):
 
     answerer = AnswerAgent(model="anthropic:dummy")
     canned = Answer(
-        text="ANVISA's RDC 1.000 establishes [d-3] and updates rules [d-9].",
+        text="The regulator's resolution establishes [d-3] and updates rules [d-9].",
         citations=["d-3", "d-9"],
     )
     answerer._agent.run = AsyncMock(return_value=_stub_run_result(canned))
 
     hits = [
-        _hit("d-3", "Sistema Nacional de Controle de Receituários (SNCR)...", source="/tmp/RDC1000.pdf"),
-        _hit("d-9", "Modifies RDC 58/2007 to permit electronic notifications.", source="/tmp/RDC1000.pdf"),
+        _hit("d-3", "Source chunk text describing the new procedure.", source="/tmp/regulation.pdf"),
+        _hit("d-9", "Source chunk text describing the rule update.", source="/tmp/regulation.pdf"),
         _hit("d-99", "Unrelated chunk that wasn't cited.", source="/tmp/other.pdf"),
     ]
-    result = await answerer.answer("What is RDC 1000?", hits)
+    result = await answerer.answer("What does the regulation establish?", hits)
 
     assert {s.chunk_id for s in result.cited_sources} == {"d-3", "d-9"}
     by_id = {s.chunk_id: s for s in result.cited_sources}
-    assert by_id["d-3"].source_path == "/tmp/RDC1000.pdf"
-    assert by_id["d-3"].snippet.startswith("Sistema Nacional")
-    assert by_id["d-9"].source_path == "/tmp/RDC1000.pdf"
+    assert by_id["d-3"].source_path == "/tmp/regulation.pdf"
+    assert by_id["d-3"].snippet.startswith("Source chunk text")
+    assert by_id["d-9"].source_path == "/tmp/regulation.pdf"
 
 
 @patch("examples.corpus_search.retrieval.answerer.FireflyAgent")

@@ -21,6 +21,10 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.rag._telemetry import (
+    query_stage_duration,
+    timed_span,
+)
 
 log = logging.getLogger(__name__)
 
@@ -81,6 +85,7 @@ class QueryExpander:
     )
 
     def __init__(self, model: str) -> None:
+        self._model = model
         self._agent = FireflyAgent(
             name="query_expander",
             model=model,
@@ -101,36 +106,47 @@ class QueryExpander:
             f"Generate {n_paraphrase} alternative phrasings and one hypothetical "
             f"document passage.\n\nQuestion: {question}"
         )
-        try:
-            result = await self._agent.run(prompt)
-            output = getattr(result, "output", _ExpandedQueries())
-            variants = list(output.variants)
-            hyde = output.hyde.strip() if output.hyde else ""
-        except Exception as exc:
-            log.warning("query expansion failed for %r: %s", question, exc)
-            variants = []
-            hyde = ""
+        async with timed_span(
+            "rag.query.expand",
+            histogram=query_stage_duration,
+            attributes={
+                "n_variants_requested": n_variants,
+                "model": self._model,
+            },
+            metric_labels={"stage": "expand"},
+        ) as span:
+            try:
+                result = await self._agent.run(prompt)
+                output = getattr(result, "output", _ExpandedQueries())
+                variants = list(output.variants)
+                hyde = output.hyde.strip() if output.hyde else ""
+            except Exception as exc:
+                log.warning("query expansion failed for %r: %s", question, exc)
+                variants = []
+                hyde = ""
 
-        seen: set[str] = {question}
-        out: list[ExpandedQuery] = [ExpandedQuery(text=question, route="hybrid")]
+            seen: set[str] = {question}
+            out: list[ExpandedQuery] = [ExpandedQuery(text=question, route="hybrid")]
 
-        for v in variants:
-            v = v.strip()
-            if v and v not in seen and len(out) <= n_paraphrase:
-                seen.add(v)
-                out.append(ExpandedQuery(text=v, route="hybrid"))
+            for v in variants:
+                v = v.strip()
+                if v and v not in seen and len(out) <= n_paraphrase:
+                    seen.add(v)
+                    out.append(ExpandedQuery(text=v, route="hybrid"))
 
-        if hyde and hyde not in seen:
-            out.append(ExpandedQuery(text=hyde, route="vec_only"))
+            if hyde and hyde not in seen:
+                out.append(ExpandedQuery(text=hyde, route="vec_only"))
 
-        log.info("query expansion produced %d query/queries:", len(out))
-        for i, q in enumerate(out):
-            if i == 0:
-                label = "original"
-            elif q.route == "vec_only":
-                label = "hyde"
-            else:
-                label = f"variant {i}"
-            log.info("  [%s] %s", label, q.text)
+            span.set_attribute("firefly.rag.n_variants_returned", len(out))
 
-        return out
+            log.info("query expansion produced %d query/queries:", len(out))
+            for i, q in enumerate(out):
+                if i == 0:
+                    label = "original"
+                elif q.route == "vec_only":
+                    label = "hyde"
+                else:
+                    label = f"variant {i}"
+                log.info("  [%s] %s", label, q.text)
+
+            return out
