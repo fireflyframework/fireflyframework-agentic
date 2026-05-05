@@ -1,13 +1,14 @@
 import re
 from collections.abc import Iterator
+from pathlib import Path
 
 from fireflyframework_agentic.ingestion.domain import RawFile, TargetSchema, TypedRecord
 
 PATTERN = re.compile(r"customers.*\.csv$")
 
 
-def map(file: RawFile, schema: TargetSchema) -> Iterator[TypedRecord]:
-    text = file.local_path.read_text()
+def map(file: RawFile, path: Path, schema: TargetSchema) -> Iterator[TypedRecord]:
+    text = path.read_text()
     lines = text.strip().splitlines()
     headers = lines[0].split(",")
     for row in lines[1:]:

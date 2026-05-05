@@ -16,15 +16,11 @@
 
 Each script in the configured directory must declare:
 
-* ``PATTERN`` -- a compiled :class:`re.Pattern` matched against
-  :attr:`RawFile.name` (or :attr:`RawFile.source_id` for path-based
-  dispatch).
-* ``map(file: RawFile, schema: TargetSchema) -> Iterator[TypedRecord]`` --
-  a callable that yields typed records.
-
-Scripts that fail to satisfy this contract raise :class:`MappingScriptError`
-at load time; this is fail-fast on configuration errors rather than at run
-time when a file happens to match.
+* ``PATTERN`` -- a compiled re.Pattern matched against RawFile.name
+  (or RawFile.source_id for path-based dispatch).
+* ``map(file: RawFile, path: Path, schema: TargetSchema) -> Iterator[TypedRecord]``
+  -- a callable that yields typed records. ``path`` is the local cached
+  copy of the file; scripts must read from this path, not from ``file``.
 """
 
 from __future__ import annotations
@@ -50,7 +46,7 @@ from fireflyframework_agentic.ingestion.exceptions import (
 
 logger = logging.getLogger(__name__)
 
-MapFn = Callable[[RawFile, TargetSchema], Iterator[TypedRecord]]
+MapFn = Callable[[RawFile, Path, TargetSchema], Iterator[TypedRecord]]
 
 
 class _LoadedScript:
@@ -85,14 +81,14 @@ class ScriptMapper:
     def supports(self, file: RawFile) -> bool:
         return any(s.matches(file) for s in self._scripts)
 
-    def map(self, file: RawFile, schema: TargetSchema) -> Iterator[TypedRecord]:
+    def map(self, file: RawFile, path: Path, schema: TargetSchema) -> Iterator[TypedRecord]:
         matches = [s for s in self._scripts if s.matches(file)]
         if not matches:
             raise MappingScriptError(f"no mapping script matches file {file.source_id!r}")
         if len(matches) > 1:
             paths = [str(s.path) for s in matches]
             raise MultipleMappersError(f"multiple mapping scripts match {file.source_id!r}: {paths}")
-        yield from matches[0].map_fn(file, schema)
+        yield from matches[0].map_fn(file, path, schema)
 
     @staticmethod
     def _load_all(scripts_dir: Path) -> list[_LoadedScript]:

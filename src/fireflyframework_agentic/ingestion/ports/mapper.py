@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from fireflyframework_agentic.ingestion.domain import RawFile, TargetSchema, TypedRecord
@@ -24,17 +25,18 @@ from fireflyframework_agentic.ingestion.domain import RawFile, TargetSchema, Typ
 
 @runtime_checkable
 class MapperPort(Protocol):
-    """Translates :class:`RawFile` into rows for the target schema."""
+    """Translates a RawFile (and its local cached path) into typed rows."""
 
     def supports(self, file: RawFile) -> bool:
         """Return whether this mapper can handle *file*."""
         ...
 
-    def map(self, file: RawFile, schema: TargetSchema) -> Iterator[TypedRecord]:
+    def map(self, file: RawFile, path: Path, schema: TargetSchema) -> Iterator[TypedRecord]:
         """Yield typed records produced from *file*.
 
-        The mapper must validate that emitted rows reference tables and
-        columns declared in *schema*. Validation against column types is
-        the sink's responsibility.
+        Args:
+            file: Metadata about the file (name, mime_type, source_id, etc.).
+            path: Local path to the cached copy of the file on disk.
+            schema: Target schema to validate emitted rows against.
         """
         ...
