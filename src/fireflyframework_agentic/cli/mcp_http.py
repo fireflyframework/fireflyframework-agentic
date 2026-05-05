@@ -21,7 +21,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from fireflyframework_agentic.exposure.mcp.server import create_mcp_app
-import fireflyframework_agentic.tools.builtins.sharepoint_rag  # noqa: F401
+from fireflyframework_agentic.tools.builtins import sharepoint_rag  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
 
 def build_app() -> FastAPI:
