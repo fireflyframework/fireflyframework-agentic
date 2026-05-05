@@ -304,6 +304,7 @@ class CorpusAgent:
                         doc_id=raw.source_id,
                         source_path=raw.source_id,
                         status="failed",
+                        n_chunks=0,
                     )
                     continue
                 yield await self.ingest_one(local_path)
