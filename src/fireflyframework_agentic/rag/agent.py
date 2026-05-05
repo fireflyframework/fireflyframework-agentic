@@ -209,47 +209,20 @@ class CorpusAgent:
             loader=self._loader,
         )
 
-    async def ingest_folder(self, folder: Path) -> list[IngestionResult]:
-        """Recursively ingest every file under ``folder``.
+    async def ingest_folder(self, folder: Path) -> IngestSummary:
+        """Recursively ingest every (non-hidden) file under ``folder``.
 
-        Hidden files (anything starting with ``.``) are skipped — that includes
-        macOS ``.DS_Store`` metadata and editor swap files. Filtering uses
-        :meth:`FolderWatcher.is_hidden` so the rules stay in sync with the
-        watcher path.
+        Thin wrapper around :meth:`ingest_source` using a
+        :class:`LocalFolderSource`. Hidden files (``.DS_Store``, editor swap
+        files, dotfiles) are skipped — same rule the watcher applies.
         """
-        await self._ensure_corpus_ready()
-        root = Path(folder)
-        watcher = FolderWatcher(folder=root)
-        candidates = sorted(p for p in root.rglob("*") if p.is_file() and not watcher.is_hidden(p))
-        log.info("found %d file(s) under %s", len(candidates), root)
-        # No histogram on the outer span; per-file durations land in
-        # ``ingest_document_duration`` via ``_record_terminal`` with
-        # accurate per-file status labels. Aggregating those gives the
-        # batch-level latency without polluting the per-stage panel.
-        async with timed_span(
-            "corpus_search.ingest_folder",
-            attributes={
-                "folder": str(root),
-                "n_files": len(candidates),
-            },
-        ) as span:
-            results: list[IngestionResult] = []
-            for i, path in enumerate(candidates, 1):
-                size_kb = path.stat().st_size / 1024 if path.exists() else 0
-                log.info(
-                    "[%d/%d] starting %s (%.0f KB)",
-                    i,
-                    len(candidates),
-                    path.relative_to(root),
-                    size_kb,
-                )
-                results.append(await self.ingest_one(path))
-            counts: dict[str, int] = {}
-            for r in results:
-                counts[r.status] = counts.get(r.status, 0) + 1
-            for status, count in counts.items():
-                span.set_attribute(f"firefly.rag.terminal.{status}", count)
-            return results
+        from fireflyframework_agentic.content.sources.local_folder import (
+            LocalFolderSource,
+            LocalFolderSourceConfig,
+        )
+
+        source = LocalFolderSource(LocalFolderSourceConfig(folder=Path(folder)))
+        return await self.ingest_source(source)
 
     async def ingest_source(self, source: ContentSource) -> IngestSummary:
         """Pull every changed file from ``source`` and ingest it.
