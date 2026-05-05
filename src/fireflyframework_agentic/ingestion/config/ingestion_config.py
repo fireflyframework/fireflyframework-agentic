@@ -132,7 +132,7 @@ def build_source(
                  if k not in {"tenant_id_secret", "client_id_secret", "client_secret_secret"}}
         merged = {**extra, "cache_dir": state.cache_dir, "delta_file": state.delta_file}
         sp_config = SharePointSourceConfig.model_validate(merged)
-        return SharePointSource(sp_config, _token_provider)
+        return SharePointSource(sp_config, token_provider=_token_provider)
     raise IngestionConfigError(f"unknown source type: {section.type!r}")
 
 
