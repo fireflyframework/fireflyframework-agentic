@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,10 @@ from examples.corpus_search.retrieval.answerer import Answer, AnswerAgent
 from fireflyframework_agentic.content.loaders import MarkitdownLoader
 from fireflyframework_agentic.content.markdown_chunker import MarkdownChunker
 from fireflyframework_agentic.pipeline.triggers import FolderWatcher
+from fireflyframework_agentic.rag._telemetry import (
+    query_total_duration,
+    timed_span,
+)
 from fireflyframework_agentic.rag.corpus import SqliteCorpus
 from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
 from fireflyframework_agentic.rag.ingest.pipeline import IngestionResult, ingest_one
@@ -193,12 +198,36 @@ class CorpusAgent:
         await self._ensure_corpus_ready()
         root = Path(folder)
         watcher = FolderWatcher(folder=root)
-        results: list[IngestionResult] = []
         candidates = sorted(p for p in root.rglob("*") if p.is_file() and not watcher.is_hidden(p))
         log.info("found %d file(s) under %s", len(candidates), root)
-        for path in candidates:
-            results.append(await self.ingest_one(path))
-        return results
+        # No histogram on the outer span; per-file durations land in
+        # ``ingest_document_duration`` via ``_record_terminal`` with
+        # accurate per-file status labels. Aggregating those gives the
+        # batch-level latency without polluting the per-stage panel.
+        async with timed_span(
+            "corpus_search.ingest_folder",
+            attributes={
+                "folder": str(root),
+                "n_files": len(candidates),
+            },
+        ) as span:
+            results: list[IngestionResult] = []
+            for i, path in enumerate(candidates, 1):
+                size_kb = path.stat().st_size / 1024 if path.exists() else 0
+                log.info(
+                    "[%d/%d] starting %s (%.0f KB)",
+                    i,
+                    len(candidates),
+                    path.relative_to(root),
+                    size_kb,
+                )
+                results.append(await self.ingest_one(path))
+            counts: dict[str, int] = {}
+            for r in results:
+                counts[r.status] = counts.get(r.status, 0) + 1
+            for status, count in counts.items():
+                span.set_attribute(f"firefly.rag.terminal.{status}", count)
+            return results
 
     async def watch(self, folder: Path) -> AsyncIterator[IngestionResult]:
         await self._ensure_corpus_ready()
@@ -224,17 +253,36 @@ class CorpusAgent:
         assert self._reranker is not None
         assert self._answerer is not None
 
-        queries = await self._expander.expand(question)
-        # Cast a wider net for the reranker to choose from. The reranker
-        # then narrows to top_k by judged relevance — better precision
-        # than RRF-positional alone.
-        candidates = await self._retriever.retrieve(
-            queries,
-            top_k_per_query=30,
-            top_k_final=self._rerank_pool,
-        )
-        top_hits = await self._reranker.rerank(question, candidates, top_k=top_k)
-        return await self._answerer.answer(question, top_hits)
+        # Histogram is emitted explicitly at the end so the ``outcome`` label
+        # reflects the actual answer state (answered / no_info), not a stuck
+        # ``in_flight`` snapshot. Spec §7.3 requires the outcome slice for
+        # the §8.2 alert "Query end-to-end p95 > 8000ms".
+        query_start = time.perf_counter()
+        async with timed_span(
+            "corpus_search.query",
+            attributes={
+                "question": question,
+                "top_k": top_k,
+                "rerank_pool": self._rerank_pool,
+            },
+        ) as span:
+            queries = await self._expander.expand(question)
+            candidates = await self._retriever.retrieve(
+                queries,
+                top_k_per_query=30,
+                top_k_final=self._rerank_pool,
+            )
+            top_hits = await self._reranker.rerank(question, candidates, top_k=top_k)
+            answer = await self._answerer.answer(question, top_hits)
+            outcome = "no_info" if not answer.cited_sources else "answered"
+            elapsed_ms = (time.perf_counter() - query_start) * 1000.0
+            query_total_duration.record(elapsed_ms, {"outcome": outcome})
+            span.set_attribute("firefly.rag.citation_count", len(answer.cited_sources))
+            span.set_attribute(
+                "firefly.rag.outcome",
+                "no_info" if not answer.cited_sources else "answered",
+            )
+            return answer
 
     async def close(self) -> None:
         await self._corpus.close()
