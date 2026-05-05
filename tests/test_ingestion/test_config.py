@@ -24,7 +24,7 @@ import yaml
 from fireflyframework_agentic.ingestion.adapters import EnvSecretsProvider
 from fireflyframework_agentic.ingestion.adapters.mappers import ScriptMapper
 from fireflyframework_agentic.ingestion.adapters.sinks import SQLiteSink
-from fireflyframework_agentic.ingestion.adapters.sources import SharePointSource
+from fireflyframework_agentic.content.sources.sharepoint import SharePointSource
 from fireflyframework_agentic.ingestion.config import (
     IngestionConfig,
     SecretsSection,
@@ -60,7 +60,7 @@ def _write_minimal_setup(tmp_path: Path) -> Path:
         "from fireflyframework_agentic.ingestion.domain import "
         "RawFile, TargetSchema, TypedRecord\n"
         "PATTERN = re.compile(r'.*')\n"
-        "def map(file, schema): yield from []\n"
+        "def map(file, path, schema): yield from []\n"
     )
     config = {
         "source": {
@@ -118,7 +118,10 @@ def test_build_secrets_provider_keyvault_requires_vault_url():
         build_secrets_provider(SecretsSection(type="azure-keyvault"))
 
 
-def test_build_source_returns_sharepoint_adapter(tmp_path: Path):
+def test_build_source_returns_sharepoint_adapter(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("T", "fake-tenant")
+    monkeypatch.setenv("C", "fake-client")
+    monkeypatch.setenv("S", "fake-secret")
     cfg = IngestionConfig.from_yaml(_write_minimal_setup(tmp_path))
     secrets = build_secrets_provider(cfg.secrets)
     src = build_source(cfg.source, cfg.state, secrets)
@@ -131,13 +134,16 @@ def test_build_mapper_returns_script_mapper(tmp_path: Path):
     assert isinstance(mapper, ScriptMapper)
 
 
-def test_build_sink_in_memory_returns_sqlite(tmp_path: Path):
+def test_build_sink_in_memory_returns_sqlite():
     sink = build_sink(SinkSection(type="sqlite", mode="in-memory"))
     assert isinstance(sink, SQLiteSink)
     sink.close()
 
 
-def test_build_service_full_pipeline(tmp_path: Path):
+def test_build_service_full_pipeline(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("T", "fake-tenant")
+    monkeypatch.setenv("C", "fake-client")
+    monkeypatch.setenv("S", "fake-secret")
     cfg = IngestionConfig.from_yaml(_write_minimal_setup(tmp_path))
     svc = build_service(cfg)
     assert svc is not None

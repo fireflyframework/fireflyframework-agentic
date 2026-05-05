@@ -14,7 +14,7 @@
 
 """Integration tests for IngestionService with a FakeSource and real adapters.
 
-The fake replaces only the *port* (DataSourcePort), so the rest of the
+The fake replaces only the *port* (ContentSource), so the rest of the
 pipeline (ScriptMapper loading real Python files, SQLiteSink running
 in-memory) is exercised end-to-end. This is the most valuable shape of
 test for hexagonal code: the boundary closest to the outside world is
@@ -46,9 +46,15 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 class FakeSource:
     """Yields RawFiles from a list and persists a delta cursor in memory."""
 
-    def __init__(self, files: list[RawFile], initial_cursor: str | None = None) -> None:
-        self._files = files
+    def __init__(
+        self,
+        files: list[tuple[RawFile, Path]],
+        initial_cursor: str | None = None,
+    ) -> None:
+        self._files = [f for f, _ in files]
+        self._paths: dict[str, Path] = {f.source_id: p for f, p in files}
         self._cursor = initial_cursor
+        self._pending: str | None = None
         self.commit_called_with: list[str] = []
 
     async def list_changed(self, since: str | None) -> AsyncIterator[RawFile]:
@@ -56,14 +62,17 @@ class FakeSource:
             yield f
 
     async def fetch(self, file: RawFile) -> Path:
-        return file.local_path
+        return self._paths[file.source_id]
+
+    async def current_cursor(self) -> str | None:
+        return self._cursor
+
+    async def pending_cursor(self) -> str | None:
+        return self._pending
 
     async def commit_delta(self, cursor: str) -> None:
         self._cursor = cursor
         self.commit_called_with.append(cursor)
-
-    async def current_cursor(self) -> str | None:
-        return self._cursor
 
 
 @pytest.fixture
@@ -99,16 +108,16 @@ def schema() -> TargetSchema:
     )
 
 
-def _csv_raw(name: str, source_id: str, path: Path) -> RawFile:
-    return RawFile(
+def _csv_raw(name: str, source_id: str, path: Path) -> tuple[RawFile, Path]:
+    raw = RawFile(
         source_id=source_id,
         name=name,
         mime_type="text/csv",
         size_bytes=path.stat().st_size if path.exists() else 0,
         etag="v1",
         fetched_at=datetime(2026, 1, 1),
-        local_path=path,
     )
+    return raw, path
 
 
 async def test_end_to_end_pipeline_writes_to_sqlite(schema: TargetSchema, tmp_path: Path):
@@ -163,7 +172,7 @@ async def test_unsupported_file_records_error_and_continues(schema: TargetSchema
         sink.close()
 
 
-async def test_run_incremental_uses_persisted_cursor_when_since_is_none(schema: TargetSchema, tmp_path: Path):
+async def test_run_incremental_uses_persisted_cursor_when_since_is_none(schema: TargetSchema):
     source = FakeSource(files=[], initial_cursor="saved-cursor")
     mapper = ScriptMapper(FIXTURES_DIR / "scripts")
     sink = SQLiteSink()
@@ -172,8 +181,6 @@ async def test_run_incremental_uses_persisted_cursor_when_since_is_none(schema: 
         await svc.run_incremental()
     finally:
         sink.close()
-    # FakeSource captures its cursor in current_cursor(); we just verify it
-    # was returned (the actual list_changed call accepted it without error).
     assert source._cursor == "saved-cursor"
 
 
@@ -204,7 +211,7 @@ async def test_mapping_script_failure_recorded_as_error(schema: TargetSchema, tm
         "import re\n"
         "from collections.abc import Iterator\n"
         "PATTERN = re.compile(r'boom')\n"
-        "def map(file, schema):\n"
+        "def map(file, path, schema):\n"
         "    raise RuntimeError('mapping kaboom')\n"
         "    yield\n"
     )
@@ -232,7 +239,7 @@ async def test_sink_validation_errors_propagate_to_result(schema: TargetSchema, 
         "from fireflyframework_agentic.ingestion.domain import "
         "RawFile, TargetSchema, TypedRecord\n"
         "PATTERN = re.compile(r'sales-bad')\n"
-        "def map(file, schema):\n"
+        "def map(file, path, schema):\n"
         "    yield TypedRecord(table='sales', row={'id': 1, 'amount': 1.0})\n"
     )
     f = tmp_path / "sales-bad.csv"

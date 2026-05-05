@@ -37,8 +37,10 @@ def test_raw_file_minimum_fields():
     f = RawFile(
         source_id="sharepoint:Sales/Q1.xlsx",
         name="Q1.xlsx",
+        mime_type="",
+        size_bytes=0,
+        etag="",
         fetched_at=datetime(2026, 1, 1),
-        local_path=Path("/tmp/cache/Q1.xlsx"),
     )
     assert f.source_id == "sharepoint:Sales/Q1.xlsx"
     assert f.size_bytes == 0
