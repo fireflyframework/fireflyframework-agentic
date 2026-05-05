@@ -57,7 +57,7 @@ def test_format_chunks_empty_returns_empty_string():
     assert format_chunks_for_prompt([]) == ""
 
 
-@patch("examples.corpus_search.retrieval.answerer.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent")
 async def test_empty_hits_returns_no_info_without_llm_call(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -70,7 +70,7 @@ async def test_empty_hits_returns_no_info_without_llm_call(mock_agent_cls):
     answerer._agent.run.assert_not_awaited()
 
 
-@patch("examples.corpus_search.retrieval.answerer.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent")
 async def test_answer_returns_llm_output(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -89,7 +89,7 @@ async def test_answer_returns_llm_output(mock_agent_cls):
     assert result.citations == ["a-0"]
 
 
-@patch("examples.corpus_search.retrieval.answerer.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent")
 async def test_answer_passes_question_and_chunks_to_agent(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -119,7 +119,7 @@ def test_answer_pydantic_model_validates():
 # --- cited_sources enrichment ----------------------------------------------
 
 
-@patch("examples.corpus_search.retrieval.answerer.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent")
 async def test_cited_sources_enriched_from_hits(mock_agent_cls):
     """The LLM returns chunk_id citations; the agent should enrich them
     into CitedSource records with source_path + snippet pulled from the
@@ -149,7 +149,7 @@ async def test_cited_sources_enriched_from_hits(mock_agent_cls):
     assert by_id["d-9"].source_path == "/tmp/regulation.pdf"
 
 
-@patch("examples.corpus_search.retrieval.answerer.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent")
 async def test_cited_sources_drops_hallucinated_chunk_ids(mock_agent_cls):
     """If the LLM cites a chunk_id that wasn't in the hits, drop it from
     cited_sources rather than fabricating a record.
@@ -170,7 +170,7 @@ async def test_cited_sources_drops_hallucinated_chunk_ids(mock_agent_cls):
     assert [s.chunk_id for s in result.cited_sources] == ["a-0"]
 
 
-@patch("examples.corpus_search.retrieval.answerer.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent")
 async def test_cited_sources_dedupes_repeated_citations(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -188,7 +188,7 @@ async def test_cited_sources_dedupes_repeated_citations(mock_agent_cls):
     assert [s.chunk_id for s in result.cited_sources] == ["a-0"]
 
 
-@patch("examples.corpus_search.retrieval.answerer.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent")
 async def test_empty_hits_returns_no_info_with_empty_cited_sources(mock_agent_cls):
     """No hits -> short-circuit to no-info answer with cited_sources=[]."""
     mock_agent = MagicMock()

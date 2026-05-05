@@ -254,7 +254,7 @@ async def agent(tmp_path):
     mock_agent_instance = MagicMock()
     with (
         patch("fireflyframework_agentic.rag.retrieval.expander.FireflyAgent", return_value=mock_agent_instance),
-        patch("examples.corpus_search.retrieval.answerer.FireflyAgent", return_value=mock_agent_instance),
+        patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent", return_value=mock_agent_instance),
         patch("fireflyframework_agentic.rag.retrieval.reranker.FireflyAgent", return_value=mock_agent_instance),
     ):
         a = CorpusAgent(
