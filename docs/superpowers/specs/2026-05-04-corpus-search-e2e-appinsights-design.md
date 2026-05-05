@@ -119,13 +119,13 @@ same PR rather than as a separate cleanup.
             │     │     └─ per-attempt      span: rag.ingest.embed.attempt
             │     └─ corpus.upsert + vec    span: rag.ingest.store
             │
-            └─ query(question)             span: corpus_search.query
+            └─ query(question)             span: firefly.rag.query
                   ├─ expander.expand        span: rag.query.expand
                   ├─ hybrid.retrieve        span: rag.query.retrieve
                   │     ├─ per-variant      span: rag.query.bm25
                   │     └─ per-variant      span: rag.query.vector
                   ├─ reranker.rerank        span: rag.query.rerank
-                  └─ answerer.answer        span: corpus_search.answer
+                  └─ answerer.answer        span: firefly.rag.answer
 ```
 
 All persistent state in `./kg/corpus.sqlite`.
@@ -299,17 +299,17 @@ the same telemetry as the example.
 ### 7.2 Example-side spans (`examples/corpus_search/`)
 
 **`agent.py::CorpusAgent.ingest_folder`** — outer span
-`corpus_search.ingest_folder`. Attributes: `folder`, `n_files`, plus per-file
+`firefly.rag.ingest_source`. Attributes: `folder`, `n_files`, plus per-file
 rollup counts of each terminal status. Each per-file `ingest_one` span is a
 child via the active context, so the trace tree shows the whole batch under
 one root.
 
-**`agent.py::CorpusAgent.query`** — outer span `corpus_search.query`
+**`agent.py::CorpusAgent.query`** — outer span `firefly.rag.query`
 (attribute `question`) wrapping the four `rag.query.*` sub-spans plus
-`corpus_search.answer` for synthesis. The `cited_sources` list is logged as
+`firefly.rag.answer` for synthesis. The `cited_sources` list is logged as
 an event on the answer span (not as an attribute — too large).
 
-**`retrieval/answerer.py::AnswerAgent.answer`** — span `corpus_search.answer`.
+**`retrieval/answerer.py::AnswerAgent.answer`** — span `firefly.rag.answer`.
 Attributes: `n_hits`, `model`, `citation_count`, `hallucinated_citation_count`.
 
 ### 7.3 Latency monitoring — histograms (the AppInsights-friendly side)
@@ -370,7 +370,7 @@ async def _timed_span(name: str, *, histogram, labels: dict[str, str]):
 ### 7.5 Privacy
 
 - **Document content**: never. Span attributes carry IDs, sizes, counts.
-- **Question text**: yes, in the `corpus_search.query` span as an attribute
+- **Question text**: yes, in the `firefly.rag.query` span as an attribute
   (needed to triage retrieval misses against AppInsights samples). If
   redaction is later required, add a `redact_query=True` flag.
 - **Answer text**: no.
@@ -411,7 +411,7 @@ and extension-less files inflate `load_failed` once during the e2e run.
 
 ```kql
 dependencies
-| where name startswith "rag.query" or name startswith "corpus_search"
+| where name startswith "rag.query" or name startswith "firefly.rag"
 | where customDimensions.["firefly.run.id"] == "<correlation-id>"
 | project timestamp, name, duration, customDimensions
 | order by timestamp asc

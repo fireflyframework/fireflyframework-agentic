@@ -121,7 +121,7 @@ class AnswerAgent:
 
     async def answer(self, question: str, hits: Sequence[ChunkHit]) -> Answer:
         async with timed_span(
-            "corpus_search.answer",
+            "firefly.rag.answer",
             histogram=query_stage_duration,
             attributes={
                 "n_hits": len(hits),
