@@ -24,7 +24,7 @@ import os
 
 import pytest
 
-from examples.corpus_search.agent import CorpusAgent
+from fireflyframework_agentic.rag.agent import CorpusAgent
 
 
 @pytest.mark.nightly
