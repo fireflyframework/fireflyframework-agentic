@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
@@ -277,6 +278,41 @@ class CorpusAgent:
             yield await self.ingest_one(path)
         async for path in watcher.watch():
             yield await self.ingest_one(path)
+
+    async def watch_source(
+        self,
+        source: ContentSource,
+        *,
+        interval: float = 60.0,
+    ) -> AsyncIterator[IngestionResult]:
+        """Poll ``source.list_changed`` on a timer; yield per-file results.
+
+        After each successful drain of the iterator, the source's
+        ``pending_cursor`` is committed, so the next tick only sees newly
+        changed files. Caller cancels by exiting the iteration (``break``,
+        task cancellation, etc.).
+        """
+        await self._ensure_corpus_ready()
+        while True:
+            cursor = await source.current_cursor()
+            async for raw in source.list_changed(cursor):
+                try:
+                    local_path = await source.fetch(raw)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("fetch failed for %s: %s", raw.source_id, exc)
+                    yield IngestionResult(
+                        doc_id=raw.source_id,
+                        source_path=raw.source_id,
+                        status="failed",
+                    )
+                    continue
+                yield await self.ingest_one(local_path)
+
+            new_cursor = await source.pending_cursor()
+            if new_cursor:
+                await source.commit_delta(new_cursor)
+
+            await asyncio.sleep(interval)
 
     async def retrieve(
         self,
