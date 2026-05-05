@@ -121,9 +121,9 @@ async def test_ingest_folder_processes_each_file(agent, tmp_path):
     src.mkdir()
     (src / "a.txt").write_text("Content for section A with enough text to pass filter.")
     (src / "b.txt").write_text("Content for section B with enough text to pass filter.")
-    results = await agent.ingest_folder(src)
-    assert len(results) == 2
-    assert all(r.status == "success" for r in results)
+    summary = await agent.ingest_folder(src)
+    assert len(summary.results) == 2
+    assert all(r.status == "success" for r in summary.results)
 
 
 async def _passthrough_reranker(question, hits, *, top_k):
