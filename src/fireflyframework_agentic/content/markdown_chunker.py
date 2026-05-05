@@ -16,11 +16,56 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+from typing import Any
 
 from markdown_it import MarkdownIt
 
 from fireflyframework_agentic.content.chunking import Chunk, TextChunker
+
+logger = logging.getLogger(__name__)
+
+
+class _EncoderCache:
+    """Lazy-loaded tiktoken encoder cache (cl100k_base — used by
+    text-embedding-3-* and all current OpenAI / Azure OpenAI embedding
+    models). When available it replaces the word-count heuristic so
+    token-budget enforcement is accurate for content shapes the heuristic
+    mis-estimates badly — markdown tables in particular, where every
+    ``|`` and numeric cell becomes its own BPE token.
+
+    Encapsulated as a class rather than a module-level mutable so static
+    analysers correctly read the access pattern (read-write on a class
+    attribute) instead of flagging it as an unused global. Same runtime
+    behaviour as the previous ``_encoding_cache`` tuple.
+    """
+
+    loaded: bool = False
+    encoder: Any = None
+
+
+def _accurate_token_count(text: str) -> int | None:
+    """Return real BPE token count via tiktoken, or *None* if unavailable.
+
+    The heuristic ``len(text.split()) * 1.33`` undercounts table-heavy
+    content by 5–20×. When that miscalculation pushes a "small" chunk past
+    the embedder's 8 192-token input limit, the embed call fails with a
+    non-retryable HTTP 400 and the document gets stranded in the ledger as
+    ``failed``. tiktoken is a transitive dep of the openai SDK so it's
+    almost always present, but we fall back gracefully if not.
+    """
+    if not _EncoderCache.loaded:
+        try:
+            import tiktoken
+
+            _EncoderCache.encoder = tiktoken.get_encoding("cl100k_base")
+        except Exception:
+            _EncoderCache.encoder = None
+        _EncoderCache.loaded = True
+    if _EncoderCache.encoder is None:
+        return None
+    return len(_EncoderCache.encoder.encode(text))
 
 
 @dataclass
@@ -119,6 +164,49 @@ class MarkdownChunker:
             return Chunk(content=content, metadata={"breadcrumb": breadcrumb})
 
         if self._estimate_tokens(section.body) <= self._max_chunk_tokens:
-            return [make_chunk(section.body)]
+            bodies = [section.body]
+        else:
+            bodies = [sc.content for sc in self._fallback.chunk(section.body)]
 
-        return [make_chunk(sc.content) for sc in self._fallback.chunk(section.body)]
+        # Hard-enforce ``max_chunk_tokens`` against the real BPE tokeniser
+        # when available, sub-splitting any body whose word-count estimate
+        # mis-judged the true token count (markdown tables in particular —
+        # every ``|`` and numeric cell becomes its own BPE token, which
+        # the heuristic undercounts by 5–20×). Without this pass, oversized
+        # chunks make it to the embedder and trigger non-retryable HTTP 400s.
+        # Crucially this happens before breadcrumb prepending so the
+        # breadcrumb stays attached to every emitted chunk.
+        budgeted: list[str] = []
+        budget = (
+            max(1, self._max_chunk_tokens - self._estimate_tokens(breadcrumb)) if breadcrumb else self._max_chunk_tokens
+        )
+        for body in bodies:
+            budgeted.extend(self._hard_split(body, budget=budget))
+        return [make_chunk(b) for b in budgeted]
+
+    def _hard_split(self, content: str, *, budget: int) -> list[str]:
+        """Recursively halve *content* on newline boundaries until each
+        piece fits under ``budget`` BPE tokens. Falls back to character-
+        midpoint splitting when no useful newline exists in a half.
+
+        We split on newlines so that table rows / paragraph boundaries
+        survive intact wherever possible; pure character halving is a
+        last-resort fallback for content with no whitespace structure
+        (e.g. base64 blobs).
+        """
+        real = _accurate_token_count(content)
+        if real is None or real <= budget:
+            return [content]
+        midpoint = len(content) // 2
+        nl = content.rfind("\n", 0, midpoint)
+        cut = nl if nl > 0 else midpoint
+        left = content[:cut]
+        right = content[cut:]
+        if not left.strip() or not right.strip():
+            # No useful whitespace to split on; force a midpoint cut.
+            cut = midpoint
+            left = content[:cut]
+            right = content[cut:]
+        if left == content or right == content:
+            return [content]
+        return self._hard_split(left, budget=budget) + self._hard_split(right, budget=budget)
