@@ -41,7 +41,7 @@ def _write_basic_config(tmp_path: Path) -> Path:
         "import re\n"
         "from collections.abc import Iterator\n"
         "PATTERN = re.compile(r'noop')\n"
-        "def map(file, schema): yield from []\n"
+        "def map(file, path, schema): yield from []\n"
     )
     cfg = {
         "source": {

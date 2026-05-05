@@ -20,6 +20,7 @@ import csv
 from pathlib import Path
 from typing import Any
 
+import openpyxl
 from pydantic_ai import Agent
 
 from fireflyframework_agentic.ingestion.domain.schema import TargetSchema
@@ -54,7 +55,6 @@ def _read_sample(path: Path) -> tuple[list[str], list[list[Any]]]:
             rows = [row for _, row in zip(range(_SAMPLE_ROWS), reader, strict=False)]
         return headers, rows
     if suffix in (".xlsx", ".xlsm"):
-        import openpyxl
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
         ws = wb.active
         all_rows = list(ws.iter_rows(values_only=True)) if ws is not None else []
@@ -62,10 +62,7 @@ def _read_sample(path: Path) -> tuple[list[str], list[list[Any]]]:
         if not all_rows:
             return [], []
         headers = [str(c) if c is not None else "" for c in all_rows[0]]
-        rows = [
-            [str(c) if c is not None else "" for c in r]
-            for r in all_rows[1 : _SAMPLE_ROWS + 1]
-        ]
+        rows = [[str(c) if c is not None else "" for c in r] for r in all_rows[1 : _SAMPLE_ROWS + 1]]
         return headers, rows
     raise ValueError(f"Unsupported file type for schema discovery: {suffix!r}")
 

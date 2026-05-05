@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import openpyxl
 import pytest
 
 from fireflyframework_agentic.ingestion.agents.schema_discovery import (
@@ -23,7 +24,6 @@ def csv_file(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def xlsx_file(tmp_path: Path) -> Path:
-    import openpyxl
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.append(["product_id", "name", "price"])

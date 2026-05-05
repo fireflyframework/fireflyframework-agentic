@@ -30,6 +30,9 @@ from fireflyframework_agentic.content.sources.sharepoint import (
     SharePointSourceConfig,
 )
 from fireflyframework_agentic.ingestion.adapters import EnvSecretsProvider
+from fireflyframework_agentic.ingestion.adapters.keyvault_provider import (
+    AzureKeyVaultSecretsProvider,
+)
 from fireflyframework_agentic.ingestion.adapters.mappers import ScriptMapper
 from fireflyframework_agentic.ingestion.adapters.sinks import SQLiteSink
 from fireflyframework_agentic.ingestion.domain import TargetSchema
@@ -97,9 +100,6 @@ def build_secrets_provider(section: SecretsSection) -> SecretsProvider:
     if section.type == "azure-keyvault":
         if not section.vault_url:
             raise IngestionConfigError("secrets.type=azure-keyvault requires secrets.vault_url")
-        from fireflyframework_agentic.ingestion.adapters.keyvault_provider import (
-            AzureKeyVaultSecretsProvider,
-        )
         return AzureKeyVaultSecretsProvider(section.vault_url)
     raise IngestionConfigError(f"unknown secrets type: {section.type!r}")
 
@@ -128,8 +128,11 @@ def build_source(
                 resp.raise_for_status()
                 return str(resp.json()["access_token"])
 
-        extra = {k: v for k, v in section.config.items()
-                 if k not in {"tenant_id_secret", "client_id_secret", "client_secret_secret"}}
+        extra = {
+            k: v
+            for k, v in section.config.items()
+            if k not in {"tenant_id_secret", "client_id_secret", "client_secret_secret"}
+        }
         merged = {**extra, "cache_dir": state.cache_dir, "delta_file": state.delta_file}
         sp_config = SharePointSourceConfig.model_validate(merged)
         return SharePointSource(sp_config, token_provider=_token_provider)
