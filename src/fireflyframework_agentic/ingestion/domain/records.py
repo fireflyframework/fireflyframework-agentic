@@ -16,65 +16,29 @@
 
 These models are pure value objects: they hold data and validate it through
 Pydantic, but never perform I/O. Adapters and services compose them.
+
+Note: RawFile is defined in content.sources.base and re-exported here for
+convenience so callers can use a single import path.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-
-class RawFile(BaseModel):
-    """A file discovered in an external source and (possibly) cached locally.
-
-    Attributes:
-        source_id: Stable identifier across runs, including the source kind.
-            Convention: ``"<source>:<path>"``, e.g. ``"sharepoint:Sales/Q1.xlsx"``.
-        name: Display name of the file (no path).
-        mime_type: MIME type as reported by the source. May be empty for
-            sources that do not provide it.
-        size_bytes: File size in bytes.
-        etag: Opaque token used to deduplicate fetches across runs.
-        fetched_at: When the file was last fetched into the local cache.
-        local_path: Absolute path to the cached copy on local disk.
-    """
-
-    source_id: str
-    name: str
-    mime_type: str = ""
-    size_bytes: int = 0
-    etag: str = ""
-    fetched_at: datetime
-    local_path: Path
+from fireflyframework_agentic.content.sources.base import RawFile
 
 
 class TypedRecord(BaseModel):
-    """A single row produced by a mapping script, targeted at a table.
-
-    Attributes:
-        table: Name of the destination table in the target schema.
-        row: Column-to-value mapping. Keys must match :class:`TableSpec`
-            columns; values are validated by the sink against :class:`ColumnSpec`.
-    """
+    """A single row produced by a mapping script, targeted at a table."""
 
     table: str
     row: dict[str, Any]
 
 
 class IngestionError(BaseModel):
-    """A non-fatal error captured during a run.
-
-    Attributes:
-        kind: Error category (e.g. ``"NoMapperFound"``, ``"MappingScriptError"``,
-            ``"RowValidationError"``).
-        message: Human-readable description.
-        file_source_id: Source identifier of the file the error relates to,
-            if applicable.
-        details: Free-form structured context useful for debugging.
-    """
+    """A non-fatal error captured during a run."""
 
     kind: str
     message: str
@@ -83,17 +47,12 @@ class IngestionError(BaseModel):
 
 
 class IngestionResult(BaseModel):
-    """Outcome of a single :meth:`IngestionService.run_*` invocation.
-
-    Attributes:
-        files_processed: Number of files successfully mapped (errors excluded).
-        records_written: Map of table name to row count actually written.
-        errors: Non-fatal errors captured during the run.
-        run_id: Identifier passed to the run for traceability, if any.
-            Echoed back from the caller; the service does not generate it.
-    """
+    """Outcome of a single IngestionService.run_* invocation."""
 
     files_processed: int = 0
     records_written: dict[str, int] = Field(default_factory=dict)
     errors: list[IngestionError] = Field(default_factory=list)
     run_id: str | None = None
+
+
+__all__ = ["IngestionError", "IngestionResult", "RawFile", "TypedRecord"]
