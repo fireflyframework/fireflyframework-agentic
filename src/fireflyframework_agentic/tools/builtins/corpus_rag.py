@@ -36,7 +36,7 @@ _GRAPH_SCOPE = "https://graph.microsoft.com/.default"
 
 
 def _corpus_root() -> Path:
-    return Path(os.environ.get("CORPUS_ROOT", _DEFAULT_CORPUS_ROOT))
+    return Path(os.path.expandvars(os.environ.get("CORPUS_ROOT", _DEFAULT_CORPUS_ROOT)))
 
 
 def _agent_for(corpus_id: str) -> CorpusAgent:
