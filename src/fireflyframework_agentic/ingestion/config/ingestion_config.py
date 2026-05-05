@@ -20,20 +20,21 @@ import os
 from pathlib import Path
 from typing import Any, Literal
 
+import httpx
 import yaml
 from pydantic import BaseModel, Field
 
-from fireflyframework_agentic.ingestion.adapters import EnvSecretsProvider
-from fireflyframework_agentic.ingestion.adapters.mappers import ScriptMapper
-from fireflyframework_agentic.ingestion.adapters.sinks import SQLiteSink
-from fireflyframework_agentic.ingestion.adapters.sources import (
+from fireflyframework_agentic.content.sources.base import ContentSource
+from fireflyframework_agentic.content.sources.sharepoint import (
     SharePointSource,
     SharePointSourceConfig,
 )
+from fireflyframework_agentic.ingestion.adapters import EnvSecretsProvider
+from fireflyframework_agentic.ingestion.adapters.mappers import ScriptMapper
+from fireflyframework_agentic.ingestion.adapters.sinks import SQLiteSink
 from fireflyframework_agentic.ingestion.domain import TargetSchema
 from fireflyframework_agentic.ingestion.exceptions import IngestionConfigError
 from fireflyframework_agentic.ingestion.ports import (
-    DataSourcePort,
     MapperPort,
     SecretsProvider,
     StructuredSinkPort,
@@ -68,7 +69,7 @@ class SecretsSection(BaseModel):
 
 
 class IngestionConfig(BaseModel):
-    """Top-level :file:`ingestion.yaml` schema."""
+    """Top-level ingestion.yaml schema."""
 
     source: SourceSection
     mapper: MapperSection
@@ -96,11 +97,9 @@ def build_secrets_provider(section: SecretsSection) -> SecretsProvider:
     if section.type == "azure-keyvault":
         if not section.vault_url:
             raise IngestionConfigError("secrets.type=azure-keyvault requires secrets.vault_url")
-        # Lazy import: this code path requires the optional extra.
         from fireflyframework_agentic.ingestion.adapters.keyvault_provider import (
             AzureKeyVaultSecretsProvider,
         )
-
         return AzureKeyVaultSecretsProvider(section.vault_url)
     raise IngestionConfigError(f"unknown secrets type: {section.type!r}")
 
@@ -109,15 +108,31 @@ def build_source(
     section: SourceSection,
     state: StateSection,
     secrets: SecretsProvider,
-) -> DataSourcePort:
+) -> ContentSource:
     if section.type == "sharepoint":
-        merged = {
-            **section.config,
-            "cache_dir": state.cache_dir,
-            "delta_file": state.delta_file,
-        }
+        tenant_id = secrets.get(section.config["tenant_id_secret"])
+        client_id = secrets.get(section.config["client_id_secret"])
+        client_secret_val = secrets.get(section.config["client_secret_secret"])
+
+        async def _token_provider() -> str:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token",
+                    data={
+                        "grant_type": "client_credentials",
+                        "client_id": client_id,
+                        "client_secret": client_secret_val,
+                        "scope": "https://graph.microsoft.com/.default",
+                    },
+                )
+                resp.raise_for_status()
+                return str(resp.json()["access_token"])
+
+        extra = {k: v for k, v in section.config.items()
+                 if k not in {"tenant_id_secret", "client_id_secret", "client_secret_secret"}}
+        merged = {**extra, "cache_dir": state.cache_dir, "delta_file": state.delta_file}
         sp_config = SharePointSourceConfig.model_validate(merged)
-        return SharePointSource(sp_config, secrets)
+        return SharePointSource(sp_config, _token_provider)
     raise IngestionConfigError(f"unknown source type: {section.type!r}")
 
 
@@ -147,5 +162,5 @@ def build_service(config: IngestionConfig) -> IngestionService:
 
 
 def expand_env_vars(value: str) -> str:
-    """Expand ``${VAR}`` references in *value* using ``os.environ``."""
+    """Expand ${VAR} references in value using os.environ."""
     return os.path.expandvars(value)
