@@ -51,7 +51,7 @@ def _read_sample(path: Path) -> tuple[list[str], list[list[Any]]]:
         with path.open(newline="", encoding="utf-8-sig") as fh:
             reader = csv.reader(fh)
             headers = next(reader, [])
-            rows = [row for _, row in zip(range(_SAMPLE_ROWS), reader)]
+            rows = [row for _, row in zip(range(_SAMPLE_ROWS), reader, strict=False)]
         return headers, rows
     if suffix in (".xlsx", ".xlsm"):
         import openpyxl

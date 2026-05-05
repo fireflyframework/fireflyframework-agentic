@@ -21,10 +21,10 @@ from pathlib import Path
 import pytest
 import yaml
 
+from fireflyframework_agentic.content.sources.sharepoint import SharePointSource
 from fireflyframework_agentic.ingestion.adapters import EnvSecretsProvider
 from fireflyframework_agentic.ingestion.adapters.mappers import ScriptMapper
 from fireflyframework_agentic.ingestion.adapters.sinks import SQLiteSink
-from fireflyframework_agentic.content.sources.sharepoint import SharePointSource
 from fireflyframework_agentic.ingestion.config import (
     IngestionConfig,
     SecretsSection,
