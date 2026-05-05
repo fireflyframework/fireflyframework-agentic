@@ -30,7 +30,7 @@ from fireflyframework_agentic.rag._telemetry import (
     query_total_duration,
     timed_span,
 )
-from fireflyframework_agentic.rag.corpus import SqliteCorpus
+from fireflyframework_agentic.rag.corpus import ChunkHit, SqliteCorpus
 from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
 from fireflyframework_agentic.rag.ingest.pipeline import IngestionResult, ingest_one
 from fireflyframework_agentic.rag.retrieval.answerer import Answer, AnswerAgent
@@ -278,26 +278,48 @@ class CorpusAgent:
         async for path in watcher.watch():
             yield await self.ingest_one(path)
 
-    async def query(self, question: str, *, top_k: int = 5) -> Answer:
-        """Run the full query pipeline: expand → retrieve → rerank → answer.
+    async def retrieve(
+        self,
+        question: str,
+        *,
+        top_k: int = 5,
+        rerank: bool = True,
+    ) -> list[ChunkHit]:
+        """Run expand → hybrid retrieve → (optional) rerank.
 
-        ``top_k`` is the number of chunks fed into the answer agent
-        *after* reranking. Retrieval pulls a wider pool (``rerank_pool``,
-        default 20) so the reranker has enough candidates to choose
-        from. Reducing ``top_k`` from 10 to 5 typically halves Sonnet's
-        wall-clock time without hurting answer quality, because the
-        reranker filters out low-relevance chunks first.
+        Returns the ranked chunk hits without invoking the answer LLM. Use
+        this when the caller wants to compose its own answer or display raw
+        evidence to the user. ``query`` calls into this method.
         """
         await self._ensure_query_ready()
         assert self._expander is not None
         assert self._retriever is not None
         assert self._reranker is not None
+
+        async with timed_span(
+            "corpus_search.retrieve",
+            attributes={"question": question, "top_k": top_k, "rerank": rerank},
+        ):
+            queries = await self._expander.expand(question)
+            candidates = await self._retriever.retrieve(
+                queries,
+                top_k_per_query=30,
+                top_k_final=self._rerank_pool if rerank else top_k,
+            )
+            if rerank:
+                return await self._reranker.rerank(question, candidates, top_k=top_k)
+            return candidates[:top_k]
+
+    async def query(self, question: str, *, top_k: int = 5) -> Answer:
+        """Run the full pipeline: retrieve (with rerank) + answer.
+
+        Wraps :meth:`retrieve` with the answerer so callers get a grounded
+        answer plus citations in one call. ``top_k`` is the number of
+        chunks fed into the answer agent *after* reranking.
+        """
+        await self._ensure_query_ready()
         assert self._answerer is not None
 
-        # Histogram is emitted explicitly at the end so the ``outcome`` label
-        # reflects the actual answer state (answered / no_info), not a stuck
-        # ``in_flight`` snapshot. Spec §7.3 requires the outcome slice for
-        # the §8.2 alert "Query end-to-end p95 > 8000ms".
         query_start = time.perf_counter()
         async with timed_span(
             "corpus_search.query",
@@ -307,22 +329,13 @@ class CorpusAgent:
                 "rerank_pool": self._rerank_pool,
             },
         ) as span:
-            queries = await self._expander.expand(question)
-            candidates = await self._retriever.retrieve(
-                queries,
-                top_k_per_query=30,
-                top_k_final=self._rerank_pool,
-            )
-            top_hits = await self._reranker.rerank(question, candidates, top_k=top_k)
+            top_hits = await self.retrieve(question, top_k=top_k, rerank=True)
             answer = await self._answerer.answer(question, top_hits)
             outcome = "no_info" if not answer.cited_sources else "answered"
             elapsed_ms = (time.perf_counter() - query_start) * 1000.0
             query_total_duration.record(elapsed_ms, {"outcome": outcome})
             span.set_attribute("firefly.rag.citation_count", len(answer.cited_sources))
-            span.set_attribute(
-                "firefly.rag.outcome",
-                "no_info" if not answer.cited_sources else "answered",
-            )
+            span.set_attribute("firefly.rag.outcome", outcome)
             return answer
 
     async def close(self) -> None:
