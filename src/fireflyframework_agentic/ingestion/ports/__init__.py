@@ -17,10 +17,8 @@
 from fireflyframework_agentic.ingestion.ports.mapper import MapperPort
 from fireflyframework_agentic.ingestion.ports.secrets import SecretsProvider
 from fireflyframework_agentic.ingestion.ports.sink import StructuredSinkPort
-from fireflyframework_agentic.ingestion.ports.source import DataSourcePort
 
 __all__ = [
-    "DataSourcePort",
     "MapperPort",
     "SecretsProvider",
     "StructuredSinkPort",
