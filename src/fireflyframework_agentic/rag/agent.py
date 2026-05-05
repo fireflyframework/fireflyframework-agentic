@@ -272,6 +272,12 @@ class CorpusAgent:
             try:
                 local_path = await source.fetch(raw)
             except Exception as exc:  # noqa: BLE001 — per-file isolation
+                # TODO: also record this failure in the IngestLedger so the file
+                # is replayable next run. Today the in-memory IngestionResult is
+                # only surfaced through the returned IngestSummary; the cursor
+                # advances past the file because the iterator drained, so a
+                # failed fetch is effectively dropped from operational replay.
+                # Tracked as part of Task 5 / follow-up.
                 log.warning("fetch failed for %s: %s", raw.source_id, exc)
                 results.append(
                     IngestionResult(

@@ -118,11 +118,11 @@ async def test_ingest_source_runs_pipeline_and_commits_cursor(tmp_path: Path) ->
     assert summary.skipped == 0
     assert summary.failed == 0
     assert summary.cursor == "fake-cursor-1"
-    assert source._committed == "fake-cursor-1"  # cursor was committed
+    assert await source.current_cursor() == "fake-cursor-1"  # cursor was committed
 
 
 @pytest.mark.asyncio
-async def test_ingest_source_does_not_commit_on_fetch_failure(tmp_path: Path) -> None:
+async def test_ingest_source_commits_cursor_after_per_file_fetch_failure(tmp_path: Path) -> None:
     a = tmp_path / "a.md"
     a.write_text("alpha", encoding="utf-8")
 
@@ -139,7 +139,7 @@ async def test_ingest_source_does_not_commit_on_fetch_failure(tmp_path: Path) ->
     assert summary.ingested == 0
     # Per-file fetch failures DO commit the cursor — drained iterator.
     # (Source-level errors that raise out of the iterator should not — covered separately.)
-    assert source._committed == "fake-cursor-1"
+    assert await source.current_cursor() == "fake-cursor-1"
 
 
 @pytest.mark.asyncio
