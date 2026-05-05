@@ -30,9 +30,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from examples.corpus_search.agent import CorpusAgent
 from examples.corpus_search.retrieval.answerer import Answer
 from fireflyframework_agentic.embeddings.types import EmbeddingResult
+from fireflyframework_agentic.rag.agent import CorpusAgent
 from fireflyframework_agentic.rag.corpus import (
     SqliteCorpus,
     StoredChunk,
@@ -254,7 +254,7 @@ async def agent(tmp_path):
     mock_agent_instance = MagicMock()
     with (
         patch("fireflyframework_agentic.rag.retrieval.expander.FireflyAgent", return_value=mock_agent_instance),
-        patch("examples.corpus_search.retrieval.answerer.FireflyAgent", return_value=mock_agent_instance),
+        patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent", return_value=mock_agent_instance),
         patch("fireflyframework_agentic.rag.retrieval.reranker.FireflyAgent", return_value=mock_agent_instance),
     ):
         a = CorpusAgent(

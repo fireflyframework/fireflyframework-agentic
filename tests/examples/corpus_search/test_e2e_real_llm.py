@@ -24,7 +24,7 @@ import os
 
 import pytest
 
-from examples.corpus_search.agent import CorpusAgent
+from fireflyframework_agentic.rag.agent import CorpusAgent
 
 
 @pytest.mark.nightly
@@ -51,10 +51,10 @@ async def test_ingest_then_query_with_real_llms(tmp_path):
         rerank_model="anthropic:claude-haiku-4-5-20251001",
     )
     try:
-        results = await agent.ingest_folder(drop)
-        assert len(results) == 1
-        assert results[0].status == "success"
-        assert results[0].n_chunks >= 1
+        summary = await agent.ingest_folder(drop)
+        assert len(summary.results) == 1
+        assert summary.results[0].status == "success"
+        assert summary.results[0].n_chunks >= 1
 
         answer = await agent.query("Who is the CEO of OpenAI?")
         # Answer should mention Altman and have at least one citation.
@@ -83,8 +83,8 @@ async def test_ingest_skips_unchanged_file_on_second_run(tmp_path):
     )
     try:
         first = await agent.ingest_folder(drop)
-        assert first[0].status == "success"
+        assert first.results[0].status == "success"
         second = await agent.ingest_folder(drop)
-        assert second[0].status == "skipped"
+        assert second.results[0].status == "skipped"
     finally:
         await agent.close()
