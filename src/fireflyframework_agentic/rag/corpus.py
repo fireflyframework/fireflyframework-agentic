@@ -149,9 +149,6 @@ class SqliteCorpus:
                 LocalBackend(p),
                 store_id=f"local:{p.resolve()}",
             )
-        self._conn: sqlite3.Connection | None = None
-        self._generation: int = -1
-        self._conn_lock = asyncio.Lock()
 
     @property
     def path(self) -> Path:
@@ -172,30 +169,33 @@ class SqliteCorpus:
             conn.close()
 
     async def close(self) -> None:
-        async with self._conn_lock:
-            if self._conn is not None:
-                await asyncio.to_thread(self._conn.close)
-                self._conn = None
         await self._store.close()
 
-    async def _read_conn(self) -> sqlite3.Connection:
-        path, generation = await self._store.ensure_fresh()
-        async with self._conn_lock:
-            if self._conn is None or generation != self._generation:
-                if self._conn is not None:
-                    await asyncio.to_thread(self._conn.close)
-                self._conn = await asyncio.to_thread(_open_corpus_conn, path)
-                self._generation = generation
-            return self._conn
+    async def _read_path(self) -> Path:
+        """Return the local cache path, refreshed against the backend.
+
+        Concurrent readers each open their own short-lived sqlite3
+        connection in their worker thread (see ``_query_sync``); we
+        deliberately do NOT cache a shared connection across coroutines
+        because a generation bump on one reader would close the
+        connection in use by another. WAL mode + sub-millisecond
+        connect cost makes per-call connections cheap.
+        """
+        path, _ = await self._store.ensure_fresh()
+        return path
 
     async def query(self, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        conn = await self._read_conn()
-        return await asyncio.to_thread(self._query_sync, conn, sql, params or {})
+        path = await self._read_path()
+        return await asyncio.to_thread(self._query_sync, path, sql, params or {})
 
     @staticmethod
-    def _query_sync(conn: sqlite3.Connection, sql: str, params: dict[str, Any]) -> list[dict[str, Any]]:
-        cur = conn.execute(sql, params)
-        return [dict(r) for r in cur.fetchall()]
+    def _query_sync(path: Path, sql: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+        conn = _open_corpus_conn(path)
+        try:
+            cur = conn.execute(sql, params)
+            return [dict(r) for r in cur.fetchall()]
+        finally:
+            conn.close()
 
     async def upsert_chunks(
         self,
@@ -271,28 +271,33 @@ class SqliteCorpus:
             conn.close()
 
     async def bm25_search(self, query: str, *, top_k: int = 30) -> list[ChunkHit]:
-        conn = await self._read_conn()
-        return await asyncio.to_thread(self._bm25_search_sync, conn, query, top_k)
+        path = await self._read_path()
+        return await asyncio.to_thread(self._bm25_search_sync, path, query, top_k)
 
     @staticmethod
-    def _bm25_search_sync(conn: sqlite3.Connection, query: str, top_k: int) -> list[ChunkHit]:
+    def _bm25_search_sync(path: Path, query: str, top_k: int) -> list[ChunkHit]:
         match_expr = sanitize_fts_query(query)
         if not match_expr:
             return []
+        conn = _open_corpus_conn(path)
         try:
-            cur = conn.execute(
-                """SELECT c.chunk_id, c.content, c.metadata, c.doc_id, c.source_path,
-                          bm25(chunks_fts) AS score
-                   FROM chunks_fts
-                   JOIN chunks c ON c.rowid = chunks_fts.rowid
-                   WHERE chunks_fts MATCH :q
-                   ORDER BY score
-                   LIMIT :k""",
-                {"q": match_expr, "k": top_k},
-            )
-        except sqlite3.OperationalError as exc:
-            log.warning("bm25_search returned no results due to OperationalError: %s", exc)
-            return []
+            try:
+                cur = conn.execute(
+                    """SELECT c.chunk_id, c.content, c.metadata, c.doc_id, c.source_path,
+                              bm25(chunks_fts) AS score
+                       FROM chunks_fts
+                       JOIN chunks c ON c.rowid = chunks_fts.rowid
+                       WHERE chunks_fts MATCH :q
+                       ORDER BY score
+                       LIMIT :k""",
+                    {"q": match_expr, "k": top_k},
+                )
+            except sqlite3.OperationalError as exc:
+                log.warning("bm25_search returned no results due to OperationalError: %s", exc)
+                return []
+            rows = cur.fetchall()
+        finally:
+            conn.close()
         return [
             ChunkHit(
                 chunk_id=r["chunk_id"],
@@ -302,7 +307,7 @@ class SqliteCorpus:
                 source_path=r["source_path"],
                 doc_id=r["doc_id"],
             )
-            for r in cur.fetchall()
+            for r in rows
         ]
 
     async def get_chunks(self, chunk_ids: list[str]) -> list[StoredChunk]:
@@ -330,5 +335,8 @@ class SqliteCorpus:
 def _open_corpus_conn(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    # 30s busy_timeout so concurrent ingest workers wait for each other's
+    # WAL writes to drain instead of failing fast with "database is locked".
+    conn.execute("PRAGMA busy_timeout = 30000")
     conn.executescript(_SCHEMA)
     return conn

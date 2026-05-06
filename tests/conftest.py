@@ -97,6 +97,10 @@ def azurite_connection_string() -> Iterator[str]:
                     "azurite-blob",
                     "--blobHost",
                     "0.0.0.0",
+                    # The Azure SDK ships newer API versions than the
+                    # tagged Azurite image; skip the version check so
+                    # the SDK/Azurite pair stays compatible.
+                    "--skipApiVersionCheck",
                 ],
                 stderr=subprocess.STDOUT,
             )
