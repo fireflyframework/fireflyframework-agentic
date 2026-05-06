@@ -33,6 +33,7 @@ from fireflyframework_agentic.storage.database_store import DatabaseStore
 from fireflyframework_agentic.storage.local_backend import LocalBackend
 
 __all__ = [
+    "AzureBlobBackend",
     "DatabaseStore",
     "DatabaseStoreError",
     "LocalBackend",
@@ -47,3 +48,11 @@ __all__ = [
     "StoreUnavailableError",
     "WriteSession",
 ]
+
+
+def __getattr__(name: str):
+    if name == "AzureBlobBackend":
+        from fireflyframework_agentic.storage.azure_backend import AzureBlobBackend
+
+        return AzureBlobBackend
+    raise AttributeError(name)
