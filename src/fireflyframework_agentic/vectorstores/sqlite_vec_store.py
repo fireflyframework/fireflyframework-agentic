@@ -63,6 +63,7 @@ class SqliteVecVectorStore(BaseVectorStore):
         if path_or_store is None and db_path is None:
             raise TypeError("SqliteVecVectorStore requires path_or_store or db_path")
         target = path_or_store if path_or_store is not None else db_path
+        assert target is not None  # guaranteed by the TypeError check above
 
         from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
 

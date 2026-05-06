@@ -21,7 +21,7 @@ import contextlib
 import logging
 import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -81,7 +81,14 @@ class AzureBlobBackend(StorageBackend):
     def kind(self) -> str:
         return "azure_blob"
 
+    def _check_renew_failure(self) -> None:
+        if self._renew_failure is not None:
+            failure = self._renew_failure
+            self._renew_failure = None
+            raise StorageLeaseError("lease renewal failed mid-operation") from failure
+
     async def metadata(self) -> StorageMetadata:
+        self._check_renew_failure()
         return await asyncio.to_thread(self._metadata_sync)
 
     def _metadata_sync(self) -> StorageMetadata:
@@ -102,6 +109,7 @@ class AzureBlobBackend(StorageBackend):
         )
 
     async def download(self, dest: Path) -> StorageMetadata:
+        self._check_renew_failure()
         return await asyncio.to_thread(self._download_sync, dest)
 
     def _download_sync(self, dest: Path) -> StorageMetadata:
@@ -126,6 +134,7 @@ class AzureBlobBackend(StorageBackend):
         if_match: str | None = None,
         if_none_match: str | None = None,
     ) -> StorageMetadata:
+        self._check_renew_failure()
         return await asyncio.to_thread(self._upload_sync, src, if_match, if_none_match)
 
     def _upload_sync(
@@ -202,10 +211,11 @@ class AzureBlobBackend(StorageBackend):
                     continue
                 raise StoreUnavailableError(f"acquire_lease: {exc}") from exc
         _ = last_exc  # consumed above; referenced to satisfy linters
+        now = datetime.now(UTC)
         token = LockToken(
             token=lease.id,
-            acquired_at=datetime.now(UTC),
-            expires_at=datetime.now(UTC),  # informational
+            acquired_at=now,
+            expires_at=now + timedelta(seconds=self._lease_duration_s),
         )
         self._renew_failure = None
         self._renew_task = asyncio.create_task(self._renew_loop(lease))
@@ -225,6 +235,7 @@ class AzureBlobBackend(StorageBackend):
             return
 
     async def release_lock(self, token: LockToken) -> None:
+        self._check_renew_failure()
         if self._renew_task is not None:
             self._renew_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):

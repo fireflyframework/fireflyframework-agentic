@@ -23,6 +23,7 @@ import pytest
 from fireflyframework_agentic.storage import (
     DatabaseStore,
     RetryPolicy,
+    StorageLeaseError,
     StorageTransientError,
     StorageUploadError,
 )
@@ -164,3 +165,26 @@ async def test_close_is_idempotent(store_factory) -> None:
     store, _ = store_factory()
     await store.close()
     await store.close()
+
+
+async def test_for_write_surfaces_lease_renew_failure(tmp_path: Path) -> None:
+    """When a backend records a lease-renew failure, the next operation
+    must surface it as StorageLeaseError, not silently proceed."""
+    backend = InMemoryBackend()
+    # Simulate the error that AzureBlobBackend._renew_loop would surface:
+    # inject a StorageLeaseError into the upload-failures queue so the
+    # backend raises it on the upload step of for_write().
+    # StorageLeaseError is not in RetryPolicy.retry_on, so it
+    # short-circuits the retry loop and surfaces as StorageUploadError.
+    backend.upload_failures = [StorageLeaseError("lease renewal failed mid-operation")]
+    store = DatabaseStore(
+        backend,
+        store_id="lf",
+        cache_root=tmp_path,
+        retry_policy=RetryPolicy(max_attempts=1, initial_backoff_s=0.0),
+    )
+    with pytest.raises(StorageUploadError) as exc_info:
+        async with store.for_write() as session:
+            session.path.touch()
+    # The terminal upload failure wraps the original lease error
+    assert isinstance(exc_info.value.__cause__, StorageLeaseError)
