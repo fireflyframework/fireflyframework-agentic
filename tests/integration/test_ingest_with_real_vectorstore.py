@@ -26,6 +26,8 @@ miss.
 
 from __future__ import annotations
 
+import os
+import uuid
 from typing import Any
 
 import pytest
@@ -37,6 +39,39 @@ from fireflyframework_agentic.rag.corpus import SqliteCorpus
 from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
 from fireflyframework_agentic.rag.ingest.pipeline import ingest_one
 from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
+
+_HAVE_AZURITE = bool(os.environ.get("AZURITE_CONNECTION_STRING"))
+
+_BACKENDS = ["local"]
+if _HAVE_AZURITE:
+    _BACKENDS.append("azurite")
+
+
+@pytest.fixture(params=_BACKENDS)
+def db_store(request, tmp_path):
+    from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
+
+    if request.param == "local":
+        backend = LocalBackend(tmp_path / "corpus.sqlite")
+    else:
+        from azure.storage.blob import BlobServiceClient  # type: ignore[import-not-found]
+
+        from fireflyframework_agentic.storage import AzureBlobBackend
+
+        svc = BlobServiceClient.from_connection_string(os.environ["AZURITE_CONNECTION_STRING"])
+        container = f"e2e-{uuid.uuid4().hex}"
+        svc.create_container(container)
+        backend = AzureBlobBackend(
+            f"{svc.url}{container}",
+            "corpus.sqlite",
+            credential=svc.credential,
+        )
+        request.addfinalizer(lambda: svc.delete_container(container))
+    return DatabaseStore(
+        backend,
+        store_id=f"e2e-{request.param}",
+        cache_root=tmp_path / "cache",
+    )
 
 
 class _DeterministicEmbedder:
@@ -55,12 +90,12 @@ class _DeterministicEmbedder:
 
 
 @pytest.fixture
-async def deps(tmp_path):
-    corpus = SqliteCorpus(tmp_path / "corpus.sqlite")
+async def deps(db_store):
+    corpus = SqliteCorpus(db_store)
     await corpus.initialise()
     ledger = IngestLedger(corpus)
     embedder = _DeterministicEmbedder()
-    vector_store = SqliteVecVectorStore(db_path=tmp_path / "corpus.sqlite", dimension=4)
+    vector_store = SqliteVecVectorStore(db_store, dimension=4)
     chunker = TextChunker(chunk_size=80, chunk_overlap=10)
     loader = MarkitdownLoader()
     yield {

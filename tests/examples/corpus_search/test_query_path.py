@@ -24,6 +24,8 @@ path returns results for realistic NL questions.
 
 from __future__ import annotations
 
+import os
+import uuid
 from collections.abc import Sequence
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -38,6 +40,40 @@ from fireflyframework_agentic.rag.corpus import (
     StoredChunk,
     sanitize_fts_query,
 )
+
+_HAVE_AZURITE = bool(os.environ.get("AZURITE_CONNECTION_STRING"))
+
+_BACKENDS = ["local"]
+if _HAVE_AZURITE:
+    _BACKENDS.append("azurite")
+
+
+@pytest.fixture(params=_BACKENDS)
+def db_store(request, tmp_path):
+    from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
+
+    if request.param == "local":
+        backend = LocalBackend(tmp_path / "corpus.sqlite")
+    else:
+        from azure.storage.blob import BlobServiceClient  # type: ignore[import-not-found]
+
+        from fireflyframework_agentic.storage import AzureBlobBackend
+
+        svc = BlobServiceClient.from_connection_string(os.environ["AZURITE_CONNECTION_STRING"])
+        container = f"e2e-{uuid.uuid4().hex}"
+        svc.create_container(container)
+        backend = AzureBlobBackend(
+            f"{svc.url}{container}",
+            "corpus.sqlite",
+            credential=svc.credential,
+        )
+        request.addfinalizer(lambda: svc.delete_container(container))
+    return DatabaseStore(
+        backend,
+        store_id=f"e2e-{request.param}",
+        cache_root=tmp_path / "cache",
+    )
+
 
 # --- sanitize_fts_query unit tests --------------------------------------
 
@@ -122,9 +158,9 @@ class TestSanitizeFtsQuery:
 
 
 @pytest.fixture
-async def populated_corpus(tmp_path):
+async def populated_corpus(db_store):
     """A corpus with a few realistic chunks to search across."""
-    corpus = SqliteCorpus(tmp_path / "corpus.sqlite")
+    corpus = SqliteCorpus(db_store)
     await corpus.initialise()
     chunks = [
         StoredChunk(
