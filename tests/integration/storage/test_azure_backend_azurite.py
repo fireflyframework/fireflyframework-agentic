@@ -14,15 +14,15 @@
 
 """AzureBlobBackend tests against Azurite.
 
-Skipped unless ``AZURITE_CONNECTION_STRING`` is set in the environment.
-The standard Azurite default (``DefaultEndpointsProtocol=http;AccountName=...``)
-is supplied by docker-compose in CI.
+Azurite is sourced via the session-scoped ``azurite_connection_string``
+fixture in ``tests/conftest.py``: it uses ``AZURITE_CONNECTION_STRING``
+when set, otherwise auto-starts an Azurite container if Docker is
+available, otherwise skips.
 """
 
 from __future__ import annotations
 
 import contextlib
-import os
 import uuid
 from pathlib import Path
 
@@ -30,17 +30,12 @@ import pytest
 
 pytestmark = [pytest.mark.nightly]
 
-azurite_conn = os.environ.get("AZURITE_CONNECTION_STRING")
-
-if not azurite_conn:
-    pytest.skip("AZURITE_CONNECTION_STRING not set", allow_module_level=True)
-
 
 @pytest.fixture
-def container_url(tmp_path: Path):
+def container_url(azurite_connection_string: str, tmp_path: Path):
     from azure.storage.blob import BlobServiceClient  # type: ignore[import-not-found]
 
-    svc = BlobServiceClient.from_connection_string(azurite_conn)
+    svc = BlobServiceClient.from_connection_string(azurite_connection_string)
     name = f"dbstore-{uuid.uuid4().hex}"
     svc.create_container(name)
     yield f"{svc.url}{name}"
@@ -49,10 +44,10 @@ def container_url(tmp_path: Path):
 
 
 @pytest.fixture
-def credential() -> object:
+def credential(azurite_connection_string: str) -> object:
     from azure.storage.blob import BlobServiceClient  # type: ignore[import-not-found]
 
-    svc = BlobServiceClient.from_connection_string(azurite_conn)
+    svc = BlobServiceClient.from_connection_string(azurite_connection_string)
     return svc.credential
 
 
