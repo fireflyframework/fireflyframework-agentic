@@ -56,6 +56,10 @@ def db_store(request, tmp_path):
     if request.param == "local":
         backend = LocalBackend(tmp_path / "corpus.sqlite")
     else:
+        # Skip the azurite param when the [storage-azure] extra isn't
+        # installed (PR gate). importorskip raises Skipped without
+        # surfacing as a test error.
+        pytest.importorskip("azure.storage.blob")
         from azure.storage.blob import BlobServiceClient  # type: ignore[import-not-found]
 
         from fireflyframework_agentic.storage import AzureBlobBackend
