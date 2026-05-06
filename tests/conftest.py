@@ -71,6 +71,10 @@ def azurite_connection_string() -> Iterator[str]:
     ``request.getfixturevalue(...)`` so non-Azurite parametrisations
     (e.g. ``"local"``) still run on machines without Docker.
     """
+    # The Azure SDK is required to talk to Azurite even if the env var
+    # is set; skip cleanly when [storage-azure] isn't installed.
+    pytest.importorskip("azure.storage.blob")
+
     env_str = os.environ.get("AZURITE_CONNECTION_STRING")
     if env_str:
         yield env_str
