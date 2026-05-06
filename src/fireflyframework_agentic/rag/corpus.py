@@ -22,7 +22,10 @@ import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from fireflyframework_agentic.storage import DatabaseStore, WriteSession
 
 log = logging.getLogger(__name__)
 
@@ -126,103 +129,158 @@ class ChunkHit:
 class SqliteCorpus:
     """SQLite-backed chunk store with FTS5 (BM25) over content.
 
-    Single file, WAL mode. Threadsafe via a per-instance asyncio lock.
-    A single sqlite3 connection is held for the lifetime of the store
-    and closed via :meth:`close`.
+    Constructor accepts either a path (back-compat: wrapped in a
+    ``LocalBackend``-backed ``DatabaseStore`` automatically) or a
+    pre-built ``DatabaseStore`` (preferred for Azure / remote storage).
+
+    Read methods refresh the underlying connection when the
+    DatabaseStore reports a new generation; write methods participate
+    in a shared batch via the optional ``session`` kwarg.
     """
 
-    def __init__(self, path: str | Path) -> None:
-        self.path = Path(path)
+    def __init__(self, path_or_store: str | Path | DatabaseStore) -> None:
+        from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
+
+        if isinstance(path_or_store, DatabaseStore):
+            self._store = path_or_store
+        else:
+            p = Path(path_or_store)
+            self._store = DatabaseStore(
+                LocalBackend(p),
+                store_id=f"local:{p.resolve()}",
+            )
         self._conn: sqlite3.Connection | None = None
-        self._lock = asyncio.Lock()
+        self._generation: int = -1
+        self._conn_lock = asyncio.Lock()
+
+    @property
+    def path(self) -> Path:
+        # Back-compat shim — some callers introspect this. Returns the
+        # local cache path managed by the DatabaseStore.
+        return self._store.cache_path
 
     async def initialise(self) -> None:
-        await asyncio.to_thread(self._initialise_sync)
+        async with self._store.for_write() as session:
+            await asyncio.to_thread(self._init_schema_sync, session.path)
 
-    def _initialise_sync(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self.path, isolation_level=None, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.executescript(_SCHEMA)
-        self._conn = conn
+    def _init_schema_sync(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+        try:
+            conn.executescript(_SCHEMA)
+        finally:
+            conn.close()
 
     async def close(self) -> None:
-        if self._conn is not None:
-            await asyncio.to_thread(self._conn.close)
-            self._conn = None
+        async with self._conn_lock:
+            if self._conn is not None:
+                await asyncio.to_thread(self._conn.close)
+                self._conn = None
+        await self._store.close()
+
+    async def _read_conn(self) -> sqlite3.Connection:
+        path, generation = await self._store.ensure_fresh()
+        async with self._conn_lock:
+            if self._conn is None or generation != self._generation:
+                if self._conn is not None:
+                    await asyncio.to_thread(self._conn.close)
+                self._conn = await asyncio.to_thread(_open_corpus_conn, path)
+                self._generation = generation
+            return self._conn
 
     async def query(self, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        async with self._lock:
-            return await asyncio.to_thread(self._query_sync, sql, params or {})
+        conn = await self._read_conn()
+        return await asyncio.to_thread(self._query_sync, conn, sql, params or {})
 
-    def _query_sync(self, sql: str, params: dict[str, Any]) -> list[dict[str, Any]]:
-        assert self._conn is not None
-        cur = self._conn.execute(sql, params)
+    @staticmethod
+    def _query_sync(conn: sqlite3.Connection, sql: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+        cur = conn.execute(sql, params)
         return [dict(r) for r in cur.fetchall()]
 
-    async def upsert_chunks(self, chunks: Sequence[StoredChunk]) -> None:
+    async def upsert_chunks(
+        self,
+        chunks: Sequence[StoredChunk],
+        *,
+        session: WriteSession | None = None,
+    ) -> None:
         if not chunks:
             return
-        async with self._lock:
-            await asyncio.to_thread(self._upsert_chunks_sync, list(chunks))
+        if session is None:
+            async with self._store.for_write() as session:
+                await self._upsert_in_session(session, list(chunks))
+        else:
+            await self._upsert_in_session(session, list(chunks))
 
-    def _upsert_chunks_sync(self, chunks: list[StoredChunk]) -> None:
-        assert self._conn is not None
-        cur = self._conn
-        cur.execute("BEGIN")
+    async def _upsert_in_session(self, session: WriteSession, chunks: list[StoredChunk]) -> None:
+        await asyncio.to_thread(self._upsert_chunks_sync, session.path, chunks)
+
+    @staticmethod
+    def _upsert_chunks_sync(path: Path, chunks: list[StoredChunk]) -> None:
+        conn = _open_corpus_conn(path)
         try:
-            for c in chunks:
-                cur.execute(
-                    """INSERT OR REPLACE INTO chunks
-                       (chunk_id, doc_id, source_path, index_in_doc, content, metadata)
-                       VALUES (:chunk_id, :doc_id, :source_path, :index_in_doc, :content, :metadata)""",
-                    {
-                        "chunk_id": c.chunk_id,
-                        "doc_id": c.doc_id,
-                        "source_path": c.source_path,
-                        "index_in_doc": c.index_in_doc,
-                        "content": c.content,
-                        "metadata": json.dumps(c.metadata),
-                    },
-                )
-            cur.execute("COMMIT")
-        except Exception:
-            cur.execute("ROLLBACK")
-            raise
+            conn.execute("BEGIN")
+            try:
+                for c in chunks:
+                    conn.execute(
+                        """INSERT OR REPLACE INTO chunks
+                           (chunk_id, doc_id, source_path, index_in_doc, content, metadata)
+                           VALUES (:chunk_id, :doc_id, :source_path, :index_in_doc, :content, :metadata)""",
+                        {
+                            "chunk_id": c.chunk_id,
+                            "doc_id": c.doc_id,
+                            "source_path": c.source_path,
+                            "index_in_doc": c.index_in_doc,
+                            "content": c.content,
+                            "metadata": json.dumps(c.metadata),
+                        },
+                    )
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+        finally:
+            conn.close()
 
-    async def delete_by_doc_id(self, doc_id: str) -> int:
-        async with self._lock:
-            return await asyncio.to_thread(self._delete_by_doc_id_sync, doc_id)
+    async def delete_by_doc_id(
+        self,
+        doc_id: str,
+        *,
+        session: WriteSession | None = None,
+    ) -> int:
+        if session is None:
+            async with self._store.for_write() as session:
+                return await asyncio.to_thread(self._delete_by_doc_id_sync, session.path, doc_id)
+        return await asyncio.to_thread(self._delete_by_doc_id_sync, session.path, doc_id)
 
-    def _delete_by_doc_id_sync(self, doc_id: str) -> int:
-        assert self._conn is not None
-        cur = self._conn
-        cur.execute("BEGIN")
+    @staticmethod
+    def _delete_by_doc_id_sync(path: Path, doc_id: str) -> int:
+        conn = _open_corpus_conn(path)
         try:
-            n = cur.execute(
-                "DELETE FROM chunks WHERE doc_id = :doc",
-                {"doc": doc_id},
-            ).rowcount
-            cur.execute("COMMIT")
-            return n
-        except Exception:
-            cur.execute("ROLLBACK")
-            raise
+            conn.execute("BEGIN")
+            try:
+                n = conn.execute(
+                    "DELETE FROM chunks WHERE doc_id = :doc",
+                    {"doc": doc_id},
+                ).rowcount
+                conn.execute("COMMIT")
+                return n
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+        finally:
+            conn.close()
 
     async def bm25_search(self, query: str, *, top_k: int = 30) -> list[ChunkHit]:
-        async with self._lock:
-            return await asyncio.to_thread(self._bm25_search_sync, query, top_k)
+        conn = await self._read_conn()
+        return await asyncio.to_thread(self._bm25_search_sync, conn, query, top_k)
 
-    def _bm25_search_sync(self, query: str, top_k: int) -> list[ChunkHit]:
-        assert self._conn is not None
-        # Sanitise free-text queries (questions with ``?``, names with ``-``,
-        # phrases with quotes) into FTS5-safe MATCH syntax. Empty after
-        # sanitisation -> no hits.
+    @staticmethod
+    def _bm25_search_sync(conn: sqlite3.Connection, query: str, top_k: int) -> list[ChunkHit]:
         match_expr = sanitize_fts_query(query)
         if not match_expr:
             return []
         try:
-            cur = self._conn.execute(
+            cur = conn.execute(
                 """SELECT c.chunk_id, c.content, c.metadata, c.doc_id, c.source_path,
                           bm25(chunks_fts) AS score
                    FROM chunks_fts
@@ -233,10 +291,6 @@ class SqliteCorpus:
                 {"q": match_expr, "k": top_k},
             )
         except sqlite3.OperationalError as exc:
-            # Sanitisation should have prevented the common syntax-error
-            # cases. Anything reaching this handler is a real fault
-            # (corrupt index, missing table, disk full) — log it loudly
-            # rather than silently dropping.
             log.warning("bm25_search returned no results due to OperationalError: %s", exc)
             return []
         return [
@@ -271,3 +325,10 @@ class SqliteCorpus:
             )
             for r in rows
         ]
+
+
+def _open_corpus_conn(path: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.executescript(_SCHEMA)
+    return conn
