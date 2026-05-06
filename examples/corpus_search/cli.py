@@ -38,6 +38,7 @@ from fireflyframework_agentic.observability import configure_exporters
 from fireflyframework_agentic.pipeline.triggers import FolderWatcher
 from fireflyframework_agentic.rag.agent import CorpusAgent
 from fireflyframework_agentic.rag.corpus import SqliteCorpus
+from fireflyframework_agentic.rag.ingest.structured_schema import SchemaFeedback, TargetSchema
 
 _DEFAULT_EMBED_MODEL = "azure:text-embedding-3-small"
 _DEFAULT_EXPANSION_MODEL = "anthropic:claude-haiku-4-5-20251001"
@@ -66,6 +67,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Embedding dimension — must match the chosen model (text-embedding-3-small=1536, text-embedding-3-large=3072).",
     )
     p_ingest.add_argument("--watch", action="store_true", help="After processing existing files, watch for new ones.")
+    p_ingest.add_argument(
+        "--mode",
+        choices=["unstructured", "structured"],
+        default="unstructured",
+        help="Ingestion mode: unstructured (documents) or structured (CSV/Excel).",
+    )
+    p_ingest.add_argument(
+        "--interactive",
+        action="store_true",
+        default=False,
+        help="Interactively review and correct the inferred schema before ingestion (structured mode only).",
+    )
     p_ingest.add_argument("--verbose", action="store_true")
 
     p_query = sub.add_parser("query", help="Query the corpus.")
@@ -284,7 +297,12 @@ async def _run_ingest(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                     flush=True,
                 )
-                result = await agent.ingest_one(path)
+                on_review = _cli_review_schema if getattr(args, "interactive", False) else None
+                result = await agent.ingest_one(
+                    path,
+                    mode=getattr(args, "mode", "unstructured"),
+                    on_review=on_review,
+                )
                 _print_ingest_result(result)
     finally:
         await agent.close()
@@ -324,6 +342,27 @@ async def _run_query(args: argparse.Namespace) -> int:
 
 def _print_ingest_result(result) -> None:
     print(f"[{result.status}] {result.source_path} (doc_id={result.doc_id}, chunks={result.n_chunks})")
+
+
+async def _cli_review_schema(schema: TargetSchema) -> SchemaFeedback:
+    sys.stdout.write("\n--- Inferred schema ---\n")
+    for table in schema.tables:
+        sys.stdout.write(f"  Table: {table.name}\n")
+        for col in table.columns:
+            flags = []
+            if col.primary_key:
+                flags.append("PK")
+            if not col.nullable:
+                flags.append("NOT NULL")
+            flag_str = f"  [{', '.join(flags)}]" if flags else ""
+            sys.stdout.write(f"    {col.name}: {col.type.value}{flag_str}\n")
+    sys.stdout.write("-----------------------\n")
+    sys.stdout.write("Press Enter to approve, or type corrections: ")
+    sys.stdout.flush()
+    loop = asyncio.get_running_loop()
+    raw = await loop.run_in_executor(None, sys.stdin.readline)
+    corrections = raw.strip()
+    return SchemaFeedback(approved=not corrections, corrections=corrections)
 
 
 async def _run_show_chunk(args: argparse.Namespace) -> int:
