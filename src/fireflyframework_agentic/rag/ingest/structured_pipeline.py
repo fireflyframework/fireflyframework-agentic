@@ -129,8 +129,22 @@ def _load_rows(path: Path, schema: TargetSchema) -> dict[str, list[dict[str, Any
         else:
             col_idx = {c: norm_header_idx[_normalize_col(c)] for c in col_names}
 
+        # NOT NULL column names — used to pre-filter section-header / spacer rows
+        # that Excel sheets often contain (e.g. "REVENUE", None, None, …).
+        not_null_cols = {c.name for c in table.columns if not c.nullable or c.primary_key}
+
+        def _keep(row: list[Any]) -> bool:
+            # Skip rows that would violate a NOT NULL constraint.
+            return all(
+                row[col_idx[c]] is not None
+                for c in not_null_cols
+                if col_idx[c] < len(row)
+            )
+
         rows_by_table[table.name] = [
-            {c: (row[col_idx[c]] if col_idx[c] < len(row) else None) for c in col_names} for row in raw_rows
+            {c: (row[col_idx[c]] if col_idx[c] < len(row) else None) for c in col_names}
+            for row in raw_rows
+            if _keep(row)
         ]
     return rows_by_table
 
@@ -173,12 +187,11 @@ def _sync_ingest_table(
                 inserted += 1
             except sqlite3.Error as exc:
                 errors.append(f"row {row_num}: {exc}")
-        if inserted == 0 and errors:
+        if errors:
             conn.rollback()
             return {"status": "failed", "inserted": 0, "errors": errors}
         conn.commit()
-        status = "partial" if errors else "success"
-        return {"status": status, "inserted": inserted, "errors": errors}
+        return {"status": "success", "inserted": inserted, "errors": []}
     finally:
         conn.close()
 
