@@ -12,6 +12,7 @@ from fireflyframework_agentic.rag.ingest import IngestionResult
 from fireflyframework_agentic.rag.ingest.structured_schema import (  # noqa: F401
     ColumnSpec,
     ColumnType,
+    SchemaFeedback,
     TableSpec,
     TargetSchema,
 )
@@ -190,3 +191,30 @@ async def test_ingest_folder_structured_processes_all_files(tmp_path: Path) -> N
 
     assert len(summary.results) == 2
     assert all(r.status == "success" for r in summary.results)
+
+
+@pytest.mark.asyncio
+async def test_ingest_one_structured_calls_interactive_when_on_review_provided(tmp_path: Path) -> None:
+    """When on_review is passed, ingest_one must call discover_schema_interactive, not discover_schema."""
+    agent = _make_agent(tmp_path)
+    csv_file = tmp_path / "sales.csv"
+    csv_file.write_text("id,amount\n1,10.5\n")
+
+    on_review = AsyncMock(return_value=SchemaFeedback(approved=True))
+    schema = _stub_schema()
+
+    with (
+        patch(
+            "fireflyframework_agentic.rag.agent.discover_schema_interactive",
+            new=AsyncMock(return_value=schema),
+        ) as mock_interactive,
+        patch(
+            "fireflyframework_agentic.rag.agent.discover_schema",
+            new=AsyncMock(return_value=schema),
+        ) as mock_one_shot,
+        patch("fireflyframework_agentic.rag.agent.ingest_structured", new=AsyncMock()),
+    ):
+        await agent.ingest_one(csv_file, mode="structured", on_review=on_review)
+
+    mock_interactive.assert_awaited_once()
+    mock_one_shot.assert_not_awaited()

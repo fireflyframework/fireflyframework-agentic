@@ -18,7 +18,7 @@ import asyncio
 import logging
 import os
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -38,8 +38,11 @@ from fireflyframework_agentic.rag._telemetry import (
 from fireflyframework_agentic.rag.corpus import ChunkHit, SqliteCorpus, StoredChunk
 from fireflyframework_agentic.rag.ingest import (
     IngestionResult,
+    SchemaFeedback,
     SchemaRegistry,
+    TargetSchema,
     discover_schema,
+    discover_schema_interactive,
     ingest_one,
     ingest_structured,
 )
@@ -225,7 +228,12 @@ class CorpusAgent:
 
     # ----- public API ----------------------------------------------------
 
-    async def _ingest_structured_file(self, path: Path) -> IngestionResult:
+    async def _ingest_structured_file(
+        self,
+        path: Path,
+        *,
+        on_review: Callable[[TargetSchema], Awaitable[SchemaFeedback]] | None = None,
+    ) -> IngestionResult:
         assert self._ledger is not None
         assert self._schema_registry is not None
         doc_id = doc_id_for(path)
@@ -234,7 +242,12 @@ class CorpusAgent:
         if await self._ledger.should_skip(doc_id, file_hash):
             return IngestionResult(doc_id=doc_id, source_path=source_path, status="skipped", n_chunks=0)
         try:
-            schema = await discover_schema(path, model=self._schema_model)
+            if on_review is not None:
+                schema = await discover_schema_interactive(
+                    path, on_review=on_review, model=self._schema_model
+                )
+            else:
+                schema = await discover_schema(path, model=self._schema_model)
             await ingest_structured(path, self.root / "corpus.sqlite", schema)
             await self._schema_registry.save(schema)
             await self._ledger.upsert(doc_id, source_path, file_hash, status="success")
@@ -249,11 +262,12 @@ class CorpusAgent:
         path: Path,
         *,
         mode: Literal["unstructured", "structured"] = "unstructured",
+        on_review: Callable[[TargetSchema], Awaitable[SchemaFeedback]] | None = None,
     ) -> IngestionResult:
         await self._ensure_corpus_ready()
         assert self._ledger is not None
         if mode == "structured":
-            return await self._ingest_structured_file(path)
+            return await self._ingest_structured_file(path, on_review=on_review)
         return await ingest_one(
             path=Path(path),
             corpus=self._corpus,
