@@ -127,7 +127,7 @@ async def test_structured_ingest_writes_rows_to_sqlite(tmp_path: Path):
     csv_path = _make_csv(tmp_path)
 
     with patch(
-        "examples.corpus_search.agent.discover_schema",
+        "fireflyframework_agentic.rag.agent.discover_schema",
         new_callable=AsyncMock,
         return_value=_make_schema(),
     ):
@@ -150,7 +150,7 @@ async def test_query_sql_context_reaches_answer_agent(tmp_path: Path):
 
     # Ingest the CSV so SchemaRegistry has a schema and products table exists.
     with patch(
-        "examples.corpus_search.agent.discover_schema",
+        "fireflyframework_agentic.rag.agent.discover_schema",
         new_callable=AsyncMock,
         return_value=schema,
     ):
@@ -178,7 +178,7 @@ async def test_query_sql_context_reaches_answer_agent(tmp_path: Path):
         patch.object(agent._retriever, "retrieve", new_callable=AsyncMock, return_value=[]),
         patch.object(agent._reranker, "rerank", new_callable=AsyncMock, return_value=[]),
         patch.object(agent._answerer, "answer", side_effect=capture_answer),
-        patch("examples.corpus_search.retrieval.sql._sql_agent") as mock_sql_agent,
+        patch("fireflyframework_agentic.rag.retrieval.sql._sql_agent") as mock_sql_agent,
     ):
         mock_sql_agent.run = AsyncMock(return_value=sql_agent_result)
         await agent.query("How many products?")
@@ -197,7 +197,7 @@ async def test_second_ingest_is_skipped_by_ledger(tmp_path: Path):
     csv_path = _make_csv(tmp_path)
 
     with patch(
-        "examples.corpus_search.agent.discover_schema",
+        "fireflyframework_agentic.rag.agent.discover_schema",
         new_callable=AsyncMock,
         return_value=_make_schema(),
     ) as mock_discover:
