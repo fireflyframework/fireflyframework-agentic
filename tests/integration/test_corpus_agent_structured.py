@@ -32,7 +32,7 @@ import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -159,8 +159,6 @@ async def test_query_sql_context_reaches_answer_agent(tmp_path: Path):
     # Prepare query-stack mocks.
     await agent._ensure_query_ready()
     mock_answer = Answer(text="2 products", citations=[], cited_sources=[])
-    sql_agent_result = MagicMock()
-    sql_agent_result.output.sql = "SELECT id, name FROM products"
 
     captured_sql_context: list[str | None] = []
 
@@ -173,14 +171,17 @@ async def test_query_sql_context_reaches_answer_agent(tmp_path: Path):
         captured_sql_context.append(sql_context)
         return mock_answer
 
+    # Provide a fixed SQL result so StructuredRetriever.retrieve returns structured
+    # data without making a real LLM call to generate the SELECT statement.
+    sql_table = "id | name\n--- | ---\n1 | Widget\n2 | Gadget"
+
     with (
         patch.object(agent._expander, "expand", new_callable=AsyncMock, return_value=["q"]),
         patch.object(agent._retriever, "retrieve", new_callable=AsyncMock, return_value=[]),
         patch.object(agent._reranker, "rerank", new_callable=AsyncMock, return_value=[]),
         patch.object(agent._answerer, "answer", side_effect=capture_answer),
-        patch("fireflyframework_agentic.rag.retrieval.sql._sql_agent") as mock_sql_agent,
+        patch.object(agent._structured_retriever, "retrieve", new_callable=AsyncMock, return_value=sql_table),
     ):
-        mock_sql_agent.run = AsyncMock(return_value=sql_agent_result)
         await agent.query("How many products?")
 
     assert len(captured_sql_context) == 1

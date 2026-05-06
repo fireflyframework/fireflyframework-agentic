@@ -265,8 +265,8 @@ class SqliteCorpus:
                 quoted = row["name"].replace('"', '""')
                 await self.query(f'DROP TABLE IF EXISTS "{quoted}"')
             await self.query("DELETE FROM _schemas")
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("clear_all: could not drop structured tables: %s", exc)
         await self.query("DELETE FROM chunks")
         await self.query("DELETE FROM ingestions")
 

@@ -102,7 +102,7 @@ async def test_ingest_one_structured_mode_calls_structured_pipeline(tmp_path: Pa
     ):
         result = await agent.ingest_one(csv_file, mode="structured")
 
-    mock_discover.assert_awaited_once_with(csv_file)
+    mock_discover.assert_awaited_once_with(csv_file, model="anthropic:claude-sonnet-4-6")
     mock_ingest_structured.assert_awaited_once()
     assert result.status == "success"
     assert result.n_chunks == 0

@@ -81,6 +81,10 @@ def _load_rows(path: Path, schema: TargetSchema) -> dict[str, list[dict[str, Any
     return rows_by_table
 
 
+def _quote(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
 def _sync_ingest_table(
     db_path: Path,
     table_spec: TableSpec,
@@ -90,23 +94,23 @@ def _sync_ingest_table(
     try:
         col_defs: list[str] = []
         for col in table_spec.columns:
-            parts = [col.name, _SQL_TYPES[col.type]]
+            parts = [_quote(col.name), _SQL_TYPES[col.type]]
             if col.primary_key:
                 parts.append("PRIMARY KEY")
             elif not col.nullable:
                 parts.append("NOT NULL")
             col_defs.append(" ".join(parts))
-        conn.execute(f"CREATE TABLE IF NOT EXISTS {table_spec.name} ({', '.join(col_defs)})")
+        conn.execute(f"CREATE TABLE IF NOT EXISTS {_quote(table_spec.name)} ({', '.join(col_defs)})")
         col_names = [c.name for c in table_spec.columns]
         placeholders = ", ".join("?" for _ in col_names)
-        col_names_str = ", ".join(col_names)
+        col_names_str = ", ".join(_quote(c) for c in col_names)
         errors: list[str] = []
         inserted = 0
         for row_num, row in enumerate(rows, start=2):
             values = [row.get(c) for c in col_names]
             try:
                 conn.execute(
-                    f"INSERT INTO {table_spec.name} ({col_names_str}) VALUES ({placeholders})",
+                    f"INSERT INTO {_quote(table_spec.name)} ({col_names_str}) VALUES ({placeholders})",
                     values,
                 )
                 inserted += 1
