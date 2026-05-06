@@ -49,7 +49,7 @@ def _resolve_cache_root(cache_root: Path | None) -> Path:
 
 
 class _Sidecar:
-    """Persistent {etag, dirty, last_modified} on disk."""
+    """Persistent {etag, dirty} on disk."""
 
     def __init__(self, path: Path) -> None:
         self._path = path
