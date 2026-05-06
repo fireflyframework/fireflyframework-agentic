@@ -33,6 +33,14 @@ _DEFAULT_RERANK_POOL = 20
 _DEFAULT_TOP_K = 5
 _DEFAULT_ROOT = Path("./kg")
 
+# DB storage backend env-var contract
+_BACKEND_ENV = "CORPUS_SEARCH_BACKEND"
+_BACKEND_LOCAL = "local"
+_BACKEND_AZURE = "azure"
+_AZURE_CONTAINER_URL_ENV = "CORPUS_SEARCH_AZURE_CONTAINER_URL"
+_AZURE_BLOB_NAME_ENV = "CORPUS_SEARCH_AZURE_BLOB_NAME"
+_DEFAULT_BLOB_NAME = "corpus.sqlite"
+
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -252,19 +260,19 @@ def _build_db_store(root: Path):
     """
     from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
 
-    backend_kind = os.environ.get("CORPUS_SEARCH_BACKEND", "local")
-    if backend_kind == "local":
-        backend = LocalBackend(root / "corpus.sqlite")
-    elif backend_kind == "azure":
+    backend_kind = os.environ.get(_BACKEND_ENV, _BACKEND_LOCAL)
+    if backend_kind == _BACKEND_LOCAL:
+        backend = LocalBackend(root / _DEFAULT_BLOB_NAME)
+    elif backend_kind == _BACKEND_AZURE:
         from azure.identity import DefaultAzureCredential  # type: ignore[import-not-found]
 
         from fireflyframework_agentic.storage import AzureBlobBackend
 
-        container_url = os.environ["CORPUS_SEARCH_AZURE_CONTAINER_URL"]
-        blob_name = os.environ.get("CORPUS_SEARCH_AZURE_BLOB_NAME", "corpus.sqlite")
+        container_url = os.environ[_AZURE_CONTAINER_URL_ENV]
+        blob_name = os.environ.get(_AZURE_BLOB_NAME_ENV, _DEFAULT_BLOB_NAME)
         backend = AzureBlobBackend(container_url, blob_name, credential=DefaultAzureCredential())
     else:
-        raise SystemExit(f"Unknown CORPUS_SEARCH_BACKEND={backend_kind!r}")
+        raise SystemExit(f"Unknown {_BACKEND_ENV}={backend_kind!r}")
     return DatabaseStore(backend, store_id=f"corpus_search:{root.resolve()}")
 
 
@@ -355,9 +363,9 @@ def _print_ingest_result(result) -> None:
 async def _run_show_chunk(args: argparse.Namespace) -> int:
     from fireflyframework_agentic.rag.corpus import SqliteCorpus
 
-    backend_kind = os.environ.get("CORPUS_SEARCH_BACKEND", "local")
-    if backend_kind == "local":
-        corpus_path = args.root / "corpus.sqlite"
+    backend_kind = os.environ.get(_BACKEND_ENV, _BACKEND_LOCAL)
+    if backend_kind == _BACKEND_LOCAL:
+        corpus_path = args.root / _DEFAULT_BLOB_NAME
         if not corpus_path.exists():
             sys.stderr.write(f"corpus.sqlite not found at {corpus_path}\n")
             return 2

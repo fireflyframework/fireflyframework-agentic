@@ -39,9 +39,10 @@ from fireflyframework_agentic.rag.corpus import (
     StoredChunk,
     sanitize_fts_query,
 )
+from tests.conftest import DB_STORE_BACKENDS, DB_STORE_LOCAL
 
 
-@pytest.fixture(params=["local", "azurite"])
+@pytest.fixture(params=DB_STORE_BACKENDS)
 def db_store(request, tmp_path):
     """Parametrised over local and Azurite backends.
 
@@ -53,7 +54,7 @@ def db_store(request, tmp_path):
     """
     from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
 
-    if request.param == "local":
+    if request.param == DB_STORE_LOCAL:
         backend = LocalBackend(tmp_path / "corpus.sqlite")
     else:
         # Skip the azurite param when the [storage-azure] extra isn't
