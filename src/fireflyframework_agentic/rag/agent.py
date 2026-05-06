@@ -26,7 +26,11 @@ from typing import Any, Literal
 from fireflyframework_agentic.content.loaders import MarkitdownLoader
 from fireflyframework_agentic.content.markdown_chunker import MarkdownChunker
 from fireflyframework_agentic.content.sources import ContentSource
+from fireflyframework_agentic.content.sources.local_folder import LocalFolderSource, LocalFolderSourceConfig
+from fireflyframework_agentic.embeddings.providers.azure import AzureEmbedder
+from fireflyframework_agentic.embeddings.providers.openai import OpenAIEmbedder
 from fireflyframework_agentic.pipeline.triggers import FolderWatcher
+from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
 from fireflyframework_agentic.rag._telemetry import (
     query_total_duration,
     timed_span,
@@ -197,8 +201,6 @@ class CorpusAgent:
             provider, deployment = "openai", embed_model
 
         if provider == "azure":
-            from fireflyframework_agentic.embeddings.providers.azure import AzureEmbedder
-
             azure_endpoint = os.environ.get("EMBEDDING_BINDING_HOST")
             api_key = os.environ.get("EMBEDDING_BINDING_API_KEY")
             if not azure_endpoint:
@@ -212,15 +214,11 @@ class CorpusAgent:
             )
 
         if provider == "openai":
-            from fireflyframework_agentic.embeddings.providers.openai import OpenAIEmbedder
-
             return OpenAIEmbedder(model=deployment)
 
         raise ValueError(f"Unknown embedding provider {provider!r} (use 'azure:<deployment>' or 'openai:<model>').")
 
     def _build_vector_store(self) -> Any:
-        from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
-
         return SqliteVecVectorStore(
             db_path=self.root / "corpus.sqlite",
             dimension=self._embed_dimension,
@@ -288,11 +286,6 @@ class CorpusAgent:
             for path in candidates:
                 results.append(await self.ingest_one(path, mode="structured"))
             return IngestSummary(results=results)
-
-        from fireflyframework_agentic.content.sources.local_folder import (
-            LocalFolderSource,
-            LocalFolderSourceConfig,
-        )
 
         source = LocalFolderSource(LocalFolderSourceConfig(folder=Path(folder)))
         return await self.ingest_source(source)
