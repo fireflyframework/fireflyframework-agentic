@@ -36,15 +36,15 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from fireflyframework_agentic.rag.agent import CorpusAgent
-from fireflyframework_agentic.rag.retrieval.answerer import Answer
 from fireflyframework_agentic.embeddings.types import EmbeddingResult
+from fireflyframework_agentic.rag.agent import CorpusAgent
 from fireflyframework_agentic.rag.ingest.structured_schema import (
     ColumnSpec,
     ColumnType,
     TableSpec,
     TargetSchema,
 )
+from fireflyframework_agentic.rag.retrieval.answerer import Answer
 
 # ---------------------------------------------------------------------------
 # Stubs (same pattern as test_agent_structured.py)

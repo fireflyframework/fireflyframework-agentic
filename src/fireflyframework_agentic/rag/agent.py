@@ -30,7 +30,6 @@ from fireflyframework_agentic.content.sources.local_folder import LocalFolderSou
 from fireflyframework_agentic.embeddings.providers.azure import AzureEmbedder
 from fireflyframework_agentic.embeddings.providers.openai import OpenAIEmbedder
 from fireflyframework_agentic.pipeline.triggers import FolderWatcher
-from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
 from fireflyframework_agentic.rag._telemetry import (
     query_total_duration,
     timed_span,
@@ -56,6 +55,7 @@ from fireflyframework_agentic.rag.retrieval.expander import QueryExpander
 from fireflyframework_agentic.rag.retrieval.hybrid import HybridRetriever
 from fireflyframework_agentic.rag.retrieval.reranker import HaikuReranker
 from fireflyframework_agentic.rag.retrieval.sql import StructuredRetriever
+from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
 
 log = logging.getLogger(__name__)
 
