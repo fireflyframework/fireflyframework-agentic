@@ -31,6 +31,7 @@ from pathlib import Path
 from fireflyframework_agentic.agents.templates import create_extractor_agent
 from fireflyframework_agentic.rag.corpus import SqliteCorpus
 
+from .structured_pipeline import _normalize_sheet_name
 from .structured_schema import SchemaFeedback, TargetSchema
 
 try:
@@ -111,10 +112,18 @@ def _excel_sample(path: Path) -> str:
     parts: list[str] = []
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
-        rows = list(ws.iter_rows(values_only=True))[: _SAMPLE_ROWS + 1]
-        if not rows or all(v is None for v in rows[0]):
+        all_rows = list(ws.iter_rows(values_only=True))[: _SAMPLE_ROWS + 2]
+        if not all_rows:
             continue
-        name = sheet_name.replace(" ", "_").replace("-", "_").lower()
+        # Skip title rows (rows with only one non-null cell) to show real headers.
+        header_idx = next(
+            (i for i, r in enumerate(all_rows[:5]) if sum(1 for v in r if v is not None) >= 2),
+            0,
+        )
+        rows = all_rows[header_idx:]
+        if not rows:
+            continue
+        name = _normalize_sheet_name(sheet_name)
         lines = [f"Sheet (table): {name}", f"Headers: {list(rows[0])}"]
         lines += [f"  {list(r)}" for r in rows[1:]]
         parts.append("\n".join(lines))
