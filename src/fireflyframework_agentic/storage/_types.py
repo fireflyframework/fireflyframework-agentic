@@ -21,6 +21,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
+from fireflyframework_agentic.exceptions import FireflyAgenticError
+
 
 class StorageMetadata(NamedTuple):
     etag: str | None
@@ -49,7 +51,7 @@ class WriteSession:
 # --- Errors -----------------------------------------------------------
 
 
-class DatabaseStoreError(Exception):
+class DatabaseStoreError(FireflyAgenticError):
     """Base class for all storage-layer errors."""
 
     def __init__(self, message: str, **context: object) -> None:
