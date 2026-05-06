@@ -41,6 +41,17 @@ def _clear_registries():
     reasoning_registry.clear()
 
 
+# Azurite connection-string env var consumed by the
+# ``azurite_connection_string`` fixture and tests parametrised over a
+# DB-storage backend kind.
+AZURITE_CONNECTION_STRING_ENV = "AZURITE_CONNECTION_STRING"
+
+# Backend-kind labels for parametrised db_store fixtures across the
+# test suite. Keep these in lock-step with the fixture branches.
+DB_STORE_LOCAL = "local"
+DB_STORE_AZURITE = "azurite"
+DB_STORE_BACKENDS = (DB_STORE_LOCAL, DB_STORE_AZURITE)
+
 # Azurite dev key — public well-known constant from Microsoft's docs.
 # Not a secret; identical across every Azurite installation.
 _AZURITE_DEV_KEY = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
@@ -75,13 +86,13 @@ def azurite_connection_string() -> Iterator[str]:
     # is set; skip cleanly when [storage-azure] isn't installed.
     pytest.importorskip("azure.storage.blob")
 
-    env_str = os.environ.get("AZURITE_CONNECTION_STRING")
+    env_str = os.environ.get(AZURITE_CONNECTION_STRING_ENV)
     if env_str:
         yield env_str
         return
 
     if not shutil.which("docker"):
-        pytest.skip("Azurite not configured: set AZURITE_CONNECTION_STRING or install Docker")
+        pytest.skip(f"Azurite not configured: set {AZURITE_CONNECTION_STRING_ENV} or install Docker")
 
     container_id: str | None = None
     try:
