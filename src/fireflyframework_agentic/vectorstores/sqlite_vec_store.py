@@ -78,19 +78,18 @@ class SqliteVecVectorStore(BaseVectorStore):
         self._dim = dimension
         self._tbl = table_name
         self._shadow = f"{table_name}_shadow"
-        self._conn: sqlite3.Connection | None = None
-        self._generation: int = -1
-        self._conn_lock = asyncio.Lock()
 
-    async def _read_conn(self) -> sqlite3.Connection:
-        path, generation = await self._store.ensure_fresh()
-        async with self._conn_lock:
-            if self._conn is None or generation != self._generation:
-                if self._conn is not None:
-                    await asyncio.to_thread(self._conn.close)
-                self._conn = await asyncio.to_thread(self._open_conn_with_schema, path)
-                self._generation = generation
-            return self._conn
+    async def _read_path(self) -> Path:
+        """Return the local cache path, refreshed against the backend.
+
+        Each read opens a short-lived connection in its worker thread
+        (see ``_search_sync``) rather than sharing a cached connection.
+        This prevents a generation bump on one reader from closing the
+        connection in use by another. WAL mode + sub-millisecond
+        connect cost makes per-call connections cheap.
+        """
+        path, _ = await self._store.ensure_fresh()
+        return path
 
     def _open_conn_with_schema(self, path: Path) -> sqlite3.Connection:
         if sqlite_vec is None:
@@ -103,6 +102,9 @@ class SqliteVecVectorStore(BaseVectorStore):
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
+        # 30s busy_timeout so concurrent ingest workers wait for each
+        # other's WAL writes to drain instead of failing fast.
+        conn.execute("PRAGMA busy_timeout = 30000")
         conn.enable_load_extension(True)
         sqlite_vec.load(conn)
         conn.enable_load_extension(False)
@@ -215,31 +217,35 @@ class SqliteVecVectorStore(BaseVectorStore):
         namespace: str,
         filters: list[SearchFilter] | None,
     ) -> list[SearchResult]:
-        conn = await self._read_conn()
-        return await asyncio.to_thread(self._search_sync, conn, query_embedding, top_k, namespace)
+        path = await self._read_path()
+        return await asyncio.to_thread(self._search_sync, path, query_embedding, top_k, namespace)
 
     def _search_sync(
         self,
-        conn: sqlite3.Connection,
+        path: Path,
         query_embedding: list[float],
         top_k: int,
         namespace: str,
     ) -> list[SearchResult]:
-        rows = conn.execute(
-            f"""
-            SELECT s.id, v.distance
-            FROM (
-                SELECT rowid, distance
-                FROM {self._tbl}
-                WHERE embedding MATCH ?
-                ORDER BY distance
-                LIMIT ?
-            ) v
-            JOIN {self._shadow} s ON s.rowid = v.rowid
-            WHERE s.ns = ?
-            """,
-            (serialize_float32(query_embedding), top_k, namespace),
-        ).fetchall()
+        conn = self._open_conn_with_schema(path)
+        try:
+            rows = conn.execute(
+                f"""
+                SELECT s.id, v.distance
+                FROM (
+                    SELECT rowid, distance
+                    FROM {self._tbl}
+                    WHERE embedding MATCH ?
+                    ORDER BY distance
+                    LIMIT ?
+                ) v
+                JOIN {self._shadow} s ON s.rowid = v.rowid
+                WHERE s.ns = ?
+                """,
+                (serialize_float32(query_embedding), top_k, namespace),
+            ).fetchall()
+        finally:
+            conn.close()
         return [
             SearchResult(
                 document=VectorDocument(id=row["id"], text="", metadata={}),
@@ -292,8 +298,4 @@ class SqliteVecVectorStore(BaseVectorStore):
             raise
 
     async def close(self) -> None:
-        async with self._conn_lock:
-            if self._conn is not None:
-                await asyncio.to_thread(self._conn.close)
-                self._conn = None
         await self._store.close()

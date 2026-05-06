@@ -76,6 +76,10 @@ class AzureBlobBackend(StorageBackend):
         )
         self._renew_task: asyncio.Task[None] | None = None
         self._renew_failure: BaseException | None = None
+        # Lease ID currently held; used to authorise writes on the
+        # leased blob (Azure rejects writes without it once a lease is
+        # acquired). None means no lease is held.
+        self._active_lease_id: str | None = None
 
     @property
     def kind(self) -> str:
@@ -143,16 +147,23 @@ class AzureBlobBackend(StorageBackend):
         if_match: str | None,
         if_none_match: str | None,
     ) -> StorageMetadata:
+        # azure-core's MatchConditions enum maps semantically rather than
+        # by HTTP header name:
+        #   IfNotModified -> If-Match: <etag>   (succeed iff etag matches)
+        #   IfMissing     -> If-None-Match: *   (succeed iff blob absent)
         kwargs: dict[str, Any] = {"overwrite": True}
         if if_match:
             kwargs["etag"] = if_match
-            kwargs["match_condition"] = self._match_condition("IfMatch")
-        if if_none_match:
-            kwargs["etag"] = if_none_match
-            kwargs["match_condition"] = self._match_condition("IfNoneMatch")
+            kwargs["match_condition"] = self._match_condition("IfNotModified")
+        elif if_none_match == "*":
+            kwargs["match_condition"] = self._match_condition("IfMissing")
+        # Once a lease is held on the blob, every subsequent write must
+        # include the lease ID or Azure rejects with 412.
+        if self._active_lease_id is not None:
+            kwargs["lease"] = self._active_lease_id
         try:
             with open(src, "rb") as f:
-                resp = self._client.upload_blob(data=f, **kwargs)
+                self._client.upload_blob(data=f, **kwargs)
         except Exception as exc:
             status = getattr(exc, "status_code", None)
             if status == 412:
@@ -160,15 +171,10 @@ class AzureBlobBackend(StorageBackend):
             if _is_retryable(exc):
                 raise StorageTransientError(f"upload transient: {exc}") from exc
             raise
-        new_etag = resp.get("etag") if isinstance(resp, dict) else getattr(resp, "etag", None)
-        if new_etag is None:
-            return self._metadata_sync()
-        return StorageMetadata(
-            etag=new_etag,
-            size_bytes=src.stat().st_size,
-            modified=datetime.now(UTC),
-            exists=True,
-        )
+        # Always re-stat to get the canonical etag (the upload response
+        # and get_blob_properties may format the etag differently — using
+        # the metadata read keeps subsequent if_match calls consistent).
+        return self._metadata_sync()
 
     @staticmethod
     def _match_condition(name: str) -> Any:
@@ -218,6 +224,7 @@ class AzureBlobBackend(StorageBackend):
             expires_at=now + timedelta(seconds=self._lease_duration_s),
         )
         self._renew_failure = None
+        self._active_lease_id = lease.id
         self._renew_task = asyncio.create_task(self._renew_loop(lease))
         return token
 
@@ -241,6 +248,7 @@ class AzureBlobBackend(StorageBackend):
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._renew_task
             self._renew_task = None
+        self._active_lease_id = None
         if token.token == "<no-blob-yet>":
             return
         try:
