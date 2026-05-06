@@ -30,7 +30,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from fireflyframework_agentic.rag.retrieval.answerer import Answer
 from fireflyframework_agentic.embeddings.types import EmbeddingResult
 from fireflyframework_agentic.rag.agent import CorpusAgent
 from fireflyframework_agentic.rag.corpus import (
@@ -38,6 +37,7 @@ from fireflyframework_agentic.rag.corpus import (
     StoredChunk,
     sanitize_fts_query,
 )
+from fireflyframework_agentic.rag.retrieval.answerer import Answer
 
 # --- sanitize_fts_query unit tests --------------------------------------
 
