@@ -94,7 +94,13 @@ class CorpusAgent:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
 
-        self._corpus = SqliteCorpus(self.root / "corpus.sqlite")
+        from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
+
+        self._db_store = DatabaseStore(
+            LocalBackend(self.root / "corpus.sqlite"),
+            store_id=f"corpus_search:{self.root.resolve()}",
+        )
+        self._corpus = SqliteCorpus(self._db_store)
         self._ledger: IngestLedger | None = None
         self._embedder: Any = _embedder
         self._vector_store: Any = _vector_store
@@ -191,7 +197,7 @@ class CorpusAgent:
         from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
 
         return SqliteVecVectorStore(
-            db_path=self.root / "corpus.sqlite",
+            self._db_store,
             dimension=self._embed_dimension,
         )
 
