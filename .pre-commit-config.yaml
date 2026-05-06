@@ -1,9 +1,13 @@
 # Pre-commit hooks for fireflyframework-agentic.
 #
-# Install once per clone:
+# Install once per clone (with the firefly venv active):
 #   uv sync --extra dev
 #   uv run pre-commit install                       # wires commit-stage hooks (ruff, gitleaks, …)
 #   uv run pre-commit install --hook-type pre-push  # wires push-stage hooks (pyright, pytest)
+#
+# The pre-push hooks (pyright, pytest) use `python -m …` via language:system,
+# so they resolve against whatever venv is active when you run `git push`.
+# Always push with the firefly venv active: source ~/.venvs/firefly/bin/activate
 #
 # Run manually on the whole repo:
 #   uv run pre-commit run --all-files
@@ -58,7 +62,7 @@ repos:
       - id: pyright
         name: pyright
         language: system
-        entry: uv run pyright
+        entry: python -m pyright
         types: [python]
         pass_filenames: false
         stages: [pre-push]
@@ -66,6 +70,6 @@ repos:
       - id: pytest
         name: pytest
         language: system
-        entry: uv run pytest -m "not nightly" -q --tb=short
+        entry: python -m pytest tests/unit/ tests/integration/ -m "not nightly" -q --tb=short
         pass_filenames: false
         stages: [pre-push]
