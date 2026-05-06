@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from examples.corpus_search.retrieval.sql import StructuredRetriever, _build_schema_context, _execute
+from fireflyframework_agentic.rag.retrieval.sql import StructuredRetriever, _build_schema_context, _execute
 from fireflyframework_agentic.rag.ingest.structured_schema import (
     ColumnSpec,
     ColumnType,
