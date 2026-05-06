@@ -13,6 +13,14 @@ jobs:
   test:
     name: Test (nightly)
     runs-on: ubuntu-latest
+    services:
+      azurite:
+        image: mcr.microsoft.com/azure-storage/azurite
+        ports:
+          - 10000:10000
+    env:
+      # Default Azurite dev account; the key is a public well-known constant.
+      AZURITE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -21,7 +29,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - run: uv sync --extra dev --extra azure --extra mcp --extra rest
+      - run: uv sync --extra dev --extra azure --extra storage-azure --extra mcp --extra rest
       - run: uv run pytest --cov --cov-report=term-missing --durations=50
 
   report-failure:

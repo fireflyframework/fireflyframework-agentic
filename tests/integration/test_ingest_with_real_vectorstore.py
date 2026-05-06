@@ -26,7 +26,6 @@ miss.
 
 from __future__ import annotations
 
-import os
 import uuid
 from typing import Any
 
@@ -40,15 +39,16 @@ from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
 from fireflyframework_agentic.rag.ingest.pipeline import ingest_one
 from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
 
-_HAVE_AZURITE = bool(os.environ.get("AZURITE_CONNECTION_STRING"))
 
-_BACKENDS = ["local"]
-if _HAVE_AZURITE:
-    _BACKENDS.append("azurite")
-
-
-@pytest.fixture(params=_BACKENDS)
+@pytest.fixture(params=["local", "azurite"])
 def db_store(request, tmp_path):
+    """Parametrised over local and Azurite backends.
+
+    The "azurite" param lazily fetches ``azurite_connection_string``
+    (defined in ``tests/conftest.py``) which auto-starts Azurite via
+    Docker or reads the env var; the param skips when neither is
+    available.
+    """
     from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
 
     if request.param == "local":
@@ -58,7 +58,8 @@ def db_store(request, tmp_path):
 
         from fireflyframework_agentic.storage import AzureBlobBackend
 
-        svc = BlobServiceClient.from_connection_string(os.environ["AZURITE_CONNECTION_STRING"])
+        conn_str = request.getfixturevalue("azurite_connection_string")
+        svc = BlobServiceClient.from_connection_string(conn_str)
         container = f"e2e-{uuid.uuid4().hex}"
         svc.create_container(container)
         backend = AzureBlobBackend(
