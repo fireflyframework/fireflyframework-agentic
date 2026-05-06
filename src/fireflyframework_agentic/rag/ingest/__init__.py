@@ -1,8 +1,13 @@
 from fireflyframework_agentic.rag.ingest.structured_pipeline import ingest_structured
-from fireflyframework_agentic.rag.ingest.structured_registry import SchemaRegistry, discover_schema
+from fireflyframework_agentic.rag.ingest.structured_registry import (
+    SchemaRegistry,
+    discover_schema,
+    discover_schema_interactive,
+)
 from fireflyframework_agentic.rag.ingest.structured_schema import (
     ColumnSpec,
     ColumnType,
+    SchemaFeedback,
     TableSpec,
     TargetSchema,
 )
@@ -16,10 +21,12 @@ __all__ = [
     "ColumnSpec",
     "ColumnType",
     "IngestionResult",
+    "SchemaFeedback",
     "SchemaRegistry",
     "TableSpec",
     "TargetSchema",
     "discover_schema",
+    "discover_schema_interactive",
     "ingest_from_source",
     "ingest_one",
     "ingest_structured",
