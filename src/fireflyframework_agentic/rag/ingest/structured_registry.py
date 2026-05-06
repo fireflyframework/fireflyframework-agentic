@@ -172,7 +172,7 @@ async def discover_schema_interactive(
     corrections: str = ""
     schema: TargetSchema | None = None
 
-    for _round in range(max_rounds):
+    for _ in range(max_rounds):
         schema = await discover_schema(
             path,
             model=model,
@@ -184,4 +184,5 @@ async def discover_schema_interactive(
             return schema
         corrections = feedback.corrections
 
-    return schema  # type: ignore[return-value]
+    assert schema is not None
+    return schema
