@@ -2,10 +2,12 @@
 #
 # Install once per clone:
 #   uv sync --extra dev
-#   uv run pre-commit install
+#   uv run pre-commit install                       # wires commit-stage hooks (ruff, gitleaks, …)
+#   uv run pre-commit install --hook-type pre-push  # wires push-stage hooks (pyright, pytest)
 #
 # Run manually on the whole repo:
 #   uv run pre-commit run --all-files
+#   uv run pre-commit run --all-files --hook-stage pre-push
 #
 # Update hook versions:
 #   uv run pre-commit autoupdate
