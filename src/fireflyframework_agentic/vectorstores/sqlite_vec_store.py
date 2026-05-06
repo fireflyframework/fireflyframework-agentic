@@ -20,7 +20,7 @@ import asyncio
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 try:
     import sqlite_vec
@@ -35,52 +35,70 @@ except ImportError:
 from fireflyframework_agentic.vectorstores.base import BaseVectorStore
 from fireflyframework_agentic.vectorstores.types import SearchFilter, SearchResult, VectorDocument
 
+if TYPE_CHECKING:
+    from fireflyframework_agentic.storage import DatabaseStore, WriteSession
+
 logger = logging.getLogger(__name__)
 
 
 class SqliteVecVectorStore(BaseVectorStore):
     """sqlite-vec backed vector store co-residing in an existing SQLite file.
 
-    Uses a vec0 virtual table (distance_metric=cosine) for KNN search and a
-    shadow table that maps string IDs to integer rowids and stores namespace.
-    Opens its own sqlite3 connection so it can safely share the file with
-    SqliteCorpus under SQLite WAL mode.
-
-    Parameters:
-        db_path: Path to the SQLite file (may already contain SqliteCorpus tables).
-        dimension: Embedding dimension — must match the embedder used at ingest time.
-        table_name: Name of the vec0 virtual table (default: ``vec_chunks``).
+    Constructor accepts either a path (back-compat: wrapped in a
+    ``LocalBackend``-backed ``DatabaseStore`` automatically) or a
+    pre-built ``DatabaseStore``. The legacy ``db_path`` keyword is
+    preserved for back-compat with existing call sites.
     """
 
     def __init__(
         self,
-        db_path: Path | str,
-        dimension: int,
+        path_or_store: str | Path | DatabaseStore | None = None,
+        dimension: int = 0,
         *,
+        db_path: str | Path | None = None,
         table_name: str = "vec_chunks",
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
-        self._db_path = Path(db_path)
+        if path_or_store is None and db_path is None:
+            raise TypeError("SqliteVecVectorStore requires path_or_store or db_path")
+        target = path_or_store if path_or_store is not None else db_path
+
+        from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
+
+        if isinstance(target, DatabaseStore):
+            self._store = target
+        else:
+            p = Path(target)
+            self._store = DatabaseStore(
+                LocalBackend(p),
+                store_id=f"local:{p.resolve()}",
+            )
         self._dim = dimension
         self._tbl = table_name
         self._shadow = f"{table_name}_shadow"
         self._conn: sqlite3.Connection | None = None
-        self._lock = asyncio.Lock()
-        self._ready = False
+        self._generation: int = -1
+        self._conn_lock = asyncio.Lock()
 
-    # ------------------------------------------------------------------
-    # Initialisation (lazy, called with lock held)
-    # ------------------------------------------------------------------
+    async def _read_conn(self) -> sqlite3.Connection:
+        path, generation = await self._store.ensure_fresh()
+        async with self._conn_lock:
+            if self._conn is None or generation != self._generation:
+                if self._conn is not None:
+                    await asyncio.to_thread(self._conn.close)
+                self._conn = await asyncio.to_thread(self._open_conn_with_schema, path)
+                self._generation = generation
+            return self._conn
 
-    def _initialise_sync(self) -> None:
+    def _open_conn_with_schema(self, path: Path) -> sqlite3.Connection:
         if sqlite_vec is None:
             raise ImportError(
                 "sqlite-vec is required for SqliteVecVectorStore. "
                 "Install with: pip install 'fireflyframework-agentic[vectorstores-sqlite-vec]'"
             )
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(self._db_path), isolation_level=None, check_same_thread=False)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(path), isolation_level=None, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
@@ -98,26 +116,77 @@ class SqliteVecVectorStore(BaseVectorStore):
             CREATE VIRTUAL TABLE IF NOT EXISTS {self._tbl}
             USING vec0(embedding float[{self._dim}] distance_metric=cosine)
         """)
-        self._conn = conn
-        self._ready = True
+        return conn
 
-    async def _ensure_ready(self) -> None:
-        """Must be called with self._lock held."""
-        if not self._ready:
-            await asyncio.to_thread(self._initialise_sync)
+    # --- public overrides for session pass-through ---
 
-    # ------------------------------------------------------------------
-    # BaseVectorStore interface
-    # ------------------------------------------------------------------
+    async def upsert(
+        self,
+        documents: list[VectorDocument],
+        namespace: str = "default",
+        *,
+        session: WriteSession | None = None,
+    ) -> None:
+        """Override of BaseVectorStore.upsert to accept a shared
+        DatabaseStore write session for coordinated batches."""
+        from fireflyframework_agentic.exceptions import VectorStoreError
 
-    async def _upsert(self, documents: list[VectorDocument], namespace: str) -> None:
-        async with self._lock:
-            await self._ensure_ready()
-            await asyncio.to_thread(self._upsert_sync, documents, namespace)
+        needs_embedding = [d for d in documents if d.embedding is None]
+        if needs_embedding:
+            if self._embedder is None:
+                raise VectorStoreError(
+                    f"{len(needs_embedding)} document(s) have no embedding and no embedder is configured."
+                )
+            texts = [d.text for d in needs_embedding]
+            result = await self._embedder.embed(texts)
+            for doc, emb in zip(needs_embedding, result.embeddings, strict=True):
+                doc.embedding = emb
+        try:
+            await self._upsert(documents, namespace, session=session)
+        except VectorStoreError:
+            raise
+        except Exception as exc:
+            raise VectorStoreError(f"Upsert failed: {exc}") from exc
 
-    def _upsert_sync(self, documents: list[VectorDocument], namespace: str) -> None:
-        assert self._conn is not None
-        conn = self._conn
+    async def delete(
+        self,
+        ids: list[str],
+        namespace: str = "default",
+        *,
+        session: WriteSession | None = None,
+    ) -> None:
+        from fireflyframework_agentic.exceptions import VectorStoreError
+
+        try:
+            await self._delete(ids, namespace, session=session)
+        except VectorStoreError:
+            raise
+        except Exception as exc:
+            raise VectorStoreError(f"Delete failed: {exc}") from exc
+
+    # --- BaseVectorStore protocol implementations ---
+
+    async def _upsert(
+        self,
+        documents: list[VectorDocument],
+        namespace: str,
+        *,
+        session: WriteSession | None = None,
+    ) -> None:
+        if session is None:
+            async with self._store.for_write() as session:
+                await asyncio.to_thread(self._upsert_via_path_sync, session.path, documents, namespace)
+        else:
+            await asyncio.to_thread(self._upsert_via_path_sync, session.path, documents, namespace)
+
+    def _upsert_via_path_sync(self, path: Path, documents: list[VectorDocument], namespace: str) -> None:
+        conn = self._open_conn_with_schema(path)
+        try:
+            self._upsert_sync_on(conn, documents, namespace)
+        finally:
+            conn.close()
+
+    def _upsert_sync_on(self, conn: sqlite3.Connection, documents: list[VectorDocument], namespace: str) -> None:
         conn.execute("BEGIN")
         try:
             for doc in documents:
@@ -127,7 +196,6 @@ class SqliteVecVectorStore(BaseVectorStore):
                 )
                 row = conn.execute(f"SELECT rowid FROM {self._shadow} WHERE id = ?", (doc.id,)).fetchone()
                 rowid = row[0]
-                # vec0 does not support UPDATE — delete the old vector then re-insert.
                 conn.execute(f"DELETE FROM {self._tbl} WHERE rowid = ?", (rowid,))
                 assert doc.embedding is not None
                 conn.execute(
@@ -146,20 +214,17 @@ class SqliteVecVectorStore(BaseVectorStore):
         namespace: str,
         filters: list[SearchFilter] | None,
     ) -> list[SearchResult]:
-        async with self._lock:
-            await self._ensure_ready()
-            return await asyncio.to_thread(self._search_sync, query_embedding, top_k, namespace)
+        conn = await self._read_conn()
+        return await asyncio.to_thread(self._search_sync, conn, query_embedding, top_k, namespace)
 
     def _search_sync(
         self,
+        conn: sqlite3.Connection,
         query_embedding: list[float],
         top_k: int,
         namespace: str,
     ) -> list[SearchResult]:
-        assert self._conn is not None
-        # Namespace filter is applied after LIMIT — with a single namespace (the RAG default)
-        # this is correct; with multiple namespaces, results may be fewer than top_k.
-        rows = self._conn.execute(
+        rows = conn.execute(
             f"""
             SELECT s.id, v.distance
             FROM (
@@ -182,16 +247,29 @@ class SqliteVecVectorStore(BaseVectorStore):
             for row in rows
         ]
 
-    async def _delete(self, ids: list[str], namespace: str) -> None:
-        async with self._lock:
-            await self._ensure_ready()
-            await asyncio.to_thread(self._delete_sync, ids, namespace)
+    async def _delete(
+        self,
+        ids: list[str],
+        namespace: str,
+        *,
+        session: WriteSession | None = None,
+    ) -> None:
+        if session is None:
+            async with self._store.for_write() as session:
+                await asyncio.to_thread(self._delete_via_path_sync, session.path, ids, namespace)
+        else:
+            await asyncio.to_thread(self._delete_via_path_sync, session.path, ids, namespace)
 
-    def _delete_sync(self, ids: list[str], namespace: str) -> None:
-        assert self._conn is not None
+    def _delete_via_path_sync(self, path: Path, ids: list[str], namespace: str) -> None:
         if not ids:
             return
-        conn = self._conn
+        conn = self._open_conn_with_schema(path)
+        try:
+            self._delete_sync_on(conn, ids, namespace)
+        finally:
+            conn.close()
+
+    def _delete_sync_on(self, conn: sqlite3.Connection, ids: list[str], namespace: str) -> None:
         ph = ",".join("?" * len(ids))
         rows = conn.execute(
             f"SELECT rowid FROM {self._shadow} WHERE id IN ({ph}) AND ns = ?",
@@ -213,8 +291,8 @@ class SqliteVecVectorStore(BaseVectorStore):
             raise
 
     async def close(self) -> None:
-        async with self._lock:
+        async with self._conn_lock:
             if self._conn is not None:
                 await asyncio.to_thread(self._conn.close)
                 self._conn = None
-                self._ready = False
+        await self._store.close()
