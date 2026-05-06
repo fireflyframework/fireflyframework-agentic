@@ -244,9 +244,7 @@ class CorpusAgent:
             return IngestionResult(doc_id=doc_id, source_path=source_path, status="skipped", n_chunks=0)
         try:
             if on_review is not None:
-                schema = await discover_schema_interactive(
-                    path, on_review=on_review, model=self._schema_model
-                )
+                schema = await discover_schema_interactive(path, on_review=on_review, model=self._schema_model)
             else:
                 schema = await discover_schema(path, model=self._schema_model)
             await ingest_structured(path, self.root / "corpus.sqlite", schema)
