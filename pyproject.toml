@@ -181,6 +181,7 @@ pythonVersion = "3.13"
 typeCheckingMode = "basic"
 include = ["src"]
 exclude = ["tests/**", "examples/**"]
+extraPaths = ["src", "."]
 
 
 [tool.pytest.ini_options]
