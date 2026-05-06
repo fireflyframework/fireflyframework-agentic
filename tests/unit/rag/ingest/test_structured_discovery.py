@@ -36,8 +36,10 @@ async def test_discover_schema_csv(csv_file: Path):
     mock_result = MagicMock()
     mock_result.output = expected
 
-    with patch("fireflyframework_agentic.rag.ingest.structured_registry._agent") as mock_agent:
+    with patch("fireflyframework_agentic.rag.ingest.structured_registry.create_extractor_agent") as mock_factory:
+        mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_result)
+        mock_factory.return_value = mock_agent
         result = await discover_schema(csv_file)
 
     assert result.tables[0].name == "sales"
@@ -51,8 +53,10 @@ async def test_discover_schema_passes_sample_to_agent(csv_file: Path):
         tables=[TableSpec(name="sales", columns=[ColumnSpec(name="id", type=ColumnType.integer)])]
     )
 
-    with patch("fireflyframework_agentic.rag.ingest.structured_registry._agent") as mock_agent:
+    with patch("fireflyframework_agentic.rag.ingest.structured_registry.create_extractor_agent") as mock_factory:
+        mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_result)
+        mock_factory.return_value = mock_agent
         await discover_schema(csv_file)
 
     prompt = mock_agent.run.call_args[0][0]

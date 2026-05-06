@@ -31,7 +31,7 @@ from fireflyframework_agentic.rag._telemetry import (
     query_total_duration,
     timed_span,
 )
-from fireflyframework_agentic.rag.corpus import ChunkHit, SqliteCorpus
+from fireflyframework_agentic.rag.corpus import ChunkHit, SqliteCorpus, StoredChunk
 from fireflyframework_agentic.rag.ingest import (
     IngestionResult,
     SchemaRegistry,
@@ -48,9 +48,19 @@ from fireflyframework_agentic.rag.retrieval.answerer import Answer, AnswerAgent
 from fireflyframework_agentic.rag.retrieval.expander import QueryExpander
 from fireflyframework_agentic.rag.retrieval.hybrid import HybridRetriever
 from fireflyframework_agentic.rag.retrieval.reranker import HaikuReranker
-from fireflyframework_agentic.rag.retrieval.sql import StructuredRetriever
+from fireflyframework_agentic.rag.retrieval.sql import StructuredRetriever, _DEFAULT_SQL_MODEL
+from fireflyframework_agentic.rag.ingest.structured_registry import _DEFAULT_SCHEMA_MODEL
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class CorpusStats:
+    """Counts returned by :meth:`CorpusAgent.stats`."""
+
+    doc_count: int
+    chunk_count: int
+    schema_count: int
 
 
 @dataclass(slots=True)
@@ -98,6 +108,8 @@ class CorpusAgent:
         answer_model: str,
         rerank_model: str,
         rerank_pool: int = 20,
+        schema_model: str = _DEFAULT_SCHEMA_MODEL,
+        sql_model: str = _DEFAULT_SQL_MODEL,
         # test injection — bypass the framework's real backends
         _embedder: Any | None = None,
         _vector_store: Any | None = None,
@@ -116,6 +128,8 @@ class CorpusAgent:
         self._answer_model = answer_model
         self._rerank_model = rerank_model
         self._rerank_pool = rerank_pool
+        self._schema_model = schema_model
+        self._sql_model = sql_model
         self._chunker = MarkdownChunker(max_chunk_tokens=600, chunk_overlap=80)
         self._loader = MarkitdownLoader()
 
@@ -162,7 +176,7 @@ class CorpusAgent:
                 embedder=self._embedder,
             )
         if self._structured_retriever is None:
-            self._structured_retriever = StructuredRetriever(self.root / "corpus.sqlite")
+            self._structured_retriever = StructuredRetriever(self.root / "corpus.sqlite", sql_model=self._sql_model)
         self._query_ready = True
 
     async def _ensure_started(self) -> None:
@@ -223,7 +237,7 @@ class CorpusAgent:
         if await self._ledger.should_skip(doc_id, file_hash):
             return IngestionResult(doc_id=doc_id, source_path=source_path, status="skipped", n_chunks=0)
         try:
-            schema = await discover_schema(path)
+            schema = await discover_schema(path, model=self._schema_model)
             await ingest_structured(path, self.root / "corpus.sqlite", schema)
             await self._schema_registry.save(schema)
             await self._ledger.upsert(doc_id, source_path, file_hash, status="success")
@@ -445,6 +459,36 @@ class CorpusAgent:
             span.set_attribute("firefly.rag.citation_count", len(answer.cited_sources))
             span.set_attribute("firefly.rag.outcome", outcome)
             return answer
+
+    async def stats(self) -> CorpusStats:
+        """Return document, chunk, and schema counts for the corpus."""
+        await self._ensure_corpus_ready()
+        rows = await self._corpus.query("SELECT COUNT(DISTINCT doc_id) AS n FROM chunks")
+        doc_count = rows[0]["n"] if rows else 0
+        rows = await self._corpus.query("SELECT COUNT(*) AS n FROM chunks")
+        chunk_count = rows[0]["n"] if rows else 0
+        rows = await self._corpus.query("SELECT COUNT(*) AS n FROM _schemas")
+        schema_count = rows[0]["n"] if rows else 0
+        return CorpusStats(doc_count=doc_count, chunk_count=chunk_count, schema_count=schema_count)
+
+    async def clear(self) -> None:
+        """Wipe all ingested data: chunks, ledger, structured tables, and schemas.
+
+        The corpus file stays open and ready for new ingestion. If the vector
+        store exposes a ``clear()`` method it is called too; otherwise orphaned
+        vectors remain in the store but will never be returned (chunk IDs are
+        resolved through the corpus, which is now empty).
+        """
+        await self._ensure_corpus_ready()
+        await self._corpus.clear_all()
+        if self._vector_store is not None and hasattr(self._vector_store, "clear"):
+            await self._vector_store.clear()
+
+    async def get_chunk(self, chunk_id: str) -> StoredChunk | None:
+        """Retrieve a single chunk by its ID, or ``None`` if not found."""
+        await self._ensure_corpus_ready()
+        chunks = await self._corpus.get_chunks([chunk_id])
+        return chunks[0] if chunks else None
 
     async def close(self) -> None:
         await self._corpus.close()

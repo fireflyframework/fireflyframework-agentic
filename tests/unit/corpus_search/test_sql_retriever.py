@@ -65,7 +65,7 @@ async def test_retrieve_returns_markdown_table(tmp_path: Path):
     retriever = StructuredRetriever(db)
     mock_result = MagicMock()
     mock_result.output.sql = "SELECT id, name FROM products"
-    with patch("fireflyframework_agentic.rag.retrieval.sql._sql_agent") as mock_agent:
+    with patch.object(retriever, "_sql_agent") as mock_agent:
         mock_agent.run = AsyncMock(return_value=mock_result)
         result = await retriever.retrieve("List all products", schemas=[_schema()])
     assert result is not None
@@ -79,7 +79,7 @@ async def test_retrieve_rejects_non_select_sql(tmp_path: Path):
     retriever = StructuredRetriever(db)
     mock_result = MagicMock()
     mock_result.output.sql = "DROP TABLE products"
-    with patch("fireflyframework_agentic.rag.retrieval.sql._sql_agent") as mock_agent:
+    with patch.object(retriever, "_sql_agent") as mock_agent:
         mock_agent.run = AsyncMock(return_value=mock_result)
         result = await retriever.retrieve("drop table", schemas=[_schema()])
     assert result is None
@@ -90,7 +90,7 @@ async def test_retrieve_returns_none_on_sql_error(tmp_path: Path):
     retriever = StructuredRetriever(tmp_path / "corpus.sqlite")  # empty DB
     mock_result = MagicMock()
     mock_result.output.sql = "SELECT * FROM nonexistent_table"
-    with patch("fireflyframework_agentic.rag.retrieval.sql._sql_agent") as mock_agent:
+    with patch.object(retriever, "_sql_agent") as mock_agent:
         mock_agent.run = AsyncMock(return_value=mock_result)
         result = await retriever.retrieve("something", schemas=[_schema()])
     assert result is None
