@@ -25,12 +25,13 @@ from __future__ import annotations
 
 import csv
 import logging
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from fireflyframework_agentic.agents.templates import create_extractor_agent
 from fireflyframework_agentic.rag.corpus import SqliteCorpus
 
-from .structured_schema import TargetSchema
+from .structured_schema import SchemaFeedback, TargetSchema
 
 try:
     import openpyxl as _openpyxl
@@ -120,8 +121,18 @@ def _excel_sample(path: Path) -> str:
     return "\n\n".join(parts)
 
 
-async def discover_schema(path: Path, *, model: str = _DEFAULT_SCHEMA_MODEL) -> TargetSchema:
-    """Infer a ``TargetSchema`` from *path* (CSV or Excel)."""
+async def discover_schema(
+    path: Path,
+    *,
+    model: str = _DEFAULT_SCHEMA_MODEL,
+    corrections: str = "",
+    previous_schema: TargetSchema | None = None,
+) -> TargetSchema:
+    """Infer a ``TargetSchema`` from *path* (CSV or Excel).
+
+    When *corrections* and *previous_schema* are provided the agent is asked to
+    refine *previous_schema* according to the supplied corrections.
+    """
     agent = create_extractor_agent(
         TargetSchema,
         name="schema_discovery",
@@ -131,5 +142,46 @@ async def discover_schema(path: Path, *, model: str = _DEFAULT_SCHEMA_MODEL) -> 
     )
     suffix = path.suffix.lower()
     sample = _excel_sample(path) if suffix in (".xls", ".xlsx") else _csv_sample(path)
-    result = await agent.run(f"File: {path.name}\n\n{sample}")
+    if corrections and previous_schema is not None:
+        prompt = (
+            f"File: {path.name}\n\n{sample}\n\n"
+            f"Previous schema attempt:\n{previous_schema.model_dump_json(indent=2)}\n\n"
+            f"User corrections:\n{corrections}\n\n"
+            "Produce a corrected schema addressing the user's corrections."
+        )
+    else:
+        prompt = f"File: {path.name}\n\n{sample}"
+    result = await agent.run(prompt)
     return result.output
+
+
+async def discover_schema_interactive(
+    path: Path,
+    *,
+    on_review: Callable[[TargetSchema], Awaitable[SchemaFeedback]],
+    model: str = _DEFAULT_SCHEMA_MODEL,
+    max_rounds: int = 5,
+) -> TargetSchema:
+    """Infer a TargetSchema from *path* with iterative user refinement.
+
+    Each round: infer schema → call *on_review* with the result.
+    If feedback.approved is True, return immediately.
+    If False, inject feedback.corrections into the next inference prompt.
+    After *max_rounds*, return the last schema regardless of approval.
+    """
+    corrections: str = ""
+    schema: TargetSchema | None = None
+
+    for _round in range(max_rounds):
+        schema = await discover_schema(
+            path,
+            model=model,
+            corrections=corrections,
+            previous_schema=schema,
+        )
+        feedback = await on_review(schema)
+        if feedback.approved:
+            return schema
+        corrections = feedback.corrections
+
+    return schema  # type: ignore[return-value]
