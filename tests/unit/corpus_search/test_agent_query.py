@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from examples.corpus_search.agent import CorpusAgent
+from fireflyframework_agentic.rag.agent import CorpusAgent
 
 
 def _make_agent(tmp_path: Path) -> CorpusAgent:

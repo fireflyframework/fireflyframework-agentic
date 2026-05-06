@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from examples.corpus_search.retrieval.answerer import Answer, AnswerAgent
+from fireflyframework_agentic.rag.retrieval.answerer import Answer, AnswerAgent
 from fireflyframework_agentic.rag.corpus import ChunkHit
 
 

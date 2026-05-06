@@ -243,8 +243,8 @@ def _check_keys(*, embed_model: str, need_anthropic: bool) -> int:
 
 
 async def _run_ingest(args: argparse.Namespace) -> int:
-    from examples.corpus_search.agent import CorpusAgent
     from fireflyframework_agentic.pipeline.triggers import FolderWatcher
+    from fireflyframework_agentic.rag.agent import CorpusAgent
 
     agent = CorpusAgent(
         root=args.root,
@@ -286,7 +286,7 @@ async def _run_ingest(args: argparse.Namespace) -> int:
 
 
 async def _run_query(args: argparse.Namespace) -> int:
-    from examples.corpus_search.agent import CorpusAgent
+    from fireflyframework_agentic.rag.agent import CorpusAgent
 
     agent = CorpusAgent(
         root=args.root,
