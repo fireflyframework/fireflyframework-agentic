@@ -129,22 +129,16 @@ def _load_rows(path: Path, schema: TargetSchema) -> dict[str, list[dict[str, Any
         else:
             col_idx = {c: norm_header_idx[_normalize_col(c)] for c in col_names}
 
-        # NOT NULL column names — used to pre-filter section-header / spacer rows
-        # that Excel sheets often contain (e.g. "REVENUE", None, None, …).
-        not_null_cols = {c.name for c in table.columns if not c.nullable or c.primary_key}
-
-        def _keep(row: list[Any]) -> bool:
-            # Skip rows that would violate a NOT NULL constraint.
-            return all(
-                row[col_idx[c]] is not None
-                for c in not_null_cols
-                if col_idx[c] < len(row)
-            )
-
+        # Pre-filter section-header / spacer rows (e.g. ["REVENUE", None, …])
+        # that would violate NOT NULL constraints. Capture loop-local copies of
+        # col_idx and not_null_set to avoid B023 late-binding issues.
+        not_null_set = frozenset(c.name for c in table.columns if not c.nullable or c.primary_key)
+        _ci = col_idx
+        _nn = not_null_set
         rows_by_table[table.name] = [
-            {c: (row[col_idx[c]] if col_idx[c] < len(row) else None) for c in col_names}
+            {c: (row[_ci[c]] if _ci[c] < len(row) else None) for c in col_names}
             for row in raw_rows
-            if _keep(row)
+            if all(_ci[c] >= len(row) or row[_ci[c]] is not None for c in _nn)
         ]
     return rows_by_table
 
