@@ -80,6 +80,7 @@ async def ingest_one(
     ledger: IngestLedger,
     chunker: Chunker,
     loader: MarkitdownLoader,
+    force: bool = False,
 ) -> IngestionResult:
     """Ingest one document into the corpus + vector store.
 
@@ -152,7 +153,7 @@ async def ingest_one(
             content_hash = hash_file(path)
 
         # 3. Skip check
-        if await ledger.should_skip(doc_id, content_hash):
+        if not force and await ledger.should_skip(doc_id, content_hash):
             return _record_terminal("skipped", 0)
 
         # 4. Chunk
