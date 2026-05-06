@@ -239,8 +239,6 @@ async def ingest_one(
                 attributes={"doc_id": doc_id, "chunks": len(stored_chunks)},
                 metric_labels={"stage": "store", "status": "success"},
             ):
-                await corpus.upsert_chunks(stored_chunks)
-
                 vector_docs = [
                     VectorDocument(
                         id=c.chunk_id,
@@ -255,7 +253,24 @@ async def ingest_one(
                     )
                     for i, c in enumerate(stored_chunks)
                 ]
-                await vector_store.upsert(vector_docs)
+
+                # If both stores share a DatabaseStore (the typical
+                # corpus_search case), wrap chunk + vector writes in one
+                # for_write batch so we do a single backend upload.
+                shared_store = (
+                    corpus._store
+                    if hasattr(corpus, "_store")
+                    and hasattr(vector_store, "_store")
+                    and corpus._store is vector_store._store
+                    else None
+                )
+                if shared_store is not None:
+                    async with shared_store.for_write() as session:
+                        await corpus.upsert_chunks(stored_chunks, session=session)
+                        await vector_store.upsert(vector_docs, session=session)
+                else:
+                    await corpus.upsert_chunks(stored_chunks)
+                    await vector_store.upsert(vector_docs)
 
             async with timed_span(
                 "rag.ingest.ledger",
