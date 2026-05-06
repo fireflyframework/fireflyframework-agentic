@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,26 @@ _SQL_TYPES: dict[ColumnType, str] = {
 }
 
 
+def _normalize_sheet_name(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", name.lower().replace("&", "and")).strip("_")
+
+
+def _normalize_col(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(name).lower().replace("&", "and")).strip("_")
+
+
+def _find_header_row(rows: list[tuple[Any, ...]]) -> int:
+    """Return the index of the first row that looks like real headers.
+
+    A title row typically has exactly one non-null cell; the actual header
+    row has two or more non-null cells.
+    """
+    for i, row in enumerate(rows[:5]):
+        if sum(1 for v in row if v is not None) >= 2:
+            return i
+    return 0
+
+
 def _read_rows(path: Path, table_name: str) -> tuple[list[str], list[list[Any]]]:
     suffix = path.suffix.lower()
     if suffix in (".xls", ".xlsx"):
@@ -54,27 +75,60 @@ def _read_rows(path: Path, table_name: str) -> tuple[list[str], list[list[Any]]]
             raise RuntimeError("openpyxl is required for Excel files: pip install openpyxl")
         wb = _openpyxl.load_workbook(path, read_only=True, data_only=True)  # type: ignore[union-attr]
         sheet_name = next(
-            (s for s in wb.sheetnames if s.replace(" ", "_").replace("-", "_").lower() == table_name),
-            wb.sheetnames[0],
+            (s for s in wb.sheetnames if _normalize_sheet_name(s) == table_name),
+            None,
         )
-        rows = list(wb[sheet_name].iter_rows(values_only=True))
-        return [str(h) for h in rows[0]], [list(r) for r in rows[1:]]
+        if sheet_name is None:
+            raise KeyError(f"No sheet matching table {table_name!r} in {path.name} (sheets: {wb.sheetnames})")
+        all_rows = list(wb[sheet_name].iter_rows(values_only=True))
+        header_idx = _find_header_row(all_rows)
+        return [str(h) if h is not None else "" for h in all_rows[header_idx]], [
+            list(r) for r in all_rows[header_idx + 1 :]
+        ]
     with open(path, newline="") as f:
         rows = list(csv.reader(f))
     return rows[0], rows[1:]
 
 
 def _load_rows(path: Path, schema: TargetSchema) -> dict[str, list[dict[str, Any]] | None]:
-    """Return table_name → row dicts, or None when required columns are absent."""
+    """Return table_name → row dicts, or None when required columns are absent.
+
+    Matching strategy (in order):
+    1. Normalized name match — ``FY2022`` matches schema column ``fy2022``.
+    2. Positional fallback — when the LLM semantically renamed a column
+       (e.g. "Fiscal Year" → ``line_item``), fall back to aligning schema
+       columns to file columns by position, provided the counts match.
+    """
     rows_by_table: dict[str, list[dict[str, Any]] | None] = {}
     for table in schema.tables:
         headers, raw_rows = _read_rows(path, table.name)
+        # Build normalized-name → index map (skip empty/None header cells).
+        norm_header_idx: dict[str, int] = {}
+        for i, h in enumerate(headers):
+            nk = _normalize_col(h)
+            if nk and nk not in norm_header_idx:
+                norm_header_idx[nk] = i
+
         col_names = [c.name for c in table.columns]
-        missing = set(col_names) - set(headers)
+        missing = [c for c in col_names if _normalize_col(c) not in norm_header_idx]
+
         if missing:
-            rows_by_table[table.name] = None
-            continue
-        col_idx = {c: headers.index(c) for c in col_names}
+            # Positional fallback: align schema column i to file column i.
+            # First try matching the total column count (including None-header cells,
+            # common in multi-section sheets like dashboards).  If that doesn't fit,
+            # try matching only non-empty header positions.
+            if len(headers) >= len(col_names):
+                col_idx = {c: i for i, c in enumerate(col_names)}
+            else:
+                non_empty_headers = [h for h in headers if h and h.strip()]
+                if len(non_empty_headers) >= len(col_names):
+                    col_idx = {c: headers.index(non_empty_headers[i]) for i, c in enumerate(col_names)}
+                else:
+                    rows_by_table[table.name] = None
+                    continue
+        else:
+            col_idx = {c: norm_header_idx[_normalize_col(c)] for c in col_names}
+
         rows_by_table[table.name] = [
             {c: (row[col_idx[c]] if col_idx[c] < len(row) else None) for c in col_names} for row in raw_rows
         ]
@@ -108,6 +162,9 @@ def _sync_ingest_table(
         inserted = 0
         for row_num, row in enumerate(rows, start=2):
             values = [row.get(c) for c in col_names]
+            # Skip section-header rows: all values are None (common in Excel).
+            if all(v is None for v in values):
+                continue
             try:
                 conn.execute(
                     f"INSERT INTO {_quote(table_spec.name)} ({col_names_str}) VALUES ({placeholders})",
@@ -116,11 +173,12 @@ def _sync_ingest_table(
                 inserted += 1
             except sqlite3.Error as exc:
                 errors.append(f"row {row_num}: {exc}")
-        if errors:
+        if inserted == 0 and errors:
             conn.rollback()
             return {"status": "failed", "inserted": 0, "errors": errors}
         conn.commit()
-        return {"status": "success", "inserted": inserted, "errors": []}
+        status = "partial" if errors else "success"
+        return {"status": status, "inserted": inserted, "errors": errors}
     finally:
         conn.close()
 
