@@ -257,17 +257,21 @@ async def ingest_one(
                 # If both stores share a DatabaseStore (the typical
                 # corpus_search case), wrap chunk + vector writes in one
                 # for_write batch so we do a single backend upload.
+                # The vector_store parameter is typed against the
+                # general VectorStoreProtocol; we duck-type the shared
+                # store + session kwarg here, so the type ignores are
+                # load-bearing.
                 shared_store = (
                     corpus._store
                     if hasattr(corpus, "_store")
                     and hasattr(vector_store, "_store")
-                    and corpus._store is vector_store._store
+                    and corpus._store is vector_store._store  # type: ignore[attr-defined]
                     else None
                 )
                 if shared_store is not None:
                     async with shared_store.for_write() as session:
                         await corpus.upsert_chunks(stored_chunks, session=session)
-                        await vector_store.upsert(vector_docs, session=session)
+                        await vector_store.upsert(vector_docs, session=session)  # type: ignore[call-arg]
                 else:
                     await corpus.upsert_chunks(stored_chunks)
                     await vector_store.upsert(vector_docs)
