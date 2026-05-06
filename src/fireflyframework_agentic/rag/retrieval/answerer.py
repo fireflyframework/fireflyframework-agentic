@@ -119,7 +119,13 @@ class AnswerAgent:
             instructions=_INSTRUCTIONS,
         )
 
-    async def answer(self, question: str, hits: Sequence[ChunkHit]) -> Answer:
+    async def answer(
+        self,
+        question: str,
+        hits: Sequence[ChunkHit],
+        *,
+        sql_context: str | None = None,
+    ) -> Answer:
         async with timed_span(
             "firefly.rag.answer",
             histogram=query_stage_duration,
@@ -129,11 +135,16 @@ class AnswerAgent:
             },
             metric_labels={"stage": "answer"},
         ) as span:
-            if not hits:
+            if not hits and sql_context is None:
                 span.set_attribute("firefly.rag.short_circuit", "no_hits")
                 return Answer(text=_NO_INFO_TEXT, citations=[], cited_sources=[])
+            parts: list[str] = [f"Question: {question}"]
+            if sql_context is not None:
+                parts.append(f"## Structured Data Results\n\n{sql_context}")
             formatted = format_chunks_for_prompt(hits)
-            prompt = f"Question: {question}\n\nSource chunks:\n\n{formatted}"
+            if formatted:
+                parts.append(f"## Retrieved Documents\n\n{formatted}")
+            prompt = "\n\n".join(parts)
             result = await self._agent.run(prompt)
             answer = result.output
             # Enrich with source-path metadata post-call.

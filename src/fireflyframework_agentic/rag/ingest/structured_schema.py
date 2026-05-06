@@ -12,10 +12,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Domain models for structured data ingestion schema."""
+
 from __future__ import annotations
 
-from examples.corpus_search.agent import CorpusAgent
-from examples.corpus_search.retrieval.answerer import Answer
-from fireflyframework_agentic.rag.ingest import IngestionResult
+from enum import StrEnum
 
-__all__ = ["Answer", "CorpusAgent", "IngestionResult"]
+from pydantic import BaseModel
+
+
+class ColumnType(StrEnum):
+    string = "string"
+    integer = "integer"
+    float_ = "float"
+    boolean = "boolean"
+    date = "date"
+    datetime = "datetime"
+    json = "json"
+
+
+class ColumnSpec(BaseModel):
+    name: str
+    type: ColumnType
+    nullable: bool = True
+    primary_key: bool = False
+
+
+class TableSpec(BaseModel):
+    name: str
+    columns: list[ColumnSpec]
+
+
+class TargetSchema(BaseModel):
+    tables: list[TableSpec]

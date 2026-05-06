@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from examples.corpus_search.retrieval.answerer import Answer, AnswerAgent, CitedSource
+from examples.corpus_search.retrieval.sql import StructuredRetriever
 from fireflyframework_agentic.rag.retrieval.expander import QueryExpander
 from fireflyframework_agentic.rag.retrieval.hybrid import HybridRetriever, reciprocal_rank_fusion
 from fireflyframework_agentic.rag.retrieval.reranker import HaikuReranker, RerankerResult
@@ -27,5 +28,6 @@ __all__ = [
     "HybridRetriever",
     "QueryExpander",
     "RerankerResult",
+    "StructuredRetriever",
     "reciprocal_rank_fusion",
 ]

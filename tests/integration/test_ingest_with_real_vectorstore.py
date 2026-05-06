@@ -35,7 +35,7 @@ from fireflyframework_agentic.content.loaders import MarkitdownLoader
 from fireflyframework_agentic.embeddings.types import EmbeddingResult
 from fireflyframework_agentic.rag.corpus import SqliteCorpus
 from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
-from fireflyframework_agentic.rag.ingest.pipeline import ingest_one
+from fireflyframework_agentic.rag.ingest.unstructured_pipeline import ingest_one
 from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
 
 
