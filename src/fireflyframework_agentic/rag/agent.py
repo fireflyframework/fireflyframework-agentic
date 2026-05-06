@@ -233,13 +233,14 @@ class CorpusAgent:
         path: Path,
         *,
         on_review: Callable[[TargetSchema], Awaitable[SchemaFeedback]] | None = None,
+        force: bool = False,
     ) -> IngestionResult:
         assert self._ledger is not None
         assert self._schema_registry is not None
         doc_id = doc_id_for(path)
         source_path = str(path.resolve())
         file_hash = hash_file(path)
-        if await self._ledger.should_skip(doc_id, file_hash):
+        if not force and await self._ledger.should_skip(doc_id, file_hash):
             return IngestionResult(doc_id=doc_id, source_path=source_path, status="skipped", n_chunks=0)
         try:
             if on_review is not None:
@@ -263,11 +264,12 @@ class CorpusAgent:
         *,
         mode: Literal["unstructured", "structured"] = "unstructured",
         on_review: Callable[[TargetSchema], Awaitable[SchemaFeedback]] | None = None,
+        force: bool = False,
     ) -> IngestionResult:
         await self._ensure_corpus_ready()
         assert self._ledger is not None
         if mode == "structured":
-            return await self._ingest_structured_file(path, on_review=on_review)
+            return await self._ingest_structured_file(path, on_review=on_review, force=force)
         return await ingest_one(
             path=Path(path),
             corpus=self._corpus,
@@ -276,6 +278,7 @@ class CorpusAgent:
             ledger=self._ledger,
             chunker=self._chunker,
             loader=self._loader,
+            force=force,
         )
 
     async def ingest_folder(

@@ -80,6 +80,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=False,
         help="Interactively review and correct the inferred schema before ingestion (structured mode only).",
     )
+    p_ingest.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Re-ingest even if the file is already recorded in the ledger.",
+    )
     p_ingest.add_argument("--verbose", action="store_true")
 
     p_query = sub.add_parser("query", help="Query the corpus.")
@@ -277,11 +283,12 @@ async def _run_ingest(args: argparse.Namespace) -> int:
     )
     on_review = _cli_review_schema if getattr(args, "interactive", False) else None
     mode = getattr(args, "mode", "unstructured")
+    force = getattr(args, "force", False)
     try:
         single_path: Path | None = getattr(args, "path", None)
         folder: Path | None = getattr(args, "folder", None)
         if single_path is not None and single_path.is_file():
-            result = await agent.ingest_one(single_path, mode=mode, on_review=on_review)
+            result = await agent.ingest_one(single_path, mode=mode, on_review=on_review, force=force)
             _print_ingest_result(result)
         elif args.watch:
             target = folder or single_path
@@ -313,7 +320,7 @@ async def _run_ingest(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                     flush=True,
                 )
-                result = await agent.ingest_one(path, mode=mode, on_review=on_review)
+                result = await agent.ingest_one(path, mode=mode, on_review=on_review, force=force)
                 _print_ingest_result(result)
     finally:
         await agent.close()
