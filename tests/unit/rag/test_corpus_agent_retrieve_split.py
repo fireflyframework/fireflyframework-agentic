@@ -64,11 +64,15 @@ async def test_query_calls_answer_agent(tmp_path: Path) -> None:
         patch.object(a, "_retriever", create=True) as retriever,
         patch.object(a, "_reranker", create=True) as reranker,
         patch.object(a, "_answerer", create=True) as answerer,
+        patch.object(a, "_structured_retriever", create=True) as sql_retriever,
+        patch.object(a, "_schema_registry", create=True) as schema_registry,
     ):
         expander.expand = AsyncMock(return_value=["q"])
         retriever.retrieve = AsyncMock(return_value=fake_hits)
         reranker.rerank = AsyncMock(return_value=fake_hits)
         answerer.answer = AsyncMock(return_value=fake_answer)
+        sql_retriever.retrieve = AsyncMock(return_value=None)
+        schema_registry.list_schemas = AsyncMock(return_value=[])
 
         result = await a.query("question", top_k=1)
 
