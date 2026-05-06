@@ -45,15 +45,14 @@ from fireflyframework_agentic.rag.ingest import (
 )
 from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
 from fireflyframework_agentic.rag.ingest.unstructured_pipeline import (
-    _doc_id_for,
-    _hash_file,
+    doc_id_for,
+    hash_file,
 )
 from fireflyframework_agentic.rag.retrieval.answerer import Answer, AnswerAgent
 from fireflyframework_agentic.rag.retrieval.expander import QueryExpander
 from fireflyframework_agentic.rag.retrieval.hybrid import HybridRetriever
 from fireflyframework_agentic.rag.retrieval.reranker import HaikuReranker
-from fireflyframework_agentic.rag.retrieval.sql import StructuredRetriever, _DEFAULT_SQL_MODEL
-from fireflyframework_agentic.rag.ingest.structured_registry import _DEFAULT_SCHEMA_MODEL
+from fireflyframework_agentic.rag.retrieval.sql import StructuredRetriever
 
 log = logging.getLogger(__name__)
 
@@ -112,8 +111,8 @@ class CorpusAgent:
         answer_model: str,
         rerank_model: str,
         rerank_pool: int = 20,
-        schema_model: str = _DEFAULT_SCHEMA_MODEL,
-        sql_model: str = _DEFAULT_SQL_MODEL,
+        schema_model: str = "anthropic:claude-sonnet-4-6",
+        sql_model: str = "anthropic:claude-haiku-4-5-20251001",
         # test injection — bypass the framework's real backends
         _embedder: Any | None = None,
         _vector_store: Any | None = None,
@@ -229,9 +228,9 @@ class CorpusAgent:
     async def _ingest_structured_file(self, path: Path) -> IngestionResult:
         assert self._ledger is not None
         assert self._schema_registry is not None
-        doc_id = _doc_id_for(path)
+        doc_id = doc_id_for(path)
         source_path = str(path.resolve())
-        file_hash = _hash_file(path)
+        file_hash = hash_file(path)
         if await self._ledger.should_skip(doc_id, file_hash):
             return IngestionResult(doc_id=doc_id, source_path=source_path, status="skipped", n_chunks=0)
         try:
