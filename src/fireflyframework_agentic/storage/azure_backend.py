@@ -233,6 +233,9 @@ class AzureBlobBackend(StorageBackend):
         if token.token == "<no-blob-yet>":
             return
         try:
-            await asyncio.to_thread(self._client.get_blob_client_lease(token.token).release)
+            from azure.storage.blob import BlobLeaseClient  # type: ignore[import-not-found]
+
+            lease = BlobLeaseClient(self._client, lease_id=token.token)
+            await asyncio.to_thread(lease.release)
         except Exception as exc:
             log.warning("release_lock: %s", exc)
