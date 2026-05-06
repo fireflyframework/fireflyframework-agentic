@@ -18,13 +18,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from fireflyframework_agentic.rag.retrieval.sql import StructuredRetriever, _build_schema_context, _execute
 from fireflyframework_agentic.rag.ingest.structured_schema import (
     ColumnSpec,
     ColumnType,
     TableSpec,
     TargetSchema,
 )
+from fireflyframework_agentic.rag.retrieval.sql import StructuredRetriever, _build_schema_context, _execute
 
 
 def _schema() -> TargetSchema:

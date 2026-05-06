@@ -2,8 +2,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from fireflyframework_agentic.rag.retrieval.answerer import Answer, AnswerAgent
 from fireflyframework_agentic.rag.corpus import ChunkHit
+from fireflyframework_agentic.rag.retrieval.answerer import Answer, AnswerAgent
 
 
 @pytest.mark.asyncio

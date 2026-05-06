@@ -20,9 +20,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from fireflyframework_agentic.rag.retrieval.answerer import Answer
 from fireflyframework_agentic.embeddings.types import EmbeddingResult
 from fireflyframework_agentic.rag.agent import CorpusAgent
+from fireflyframework_agentic.rag.retrieval.answerer import Answer
 
 # --- Stubs --------------------------------------------------------------
 
