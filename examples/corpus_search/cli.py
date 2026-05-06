@@ -16,14 +16,28 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import logging
 import os
+import shutil
+import sqlite3
 import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 
+try:
+    import sqlite_vec  # type: ignore[import-not-found]
+
+    _HAS_SQLITE_VEC = True
+except ImportError:
+    sqlite_vec = None  # type: ignore[assignment]
+    _HAS_SQLITE_VEC = False
+
 from fireflyframework_agentic.observability import configure_exporters
+from fireflyframework_agentic.pipeline.triggers import FolderWatcher
+from fireflyframework_agentic.rag.agent import CorpusAgent
+from fireflyframework_agentic.rag.corpus import SqliteCorpus
 
 _DEFAULT_EMBED_MODEL = "azure:text-embedding-3-small"
 _DEFAULT_EXPANSION_MODEL = "anthropic:claude-haiku-4-5-20251001"
@@ -182,9 +196,6 @@ def _run_preflight(args: argparse.Namespace) -> int:
             if confirm.strip().lower() != "yes":
                 sys.stderr.write("[preflight] aborted by operator.\n")
                 return 2
-        import contextlib
-        import shutil
-
         with contextlib.suppress(FileNotFoundError):
             shutil.rmtree(root)
         root.mkdir(parents=True, exist_ok=True)
@@ -192,10 +203,8 @@ def _run_preflight(args: argparse.Namespace) -> int:
 
     # sqlite-vec smoke test — exercises the same load path the ingest code uses.
     try:
-        import sqlite3
-
-        import sqlite_vec  # type: ignore[import-not-found]
-
+        if not _HAS_SQLITE_VEC:
+            raise ImportError("sqlite-vec is not installed")
         conn = sqlite3.connect(":memory:")
         conn.enable_load_extension(True)
         sqlite_vec.load(conn)
@@ -243,9 +252,6 @@ def _check_keys(*, embed_model: str, need_anthropic: bool) -> int:
 
 
 async def _run_ingest(args: argparse.Namespace) -> int:
-    from fireflyframework_agentic.pipeline.triggers import FolderWatcher
-    from fireflyframework_agentic.rag.agent import CorpusAgent
-
     agent = CorpusAgent(
         root=args.root,
         embed_model=args.embed_model,
@@ -286,8 +292,6 @@ async def _run_ingest(args: argparse.Namespace) -> int:
 
 
 async def _run_query(args: argparse.Namespace) -> int:
-    from fireflyframework_agentic.rag.agent import CorpusAgent
-
     agent = CorpusAgent(
         root=args.root,
         embed_model=args.embed_model,
@@ -323,8 +327,6 @@ def _print_ingest_result(result) -> None:
 
 
 async def _run_show_chunk(args: argparse.Namespace) -> int:
-    from fireflyframework_agentic.rag.corpus import SqliteCorpus
-
     corpus_path = args.root / "corpus.sqlite"
     if not corpus_path.exists():
         sys.stderr.write(f"corpus.sqlite not found at {corpus_path}\n")
