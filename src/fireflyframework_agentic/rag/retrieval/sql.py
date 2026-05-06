@@ -34,6 +34,8 @@ Rules:
 - Output ONLY the SQL — no explanation, no markdown.
 - Use only SELECT (no INSERT/UPDATE/DELETE/DROP/ALTER).
 - Use the exact table and column names provided.
+- When filtering a text column, use LIKE with % wildcards (e.g. WHERE line_item LIKE '%Total Revenue%') \
+unless you can see the exact value in the sample rows.
 - If the question cannot be answered from the schema, output: SELECT 1 WHERE 1=0
 """
 
@@ -64,7 +66,7 @@ class StructuredRetriever:
         """Return a markdown table of SQL results, or None on failure/empty schemas."""
         if not schemas:
             return None
-        schema_context = _build_schema_context(schemas)
+        schema_context = _build_schema_context(schemas, db_path=self._db_path)
         prompt = f"{schema_context}\n\nQuestion: {question}"
         try:
             result = await self._sql_agent.run(prompt)
@@ -72,19 +74,41 @@ class StructuredRetriever:
         except Exception as exc:
             log.warning("SQL generation failed: %s", exc)
             return None
+        log.debug("generated SQL: %s", sql)
         if not re.match(r"(?i)^\s*SELECT\b", sql):
             log.warning("rejected non-SELECT SQL: %.120s", sql)
             return None
-        return _execute(self._db_path, sql)
+        query_result = _execute(self._db_path, sql)
+        log.debug("SQL result: %s", query_result[:200] if query_result else None)
+        return query_result
 
 
-def _build_schema_context(schemas: list[TargetSchema]) -> str:
+def _build_schema_context(schemas: list[TargetSchema], db_path: Path | None = None) -> str:
     lines: list[str] = ["Available tables:"]
     for schema in schemas:
         for table in schema.tables:
             col_descs = ", ".join(f"{c.name} ({c.type.value})" for c in table.columns)
             lines.append(f"- {table.name}: {col_descs}")
+            if db_path is not None:
+                # Include sample values for the first string column so the LLM
+                # knows which label values exist and can filter accurately.
+                first_str_col = next((c.name for c in table.columns if c.type.value == "string"), None)
+                if first_str_col:
+                    samples = _sample_values(db_path, table.name, first_str_col)
+                    if samples:
+                        lines.append(f"  sample {first_str_col} values: {samples}")
     return "\n".join(lines)
+
+
+def _sample_values(db_path: Path, table: str, column: str, limit: int = 8) -> list[str]:
+    try:
+        with sqlite3.connect(db_path) as conn:
+            rows = conn.execute(
+                f'SELECT DISTINCT "{column}" FROM "{table}" WHERE "{column}" IS NOT NULL LIMIT {limit}'
+            ).fetchall()
+        return [str(r[0]) for r in rows]
+    except sqlite3.Error:
+        return []
 
 
 def _execute(db_path: Path, sql: str) -> str | None:
