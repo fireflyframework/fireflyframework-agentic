@@ -45,3 +45,8 @@ class TableSpec(BaseModel):
 
 class TargetSchema(BaseModel):
     tables: list[TableSpec]
+
+
+class SchemaFeedback(BaseModel):
+    approved: bool
+    corrections: str = ""
