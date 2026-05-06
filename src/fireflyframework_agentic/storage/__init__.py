@@ -28,11 +28,13 @@ from fireflyframework_agentic.storage._types import (
     StoreUnavailableError,
     WriteSession,
 )
+from fireflyframework_agentic.storage.backend import StorageBackend
 
 __all__ = [
     "DatabaseStoreError",
     "LockToken",
     "RetryPolicy",
+    "StorageBackend",
     "StorageDownloadError",
     "StorageLeaseError",
     "StorageMetadata",
