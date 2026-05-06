@@ -10,6 +10,7 @@ from fireflyframework_agentic.rag.retrieval.answerer import (
 from fireflyframework_agentic.rag.retrieval.expander import QueryExpander
 from fireflyframework_agentic.rag.retrieval.hybrid import HybridRetriever, reciprocal_rank_fusion
 from fireflyframework_agentic.rag.retrieval.reranker import HaikuReranker, RerankerResult
+from fireflyframework_agentic.rag.retrieval.sql import StructuredRetriever
 
 __all__ = [
     "Answer",
@@ -19,6 +20,7 @@ __all__ = [
     "HybridRetriever",
     "QueryExpander",
     "RerankerResult",
+    "StructuredRetriever",
     "format_chunks_for_prompt",
     "reciprocal_rank_fusion",
 ]

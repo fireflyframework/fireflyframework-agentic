@@ -27,11 +27,14 @@ Quick start::
     print(config.default_model)
 """
 
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 
 from fireflyframework_agentic.config import FireflyAgenticConfig, get_config, reset_config
 
-__version__ = version("fireflyframework-agentic")
+try:
+    __version__ = version("fireflyframework-agentic")
+except PackageNotFoundError:
+    __version__ = "0.0.0+dev"
 
 from fireflyframework_agentic.embeddings import BaseEmbedder, EmbedderRegistry, EmbeddingProtocol
 from fireflyframework_agentic.exceptions import (

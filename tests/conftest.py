@@ -16,7 +16,14 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
+
+# Provide a dummy key so that modules using pydantic-ai Anthropic agents can
+# be imported during test collection without a real API key.  Tests that mock
+# the agent never make real calls, so the value is irrelevant.
+os.environ.setdefault("ANTHROPIC_API_KEY", "test")
 
 
 @pytest.fixture(autouse=True)
