@@ -56,8 +56,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p_ingest = sub.add_parser("ingest", help="Ingest a folder of documents.")
-    p_ingest.add_argument("--folder", type=Path, required=True, help="Folder of source documents to ingest.")
+    p_ingest = sub.add_parser("ingest", help="Ingest a file or folder of documents.")
+    p_ingest.add_argument("path", nargs="?", type=Path, default=None, help="Single file to ingest (alternative to --folder).")
+    p_ingest.add_argument("--folder", type=Path, default=None, help="Folder of source documents to ingest.")
     p_ingest.add_argument("--root", type=Path, default=_DEFAULT_ROOT, help="Output root for corpus.sqlite.")
     p_ingest.add_argument("--embed-model", default=_DEFAULT_EMBED_MODEL, help="Embedding model.")
     p_ingest.add_argument(
@@ -274,9 +275,20 @@ async def _run_ingest(args: argparse.Namespace) -> int:
         rerank_model=_DEFAULT_RERANK_MODEL,
         rerank_pool=_DEFAULT_RERANK_POOL,
     )
+    on_review = _cli_review_schema if getattr(args, "interactive", False) else None
+    mode = getattr(args, "mode", "unstructured")
     try:
-        if args.watch:
-            async for result in agent.watch(args.folder):
+        single_path: Path | None = getattr(args, "path", None)
+        folder: Path | None = getattr(args, "folder", None)
+        if single_path is not None and single_path.is_file():
+            result = await agent.ingest_one(single_path, mode=mode, on_review=on_review)
+            _print_ingest_result(result)
+        elif args.watch:
+            target = folder or single_path
+            if target is None:
+                sys.stderr.write("error: --folder or a path argument is required for --watch\n")
+                return 1
+            async for result in agent.watch(target):
                 _print_ingest_result(result)
         else:
             # Walk the folder ourselves so we can stream per-file status
@@ -286,7 +298,11 @@ async def _run_ingest(args: argparse.Namespace) -> int:
             # path. The framework-level corpus_search.ingest_folder span
             # is sacrificed in favour of operator UX; per-file
             # rag.ingest.document spans are still emitted as before.
-            root = Path(args.folder)
+            dir_target = folder or single_path
+            if dir_target is None:
+                sys.stderr.write("error: --folder or a path argument is required\n")
+                return 1
+            root = Path(dir_target)
             watcher = FolderWatcher(folder=root)
             candidates = sorted(p for p in root.rglob("*") if p.is_file() and not watcher.is_hidden(p))
             print(f"found {len(candidates)} file(s) under {root}", file=sys.stderr)
@@ -297,12 +313,7 @@ async def _run_ingest(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                     flush=True,
                 )
-                on_review = _cli_review_schema if getattr(args, "interactive", False) else None
-                result = await agent.ingest_one(
-                    path,
-                    mode=getattr(args, "mode", "unstructured"),
-                    on_review=on_review,
-                )
+                result = await agent.ingest_one(path, mode=mode, on_review=on_review)
                 _print_ingest_result(result)
     finally:
         await agent.close()
