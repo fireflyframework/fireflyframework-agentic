@@ -16,6 +16,8 @@
 See docs/superpowers/specs/2026-05-06-db-storage-backend-design.md.
 """
 
+from typing import TYPE_CHECKING
+
 from fireflyframework_agentic.storage._types import (
     DatabaseStoreError,
     LockToken,
@@ -31,6 +33,11 @@ from fireflyframework_agentic.storage._types import (
 from fireflyframework_agentic.storage.backend import StorageBackend
 from fireflyframework_agentic.storage.database_store import DatabaseStore
 from fireflyframework_agentic.storage.local_backend import LocalBackend
+
+# AzureBlobBackend is lazy-imported via __getattr__ so callers without
+# the [storage-azure] extra installed can still import the package.
+if TYPE_CHECKING:
+    from fireflyframework_agentic.storage.azure_backend import AzureBlobBackend
 
 __all__ = [
     "AzureBlobBackend",
