@@ -242,10 +242,37 @@ def _check_keys(*, embed_model: str, need_anthropic: bool) -> int:
     return 0
 
 
+def _build_db_store(root: Path):
+    """Construct a DatabaseStore for the corpus_search example.
+
+    Backend is chosen by the ``CORPUS_SEARCH_BACKEND`` env var:
+    - ``local`` (default): on-disk LocalBackend at ``<root>/corpus.sqlite``.
+    - ``azure``: AzureBlobBackend at ``CORPUS_SEARCH_AZURE_CONTAINER_URL``
+      / ``CORPUS_SEARCH_AZURE_BLOB_NAME`` (default ``corpus.sqlite``).
+    """
+    from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
+
+    backend_kind = os.environ.get("CORPUS_SEARCH_BACKEND", "local")
+    if backend_kind == "local":
+        backend = LocalBackend(root / "corpus.sqlite")
+    elif backend_kind == "azure":
+        from azure.identity import DefaultAzureCredential  # type: ignore[import-not-found]
+
+        from fireflyframework_agentic.storage import AzureBlobBackend
+
+        container_url = os.environ["CORPUS_SEARCH_AZURE_CONTAINER_URL"]
+        blob_name = os.environ.get("CORPUS_SEARCH_AZURE_BLOB_NAME", "corpus.sqlite")
+        backend = AzureBlobBackend(container_url, blob_name, credential=DefaultAzureCredential())
+    else:
+        raise SystemExit(f"Unknown CORPUS_SEARCH_BACKEND={backend_kind!r}")
+    return DatabaseStore(backend, store_id=f"corpus_search:{root.resolve()}")
+
+
 async def _run_ingest(args: argparse.Namespace) -> int:
     from examples.corpus_search.agent import CorpusAgent
     from fireflyframework_agentic.pipeline.triggers import FolderWatcher
 
+    db_store = _build_db_store(args.root)
     agent = CorpusAgent(
         root=args.root,
         embed_model=args.embed_model,
@@ -254,6 +281,7 @@ async def _run_ingest(args: argparse.Namespace) -> int:
         answer_model=_DEFAULT_ANSWER_MODEL,
         rerank_model=_DEFAULT_RERANK_MODEL,
         rerank_pool=_DEFAULT_RERANK_POOL,
+        db_store=db_store,
     )
     try:
         if args.watch:
@@ -288,6 +316,7 @@ async def _run_ingest(args: argparse.Namespace) -> int:
 async def _run_query(args: argparse.Namespace) -> int:
     from examples.corpus_search.agent import CorpusAgent
 
+    db_store = _build_db_store(args.root)
     agent = CorpusAgent(
         root=args.root,
         embed_model=args.embed_model,
@@ -296,6 +325,7 @@ async def _run_query(args: argparse.Namespace) -> int:
         answer_model=args.answer_model,
         rerank_model=args.rerank_model,
         rerank_pool=args.rerank_pool,
+        db_store=db_store,
     )
     try:
         result = await agent.query(args.question, top_k=args.top_k)
@@ -325,11 +355,13 @@ def _print_ingest_result(result) -> None:
 async def _run_show_chunk(args: argparse.Namespace) -> int:
     from fireflyframework_agentic.rag.corpus import SqliteCorpus
 
-    corpus_path = args.root / "corpus.sqlite"
-    if not corpus_path.exists():
-        sys.stderr.write(f"corpus.sqlite not found at {corpus_path}\n")
-        return 2
-    corpus = SqliteCorpus(corpus_path)
+    backend_kind = os.environ.get("CORPUS_SEARCH_BACKEND", "local")
+    if backend_kind == "local":
+        corpus_path = args.root / "corpus.sqlite"
+        if not corpus_path.exists():
+            sys.stderr.write(f"corpus.sqlite not found at {corpus_path}\n")
+            return 2
+    corpus = SqliteCorpus(_build_db_store(args.root))
     await corpus.initialise()
     try:
         chunks = await corpus.get_chunks([args.chunk_id])
