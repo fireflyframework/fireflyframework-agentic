@@ -66,13 +66,7 @@ _SKILL = (
     "**Multi-sheet Excel:** One TableSpec per sheet. Skip sheets where all sample rows are empty."
 )
 
-_agent = create_extractor_agent(
-    TargetSchema,
-    name="schema_discovery",
-    model="anthropic:claude-sonnet-4-6",
-    extra_instructions=_SKILL,
-    auto_register=True,
-)
+_DEFAULT_SCHEMA_MODEL = "anthropic:claude-sonnet-4-6"
 
 
 class SchemaRegistry:
@@ -126,9 +120,16 @@ def _excel_sample(path: Path) -> str:
     return "\n\n".join(parts)
 
 
-async def discover_schema(path: Path) -> TargetSchema:
+async def discover_schema(path: Path, *, model: str = _DEFAULT_SCHEMA_MODEL) -> TargetSchema:
     """Infer a ``TargetSchema`` from *path* (CSV or Excel)."""
+    agent = create_extractor_agent(
+        TargetSchema,
+        name="schema_discovery",
+        model=model,
+        extra_instructions=_SKILL,
+        auto_register=False,
+    )
     suffix = path.suffix.lower()
     sample = _excel_sample(path) if suffix in (".xls", ".xlsx") else _csv_sample(path)
-    result = await _agent.run(f"File: {path.name}\n\n{sample}")
+    result = await agent.run(f"File: {path.name}\n\n{sample}")
     return result.output

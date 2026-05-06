@@ -42,18 +42,19 @@ class SQLQuery(BaseModel):
     sql: str
 
 
-_sql_agent = create_extractor_agent(
-    SQLQuery,
-    name="text_to_sql",
-    model="anthropic:claude-haiku-4-5-20251001",
-    extra_instructions=_SYSTEM,
-    auto_register=False,
-)
+_DEFAULT_SQL_MODEL = "anthropic:claude-haiku-4-5-20251001"
 
 
 class StructuredRetriever:
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, *, sql_model: str = _DEFAULT_SQL_MODEL) -> None:
         self._db_path = db_path
+        self._sql_agent = create_extractor_agent(
+            SQLQuery,
+            name="text_to_sql",
+            model=sql_model,
+            extra_instructions=_SYSTEM,
+            auto_register=False,
+        )
 
     async def retrieve(
         self,
@@ -66,7 +67,7 @@ class StructuredRetriever:
         schema_context = _build_schema_context(schemas)
         prompt = f"{schema_context}\n\nQuestion: {question}"
         try:
-            result = await _sql_agent.run(prompt)
+            result = await self._sql_agent.run(prompt)
             sql = result.output.sql.strip()
         except Exception as exc:
             log.warning("SQL generation failed: %s", exc)
