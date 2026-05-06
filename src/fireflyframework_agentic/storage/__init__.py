@@ -29,9 +29,11 @@ from fireflyframework_agentic.storage._types import (
     WriteSession,
 )
 from fireflyframework_agentic.storage.backend import StorageBackend
+from fireflyframework_agentic.storage.local_backend import LocalBackend
 
 __all__ = [
     "DatabaseStoreError",
+    "LocalBackend",
     "LockToken",
     "RetryPolicy",
     "StorageBackend",
