@@ -31,12 +31,15 @@ class StorageBackend(ABC):
     """
 
     @abstractmethod
-    async def metadata(self) -> StorageMetadata: ...
+    async def metadata(self) -> StorageMetadata:
+        """Return current remote metadata (etag, size, exists)."""
+        raise NotImplementedError
 
     @abstractmethod
     async def download(self, dest: Path) -> StorageMetadata:
         """Atomically replace ``dest`` with the current remote contents.
         Returns the metadata observed at the time of the read."""
+        raise NotImplementedError
 
     @abstractmethod
     async def upload(
@@ -57,12 +60,17 @@ class StorageBackend(ABC):
         Transport / 5xx errors raise ``StorageTransientError`` and are
         retried by the caller's RetryPolicy.
         """
+        raise NotImplementedError
 
     @abstractmethod
-    async def acquire_lock(self, *, timeout: float) -> LockToken: ...
+    async def acquire_lock(self, *, timeout: float) -> LockToken:
+        """Acquire the exclusive write lock, waiting up to ``timeout``."""
+        raise NotImplementedError
 
     @abstractmethod
-    async def release_lock(self, token: LockToken) -> None: ...
+    async def release_lock(self, token: LockToken) -> None:
+        """Release the lock previously acquired via ``acquire_lock``."""
+        raise NotImplementedError
 
     async def renew_lock(self, token: LockToken) -> LockToken:
         """Optional. Default raises NotImplementedError. Used by
