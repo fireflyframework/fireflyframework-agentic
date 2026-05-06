@@ -57,7 +57,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_ingest = sub.add_parser("ingest", help="Ingest a file or folder of documents.")
-    p_ingest.add_argument("path", nargs="?", type=Path, default=None, help="Single file to ingest (alternative to --folder).")
+    p_ingest.add_argument(
+        "path", nargs="?", type=Path, default=None, help="Single file to ingest (alternative to --folder)."
+    )
     p_ingest.add_argument("--folder", type=Path, default=None, help="Folder of source documents to ingest.")
     p_ingest.add_argument("--root", type=Path, default=_DEFAULT_ROOT, help="Output root for corpus.sqlite.")
     p_ingest.add_argument("--embed-model", default=_DEFAULT_EMBED_MODEL, help="Embedding model.")

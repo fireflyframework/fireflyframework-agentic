@@ -50,3 +50,20 @@ repos:
     rev: v8.21.2
     hooks:
       - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        language: system
+        entry: uv run pyright
+        types: [python]
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: pytest
+        name: pytest
+        language: system
+        entry: uv run pytest -m "not nightly" -q --tb=short
+        pass_filenames: false
+        stages: [pre-push]

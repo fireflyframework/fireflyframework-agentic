@@ -70,9 +70,16 @@ async def test_discover_schema_passes_sample_to_agent(csv_file: Path):
 
 
 def _stub_schema() -> TargetSchema:
-    return TargetSchema(tables=[TableSpec(name="data", columns=[
-        ColumnSpec(name="id", type=ColumnType.integer),
-    ])])
+    return TargetSchema(
+        tables=[
+            TableSpec(
+                name="data",
+                columns=[
+                    ColumnSpec(name="id", type=ColumnType.integer),
+                ],
+            )
+        ]
+    )
 
 
 @pytest.mark.asyncio
@@ -100,15 +107,24 @@ async def test_interactive_refines_on_rejection(tmp_path: Path):
     csv.write_text("id,name\n1,Alice\n")
 
     schema_v1 = _stub_schema()
-    schema_v2 = TargetSchema(tables=[TableSpec(name="t", columns=[
-        ColumnSpec(name="id", type=ColumnType.integer),
-        ColumnSpec(name="name", type=ColumnType.string),
-    ])])
+    schema_v2 = TargetSchema(
+        tables=[
+            TableSpec(
+                name="t",
+                columns=[
+                    ColumnSpec(name="id", type=ColumnType.integer),
+                    ColumnSpec(name="name", type=ColumnType.string),
+                ],
+            )
+        ]
+    )
 
-    on_review = AsyncMock(side_effect=[
-        SchemaFeedback(approved=False, corrections="name column is missing"),
-        SchemaFeedback(approved=True),
-    ])
+    on_review = AsyncMock(
+        side_effect=[
+            SchemaFeedback(approved=False, corrections="name column is missing"),
+            SchemaFeedback(approved=True),
+        ]
+    )
 
     with patch(
         "fireflyframework_agentic.rag.ingest.structured_registry.discover_schema",
