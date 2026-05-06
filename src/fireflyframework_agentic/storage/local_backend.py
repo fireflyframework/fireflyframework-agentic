@@ -127,10 +127,12 @@ class LocalBackend(StorageBackend):
                 self._reclaim_stale_sentinel_if_any()
                 token_str = f"{os.getpid()}:{uuid.uuid4().hex}"
                 try:
+                    # 0o600: owner read/write only — sentinel encodes the
+                    # owning pid and shouldn't be readable by other users.
                     fd = os.open(
                         self._sentinel,
                         os.O_CREAT | os.O_EXCL | os.O_WRONLY,
-                        0o644,
+                        0o600,
                     )
                 except FileExistsError as exc:
                     if time.monotonic() >= deadline:

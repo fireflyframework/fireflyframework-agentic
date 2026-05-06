@@ -16,8 +16,6 @@
 See docs/superpowers/specs/2026-05-06-db-storage-backend-design.md.
 """
 
-from typing import TYPE_CHECKING
-
 from fireflyframework_agentic.storage._types import (
     DatabaseStoreError,
     LockToken,
@@ -34,10 +32,20 @@ from fireflyframework_agentic.storage.backend import StorageBackend
 from fireflyframework_agentic.storage.database_store import DatabaseStore
 from fireflyframework_agentic.storage.local_backend import LocalBackend
 
-# AzureBlobBackend is lazy-imported via __getattr__ so callers without
-# the [storage-azure] extra installed can still import the package.
-if TYPE_CHECKING:
+# AzureBlobBackend lives behind the [storage-azure] extra. We try the
+# import eagerly so it is a real symbol when the deps are installed
+# (matches static-analyser expectations); when the deps are missing,
+# `__getattr__` raises a clear, install-suggesting error instead of
+# the bare ImportError seen at this site.
+try:
     from fireflyframework_agentic.storage.azure_backend import AzureBlobBackend
+except ImportError:  # pragma: no cover — exercised when the extra isn't installed
+    _AZURE_BACKEND_IMPORT_ERROR: ImportError | None = ImportError(
+        "AzureBlobBackend requires the storage-azure extra; install with "
+        "`pip install fireflyframework-agentic[storage-azure]`"
+    )
+else:
+    _AZURE_BACKEND_IMPORT_ERROR = None
 
 __all__ = [
     "AzureBlobBackend",
@@ -58,8 +66,6 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    if name == "AzureBlobBackend":
-        from fireflyframework_agentic.storage.azure_backend import AzureBlobBackend
-
-        return AzureBlobBackend
+    if name == "AzureBlobBackend" and _AZURE_BACKEND_IMPORT_ERROR is not None:
+        raise _AZURE_BACKEND_IMPORT_ERROR
     raise AttributeError(name)

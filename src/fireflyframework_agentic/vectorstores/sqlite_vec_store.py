@@ -78,18 +78,22 @@ class SqliteVecVectorStore(BaseVectorStore):
         self._dim = dimension
         self._tbl = table_name
         self._shadow = f"{table_name}_shadow"
+        # Long-lived cached connection; serialised by _lock for both
+        # reads and writes. Reopened when the cache file is replaced.
+        self._conn: sqlite3.Connection | None = None
+        self._generation: int = -1
+        self._lock = asyncio.Lock()
 
-    async def _read_path(self) -> Path:
-        """Return the local cache path, refreshed against the backend.
-
-        Each read opens a short-lived connection in its worker thread
-        (see ``_search_sync``) rather than sharing a cached connection.
-        This prevents a generation bump on one reader from closing the
-        connection in use by another. WAL mode + sub-millisecond
-        connect cost makes per-call connections cheap.
-        """
-        path, _ = await self._store.ensure_fresh()
-        return path
+    async def _ensure_conn(self) -> sqlite3.Connection:
+        """Return the cached conn, reopening if the cache file was
+        replaced. MUST be called with ``self._lock`` held."""
+        path, generation = await self._store.ensure_fresh()
+        if self._conn is None or generation != self._generation:
+            if self._conn is not None:
+                await asyncio.to_thread(self._conn.close)
+            self._conn = await asyncio.to_thread(self._open_conn_with_schema, path)
+            self._generation = generation
+        return self._conn
 
     def _open_conn_with_schema(self, path: Path) -> sqlite3.Connection:
         if sqlite_vec is None:
@@ -98,13 +102,11 @@ class SqliteVecVectorStore(BaseVectorStore):
                 "Install with: pip install 'fireflyframework-agentic[vectorstores-sqlite-vec]'"
             )
         path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(path), isolation_level=None, check_same_thread=False)
+        # See _open_corpus_conn for why timeout= is used instead of PRAGMA.
+        conn = sqlite3.connect(str(path), isolation_level=None, check_same_thread=False, timeout=30.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
-        # 30s busy_timeout so concurrent ingest workers wait for each
-        # other's WAL writes to drain instead of failing fast.
-        conn.execute("PRAGMA busy_timeout = 30000")
         conn.enable_load_extension(True)
         sqlite_vec.load(conn)
         conn.enable_load_extension(False)
@@ -178,16 +180,14 @@ class SqliteVecVectorStore(BaseVectorStore):
     ) -> None:
         if session is None:
             async with self._store.for_write() as session:
-                await asyncio.to_thread(self._upsert_via_path_sync, session.path, documents, namespace)
+                await self._upsert_in_session(documents, namespace)
         else:
-            await asyncio.to_thread(self._upsert_via_path_sync, session.path, documents, namespace)
+            await self._upsert_in_session(documents, namespace)
 
-    def _upsert_via_path_sync(self, path: Path, documents: list[VectorDocument], namespace: str) -> None:
-        conn = self._open_conn_with_schema(path)
-        try:
-            self._upsert_sync_on(conn, documents, namespace)
-        finally:
-            conn.close()
+    async def _upsert_in_session(self, documents: list[VectorDocument], namespace: str) -> None:
+        async with self._lock:
+            conn = await self._ensure_conn()
+            await asyncio.to_thread(self._upsert_sync_on, conn, documents, namespace)
 
     def _upsert_sync_on(self, conn: sqlite3.Connection, documents: list[VectorDocument], namespace: str) -> None:
         conn.execute("BEGIN")
@@ -217,35 +217,32 @@ class SqliteVecVectorStore(BaseVectorStore):
         namespace: str,
         filters: list[SearchFilter] | None,
     ) -> list[SearchResult]:
-        path = await self._read_path()
-        return await asyncio.to_thread(self._search_sync, path, query_embedding, top_k, namespace)
+        async with self._lock:
+            conn = await self._ensure_conn()
+            return await asyncio.to_thread(self._search_sync, conn, query_embedding, top_k, namespace)
 
     def _search_sync(
         self,
-        path: Path,
+        conn: sqlite3.Connection,
         query_embedding: list[float],
         top_k: int,
         namespace: str,
     ) -> list[SearchResult]:
-        conn = self._open_conn_with_schema(path)
-        try:
-            rows = conn.execute(
-                f"""
-                SELECT s.id, v.distance
-                FROM (
-                    SELECT rowid, distance
-                    FROM {self._tbl}
-                    WHERE embedding MATCH ?
-                    ORDER BY distance
-                    LIMIT ?
-                ) v
-                JOIN {self._shadow} s ON s.rowid = v.rowid
-                WHERE s.ns = ?
-                """,
-                (serialize_float32(query_embedding), top_k, namespace),
-            ).fetchall()
-        finally:
-            conn.close()
+        rows = conn.execute(
+            f"""
+            SELECT s.id, v.distance
+            FROM (
+                SELECT rowid, distance
+                FROM {self._tbl}
+                WHERE embedding MATCH ?
+                ORDER BY distance
+                LIMIT ?
+            ) v
+            JOIN {self._shadow} s ON s.rowid = v.rowid
+            WHERE s.ns = ?
+            """,
+            (serialize_float32(query_embedding), top_k, namespace),
+        ).fetchall()
         return [
             SearchResult(
                 document=VectorDocument(id=row["id"], text="", metadata={}),
@@ -261,20 +258,18 @@ class SqliteVecVectorStore(BaseVectorStore):
         *,
         session: WriteSession | None = None,
     ) -> None:
-        if session is None:
-            async with self._store.for_write() as session:
-                await asyncio.to_thread(self._delete_via_path_sync, session.path, ids, namespace)
-        else:
-            await asyncio.to_thread(self._delete_via_path_sync, session.path, ids, namespace)
-
-    def _delete_via_path_sync(self, path: Path, ids: list[str], namespace: str) -> None:
         if not ids:
             return
-        conn = self._open_conn_with_schema(path)
-        try:
-            self._delete_sync_on(conn, ids, namespace)
-        finally:
-            conn.close()
+        if session is None:
+            async with self._store.for_write() as session:
+                await self._delete_in_session(ids, namespace)
+        else:
+            await self._delete_in_session(ids, namespace)
+
+    async def _delete_in_session(self, ids: list[str], namespace: str) -> None:
+        async with self._lock:
+            conn = await self._ensure_conn()
+            await asyncio.to_thread(self._delete_sync_on, conn, ids, namespace)
 
     def _delete_sync_on(self, conn: sqlite3.Connection, ids: list[str], namespace: str) -> None:
         ph = ",".join("?" * len(ids))
@@ -298,4 +293,8 @@ class SqliteVecVectorStore(BaseVectorStore):
             raise
 
     async def close(self) -> None:
+        async with self._lock:
+            if self._conn is not None:
+                await asyncio.to_thread(self._conn.close)
+                self._conn = None
         await self._store.close()

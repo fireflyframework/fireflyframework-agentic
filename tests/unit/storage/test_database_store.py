@@ -87,9 +87,13 @@ async def test_for_write_downloads_when_remote_changed(tmp_path: Path) -> None:
 
 async def test_for_write_exception_does_not_upload(store_factory) -> None:
     store, backend = store_factory()
-    with pytest.raises(RuntimeError):
+    raised = False
+    try:
         async with store.for_write() as _session:
             raise RuntimeError("boom")
+    except RuntimeError:
+        raised = True
+    assert raised, "for_write must propagate RuntimeError from the body"
     assert backend.uploads == 0
 
 
