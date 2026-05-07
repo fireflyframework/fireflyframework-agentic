@@ -92,3 +92,38 @@ async def test_corpus_query_raises_for_unknown_corpus(configured_env: Path, stub
     with pytest.raises(ToolError) as exc_info:
         await corpus_query.execute(corpus_id="never-ingested", question="anything", top_k=3)
     assert isinstance(exc_info.value.__cause__, CorpusNotFoundError)
+
+
+@pytest.mark.asyncio
+async def test_list_corpora_empty_when_root_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from fireflyframework_agentic.tools.builtins.corpus_rag import list_corpora
+
+    monkeypatch.setenv("CORPUS_ROOT", str(tmp_path / "does-not-exist"))
+    result = await list_corpora.execute()
+    assert result["corpora"] == []
+    assert result["corpus_root"].endswith("does-not-exist")
+
+
+@pytest.mark.asyncio
+async def test_list_corpora_returns_only_dirs_with_sqlite(configured_env: Path, stub_backends: None) -> None:
+    from fireflyframework_agentic.tools.builtins.corpus_rag import (
+        ingest_corpus_filesystem,
+        list_corpora,
+    )
+
+    docs = configured_env / "src"
+    docs.mkdir()
+    (docs / "a.md").write_text("alpha", encoding="utf-8")
+
+    await ingest_corpus_filesystem.execute(corpus_id="bravo", root_path=str(docs))
+    await ingest_corpus_filesystem.execute(corpus_id="alpha", root_path=str(docs))
+
+    # A stray directory with no corpus.sqlite must be ignored.
+    (configured_env / "corpora" / "stray").mkdir(parents=True)
+
+    result = await list_corpora.execute()
+    ids = [c["corpus_id"] for c in result["corpora"]]
+    assert ids == ["alpha", "bravo"]
+    for entry in result["corpora"]:
+        assert entry["size_bytes"] > 0
+        assert "T" in entry["modified"]  # ISO 8601 marker
