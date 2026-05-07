@@ -3,7 +3,8 @@
 
 """Corpus RAG tools exposed via MCP.
 
-Four tools:
+Five tools:
+    - list_corpora()
     - ingest_corpus_filesystem(corpus_id, root_path)
     - ingest_corpus_sharepoint(corpus_id, drive_id, root_folder?)
     - corpus_retrieve(corpus_id, question, top_k)
@@ -21,6 +22,7 @@ provider against Microsoft Graph (zero-trust model — see
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +58,38 @@ def _assert_corpus_exists(corpus_id: str) -> Path:
     if not sqlite_path.exists():
         raise CorpusNotFoundError(corpus_id, str(sqlite_path))
     return sqlite_path
+
+
+# ---------- discovery ------------------------------------------------------
+
+
+@firefly_tool(
+    "list_corpora",
+    description=(
+        "List every corpus_id available on this server. A corpus_id is the name "
+        "of a subdirectory of CORPUS_ROOT that contains a corpus.sqlite file. "
+        "Call this first when you don't know which corpus to query. Returns "
+        "an empty list if CORPUS_ROOT does not exist or contains no corpora."
+    ),
+    tags=("rag", "discovery"),
+)
+async def list_corpora() -> dict[str, Any]:
+    root = _corpus_root()
+    corpora: list[dict[str, Any]] = []
+    if root.is_dir():
+        for entry in sorted(root.iterdir()):
+            sqlite_path = entry / "corpus.sqlite"
+            if not (entry.is_dir() and sqlite_path.is_file()):
+                continue
+            st = sqlite_path.stat()
+            corpora.append(
+                {
+                    "corpus_id": entry.name,
+                    "size_bytes": st.st_size,
+                    "modified": datetime.fromtimestamp(st.st_mtime, tz=UTC).isoformat(),
+                }
+            )
+    return {"corpus_root": str(root), "corpora": corpora}
 
 
 # ---------- ingest ---------------------------------------------------------
@@ -200,4 +234,5 @@ __all__ = [
     "corpus_retrieve",
     "ingest_corpus_filesystem",
     "ingest_corpus_sharepoint",
+    "list_corpora",
 ]
