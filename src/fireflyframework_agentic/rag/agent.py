@@ -259,7 +259,21 @@ class CorpusAgent:
                 schema = await discover_schema_interactive(path, on_review=on_review, model=self._schema_model)
             else:
                 schema = await discover_schema(path, model=self._schema_model)
-            await ingest_structured(path, self.root / "corpus.sqlite", schema)
+            ingest_result = await ingest_structured(path, self.root / "corpus.sqlite", schema)
+            failed_tables = {name: meta for name, meta in ingest_result.items() if meta.get("status") != "success"}
+            if failed_tables:
+                # Per-table rollback inside ingest_structured leaves nothing
+                # behind for the failed tables; reporting "success" here would
+                # silently lose data and block retries via the ledger.
+                for name, meta in failed_tables.items():
+                    log.warning(
+                        "structured ingest table %s failed for %s: %s",
+                        name,
+                        path,
+                        "; ".join(meta.get("errors", [])) or meta.get("status"),
+                    )
+                await self._ledger.upsert(doc_id, source_path, file_hash, status="load_failed")
+                return IngestionResult(doc_id=doc_id, source_path=source_path, status="load_failed", n_chunks=0)
             await self._schema_registry.save(schema)
             await self._ledger.upsert(doc_id, source_path, file_hash, status="success")
             return IngestionResult(doc_id=doc_id, source_path=source_path, status="success", n_chunks=0)
@@ -296,13 +310,17 @@ class CorpusAgent:
         folder: Path,
         *,
         mode: Literal["unstructured", "structured"] = "unstructured",
+        on_review: Callable[[TargetSchema], Awaitable[SchemaFeedback]] | None = None,
+        force: bool = False,
     ) -> IngestSummary:
         """Recursively ingest every (non-hidden) file under ``folder``.
 
         For ``mode='unstructured'`` (default), delegates to :meth:`ingest_source`
         via :class:`LocalFolderSource`. For ``mode='structured'``, runs a direct
         loop calling :meth:`ingest_one` so each file goes through schema discovery
-        and SQLite insertion rather than the embedding pipeline.
+        and SQLite insertion rather than the embedding pipeline. ``on_review``
+        and ``force`` are only honoured by the structured branch (the
+        unstructured ContentSource path has its own change-detection model).
         """
         if mode == "structured":
             await self._ensure_corpus_ready()
@@ -310,7 +328,7 @@ class CorpusAgent:
             candidates = sorted(p for p in Path(folder).rglob("*") if p.is_file() and not watcher.is_hidden(p))
             results: list[IngestionResult] = []
             for path in candidates:
-                results.append(await self.ingest_one(path, mode="structured"))
+                results.append(await self.ingest_one(path, mode="structured", on_review=on_review, force=force))
             return IngestSummary(results=results)
 
         source = LocalFolderSource(LocalFolderSourceConfig(folder=Path(folder)))

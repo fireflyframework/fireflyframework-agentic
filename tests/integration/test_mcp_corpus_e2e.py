@@ -34,7 +34,7 @@ from fireflyframework_agentic.tools.registry import ToolRegistry
 
 _BENCH_CORPUS = Path(__file__).resolve().parents[2] / "tests" / "examples" / "corpus_search" / "benchmark" / "corpus"
 
-_REQUIRED_SECRETS = ("EMBEDDING_BINDING_HOST", "EMBEDDING_BINDING_API_KEY", "ANTHROPIC_API_KEY")
+_REQUIRED_ENV_VARS = ("EMBEDDING_BINDING_HOST", "EMBEDDING_BINDING_API_KEY", "ANTHROPIC_API_KEY")
 
 
 def _build_registry() -> ToolRegistry:
@@ -68,8 +68,8 @@ def _set_e2e_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.nightly
 @pytest.mark.skipif(
-    not all(os.environ.get(k) for k in _REQUIRED_SECRETS),
-    reason=f"Requires {', '.join(_REQUIRED_SECRETS)}",
+    not all(os.environ.get(k) for k in _REQUIRED_ENV_VARS),
+    reason=f"Requires {', '.join(_REQUIRED_ENV_VARS)}",
 )
 async def test_mcp_list_ingest_query_e2e(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _set_e2e_env(tmp_path, monkeypatch)
@@ -128,8 +128,8 @@ async def test_mcp_list_ingest_query_e2e(tmp_path: Path, monkeypatch: pytest.Mon
 
 @pytest.mark.nightly
 @pytest.mark.skipif(
-    not all(os.environ.get(k) for k in _REQUIRED_SECRETS),
-    reason=f"Requires {', '.join(_REQUIRED_SECRETS)}",
+    not all(os.environ.get(k) for k in _REQUIRED_ENV_VARS),
+    reason=f"Requires {', '.join(_REQUIRED_ENV_VARS)}",
 )
 async def test_mcp_structured_plus_unstructured_query_e2e(
     tmp_path: Path,
