@@ -3,10 +3,11 @@
 
 """Corpus RAG tools exposed via MCP.
 
-Six tools:
+Seven tools:
     - list_corpora()
     - ingest_corpus_filesystem(corpus_id, root_path)
-    - ingest_corpus_structured(corpus_id, path)
+    - discover_corpus_schema(corpus_id, path)
+    - ingest_corpus_structured(corpus_id, path, schema?)
     - ingest_corpus_sharepoint(corpus_id, drive_id, root_folder?)
     - corpus_retrieve(corpus_id, question, top_k)
     - corpus_query(corpus_id, question, top_k)
@@ -32,6 +33,7 @@ from fireflyframework_agentic.content.sources.local_folder import (
     LocalFolderSourceConfig,
 )
 from fireflyframework_agentic.rag import CorpusAgent, CorpusNotFoundError
+from fireflyframework_agentic.rag.ingest import TargetSchema
 from fireflyframework_agentic.tools.decorators import firefly_tool
 
 _DEFAULT_CORPUS_ROOT = "/tmp/firefly/corpora"
@@ -119,27 +121,72 @@ async def ingest_corpus_filesystem(corpus_id: str, root_path: str) -> dict[str, 
 
 
 @firefly_tool(
+    "discover_corpus_schema",
+    description=(
+        "Infer a relational schema for the CSV / Excel file or folder at "
+        "path WITHOUT ingesting any data. Returns a TargetSchema JSON "
+        "document the caller can review, edit (e.g. fix types, add "
+        "foreign_key references, rename columns), and pass back to "
+        "ingest_corpus_structured via the schema parameter. For folders, "
+        "discovery runs across every non-hidden file in one LLM call so "
+        "cross-file foreign keys can be proposed. To iteratively refine an "
+        "earlier output, pass the prior result back as previous_schema "
+        "together with free-text corrections (e.g. 'rename amount to "
+        "total_due', 'mark customer_id as a foreign_key to customers.id', "
+        "'date should be a date type, not string'). corpus_id selects which "
+        "model / config the discovery agent runs under; no rows or schemas "
+        "are written to the corpus."
+    ),
+    tags=("rag", "ingest", "structured", "schema"),
+)
+async def discover_corpus_schema(
+    corpus_id: str,
+    path: str,
+    corrections: str = "",
+    previous_schema: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    target = Path(path)
+    prior = TargetSchema.model_validate(previous_schema) if previous_schema is not None else None
+    async with _agent_for(corpus_id) as agent:
+        schema = await agent.discover_schema(target, corrections=corrections, previous_schema=prior)
+    return {
+        "corpus_id": corpus_id,
+        "path": str(target),
+        "schema": schema.model_dump(mode="json"),
+    }
+
+
+@firefly_tool(
     "ingest_corpus_structured",
     description=(
         "Ingest CSV / Excel files at path into the corpus identified by "
-        "corpus_id as STRUCTURED data: schema is inferred via LLM, rows are "
-        "loaded into normalised SQLite tables, and subsequent corpus_query "
-        "calls run text-to-SQL alongside hybrid retrieval over the corpus's "
-        "unstructured chunks. path may be a single file or a folder (the "
-        "folder is walked recursively and every non-hidden file is treated "
-        "as a tabular source). Idempotent: files already recorded in the "
-        "ledger are skipped. Schema discovery and SQL generation issue real "
-        "LLM calls so this tool is more expensive than ingest_corpus_filesystem."
+        "corpus_id as STRUCTURED data: rows are loaded into normalised "
+        "SQLite tables, and subsequent corpus_query calls run text-to-SQL "
+        "alongside hybrid retrieval over the corpus's unstructured chunks. "
+        "path may be a single file or a folder (the folder is walked "
+        "recursively and every non-hidden file is treated as a tabular "
+        "source). When the optional schema argument is supplied (a "
+        "TargetSchema JSON document — typically the output of "
+        "discover_corpus_schema after operator review), schema discovery "
+        "is skipped and rows are loaded directly under the supplied schema. "
+        "Idempotent: files already recorded in the ledger are skipped. "
+        "Schema discovery and SQL generation issue real LLM calls so this "
+        "tool is more expensive than ingest_corpus_filesystem."
     ),
     tags=("rag", "ingest", "filesystem", "structured"),
 )
-async def ingest_corpus_structured(corpus_id: str, path: str) -> dict[str, Any]:
+async def ingest_corpus_structured(
+    corpus_id: str,
+    path: str,
+    schema: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     target = Path(path)
+    target_schema = TargetSchema.model_validate(schema) if schema is not None else None
     async with _agent_for(corpus_id) as agent:
         if target.is_file():
-            results = [await agent.ingest_one(target, mode="structured")]
+            results = [await agent.ingest_one(target, mode="structured", schema=target_schema)]
         else:
-            summary = await agent.ingest_folder(target, mode="structured")
+            summary = await agent.ingest_folder(target, mode="structured", schema=target_schema)
             results = summary.results
     ingested = sum(1 for r in results if r.status == "success")
     skipped = sum(1 for r in results if r.status == "skipped")
@@ -267,6 +314,7 @@ async def corpus_query(corpus_id: str, question: str, top_k: int = 5) -> dict[st
 __all__ = [
     "corpus_query",
     "corpus_retrieve",
+    "discover_corpus_schema",
     "ingest_corpus_filesystem",
     "ingest_corpus_sharepoint",
     "ingest_corpus_structured",

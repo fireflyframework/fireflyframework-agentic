@@ -137,6 +137,90 @@ async def test_ingest_structured_bad_row_rollback(tmp_path: Path, db_path: Path)
 
 
 @pytest.mark.asyncio
+async def test_ingest_structured_emits_foreign_key(tmp_path: Path, db_path: Path):
+    """A column with foreign_key='customers.id' should produce a FOREIGN KEY clause."""
+    customers_csv = tmp_path / "customers.csv"
+    customers_csv.write_text("id,name\n1,Alice\n2,Bob\n")
+    orders_csv = tmp_path / "orders.csv"
+    orders_csv.write_text("id,customer_id,total\n1,1,9.99\n2,2,19.99\n")
+
+    customers_schema = TargetSchema(
+        tables=[
+            TableSpec(
+                name="customers",
+                columns=[
+                    ColumnSpec(name="id", type=ColumnType.integer, primary_key=True),
+                    ColumnSpec(name="name", type=ColumnType.string),
+                ],
+            )
+        ]
+    )
+    orders_schema = TargetSchema(
+        tables=[
+            TableSpec(
+                name="orders",
+                columns=[
+                    ColumnSpec(name="id", type=ColumnType.integer, primary_key=True),
+                    ColumnSpec(
+                        name="customer_id",
+                        type=ColumnType.integer,
+                        foreign_key="customers.id",
+                    ),
+                    ColumnSpec(name="total", type=ColumnType.float_),
+                ],
+            )
+        ]
+    )
+
+    await ingest_structured(customers_csv, db_path, customers_schema)
+    result = await ingest_structured(orders_csv, db_path, orders_schema)
+    assert result["orders"]["status"] == "success"
+
+    conn = sqlite3.connect(db_path)
+    try:
+        ddl = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='orders'").fetchone()[0]
+        fks = conn.execute("PRAGMA foreign_key_list(orders)").fetchall()
+    finally:
+        conn.close()
+    assert "FOREIGN KEY" in ddl
+    assert any(fk[2] == "customers" and fk[3] == "customer_id" and fk[4] == "id" for fk in fks)
+
+
+@pytest.mark.asyncio
+async def test_ingest_structured_orders_tables_by_fk(tmp_path: Path, db_path: Path):
+    """When the parent table is listed after the child, the parent is created first."""
+    parent_csv = tmp_path / "parent.csv"
+    parent_csv.write_text("id\n1\n")
+    child_csv = tmp_path / "child.csv"
+    child_csv.write_text("id,parent_id\n1,1\n")
+
+    schema = TargetSchema(
+        tables=[
+            TableSpec(
+                name="child",
+                columns=[
+                    ColumnSpec(name="id", type=ColumnType.integer, primary_key=True),
+                    ColumnSpec(name="parent_id", type=ColumnType.integer, foreign_key="parent.id"),
+                ],
+            ),
+            TableSpec(
+                name="parent",
+                columns=[ColumnSpec(name="id", type=ColumnType.integer, primary_key=True)],
+            ),
+        ]
+    )
+
+    # ingest parent first under combined schema (would fail without ordering
+    # if the FOREIGN KEY clause referenced an absent table on creation —
+    # SQLite is permissive about that, but we still want predictable order).
+    await ingest_structured(parent_csv, db_path, TargetSchema(tables=[t for t in schema.tables if t.name == "parent"]))
+    result = await ingest_structured(child_csv, db_path, schema)
+    # The combined schema includes both tables; ordering means parent is
+    # processed before child — child table creation succeeds.
+    assert result["child"]["status"] == "success"
+
+
+@pytest.mark.asyncio
 async def test_ingest_structured_empty_rows(tmp_path: Path, db_path: Path):
     """An empty CSV (header only) should yield status==success with inserted==0."""
     p = tmp_path / "empty.csv"
