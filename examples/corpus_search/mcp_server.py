@@ -46,7 +46,7 @@ from fireflyframework_agentic.exposure.mcp.server import create_mcp_app
 from fireflyframework_agentic.tools.builtins import corpus_rag
 from fireflyframework_agentic.tools.registry import ToolRegistry
 
-_REQUIRED_SECRETS = ("EMBEDDING_BINDING_HOST", "EMBEDDING_BINDING_API_KEY", "ANTHROPIC_API_KEY")
+_REQUIRED_ENV_VARS = ("EMBEDDING_BINDING_HOST", "EMBEDDING_BINDING_API_KEY", "ANTHROPIC_API_KEY")
 
 
 def _build_registry() -> ToolRegistry:
@@ -63,7 +63,7 @@ def _build_registry() -> ToolRegistry:
 
 
 def _ensure_env() -> None:
-    missing = [k for k in _REQUIRED_SECRETS if not os.environ.get(k)]
+    missing = [k for k in _REQUIRED_ENV_VARS if not os.environ.get(k)]
     if missing:
         sys.stderr.write(f"[mcp_server] missing required env: {', '.join(missing)}\n")
         sys.stderr.write("[mcp_server] set them in .env or pass via the MCP client config\n")
