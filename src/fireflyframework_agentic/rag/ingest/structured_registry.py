@@ -194,4 +194,14 @@ async def discover_schema_interactive(
         corrections = feedback.corrections
 
     assert schema is not None
+    # Operator rejected every round but we still have a schema in hand;
+    # surface this as a warning rather than silently proceeding under a
+    # schema the user explicitly disapproved of.
+    log.warning(
+        "schema discovery for %s exhausted %d rounds without operator approval; "
+        "ingesting under the last inferred schema (last corrections=%r)",
+        path,
+        max_rounds,
+        corrections,
+    )
     return schema

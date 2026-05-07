@@ -111,7 +111,7 @@ async def test_ingest_corpus_structured_dispatches_structured_mode(configured_en
         ),
         patch(
             "fireflyframework_agentic.rag.agent.ingest_structured",
-            new=AsyncMock(),
+            new=AsyncMock(return_value={"sales": {"status": "success", "inserted": 1, "errors": []}}),
         ) as mock_ingest_structured,
     ):
         result = await ingest_corpus_structured.execute(corpus_id="t-struct", path=str(csv_path))
@@ -158,7 +158,10 @@ async def test_ingest_corpus_structured_folder_iterates(configured_env: Path, st
             "fireflyframework_agentic.rag.agent.discover_schema",
             new=AsyncMock(return_value=schema),
         ),
-        patch("fireflyframework_agentic.rag.agent.ingest_structured", new=AsyncMock()),
+        patch(
+            "fireflyframework_agentic.rag.agent.ingest_structured",
+            new=AsyncMock(return_value={"t": {"status": "success", "inserted": 1, "errors": []}}),
+        ),
     ):
         result = await ingest_corpus_structured.execute(corpus_id="t-folder", path=str(folder))
 

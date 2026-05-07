@@ -82,6 +82,9 @@ def _stub_schema() -> TargetSchema:
 # ---------------------------------------------------------------------------
 
 
+_STUB_INGEST_OK = {"sales": {"status": "success", "inserted": 2, "errors": []}}
+
+
 @pytest.mark.asyncio
 async def test_ingest_one_structured_mode_calls_structured_pipeline(tmp_path: Path) -> None:
     """ingest_one with mode='structured' calls discover_schema and ingest_structured."""
@@ -98,7 +101,7 @@ async def test_ingest_one_structured_mode_calls_structured_pipeline(tmp_path: Pa
         ) as mock_discover,
         patch(
             "fireflyframework_agentic.rag.agent.ingest_structured",
-            new=AsyncMock(),
+            new=AsyncMock(return_value=_STUB_INGEST_OK),
         ) as mock_ingest_structured,
     ):
         result = await agent.ingest_one(csv_file, mode="structured")
@@ -120,7 +123,10 @@ async def test_ingest_one_structured_skips_on_second_call(tmp_path: Path) -> Non
 
     with (
         patch("fireflyframework_agentic.rag.agent.discover_schema", new=AsyncMock(return_value=schema)),
-        patch("fireflyframework_agentic.rag.agent.ingest_structured", new=AsyncMock()),
+        patch(
+            "fireflyframework_agentic.rag.agent.ingest_structured",
+            new=AsyncMock(return_value=_STUB_INGEST_OK),
+        ),
     ):
         first = await agent.ingest_one(csv_file, mode="structured")
         second = await agent.ingest_one(csv_file, mode="structured")
@@ -146,6 +152,42 @@ async def test_ingest_one_structured_records_load_failed_on_exception(tmp_path: 
         result = await agent.ingest_one(csv_file, mode="structured")
 
     assert result.status == "load_failed"
+
+
+@pytest.mark.asyncio
+async def test_ingest_one_structured_records_load_failed_when_pipeline_reports_table_failure(
+    tmp_path: Path,
+) -> None:
+    """If ingest_structured rolls a table back (e.g. PK collision), the agent
+    must surface that as load_failed and skip schema-registry persistence —
+    not silently report success against an empty SQLite table.
+    """
+    agent = _make_agent(tmp_path)
+    csv_file = tmp_path / "products.csv"
+    csv_file.write_text("id,name\n1,a\n1,b\n")
+
+    schema = _stub_schema()
+    failing_result = {
+        "products": {
+            "status": "failed",
+            "inserted": 0,
+            "errors": ["row 3: UNIQUE constraint failed: products.id"],
+        }
+    }
+
+    with (
+        patch(
+            "fireflyframework_agentic.rag.agent.discover_schema",
+            new=AsyncMock(return_value=schema),
+        ),
+        patch(
+            "fireflyframework_agentic.rag.agent.ingest_structured",
+            new=AsyncMock(return_value=failing_result),
+        ),
+    ):
+        result = await agent.ingest_one(csv_file, mode="structured")
+
+    assert result.status == "load_failed", "partial-rollback (PK collision) must not be silently reported as success"
 
 
 @pytest.mark.asyncio
@@ -185,7 +227,10 @@ async def test_ingest_folder_structured_processes_all_files(tmp_path: Path) -> N
 
     with (
         patch("fireflyframework_agentic.rag.agent.discover_schema", new=AsyncMock(return_value=schema)),
-        patch("fireflyframework_agentic.rag.agent.ingest_structured", new=AsyncMock()),
+        patch(
+            "fireflyframework_agentic.rag.agent.ingest_structured",
+            new=AsyncMock(return_value=_STUB_INGEST_OK),
+        ),
     ):
         summary = await agent.ingest_folder(folder, mode="structured")
 
@@ -212,7 +257,10 @@ async def test_ingest_one_structured_calls_interactive_when_on_review_provided(t
             "fireflyframework_agentic.rag.agent.discover_schema",
             new=AsyncMock(return_value=schema),
         ) as mock_one_shot,
-        patch("fireflyframework_agentic.rag.agent.ingest_structured", new=AsyncMock()),
+        patch(
+            "fireflyframework_agentic.rag.agent.ingest_structured",
+            new=AsyncMock(return_value=_STUB_INGEST_OK),
+        ),
     ):
         await agent.ingest_one(csv_file, mode="structured", on_review=on_review)
 
