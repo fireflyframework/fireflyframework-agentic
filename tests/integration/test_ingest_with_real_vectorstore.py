@@ -26,6 +26,7 @@ miss.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 import pytest
@@ -37,6 +38,43 @@ from fireflyframework_agentic.rag.corpus import SqliteCorpus
 from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
 from fireflyframework_agentic.rag.ingest.pipeline import ingest_one
 from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
+from tests.conftest import DB_STORE_BACKENDS, DB_STORE_LOCAL
+
+
+@pytest.fixture(params=DB_STORE_BACKENDS)
+def db_store(request, tmp_path):
+    """Parametrised over local and Azurite backends.
+
+    The "azurite" param lazily fetches ``azurite_connection_string``
+    (defined in ``tests/conftest.py``) which auto-starts Azurite via
+    Docker or reads the env var; the param skips when neither is
+    available.
+    """
+    from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
+
+    if request.param == DB_STORE_LOCAL:
+        backend = LocalBackend(tmp_path / "corpus.sqlite")
+    else:
+        pytest.importorskip("azure.storage.blob")
+        from azure.storage.blob import BlobServiceClient  # type: ignore[import-not-found]
+
+        from fireflyframework_agentic.storage import AzureBlobBackend
+
+        conn_str = request.getfixturevalue("azurite_connection_string")
+        svc = BlobServiceClient.from_connection_string(conn_str)
+        container = f"e2e-{uuid.uuid4().hex}"
+        svc.create_container(container)
+        backend = AzureBlobBackend(
+            f"{svc.url}{container}",
+            "corpus.sqlite",
+            credential=svc.credential,
+        )
+        request.addfinalizer(lambda: svc.delete_container(container))
+    return DatabaseStore(
+        backend,
+        store_id=f"e2e-{request.param}",
+        cache_root=tmp_path / "cache",
+    )
 
 
 class _DeterministicEmbedder:
@@ -55,12 +93,12 @@ class _DeterministicEmbedder:
 
 
 @pytest.fixture
-async def deps(tmp_path):
-    corpus = SqliteCorpus(tmp_path / "corpus.sqlite")
+async def deps(db_store):
+    corpus = SqliteCorpus(db_store)
     await corpus.initialise()
     ledger = IngestLedger(corpus)
     embedder = _DeterministicEmbedder()
-    vector_store = SqliteVecVectorStore(db_path=tmp_path / "corpus.sqlite", dimension=4)
+    vector_store = SqliteVecVectorStore(db_store, dimension=4)
     chunker = TextChunker(chunk_size=80, chunk_overlap=10)
     loader = MarkitdownLoader()
     yield {

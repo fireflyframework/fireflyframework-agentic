@@ -221,6 +221,42 @@ class _FlakyDeleteVectorStore(_StubVectorStore):
         await super().delete(ids, namespace)
 
 
+async def test_shared_store_results_in_one_upload(tmp_path):
+    """When corpus and vector_store share a DatabaseStore, ingestion
+    produces one upload per batch, not two."""
+    from fireflyframework_agentic.rag.corpus import SqliteCorpus, StoredChunk
+    from fireflyframework_agentic.storage import DatabaseStore
+    from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
+    from fireflyframework_agentic.vectorstores.types import VectorDocument
+    from tests.unit.storage._fakes import InMemoryBackend
+
+    backend = InMemoryBackend()
+    store = DatabaseStore(backend, store_id="pipe", cache_root=tmp_path / "cache")
+    corpus = SqliteCorpus(store)
+    await corpus.initialise()
+    vec = SqliteVecVectorStore(store, dimension=4)
+
+    # Pre-test: backend.uploads is whatever happened during initialise()
+    initial_uploads = backend.uploads
+
+    # Run the same low-level write the pipeline performs in shared-store mode.
+    async with store.for_write() as session:
+        await corpus.upsert_chunks(
+            [StoredChunk(chunk_id="a-0", doc_id="a", source_path="a", index_in_doc=0, content="hello", metadata={})],
+            session=session,
+        )
+        await vec.upsert(
+            [VectorDocument(id="a-0", text="hello", metadata={}, embedding=[0.1, 0.2, 0.3, 0.4])],
+            namespace="default",
+            session=session,
+        )
+
+    # The shared `for_write` should have produced exactly one additional upload.
+    assert backend.uploads == initial_uploads + 1
+    await corpus.close()
+    await vec.close()
+
+
 async def test_re_ingest_proceeds_when_prior_vector_delete_fails(tmp_path):
     """If the vector store's delete-of-prior-chunks blips during re-ingest,
     the corpus should still be reset and re-ingest should still complete.
