@@ -22,7 +22,14 @@ jobs:
         with:
           python-version: '3.13'
       - run: uv sync --extra dev --extra azure --extra mcp --extra rest
-      - run: uv run pytest --cov --cov-report=term-missing --durations=50
+      - name: Run pytest (with real-LLM secrets when available)
+        env:
+          # Real-LLM nightly tests auto-skip when these are absent. Inject the
+          # same secrets the benchmark job uses so they actually run.
+          EMBEDDING_BINDING_HOST: ${{ secrets.EMBEDDING_BINDING_HOST }}
+          EMBEDDING_BINDING_API_KEY: ${{ secrets.EMBEDDING_BINDING_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: uv run pytest --cov --cov-report=term-missing --durations=50
 
   report-failure:
     name: Report failure
