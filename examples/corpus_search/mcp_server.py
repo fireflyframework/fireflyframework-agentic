@@ -54,6 +54,7 @@ def _build_registry() -> ToolRegistry:
     for name in (
         "list_corpora",
         "ingest_corpus_filesystem",
+        "discover_corpus_schema",
         "ingest_corpus_structured",
         "corpus_retrieve",
         "corpus_query",

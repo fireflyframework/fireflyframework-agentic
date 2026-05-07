@@ -36,6 +36,8 @@ class ColumnSpec(BaseModel):
     type: ColumnType
     nullable: bool = True
     primary_key: bool = False
+    foreign_key: str | None = None
+    """References another table's column as ``"<table>.<column>"`` (e.g. ``"customers.id"``)."""
 
 
 class TableSpec(BaseModel):

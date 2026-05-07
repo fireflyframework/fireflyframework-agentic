@@ -228,6 +228,10 @@ async def test_ingest_folder_structured_processes_all_files(tmp_path: Path) -> N
     with (
         patch("fireflyframework_agentic.rag.agent.discover_schema", new=AsyncMock(return_value=schema)),
         patch(
+            "fireflyframework_agentic.rag.agent.discover_schema_for_paths",
+            new=AsyncMock(return_value=schema),
+        ),
+        patch(
             "fireflyframework_agentic.rag.agent.ingest_structured",
             new=AsyncMock(return_value=_STUB_INGEST_OK),
         ),

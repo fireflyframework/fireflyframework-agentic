@@ -155,6 +155,7 @@ def _sync_ingest_table(
     conn = sqlite3.connect(db_path)
     try:
         col_defs: list[str] = []
+        fk_defs: list[str] = []
         for col in table_spec.columns:
             parts = [_quote(col.name), _SQL_TYPES[col.type]]
             if col.primary_key:
@@ -162,7 +163,14 @@ def _sync_ingest_table(
             elif not col.nullable:
                 parts.append("NOT NULL")
             col_defs.append(" ".join(parts))
-        conn.execute(f"CREATE TABLE IF NOT EXISTS {_quote(table_spec.name)} ({', '.join(col_defs)})")
+            if col.foreign_key:
+                ref_table, _, ref_column = col.foreign_key.partition(".")
+                if ref_table and ref_column:
+                    fk_defs.append(
+                        f"FOREIGN KEY ({_quote(col.name)}) REFERENCES {_quote(ref_table)} ({_quote(ref_column)})"
+                    )
+        all_defs = col_defs + fk_defs
+        conn.execute(f"CREATE TABLE IF NOT EXISTS {_quote(table_spec.name)} ({', '.join(all_defs)})")
         col_names = [c.name for c in table_spec.columns]
         placeholders = ", ".join("?" for _ in col_names)
         col_names_str = ", ".join(_quote(c) for c in col_names)
@@ -190,6 +198,35 @@ def _sync_ingest_table(
         conn.close()
 
 
+def _order_tables_by_fk(tables: list[TableSpec]) -> list[TableSpec]:
+    """Return *tables* topologically sorted so referenced tables are created first.
+
+    Cycles or references to unknown tables are ignored — the offending table
+    just keeps its original position. SQLite will surface a real FK error at
+    insert time if the reference is wrong.
+    """
+    by_name = {t.name: t for t in tables}
+    ordered: list[TableSpec] = []
+    seen: set[str] = set()
+
+    def visit(t: TableSpec, on_path: set[str]) -> None:
+        if t.name in seen or t.name in on_path:
+            return
+        on_path.add(t.name)
+        for col in t.columns:
+            if col.foreign_key:
+                ref_table = col.foreign_key.split(".", 1)[0]
+                if ref_table in by_name and ref_table != t.name:
+                    visit(by_name[ref_table], on_path)
+        on_path.discard(t.name)
+        seen.add(t.name)
+        ordered.append(t)
+
+    for t in tables:
+        visit(t, set())
+    return ordered
+
+
 async def ingest_structured(
     path: Path,
     db_path: Path,
@@ -198,12 +235,13 @@ async def ingest_structured(
     """Insert rows from *path* into *db_path* according to *schema*.
 
     Returns ``{table_name: {status, inserted, errors}}`` for each table.
-    Missing columns are reported without aborting other tables.
+    Missing columns are reported without aborting other tables. When tables
+    declare ``foreign_key`` references they are created in dependency order.
     """
     rows_by_table = _load_rows(path, schema)
     loop = asyncio.get_running_loop()
     results: dict[str, Any] = {}
-    for table_spec in schema.tables:
+    for table_spec in _order_tables_by_fk(schema.tables):
         rows = rows_by_table.get(table_spec.name)
         if rows is None:
             results[table_spec.name] = {
