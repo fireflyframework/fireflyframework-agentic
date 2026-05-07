@@ -21,7 +21,10 @@ import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from fireflyframework_agentic.storage import DatabaseStore
 
 from fireflyframework_agentic.content.loaders import MarkitdownLoader
 from fireflyframework_agentic.content.markdown_chunker import MarkdownChunker
@@ -90,11 +93,20 @@ class CorpusAgent:
         # test injection — bypass the framework's real backends
         _embedder: Any | None = None,
         _vector_store: Any | None = None,
+        db_store: DatabaseStore | None = None,
     ) -> None:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
 
-        self._corpus = SqliteCorpus(self.root / "corpus.sqlite")
+        if db_store is None:
+            from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
+
+            db_store = DatabaseStore(
+                LocalBackend(self.root / "corpus.sqlite"),
+                store_id=f"corpus_search:{self.root.resolve()}",
+            )
+        self._db_store = db_store
+        self._corpus = SqliteCorpus(self._db_store)
         self._ledger: IngestLedger | None = None
         self._embedder: Any = _embedder
         self._vector_store: Any = _vector_store
@@ -191,7 +203,7 @@ class CorpusAgent:
         from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
 
         return SqliteVecVectorStore(
-            db_path=self.root / "corpus.sqlite",
+            self._db_store,
             dimension=self._embed_dimension,
         )
 
