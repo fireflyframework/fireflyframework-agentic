@@ -65,7 +65,16 @@ _SKILL = (
     "- primary_key: true if the column looks like a unique identifier "
     "(named 'id' or ending in '_id', sequential integers with no duplicates).\n"
     "- At most one primary key per table.\n\n"
-    "**Multi-sheet Excel:** One TableSpec per sheet. Skip sheets where all sample rows are empty."
+    "**Foreign keys (only when multiple tables are present):**\n"
+    "- Set foreign_key to '<table>.<column>' when a column's values plausibly "
+    "reference another table's primary key. Common signals: column ends in "
+    "'_id' and a same-typed PK exists on another table whose name matches the "
+    "prefix (e.g. customer_id → customers.id).\n"
+    "- Do not invent references across unrelated tables; leave foreign_key "
+    "null when the relationship is not clearly supported by names + types.\n"
+    "- A column that is itself a primary_key must NOT also be a foreign_key.\n\n"
+    "**Multi-sheet Excel / multi-file folders:** One TableSpec per source "
+    "(sheet or file). Skip sources where all sample rows are empty."
 )
 
 _DEFAULT_SCHEMA_MODEL = "anthropic:claude-sonnet-4-6"
@@ -130,6 +139,19 @@ def _excel_sample(path: Path) -> str:
     return "\n\n".join(parts)
 
 
+def _sample_for(path: Path) -> str:
+    suffix = path.suffix.lower()
+    return _excel_sample(path) if suffix in (".xls", ".xlsx") else _csv_sample(path)
+
+
+def _multi_file_sample(paths: list[Path]) -> str:
+    """Build a combined sample block for *paths* with one section per file."""
+    parts: list[str] = []
+    for p in paths:
+        parts.append(f"File: {p.name}\n{_sample_for(p)}")
+    return "\n\n".join(parts)
+
+
 async def discover_schema(
     path: Path,
     *,
@@ -149,8 +171,7 @@ async def discover_schema(
         extra_instructions=_SKILL,
         auto_register=False,
     )
-    suffix = path.suffix.lower()
-    sample = _excel_sample(path) if suffix in (".xls", ".xlsx") else _csv_sample(path)
+    sample = _sample_for(path)
     if corrections and previous_schema is not None:
         prompt = (
             f"File: {path.name}\n\n{sample}\n\n"
@@ -160,6 +181,53 @@ async def discover_schema(
         )
     else:
         prompt = f"File: {path.name}\n\n{sample}"
+    result = await agent.run(prompt)
+    return result.output
+
+
+async def discover_schema_for_paths(
+    paths: list[Path],
+    *,
+    model: str = _DEFAULT_SCHEMA_MODEL,
+    corrections: str = "",
+    previous_schema: TargetSchema | None = None,
+) -> TargetSchema:
+    """Infer a ``TargetSchema`` across *paths* in a single LLM call.
+
+    The combined sample lets the agent propose cross-file foreign keys
+    (e.g. ``billing_ledger.customer_id`` → ``customers.id``) that per-file
+    discovery cannot see. Returns one ``TargetSchema`` containing one
+    ``TableSpec`` per source (CSV file, or sheet for Excel inputs).
+
+    When *corrections* and *previous_schema* are provided the agent is asked
+    to refine *previous_schema* according to the supplied free-text feedback.
+    """
+    if not paths:
+        return TargetSchema(tables=[])
+    if len(paths) == 1:
+        return await discover_schema(paths[0], model=model, corrections=corrections, previous_schema=previous_schema)
+    agent = create_extractor_agent(
+        TargetSchema,
+        name="schema_discovery",
+        model=model,
+        extra_instructions=_SKILL,
+        auto_register=False,
+    )
+    sample = _multi_file_sample(paths)
+    if corrections and previous_schema is not None:
+        prompt = (
+            f"You are given {len(paths)} tabular sources.\n\n{sample}\n\n"
+            f"Previous schema attempt:\n{previous_schema.model_dump_json(indent=2)}\n\n"
+            f"User corrections:\n{corrections}\n\n"
+            "Produce a corrected schema addressing the user's corrections. "
+            "Re-evaluate foreign_key relationships in light of the feedback."
+        )
+    else:
+        prompt = (
+            f"You are given {len(paths)} tabular sources. Infer one TableSpec "
+            f"per source and propose foreign_key relationships where the data "
+            f"clearly supports them.\n\n{sample}"
+        )
     result = await agent.run(prompt)
     return result.output
 

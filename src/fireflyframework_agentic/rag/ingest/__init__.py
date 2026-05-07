@@ -2,6 +2,7 @@ from fireflyframework_agentic.rag.ingest.structured_pipeline import ingest_struc
 from fireflyframework_agentic.rag.ingest.structured_registry import (
     SchemaRegistry,
     discover_schema,
+    discover_schema_for_paths,
     discover_schema_interactive,
 )
 from fireflyframework_agentic.rag.ingest.structured_schema import (
@@ -26,6 +27,7 @@ __all__ = [
     "TableSpec",
     "TargetSchema",
     "discover_schema",
+    "discover_schema_for_paths",
     "discover_schema_interactive",
     "ingest_from_source",
     "ingest_one",

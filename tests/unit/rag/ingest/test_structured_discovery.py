@@ -5,6 +5,7 @@ import pytest
 
 from fireflyframework_agentic.rag.ingest.structured_registry import (
     discover_schema,
+    discover_schema_for_paths,
     discover_schema_interactive,
 )
 from fireflyframework_agentic.rag.ingest.structured_schema import (
@@ -134,6 +135,106 @@ async def test_interactive_refines_on_rejection(tmp_path: Path):
 
     assert result == schema_v2
     assert on_review.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_discover_schema_for_paths_combines_samples(tmp_path: Path):
+    """Multi-file discovery sends one prompt mentioning every file."""
+    a = tmp_path / "customers.csv"
+    a.write_text("id,name\n1,Alice\n")
+    b = tmp_path / "orders.csv"
+    b.write_text("id,customer_id,total\n1,1,9.99\n")
+
+    expected = TargetSchema(
+        tables=[
+            TableSpec(
+                name="customers",
+                columns=[ColumnSpec(name="id", type=ColumnType.integer, primary_key=True)],
+            ),
+            TableSpec(
+                name="orders",
+                columns=[
+                    ColumnSpec(name="id", type=ColumnType.integer, primary_key=True),
+                    ColumnSpec(name="customer_id", type=ColumnType.integer, foreign_key="customers.id"),
+                ],
+            ),
+        ]
+    )
+    mock_result = MagicMock()
+    mock_result.output = expected
+
+    with patch("fireflyframework_agentic.rag.ingest.structured_registry.create_extractor_agent") as mock_factory:
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value=mock_result)
+        mock_factory.return_value = mock_agent
+        result = await discover_schema_for_paths([a, b])
+
+    prompt = mock_agent.run.call_args[0][0]
+    assert "customers.csv" in prompt
+    assert "orders.csv" in prompt
+    assert "foreign_key" in prompt
+    assert len(result.tables) == 2
+
+
+@pytest.mark.asyncio
+async def test_discover_schema_for_paths_single_path_delegates(tmp_path: Path):
+    """A single-file folder collapses to discover_schema (no multi-file prompt)."""
+    p = tmp_path / "only.csv"
+    p.write_text("id\n1\n")
+
+    expected = TargetSchema(tables=[TableSpec(name="only", columns=[ColumnSpec(name="id", type=ColumnType.integer)])])
+    with patch(
+        "fireflyframework_agentic.rag.ingest.structured_registry.discover_schema",
+        new=AsyncMock(return_value=expected),
+    ) as mock_single:
+        result = await discover_schema_for_paths([p])
+
+    mock_single.assert_awaited_once()
+    assert result == expected
+
+
+@pytest.mark.asyncio
+async def test_discover_schema_for_paths_with_corrections(tmp_path: Path):
+    """Refinement on a multi-file folder echoes corrections + previous_schema."""
+    a = tmp_path / "x.csv"
+    a.write_text("id\n1\n")
+    b = tmp_path / "y.csv"
+    b.write_text("id\n2\n")
+    prior = TargetSchema(
+        tables=[
+            TableSpec(name="x", columns=[ColumnSpec(name="id", type=ColumnType.integer)]),
+            TableSpec(name="y", columns=[ColumnSpec(name="id", type=ColumnType.integer)]),
+        ]
+    )
+    expected = TargetSchema(
+        tables=[
+            TableSpec(
+                name="x",
+                columns=[ColumnSpec(name="id", type=ColumnType.integer, primary_key=True)],
+            ),
+            TableSpec(
+                name="y",
+                columns=[ColumnSpec(name="id", type=ColumnType.integer, primary_key=True)],
+            ),
+        ]
+    )
+    mock_result = MagicMock()
+    mock_result.output = expected
+
+    with patch("fireflyframework_agentic.rag.ingest.structured_registry.create_extractor_agent") as mock_factory:
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value=mock_result)
+        mock_factory.return_value = mock_agent
+        await discover_schema_for_paths(
+            [a, b],
+            corrections="mark id as primary_key on every table",
+            previous_schema=prior,
+        )
+
+    prompt = mock_agent.run.call_args[0][0]
+    assert "User corrections" in prompt
+    assert "mark id as primary_key" in prompt
+    assert "Previous schema attempt" in prompt
 
 
 @pytest.mark.asyncio
