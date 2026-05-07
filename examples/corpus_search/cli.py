@@ -48,6 +48,14 @@ _DEFAULT_RERANK_POOL = 20
 _DEFAULT_TOP_K = 5
 _DEFAULT_ROOT = Path("./kg")
 
+# DB storage backend env-var contract
+_BACKEND_ENV = "CORPUS_SEARCH_BACKEND"
+_BACKEND_LOCAL = "local"
+_BACKEND_AZURE = "azure"
+_AZURE_CONTAINER_URL_ENV = "CORPUS_SEARCH_AZURE_CONTAINER_URL"
+_AZURE_BLOB_NAME_ENV = "CORPUS_SEARCH_AZURE_BLOB_NAME"
+_DEFAULT_BLOB_NAME = "corpus.sqlite"
+
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -273,7 +281,34 @@ def _check_keys(*, embed_model: str, need_anthropic: bool) -> int:
     return 0
 
 
+def _build_db_store(root: Path):
+    """Construct a DatabaseStore for the corpus_search example.
+
+    Backend is chosen by the ``CORPUS_SEARCH_BACKEND`` env var:
+    - ``local`` (default): on-disk LocalBackend at ``<root>/corpus.sqlite``.
+    - ``azure``: AzureBlobBackend at ``CORPUS_SEARCH_AZURE_CONTAINER_URL``
+      / ``CORPUS_SEARCH_AZURE_BLOB_NAME`` (default ``corpus.sqlite``).
+    """
+    from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
+
+    backend_kind = os.environ.get(_BACKEND_ENV, _BACKEND_LOCAL)
+    if backend_kind == _BACKEND_LOCAL:
+        backend = LocalBackend(root / _DEFAULT_BLOB_NAME)
+    elif backend_kind == _BACKEND_AZURE:
+        from azure.identity import DefaultAzureCredential  # type: ignore[import-not-found]
+
+        from fireflyframework_agentic.storage import AzureBlobBackend
+
+        container_url = os.environ[_AZURE_CONTAINER_URL_ENV]
+        blob_name = os.environ.get(_AZURE_BLOB_NAME_ENV, _DEFAULT_BLOB_NAME)
+        backend = AzureBlobBackend(container_url, blob_name, credential=DefaultAzureCredential())
+    else:
+        raise SystemExit(f"Unknown {_BACKEND_ENV}={backend_kind!r}")
+    return DatabaseStore(backend, store_id=f"corpus_search:{root.resolve()}")
+
+
 async def _run_ingest(args: argparse.Namespace) -> int:
+    db_store = _build_db_store(args.root)
     agent = CorpusAgent(
         root=args.root,
         embed_model=args.embed_model,
@@ -282,6 +317,7 @@ async def _run_ingest(args: argparse.Namespace) -> int:
         answer_model=_DEFAULT_ANSWER_MODEL,
         rerank_model=_DEFAULT_RERANK_MODEL,
         rerank_pool=_DEFAULT_RERANK_POOL,
+        db_store=db_store,
     )
     on_review = _cli_review_schema if getattr(args, "interactive", False) else None
     mode = getattr(args, "mode", "unstructured")
@@ -330,6 +366,7 @@ async def _run_ingest(args: argparse.Namespace) -> int:
 
 
 async def _run_query(args: argparse.Namespace) -> int:
+    db_store = _build_db_store(args.root)
     agent = CorpusAgent(
         root=args.root,
         embed_model=args.embed_model,
@@ -338,6 +375,7 @@ async def _run_query(args: argparse.Namespace) -> int:
         answer_model=args.answer_model,
         rerank_model=args.rerank_model,
         rerank_pool=args.rerank_pool,
+        db_store=db_store,
     )
     try:
         result = await agent.query(args.question, top_k=args.top_k)
@@ -386,11 +424,13 @@ async def _cli_review_schema(schema: TargetSchema) -> SchemaFeedback:
 
 
 async def _run_show_chunk(args: argparse.Namespace) -> int:
-    corpus_path = args.root / "corpus.sqlite"
-    if not corpus_path.exists():
-        sys.stderr.write(f"corpus.sqlite not found at {corpus_path}\n")
-        return 2
-    corpus = SqliteCorpus(corpus_path)
+    backend_kind = os.environ.get(_BACKEND_ENV, _BACKEND_LOCAL)
+    if backend_kind == _BACKEND_LOCAL:
+        corpus_path = args.root / _DEFAULT_BLOB_NAME
+        if not corpus_path.exists():
+            sys.stderr.write(f"corpus.sqlite not found at {corpus_path}\n")
+            return 2
+    corpus = SqliteCorpus(_build_db_store(args.root))
     await corpus.initialise()
     try:
         chunks = await corpus.get_chunks([args.chunk_id])
