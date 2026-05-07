@@ -52,7 +52,7 @@ from fireflyframework_agentic.content.markdown_chunker import MarkdownChunker
 from fireflyframework_agentic.embeddings.types import EmbeddingResult
 from fireflyframework_agentic.rag.corpus import ChunkHit, SqliteCorpus
 from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
-from fireflyframework_agentic.rag.ingest.pipeline import ingest_one
+from fireflyframework_agentic.rag.ingest.unstructured_pipeline import ingest_one
 from fireflyframework_agentic.rag.retrieval.expander import ExpandedQuery, QueryExpander
 from fireflyframework_agentic.rag.retrieval.hybrid import HybridRetriever
 from fireflyframework_agentic.vectorstores.memory_store import InMemoryVectorStore

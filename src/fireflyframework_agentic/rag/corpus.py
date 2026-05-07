@@ -311,6 +311,25 @@ class SqliteCorpus:
             for r in cur.fetchall()
         ]
 
+    async def clear_all(self) -> None:
+        """Delete all chunks, ingestions, and structured data.
+
+        Drops every table recorded in ``_schemas``, then purges the
+        ``chunks``, ``ingestions``, and ``_schemas`` tables. FTS5 triggers
+        fire on chunk deletes, keeping the index consistent. The database
+        file stays open and ready for new ingestion.
+        """
+        try:
+            schema_rows = await self.query("SELECT name FROM _schemas")
+            for row in schema_rows:
+                quoted = row["name"].replace('"', '""')
+                await self.query(f'DROP TABLE IF EXISTS "{quoted}"')
+            await self.query("DELETE FROM _schemas")
+        except Exception as exc:
+            log.warning("clear_all: could not drop structured tables: %s", exc)
+        await self.query("DELETE FROM chunks")
+        await self.query("DELETE FROM ingestions")
+
     async def get_chunks(self, chunk_ids: list[str]) -> list[StoredChunk]:
         if not chunk_ids:
             return []

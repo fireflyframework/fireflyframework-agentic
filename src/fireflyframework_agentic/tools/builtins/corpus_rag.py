@@ -3,9 +3,10 @@
 
 """Corpus RAG tools exposed via MCP.
 
-Five tools:
+Six tools:
     - list_corpora()
     - ingest_corpus_filesystem(corpus_id, root_path)
+    - ingest_corpus_structured(corpus_id, path)
     - ingest_corpus_sharepoint(corpus_id, drive_id, root_folder?)
     - corpus_retrieve(corpus_id, question, top_k)
     - corpus_query(corpus_id, question, top_k)
@@ -114,6 +115,40 @@ async def ingest_corpus_filesystem(corpus_id: str, root_path: str) -> dict[str, 
         "skipped": summary.skipped,
         "failed": summary.failed,
         "cursor": summary.cursor,
+    }
+
+
+@firefly_tool(
+    "ingest_corpus_structured",
+    description=(
+        "Ingest CSV / Excel files at path into the corpus identified by "
+        "corpus_id as STRUCTURED data: schema is inferred via LLM, rows are "
+        "loaded into normalised SQLite tables, and subsequent corpus_query "
+        "calls run text-to-SQL alongside hybrid retrieval over the corpus's "
+        "unstructured chunks. path may be a single file or a folder (the "
+        "folder is walked recursively and every non-hidden file is treated "
+        "as a tabular source). Idempotent: files already recorded in the "
+        "ledger are skipped. Schema discovery and SQL generation issue real "
+        "LLM calls so this tool is more expensive than ingest_corpus_filesystem."
+    ),
+    tags=("rag", "ingest", "filesystem", "structured"),
+)
+async def ingest_corpus_structured(corpus_id: str, path: str) -> dict[str, Any]:
+    target = Path(path)
+    async with _agent_for(corpus_id) as agent:
+        if target.is_file():
+            results = [await agent.ingest_one(target, mode="structured")]
+        else:
+            summary = await agent.ingest_folder(target, mode="structured")
+            results = summary.results
+    ingested = sum(1 for r in results if r.status == "success")
+    skipped = sum(1 for r in results if r.status == "skipped")
+    failed = sum(1 for r in results if r.status not in {"success", "skipped"})
+    return {
+        "corpus_id": corpus_id,
+        "ingested": ingested,
+        "skipped": skipped,
+        "failed": failed,
     }
 
 
@@ -234,5 +269,6 @@ __all__ = [
     "corpus_retrieve",
     "ingest_corpus_filesystem",
     "ingest_corpus_sharepoint",
+    "ingest_corpus_structured",
     "list_corpora",
 ]

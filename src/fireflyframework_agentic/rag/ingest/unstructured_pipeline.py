@@ -52,11 +52,11 @@ class IngestionResult:
     n_chunks: int = 0
 
 
-def _doc_id_for(path: Path) -> str:
+def doc_id_for(path: Path) -> str:
     return hashlib.sha256(str(path.resolve()).encode("utf-8")).hexdigest()[:16]
 
 
-def _hash_file(path: Path) -> str:
+def hash_file(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as fh:
         for block in iter(lambda: fh.read(64 * 1024), b""):
@@ -80,6 +80,7 @@ async def ingest_one(
     ledger: IngestLedger,
     chunker: Chunker,
     loader: MarkitdownLoader,
+    force: bool = False,
 ) -> IngestionResult:
     """Ingest one document into the corpus + vector store.
 
@@ -87,7 +88,7 @@ async def ingest_one(
     -> store -> ledger. Each error branch records a status in the ledger and
     returns; cleanup on storage failure attempts to leave a clean state.
     """
-    doc_id = _doc_id_for(path)
+    doc_id = doc_id_for(path)
     source_path = str(path.resolve())
     bytes_seen = _file_size(path)
     mime_type = (path.suffix.lstrip(".") or "unknown").lower()
@@ -136,7 +137,7 @@ async def ingest_one(
         except Exception as exc:
             log.warning("load_failed for %s: %s", path, exc)
             try:
-                content_hash = _hash_file(path)
+                content_hash = hash_file(path)
             except Exception:
                 content_hash = ""
             await ledger.upsert(doc_id, source_path, content_hash, status="load_failed")
@@ -149,10 +150,10 @@ async def ingest_one(
             attributes={"doc_id": doc_id},
             metric_labels={"stage": "hash", "status": "success"},
         ):
-            content_hash = _hash_file(path)
+            content_hash = hash_file(path)
 
         # 3. Skip check
-        if await ledger.should_skip(doc_id, content_hash):
+        if not force and await ledger.should_skip(doc_id, content_hash):
             return _record_terminal("skipped", 0)
 
         # 4. Chunk

@@ -16,14 +16,29 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import logging
 import os
+import shutil
+import sqlite3
 import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 
+try:
+    import sqlite_vec  # type: ignore[import-not-found]
+
+    _HAS_SQLITE_VEC = True
+except ImportError:
+    sqlite_vec = None  # type: ignore[assignment]
+    _HAS_SQLITE_VEC = False
+
 from fireflyframework_agentic.observability import configure_exporters
+from fireflyframework_agentic.pipeline.triggers import FolderWatcher
+from fireflyframework_agentic.rag.agent import CorpusAgent
+from fireflyframework_agentic.rag.corpus import SqliteCorpus
+from fireflyframework_agentic.rag.ingest.structured_schema import SchemaFeedback, TargetSchema
 
 _DEFAULT_EMBED_MODEL = "azure:text-embedding-3-small"
 _DEFAULT_EXPANSION_MODEL = "anthropic:claude-haiku-4-5-20251001"
@@ -49,8 +64,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p_ingest = sub.add_parser("ingest", help="Ingest a folder of documents.")
-    p_ingest.add_argument("--folder", type=Path, required=True, help="Folder of source documents to ingest.")
+    p_ingest = sub.add_parser("ingest", help="Ingest a file or folder of documents.")
+    p_ingest.add_argument(
+        "path", nargs="?", type=Path, default=None, help="Single file to ingest (alternative to --folder)."
+    )
+    p_ingest.add_argument("--folder", type=Path, default=None, help="Folder of source documents to ingest.")
     p_ingest.add_argument("--root", type=Path, default=_DEFAULT_ROOT, help="Output root for corpus.sqlite.")
     p_ingest.add_argument("--embed-model", default=_DEFAULT_EMBED_MODEL, help="Embedding model.")
     p_ingest.add_argument(
@@ -60,6 +78,24 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Embedding dimension — must match the chosen model (text-embedding-3-small=1536, text-embedding-3-large=3072).",
     )
     p_ingest.add_argument("--watch", action="store_true", help="After processing existing files, watch for new ones.")
+    p_ingest.add_argument(
+        "--mode",
+        choices=["unstructured", "structured"],
+        default="unstructured",
+        help="Ingestion mode: unstructured (documents) or structured (CSV/Excel).",
+    )
+    p_ingest.add_argument(
+        "--interactive",
+        action="store_true",
+        default=False,
+        help="Interactively review and correct the inferred schema before ingestion (structured mode only).",
+    )
+    p_ingest.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Re-ingest even if the file is already recorded in the ledger.",
+    )
     p_ingest.add_argument("--verbose", action="store_true")
 
     p_query = sub.add_parser("query", help="Query the corpus.")
@@ -190,9 +226,6 @@ def _run_preflight(args: argparse.Namespace) -> int:
             if confirm.strip().lower() != "yes":
                 sys.stderr.write("[preflight] aborted by operator.\n")
                 return 2
-        import contextlib
-        import shutil
-
         with contextlib.suppress(FileNotFoundError):
             shutil.rmtree(root)
         root.mkdir(parents=True, exist_ok=True)
@@ -200,10 +233,8 @@ def _run_preflight(args: argparse.Namespace) -> int:
 
     # sqlite-vec smoke test — exercises the same load path the ingest code uses.
     try:
-        import sqlite3
-
-        import sqlite_vec  # type: ignore[import-not-found]
-
+        if not _HAS_SQLITE_VEC:
+            raise ImportError("sqlite-vec is not installed")
         conn = sqlite3.connect(":memory:")
         conn.enable_load_extension(True)
         sqlite_vec.load(conn)
@@ -277,9 +308,6 @@ def _build_db_store(root: Path):
 
 
 async def _run_ingest(args: argparse.Namespace) -> int:
-    from examples.corpus_search.agent import CorpusAgent
-    from fireflyframework_agentic.pipeline.triggers import FolderWatcher
-
     db_store = _build_db_store(args.root)
     agent = CorpusAgent(
         root=args.root,
@@ -291,9 +319,21 @@ async def _run_ingest(args: argparse.Namespace) -> int:
         rerank_pool=_DEFAULT_RERANK_POOL,
         db_store=db_store,
     )
+    on_review = _cli_review_schema if getattr(args, "interactive", False) else None
+    mode = getattr(args, "mode", "unstructured")
+    force = getattr(args, "force", False)
     try:
-        if args.watch:
-            async for result in agent.watch(args.folder):
+        single_path: Path | None = getattr(args, "path", None)
+        folder: Path | None = getattr(args, "folder", None)
+        if single_path is not None and single_path.is_file():
+            result = await agent.ingest_one(single_path, mode=mode, on_review=on_review, force=force)
+            _print_ingest_result(result)
+        elif args.watch:
+            target = folder or single_path
+            if target is None:
+                sys.stderr.write("error: --folder or a path argument is required for --watch\n")
+                return 1
+            async for result in agent.watch(target):
                 _print_ingest_result(result)
         else:
             # Walk the folder ourselves so we can stream per-file status
@@ -303,7 +343,11 @@ async def _run_ingest(args: argparse.Namespace) -> int:
             # path. The framework-level corpus_search.ingest_folder span
             # is sacrificed in favour of operator UX; per-file
             # rag.ingest.document spans are still emitted as before.
-            root = Path(args.folder)
+            dir_target = folder or single_path
+            if dir_target is None:
+                sys.stderr.write("error: --folder or a path argument is required\n")
+                return 1
+            root = Path(dir_target)
             watcher = FolderWatcher(folder=root)
             candidates = sorted(p for p in root.rglob("*") if p.is_file() and not watcher.is_hidden(p))
             print(f"found {len(candidates)} file(s) under {root}", file=sys.stderr)
@@ -314,7 +358,7 @@ async def _run_ingest(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                     flush=True,
                 )
-                result = await agent.ingest_one(path)
+                result = await agent.ingest_one(path, mode=mode, on_review=on_review, force=force)
                 _print_ingest_result(result)
     finally:
         await agent.close()
@@ -322,8 +366,6 @@ async def _run_ingest(args: argparse.Namespace) -> int:
 
 
 async def _run_query(args: argparse.Namespace) -> int:
-    from examples.corpus_search.agent import CorpusAgent
-
     db_store = _build_db_store(args.root)
     agent = CorpusAgent(
         root=args.root,
@@ -360,9 +402,28 @@ def _print_ingest_result(result) -> None:
     print(f"[{result.status}] {result.source_path} (doc_id={result.doc_id}, chunks={result.n_chunks})")
 
 
-async def _run_show_chunk(args: argparse.Namespace) -> int:
-    from fireflyframework_agentic.rag.corpus import SqliteCorpus
+async def _cli_review_schema(schema: TargetSchema) -> SchemaFeedback:
+    sys.stdout.write("\n--- Inferred schema ---\n")
+    for table in schema.tables:
+        sys.stdout.write(f"  Table: {table.name}\n")
+        for col in table.columns:
+            flags = []
+            if col.primary_key:
+                flags.append("PK")
+            if not col.nullable:
+                flags.append("NOT NULL")
+            flag_str = f"  [{', '.join(flags)}]" if flags else ""
+            sys.stdout.write(f"    {col.name}: {col.type.value}{flag_str}\n")
+    sys.stdout.write("-----------------------\n")
+    sys.stdout.write("Press Enter to approve, or type corrections: ")
+    sys.stdout.flush()
+    loop = asyncio.get_running_loop()
+    raw = await loop.run_in_executor(None, sys.stdin.readline)
+    corrections = raw.strip()
+    return SchemaFeedback(approved=not corrections, corrections=corrections)
 
+
+async def _run_show_chunk(args: argparse.Namespace) -> int:
     backend_kind = os.environ.get(_BACKEND_ENV, _BACKEND_LOCAL)
     if backend_kind == _BACKEND_LOCAL:
         corpus_path = args.root / _DEFAULT_BLOB_NAME

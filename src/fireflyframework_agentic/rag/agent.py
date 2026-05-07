@@ -18,10 +18,10 @@ import asyncio
 import logging
 import os
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from fireflyframework_agentic.storage import DatabaseStore
@@ -29,20 +29,47 @@ if TYPE_CHECKING:
 from fireflyframework_agentic.content.loaders import MarkitdownLoader
 from fireflyframework_agentic.content.markdown_chunker import MarkdownChunker
 from fireflyframework_agentic.content.sources import ContentSource
+from fireflyframework_agentic.content.sources.local_folder import LocalFolderSource, LocalFolderSourceConfig
+from fireflyframework_agentic.embeddings.providers.azure import AzureEmbedder
+from fireflyframework_agentic.embeddings.providers.openai import OpenAIEmbedder
 from fireflyframework_agentic.pipeline.triggers import FolderWatcher
 from fireflyframework_agentic.rag._telemetry import (
     query_total_duration,
     timed_span,
 )
-from fireflyframework_agentic.rag.corpus import ChunkHit, SqliteCorpus
+from fireflyframework_agentic.rag.corpus import ChunkHit, SqliteCorpus, StoredChunk
+from fireflyframework_agentic.rag.ingest import (
+    IngestionResult,
+    SchemaFeedback,
+    SchemaRegistry,
+    TargetSchema,
+    discover_schema,
+    discover_schema_interactive,
+    ingest_one,
+    ingest_structured,
+)
 from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
-from fireflyframework_agentic.rag.ingest.pipeline import IngestionResult, ingest_one
+from fireflyframework_agentic.rag.ingest.unstructured_pipeline import (
+    doc_id_for,
+    hash_file,
+)
 from fireflyframework_agentic.rag.retrieval.answerer import Answer, AnswerAgent
 from fireflyframework_agentic.rag.retrieval.expander import QueryExpander
 from fireflyframework_agentic.rag.retrieval.hybrid import HybridRetriever
 from fireflyframework_agentic.rag.retrieval.reranker import HaikuReranker
+from fireflyframework_agentic.rag.retrieval.sql import StructuredRetriever
+from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class CorpusStats:
+    """Counts returned by :meth:`CorpusAgent.stats`."""
+
+    doc_count: int
+    chunk_count: int
+    schema_count: int
 
 
 @dataclass(slots=True)
@@ -90,6 +117,8 @@ class CorpusAgent:
         answer_model: str,
         rerank_model: str,
         rerank_pool: int = 20,
+        schema_model: str = "anthropic:claude-sonnet-4-6",
+        sql_model: str = "anthropic:claude-haiku-4-5-20251001",
         # test injection — bypass the framework's real backends
         _embedder: Any | None = None,
         _vector_store: Any | None = None,
@@ -108,6 +137,7 @@ class CorpusAgent:
         self._db_store = db_store
         self._corpus = SqliteCorpus(self._db_store)
         self._ledger: IngestLedger | None = None
+        self._schema_registry: SchemaRegistry | None = None
         self._embedder: Any = _embedder
         self._vector_store: Any = _vector_store
         self._embed_model = embed_model
@@ -116,6 +146,8 @@ class CorpusAgent:
         self._answer_model = answer_model
         self._rerank_model = rerank_model
         self._rerank_pool = rerank_pool
+        self._schema_model = schema_model
+        self._sql_model = sql_model
         self._chunker = MarkdownChunker(max_chunk_tokens=600, chunk_overlap=80)
         self._loader = MarkitdownLoader()
 
@@ -125,6 +157,7 @@ class CorpusAgent:
         self._answerer: AnswerAgent | None = None
         self._retriever: HybridRetriever | None = None
         self._reranker: HaikuReranker | None = None
+        self._structured_retriever: StructuredRetriever | None = None
 
         self._corpus_ready = False
         self._query_ready = False
@@ -140,6 +173,8 @@ class CorpusAgent:
         if self._vector_store is None:
             self._vector_store = self._build_vector_store()
         self._ledger = IngestLedger(self._corpus)
+        self._schema_registry = SchemaRegistry(self._corpus)
+        await self._schema_registry.initialise()
         self._corpus_ready = True
 
     async def _ensure_query_ready(self) -> None:
@@ -158,6 +193,8 @@ class CorpusAgent:
                 vector_store=self._vector_store,
                 embedder=self._embedder,
             )
+        if self._structured_retriever is None:
+            self._structured_retriever = StructuredRetriever(self.root / "corpus.sqlite", sql_model=self._sql_model)
         self._query_ready = True
 
     async def _ensure_started(self) -> None:
@@ -178,8 +215,6 @@ class CorpusAgent:
             provider, deployment = "openai", embed_model
 
         if provider == "azure":
-            from fireflyframework_agentic.embeddings.providers.azure import AzureEmbedder
-
             azure_endpoint = os.environ.get("EMBEDDING_BINDING_HOST")
             api_key = os.environ.get("EMBEDDING_BINDING_API_KEY")
             if not azure_endpoint:
@@ -193,15 +228,11 @@ class CorpusAgent:
             )
 
         if provider == "openai":
-            from fireflyframework_agentic.embeddings.providers.openai import OpenAIEmbedder
-
             return OpenAIEmbedder(model=deployment)
 
         raise ValueError(f"Unknown embedding provider {provider!r} (use 'azure:<deployment>' or 'openai:<model>').")
 
     def _build_vector_store(self) -> Any:
-        from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
-
         return SqliteVecVectorStore(
             self._db_store,
             dimension=self._embed_dimension,
@@ -209,9 +240,60 @@ class CorpusAgent:
 
     # ----- public API ----------------------------------------------------
 
-    async def ingest_one(self, path: Path) -> IngestionResult:
+    async def _ingest_structured_file(
+        self,
+        path: Path,
+        *,
+        on_review: Callable[[TargetSchema], Awaitable[SchemaFeedback]] | None = None,
+        force: bool = False,
+    ) -> IngestionResult:
+        assert self._ledger is not None
+        assert self._schema_registry is not None
+        doc_id = doc_id_for(path)
+        source_path = str(path.resolve())
+        file_hash = hash_file(path)
+        if not force and await self._ledger.should_skip(doc_id, file_hash):
+            return IngestionResult(doc_id=doc_id, source_path=source_path, status="skipped", n_chunks=0)
+        try:
+            if on_review is not None:
+                schema = await discover_schema_interactive(path, on_review=on_review, model=self._schema_model)
+            else:
+                schema = await discover_schema(path, model=self._schema_model)
+            ingest_result = await ingest_structured(path, self.root / "corpus.sqlite", schema)
+            failed_tables = {name: meta for name, meta in ingest_result.items() if meta.get("status") != "success"}
+            if failed_tables:
+                # Per-table rollback inside ingest_structured leaves nothing
+                # behind for the failed tables; reporting "success" here would
+                # silently lose data and block retries via the ledger.
+                for name, meta in failed_tables.items():
+                    log.warning(
+                        "structured ingest table %s failed for %s: %s",
+                        name,
+                        path,
+                        "; ".join(meta.get("errors", [])) or meta.get("status"),
+                    )
+                await self._ledger.upsert(doc_id, source_path, file_hash, status="load_failed")
+                return IngestionResult(doc_id=doc_id, source_path=source_path, status="load_failed", n_chunks=0)
+            await self._schema_registry.save(schema)
+            await self._ledger.upsert(doc_id, source_path, file_hash, status="success")
+            return IngestionResult(doc_id=doc_id, source_path=source_path, status="success", n_chunks=0)
+        except Exception as exc:
+            log.warning("structured ingest failed for %s: %s", path, exc)
+            await self._ledger.upsert(doc_id, source_path, file_hash, status="load_failed")
+            return IngestionResult(doc_id=doc_id, source_path=source_path, status="load_failed", n_chunks=0)
+
+    async def ingest_one(
+        self,
+        path: Path,
+        *,
+        mode: Literal["unstructured", "structured"] = "unstructured",
+        on_review: Callable[[TargetSchema], Awaitable[SchemaFeedback]] | None = None,
+        force: bool = False,
+    ) -> IngestionResult:
         await self._ensure_corpus_ready()
         assert self._ledger is not None
+        if mode == "structured":
+            return await self._ingest_structured_file(path, on_review=on_review, force=force)
         return await ingest_one(
             path=Path(path),
             corpus=self._corpus,
@@ -220,19 +302,34 @@ class CorpusAgent:
             ledger=self._ledger,
             chunker=self._chunker,
             loader=self._loader,
+            force=force,
         )
 
-    async def ingest_folder(self, folder: Path) -> IngestSummary:
+    async def ingest_folder(
+        self,
+        folder: Path,
+        *,
+        mode: Literal["unstructured", "structured"] = "unstructured",
+        on_review: Callable[[TargetSchema], Awaitable[SchemaFeedback]] | None = None,
+        force: bool = False,
+    ) -> IngestSummary:
         """Recursively ingest every (non-hidden) file under ``folder``.
 
-        Thin wrapper around :meth:`ingest_source` using a
-        :class:`LocalFolderSource`. Hidden files (``.DS_Store``, editor swap
-        files, dotfiles) are skipped — same rule the watcher applies.
+        For ``mode='unstructured'`` (default), delegates to :meth:`ingest_source`
+        via :class:`LocalFolderSource`. For ``mode='structured'``, runs a direct
+        loop calling :meth:`ingest_one` so each file goes through schema discovery
+        and SQLite insertion rather than the embedding pipeline. ``on_review``
+        and ``force`` are only honoured by the structured branch (the
+        unstructured ContentSource path has its own change-detection model).
         """
-        from fireflyframework_agentic.content.sources.local_folder import (
-            LocalFolderSource,
-            LocalFolderSourceConfig,
-        )
+        if mode == "structured":
+            await self._ensure_corpus_ready()
+            watcher = FolderWatcher(folder=Path(folder))
+            candidates = sorted(p for p in Path(folder).rglob("*") if p.is_file() and not watcher.is_hidden(p))
+            results: list[IngestionResult] = []
+            for path in candidates:
+                results.append(await self.ingest_one(path, mode="structured", on_review=on_review, force=force))
+            return IngestSummary(results=results)
 
         source = LocalFolderSource(LocalFolderSourceConfig(folder=Path(folder)))
         return await self.ingest_source(source)
@@ -370,12 +467,13 @@ class CorpusAgent:
     async def query(self, question: str, *, top_k: int = 5) -> Answer:
         """Run the full pipeline: retrieve (with rerank) + answer.
 
-        Wraps :meth:`retrieve` with the answerer so callers get a grounded
-        answer plus citations in one call. ``top_k`` is the number of
-        chunks fed into the answer agent *after* reranking.
+        RAG retrieval and SQL retrieval run in parallel via ``asyncio.gather``.
+        ``top_k`` is the number of chunks fed into the answer agent *after* reranking.
         """
         await self._ensure_query_ready()
         assert self._answerer is not None
+        assert self._structured_retriever is not None
+        assert self._schema_registry is not None
 
         query_start = time.perf_counter()
         async with timed_span(
@@ -386,14 +484,48 @@ class CorpusAgent:
                 "rerank_pool": self._rerank_pool,
             },
         ) as span:
-            top_hits = await self.retrieve(question, top_k=top_k, rerank=True)
-            answer = await self._answerer.answer(question, top_hits)
+            schemas = await self._schema_registry.list_schemas()
+            top_hits, sql_context = await asyncio.gather(
+                self.retrieve(question, top_k=top_k, rerank=True),
+                self._structured_retriever.retrieve(question, schemas),
+            )
+            answer = await self._answerer.answer(question, top_hits, sql_context=sql_context)
             outcome = "no_info" if not answer.cited_sources else "answered"
             elapsed_ms = (time.perf_counter() - query_start) * 1000.0
             query_total_duration.record(elapsed_ms, {"outcome": outcome})
             span.set_attribute("firefly.rag.citation_count", len(answer.cited_sources))
             span.set_attribute("firefly.rag.outcome", outcome)
             return answer
+
+    async def stats(self) -> CorpusStats:
+        """Return document, chunk, and schema counts for the corpus."""
+        await self._ensure_corpus_ready()
+        rows = await self._corpus.query("SELECT COUNT(DISTINCT doc_id) AS n FROM chunks")
+        doc_count = rows[0]["n"] if rows else 0
+        rows = await self._corpus.query("SELECT COUNT(*) AS n FROM chunks")
+        chunk_count = rows[0]["n"] if rows else 0
+        rows = await self._corpus.query("SELECT COUNT(*) AS n FROM _schemas")
+        schema_count = rows[0]["n"] if rows else 0
+        return CorpusStats(doc_count=doc_count, chunk_count=chunk_count, schema_count=schema_count)
+
+    async def clear(self) -> None:
+        """Wipe all ingested data: chunks, ledger, structured tables, and schemas.
+
+        The corpus file stays open and ready for new ingestion. If the vector
+        store exposes a ``clear()`` method it is called too; otherwise orphaned
+        vectors remain in the store but will never be returned (chunk IDs are
+        resolved through the corpus, which is now empty).
+        """
+        await self._ensure_corpus_ready()
+        await self._corpus.clear_all()
+        if self._vector_store is not None and hasattr(self._vector_store, "clear"):
+            await self._vector_store.clear()
+
+    async def get_chunk(self, chunk_id: str) -> StoredChunk | None:
+        """Retrieve a single chunk by its ID, or ``None`` if not found."""
+        await self._ensure_corpus_ready()
+        chunks = await self._corpus.get_chunks([chunk_id])
+        return chunks[0] if chunks else None
 
     async def close(self) -> None:
         await self._corpus.close()
