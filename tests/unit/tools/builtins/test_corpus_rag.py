@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -68,6 +69,103 @@ async def test_ingest_corpus_filesystem_smoke(configured_env: Path, stub_backend
 
     result = await ingest_corpus_filesystem.execute(corpus_id="t1", root_path=str(docs))
     assert result["corpus_id"] == "t1"
+    assert result["ingested"] == 2
+    assert result["failed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_ingest_corpus_structured_dispatches_structured_mode(configured_env: Path, stub_backends: None) -> None:
+    """The new MCP tool delegates to CorpusAgent.ingest_one with mode='structured'.
+
+    Schema discovery and the structured pipeline both make real LLM / file
+    calls in production; we patch them out and only verify that the tool
+    routes correctly and shapes its return value from the IngestionResult.
+    """
+    from fireflyframework_agentic.rag.ingest.structured_schema import (
+        ColumnSpec,
+        ColumnType,
+        TableSpec,
+        TargetSchema,
+    )
+    from fireflyframework_agentic.tools.builtins.corpus_rag import ingest_corpus_structured
+
+    csv_path = configured_env / "sales.csv"
+    csv_path.write_text("id,amount\n1,10.5\n", encoding="utf-8")
+
+    schema = TargetSchema(
+        tables=[
+            TableSpec(
+                name="sales",
+                columns=[
+                    ColumnSpec(name="id", type=ColumnType.integer, nullable=False, primary_key=True),
+                    ColumnSpec(name="amount", type=ColumnType.float_, nullable=True, primary_key=False),
+                ],
+            )
+        ]
+    )
+
+    with (
+        patch(
+            "fireflyframework_agentic.rag.agent.discover_schema",
+            new=AsyncMock(return_value=schema),
+        ),
+        patch(
+            "fireflyframework_agentic.rag.agent.ingest_structured",
+            new=AsyncMock(return_value={"sales": {"status": "success", "inserted": 1, "errors": []}}),
+        ) as mock_ingest_structured,
+    ):
+        result = await ingest_corpus_structured.execute(corpus_id="t-struct", path=str(csv_path))
+
+    assert result == {
+        "corpus_id": "t-struct",
+        "ingested": 1,
+        "skipped": 0,
+        "failed": 0,
+    }
+    mock_ingest_structured.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_ingest_corpus_structured_folder_iterates(configured_env: Path, stub_backends: None) -> None:
+    """Passing a folder path walks every non-hidden file and aggregates counts."""
+    from fireflyframework_agentic.rag.ingest.structured_schema import (
+        ColumnSpec,
+        ColumnType,
+        TableSpec,
+        TargetSchema,
+    )
+    from fireflyframework_agentic.tools.builtins.corpus_rag import ingest_corpus_structured
+
+    folder = configured_env / "tabular"
+    folder.mkdir()
+    (folder / "a.csv").write_text("id,v\n1,2\n", encoding="utf-8")
+    (folder / "b.csv").write_text("id,v\n3,4\n", encoding="utf-8")
+
+    schema = TargetSchema(
+        tables=[
+            TableSpec(
+                name="t",
+                columns=[
+                    ColumnSpec(name="id", type=ColumnType.integer, nullable=False, primary_key=True),
+                    ColumnSpec(name="v", type=ColumnType.integer, nullable=True, primary_key=False),
+                ],
+            )
+        ]
+    )
+
+    with (
+        patch(
+            "fireflyframework_agentic.rag.agent.discover_schema",
+            new=AsyncMock(return_value=schema),
+        ),
+        patch(
+            "fireflyframework_agentic.rag.agent.ingest_structured",
+            new=AsyncMock(return_value={"t": {"status": "success", "inserted": 1, "errors": []}}),
+        ),
+    ):
+        result = await ingest_corpus_structured.execute(corpus_id="t-folder", path=str(folder))
+
+    assert result["corpus_id"] == "t-folder"
     assert result["ingested"] == 2
     assert result["failed"] == 0
 
