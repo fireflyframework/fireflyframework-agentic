@@ -44,11 +44,13 @@ from fireflyframework_agentic.rag.ingest import (
     SchemaRegistry,
     TargetSchema,
     discover_schema,
+    discover_schema_for_paths,
     discover_schema_interactive,
     ingest_one,
     ingest_structured,
 )
 from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
+from fireflyframework_agentic.rag.ingest.structured_pipeline import _normalize_sheet_name
 from fireflyframework_agentic.rag.ingest.unstructured_pipeline import (
     doc_id_for,
     hash_file,
@@ -70,6 +72,33 @@ class CorpusStats:
     doc_count: int
     chunk_count: int
     schema_count: int
+
+
+def _filter_schema_for_path(schema: TargetSchema, path: Path) -> TargetSchema | None:
+    """Pick the ``TableSpec``s in *schema* that belong to *path*.
+
+    For a CSV: match the single TableSpec whose snake_case name equals the
+    file stem. For an Excel workbook: match every TableSpec whose name is one
+    of the workbook's sheet names. Returns ``None`` if no table matches —
+    caller falls back to per-file discovery.
+    """
+    suffix = path.suffix.lower()
+    if suffix in (".xls", ".xlsx"):
+        try:
+            import openpyxl  # noqa: PLC0415
+
+            wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+            wanted = {_normalize_sheet_name(s) for s in wb.sheetnames}
+            wb.close()
+        except Exception:
+            return None
+        tables = [t for t in schema.tables if t.name in wanted]
+    else:
+        target = _normalize_sheet_name(path.stem)
+        tables = [t for t in schema.tables if t.name == target]
+    if not tables:
+        return None
+    return TargetSchema(tables=tables)
 
 
 @dataclass(slots=True)
@@ -246,7 +275,14 @@ class CorpusAgent:
         *,
         on_review: Callable[[TargetSchema], Awaitable[SchemaFeedback]] | None = None,
         force: bool = False,
+        schema: TargetSchema | None = None,
     ) -> IngestionResult:
+        """Ingest a single tabular file.
+
+        When *schema* is provided, schema discovery is skipped — caller
+        already supplied the target shape (e.g. operator-reviewed output of
+        :meth:`discover_schema`, or a canonical schema reused across files).
+        """
         assert self._ledger is not None
         assert self._schema_registry is not None
         doc_id = doc_id_for(path)
@@ -255,10 +291,11 @@ class CorpusAgent:
         if not force and await self._ledger.should_skip(doc_id, file_hash):
             return IngestionResult(doc_id=doc_id, source_path=source_path, status="skipped", n_chunks=0)
         try:
-            if on_review is not None:
-                schema = await discover_schema_interactive(path, on_review=on_review, model=self._schema_model)
-            else:
-                schema = await discover_schema(path, model=self._schema_model)
+            if schema is None:
+                if on_review is not None:
+                    schema = await discover_schema_interactive(path, on_review=on_review, model=self._schema_model)
+                else:
+                    schema = await discover_schema(path, model=self._schema_model)
             ingest_result = await ingest_structured(path, self.root / "corpus.sqlite", schema)
             failed_tables = {name: meta for name, meta in ingest_result.items() if meta.get("status") != "success"}
             if failed_tables:
@@ -289,11 +326,12 @@ class CorpusAgent:
         mode: Literal["unstructured", "structured"] = "unstructured",
         on_review: Callable[[TargetSchema], Awaitable[SchemaFeedback]] | None = None,
         force: bool = False,
+        schema: TargetSchema | None = None,
     ) -> IngestionResult:
         await self._ensure_corpus_ready()
         assert self._ledger is not None
         if mode == "structured":
-            return await self._ingest_structured_file(path, on_review=on_review, force=force)
+            return await self._ingest_structured_file(path, on_review=on_review, force=force, schema=schema)
         return await ingest_one(
             path=Path(path),
             corpus=self._corpus,
@@ -305,6 +343,44 @@ class CorpusAgent:
             force=force,
         )
 
+    async def discover_schema(
+        self,
+        path: Path,
+        *,
+        corrections: str = "",
+        previous_schema: TargetSchema | None = None,
+    ) -> TargetSchema:
+        """Infer a ``TargetSchema`` for *path* without ingesting anything.
+
+        Accepts a single CSV/Excel file or a folder. For a folder, discovery
+        is run across every (non-hidden) file in one LLM call so cross-file
+        foreign keys can be proposed. The returned schema is **not** persisted
+        to the schema registry — callers that want to ingest under it should
+        pass it back via :meth:`ingest_one` / :meth:`ingest_folder` ``schema=``.
+
+        Pass *corrections* + *previous_schema* to iteratively refine an
+        earlier discovery output ("rename column X to Y", "amount should be
+        nullable", "add foreign_key from billing.customer_id to
+        customers.id"); both must be supplied together.
+        """
+        await self._ensure_corpus_ready()
+        target = Path(path)
+        if target.is_file():
+            return await discover_schema(
+                target,
+                model=self._schema_model,
+                corrections=corrections,
+                previous_schema=previous_schema,
+            )
+        watcher = FolderWatcher(folder=target)
+        candidates = sorted(p for p in target.rglob("*") if p.is_file() and not watcher.is_hidden(p))
+        return await discover_schema_for_paths(
+            candidates,
+            model=self._schema_model,
+            corrections=corrections,
+            previous_schema=previous_schema,
+        )
+
     async def ingest_folder(
         self,
         folder: Path,
@@ -312,23 +388,44 @@ class CorpusAgent:
         mode: Literal["unstructured", "structured"] = "unstructured",
         on_review: Callable[[TargetSchema], Awaitable[SchemaFeedback]] | None = None,
         force: bool = False,
+        schema: TargetSchema | None = None,
     ) -> IngestSummary:
         """Recursively ingest every (non-hidden) file under ``folder``.
 
         For ``mode='unstructured'`` (default), delegates to :meth:`ingest_source`
-        via :class:`LocalFolderSource`. For ``mode='structured'``, runs a direct
-        loop calling :meth:`ingest_one` so each file goes through schema discovery
-        and SQLite insertion rather than the embedding pipeline. ``on_review``
-        and ``force`` are only honoured by the structured branch (the
-        unstructured ContentSource path has its own change-detection model).
+        via :class:`LocalFolderSource`. For ``mode='structured'``, runs schema
+        discovery once across the whole folder (so cross-file foreign keys are
+        visible) and then ingests each file under the matching ``TableSpec``.
+        ``on_review`` and ``force`` are only honoured by the structured branch
+        (the unstructured ContentSource path has its own change-detection
+        model). When *schema* is supplied, discovery is skipped entirely.
         """
         if mode == "structured":
             await self._ensure_corpus_ready()
             watcher = FolderWatcher(folder=Path(folder))
             candidates = sorted(p for p in Path(folder).rglob("*") if p.is_file() and not watcher.is_hidden(p))
+            folder_schema = schema
+            if folder_schema is None and len(candidates) > 1:
+                folder_schema = await discover_schema_for_paths(candidates, model=self._schema_model)
+                if on_review is not None:
+                    feedback = await on_review(folder_schema)
+                    if not feedback.approved:
+                        # Rerun discovery once with corrections — keep the
+                        # interactive loop shallow at folder level so
+                        # per-folder UX matches per-file UX (one approval).
+                        folder_schema = await discover_schema_for_paths(candidates, model=self._schema_model)
             results: list[IngestionResult] = []
             for path in candidates:
-                results.append(await self.ingest_one(path, mode="structured", on_review=on_review, force=force))
+                per_file_schema = _filter_schema_for_path(folder_schema, path) if folder_schema else None
+                results.append(
+                    await self.ingest_one(
+                        path,
+                        mode="structured",
+                        on_review=on_review if per_file_schema is None else None,
+                        force=force,
+                        schema=per_file_schema,
+                    )
+                )
             return IngestSummary(results=results)
 
         source = LocalFolderSource(LocalFolderSourceConfig(folder=Path(folder)))

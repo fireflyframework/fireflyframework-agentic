@@ -159,6 +159,10 @@ async def test_ingest_corpus_structured_folder_iterates(configured_env: Path, st
             new=AsyncMock(return_value=schema),
         ),
         patch(
+            "fireflyframework_agentic.rag.agent.discover_schema_for_paths",
+            new=AsyncMock(return_value=schema),
+        ),
+        patch(
             "fireflyframework_agentic.rag.agent.ingest_structured",
             new=AsyncMock(return_value={"t": {"status": "success", "inserted": 1, "errors": []}}),
         ),
@@ -166,8 +170,161 @@ async def test_ingest_corpus_structured_folder_iterates(configured_env: Path, st
         result = await ingest_corpus_structured.execute(corpus_id="t-folder", path=str(folder))
 
     assert result["corpus_id"] == "t-folder"
+    # Folder discovery returns one TableSpec named "t" — neither file matches
+    # by stem, so per-file fallback handles each file independently.
     assert result["ingested"] == 2
     assert result["failed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_discover_corpus_schema_returns_schema_json(configured_env: Path, stub_backends: None) -> None:
+    """discover_corpus_schema runs discovery and returns the TargetSchema as JSON without ingesting."""
+    from fireflyframework_agentic.rag.ingest.structured_schema import (
+        ColumnSpec,
+        ColumnType,
+        TableSpec,
+        TargetSchema,
+    )
+    from fireflyframework_agentic.tools.builtins.corpus_rag import discover_corpus_schema
+
+    csv_path = configured_env / "sales.csv"
+    csv_path.write_text("id,amount\n1,10.5\n", encoding="utf-8")
+
+    schema = TargetSchema(
+        tables=[
+            TableSpec(
+                name="sales",
+                columns=[
+                    ColumnSpec(name="id", type=ColumnType.integer, primary_key=True),
+                    ColumnSpec(name="amount", type=ColumnType.float_),
+                ],
+            )
+        ]
+    )
+
+    with (
+        patch(
+            "fireflyframework_agentic.rag.agent.discover_schema",
+            new=AsyncMock(return_value=schema),
+        ),
+        patch(
+            "fireflyframework_agentic.rag.agent.ingest_structured",
+            new=AsyncMock(side_effect=AssertionError("ingest must NOT run during discovery")),
+        ),
+    ):
+        result = await discover_corpus_schema.execute(corpus_id="t-disc", path=str(csv_path))
+
+    assert result["corpus_id"] == "t-disc"
+    assert result["path"] == str(csv_path)
+    assert result["schema"]["tables"][0]["name"] == "sales"
+    assert {c["name"] for c in result["schema"]["tables"][0]["columns"]} == {"id", "amount"}
+
+
+@pytest.mark.asyncio
+async def test_discover_corpus_schema_refines_with_corrections(configured_env: Path, stub_backends: None) -> None:
+    """Passing previous_schema + corrections threads them into the underlying discover_schema call."""
+    from fireflyframework_agentic.rag.ingest.structured_schema import (
+        ColumnSpec,
+        ColumnType,
+        TableSpec,
+        TargetSchema,
+    )
+    from fireflyframework_agentic.tools.builtins.corpus_rag import discover_corpus_schema
+
+    csv_path = configured_env / "sales.csv"
+    csv_path.write_text("id,amount\n1,10.5\n", encoding="utf-8")
+
+    refined = TargetSchema(
+        tables=[
+            TableSpec(
+                name="sales",
+                columns=[
+                    ColumnSpec(name="id", type=ColumnType.integer, primary_key=True),
+                    ColumnSpec(name="amount", type=ColumnType.float_, nullable=False),
+                ],
+            )
+        ]
+    )
+
+    prior = {
+        "tables": [
+            {
+                "name": "sales",
+                "columns": [
+                    {"name": "id", "type": "integer", "primary_key": True, "nullable": True, "foreign_key": None},
+                    {"name": "amount", "type": "float", "nullable": True, "primary_key": False, "foreign_key": None},
+                ],
+            }
+        ]
+    }
+
+    discover_mock = AsyncMock(return_value=refined)
+    with patch("fireflyframework_agentic.rag.agent.discover_schema", new=discover_mock):
+        result = await discover_corpus_schema.execute(
+            corpus_id="t-refine",
+            path=str(csv_path),
+            corrections="amount is required, mark it not null",
+            previous_schema=prior,
+        )
+
+    assert result["schema"]["tables"][0]["columns"][1]["nullable"] is False
+    kwargs = discover_mock.await_args.kwargs
+    assert kwargs["corrections"] == "amount is required, mark it not null"
+    assert kwargs["previous_schema"].tables[0].name == "sales"
+
+
+@pytest.mark.asyncio
+async def test_ingest_corpus_structured_skips_discovery_when_schema_supplied(
+    configured_env: Path, stub_backends: None
+) -> None:
+    """When schema= is passed, discovery is skipped and rows are loaded under the supplied schema."""
+    from fireflyframework_agentic.rag.ingest.structured_schema import (
+        ColumnSpec,
+        ColumnType,
+        TableSpec,
+        TargetSchema,
+    )
+    from fireflyframework_agentic.tools.builtins.corpus_rag import ingest_corpus_structured
+
+    csv_path = configured_env / "sales.csv"
+    csv_path.write_text("id,amount\n1,10.5\n", encoding="utf-8")
+
+    operator_schema = TargetSchema(
+        tables=[
+            TableSpec(
+                name="sales",
+                columns=[
+                    ColumnSpec(name="id", type=ColumnType.integer, primary_key=True),
+                    ColumnSpec(name="amount", type=ColumnType.float_),
+                ],
+            )
+        ]
+    )
+
+    discover_mock = AsyncMock(side_effect=AssertionError("discovery must NOT run when schema is supplied"))
+    with (
+        patch("fireflyframework_agentic.rag.agent.discover_schema", new=discover_mock),
+        patch(
+            "fireflyframework_agentic.rag.agent.ingest_structured",
+            new=AsyncMock(return_value={"sales": {"status": "success", "inserted": 1, "errors": []}}),
+        ) as mock_ingest,
+    ):
+        result = await ingest_corpus_structured.execute(
+            corpus_id="t-with-schema",
+            path=str(csv_path),
+            schema=operator_schema.model_dump(mode="json"),
+        )
+
+    assert result == {
+        "corpus_id": "t-with-schema",
+        "ingested": 1,
+        "skipped": 0,
+        "failed": 0,
+    }
+    discover_mock.assert_not_called()
+    # The schema arg passed to ingest_structured is the operator's schema.
+    passed_schema = mock_ingest.await_args.args[2]
+    assert passed_schema.tables[0].name == "sales"
 
 
 @pytest.mark.asyncio
