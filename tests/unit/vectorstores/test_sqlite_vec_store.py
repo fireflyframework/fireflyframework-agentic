@@ -103,3 +103,20 @@ async def test_import_error_when_sqlite_vec_not_installed(tmp_path):
         # ImportError from _initialise_sync is wrapped by BaseVectorStore.upsert
         with pytest.raises(VectorStoreError, match="sqlite-vec"):
             await store.upsert([VectorDocument(id="x", text="", embedding=[1.0, 0.0, 0.0, 0.0])])
+
+
+async def test_sqlite_vec_store_accepts_database_store(tmp_path):
+    from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
+    from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
+
+    store = DatabaseStore(
+        LocalBackend(tmp_path / "vec.sqlite"),
+        store_id="ut-vec",
+        cache_root=tmp_path / "cache",
+    )
+    s = SqliteVecVectorStore(store, dimension=4)
+    docs = [VectorDocument(id="a", text="x", metadata={}, embedding=[0.1, 0.2, 0.3, 0.4])]
+    await s.upsert(docs, namespace="default")
+    hits = await s.search([0.1, 0.2, 0.3, 0.4], top_k=1, namespace="default")
+    assert hits and hits[0].document.id == "a"
+    await s.close()

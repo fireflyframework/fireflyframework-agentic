@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from fireflyframework_agentic.rag.corpus import SqliteCorpus, StoredChunk
+from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
 
 
 @pytest.fixture
@@ -100,3 +101,38 @@ async def test_bm25_search_no_match_returns_empty(corpus: SqliteCorpus):
     await corpus.upsert_chunks(chunks)
     hits = await corpus.bm25_search("totally-unrelated-query", top_k=10)
     assert hits == []
+
+
+async def test_sqlite_corpus_accepts_database_store(tmp_path):
+    store = DatabaseStore(
+        LocalBackend(tmp_path / "corpus.sqlite"),
+        store_id="ut-corpus",
+        cache_root=tmp_path / "cache",
+    )
+    c = SqliteCorpus(store)
+    await c.initialise()
+    chunks = [
+        StoredChunk(chunk_id="d-0", doc_id="d", source_path="d.md", index_in_doc=0, content="hello world", metadata={}),
+    ]
+    await c.upsert_chunks(chunks)
+    rows = await c.query("SELECT chunk_id FROM chunks")
+    assert rows[0]["chunk_id"] == "d-0"
+    await c.close()
+
+
+async def test_sqlite_corpus_session_kwarg_skips_own_lock(tmp_path):
+    store = DatabaseStore(
+        LocalBackend(tmp_path / "corpus.sqlite"),
+        store_id="ut-corpus-session",
+        cache_root=tmp_path / "cache",
+    )
+    c = SqliteCorpus(store)
+    await c.initialise()
+    async with store.for_write() as session:
+        await c.upsert_chunks(
+            [StoredChunk(chunk_id="x-0", doc_id="x", source_path="x.md", index_in_doc=0, content="abc", metadata={})],
+            session=session,
+        )
+    rows = await c.query("SELECT chunk_id FROM chunks WHERE chunk_id='x-0'")
+    assert rows
+    await c.close()
