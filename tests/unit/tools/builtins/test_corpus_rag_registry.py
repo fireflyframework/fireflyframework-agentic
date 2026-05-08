@@ -107,6 +107,28 @@ async def test_shutdown_agents_closes_and_clears() -> None:
 
 
 @pytest.mark.asyncio
+async def test_shutdown_agents_continues_after_one_close_fails() -> None:
+    """If one agent's close raises, the rest still close and registries clear."""
+    a = await corpus_rag._agent_for("X")
+    b = await corpus_rag._agent_for("Y")
+    closed: list[str] = []
+
+    async def x_close():
+        raise RuntimeError("boom")
+
+    async def y_close():
+        closed.append("Y")
+
+    a.close = x_close  # type: ignore[method-assign]
+    b.close = y_close  # type: ignore[method-assign]
+
+    await corpus_rag._shutdown_agents()
+    assert closed == ["Y"]
+    assert corpus_rag._AGENT_CACHE == {}
+    assert corpus_rag._WRITE_LOCKS == {}
+
+
+@pytest.mark.asyncio
 async def test_create_mcp_app_accepts_lifespan() -> None:
     """create_mcp_app must accept a lifespan and pass it to FastMCP."""
     import contextlib
