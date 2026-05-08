@@ -12,9 +12,15 @@ Seven tools:
     - corpus_retrieve(corpus_id, question, top_k)
     - corpus_query(corpus_id, question, top_k)
 
-Each call constructs a fresh CorpusAgent rooted at
-``CORPUS_ROOT/<corpus_id>`` and delegates. No process-global registry; the
-on-disk SqliteCorpus + SqliteVec carry continuity across requests.
+Each tool resolves a process-wide cached :class:`CorpusAgent` via
+``_agent_for(corpus_id)`` so every call against a given corpus shares one
+DatabaseStore / LocalBackend / SqliteCorpus (and one ``asyncio.Lock``)
+instance. Write tools additionally serialise on a per-corpus
+``asyncio.Lock`` from ``_WRITE_LOCKS`` as belt-and-braces against
+concurrent writers in the same process. Read tools (``corpus_query`` /
+``corpus_retrieve``) stay lock-free and rely on SQLite WAL for concurrent
+reader semantics. Cached agents are torn down via ``_shutdown_agents``,
+which is wired into the FastMCP server's lifespan hook.
 
 Auth: SharePoint ingestion uses the framework's managed-identity token
 provider against Microsoft Graph (zero-trust model — see
@@ -23,6 +29,8 @@ provider against Microsoft Graph (zero-trust model — see
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -39,20 +47,58 @@ from fireflyframework_agentic.tools.decorators import firefly_tool
 _DEFAULT_CORPUS_ROOT = "/tmp/firefly/corpora"
 _GRAPH_SCOPE = "https://graph.microsoft.com/.default"
 
+_AGENT_CACHE: dict[str, CorpusAgent] = {}
+_WRITE_LOCKS: dict[str, asyncio.Lock] = {}
+_CACHE_LOCK = asyncio.Lock()
+
 
 def _corpus_root() -> Path:
     return Path(os.path.expandvars(os.environ.get("CORPUS_ROOT", _DEFAULT_CORPUS_ROOT)))
 
 
-def _agent_for(corpus_id: str) -> CorpusAgent:
-    """Construct an agent rooted at ``CORPUS_ROOT/<corpus_id>``."""
-    return CorpusAgent(
-        root=_corpus_root() / corpus_id,
-        embed_model=os.environ["EMBEDDING_MODEL"],
-        expansion_model=os.environ["EXPANSION_MODEL"],
-        answer_model=os.environ["ANSWER_MODEL"],
-        rerank_model=os.environ["RERANK_MODEL"],
-    )
+async def _agent_for(corpus_id: str) -> CorpusAgent:
+    """Return a process-wide CorpusAgent for *corpus_id*, creating one on
+    first use.
+
+    Sharing the agent means sharing its DatabaseStore / LocalBackend /
+    SqliteCorpus connections so the asyncio.Lock inside the backend
+    actually serialises writes from multiple tool calls in the same
+    process. Construction is sync and does no I/O (no SQLite open until
+    the agent's first ensure_corpus_ready) so holding _CACHE_LOCK across
+    it is harmless.
+    """
+    async with _CACHE_LOCK:
+        if corpus_id not in _AGENT_CACHE:
+            _AGENT_CACHE[corpus_id] = CorpusAgent(
+                root=_corpus_root() / corpus_id,
+                embed_model=os.environ["EMBEDDING_MODEL"],
+                expansion_model=os.environ["EXPANSION_MODEL"],
+                answer_model=os.environ["ANSWER_MODEL"],
+                rerank_model=os.environ["RERANK_MODEL"],
+            )
+        return _AGENT_CACHE[corpus_id]
+
+
+def _write_lock_for(corpus_id: str) -> asyncio.Lock:
+    """Return the per-corpus write lock, creating one on first use.
+
+    Belt-and-braces serialisation for write tools at the MCP layer.
+    Reads (corpus_query / corpus_retrieve) do NOT take this lock — they
+    rely on SQLite's WAL mode for concurrent reader semantics.
+    """
+    if corpus_id not in _WRITE_LOCKS:
+        _WRITE_LOCKS[corpus_id] = asyncio.Lock()
+    return _WRITE_LOCKS[corpus_id]
+
+
+async def _shutdown_agents() -> None:
+    """Close every cached agent. Wired into FastMCP lifespan."""
+    agents = list(_AGENT_CACHE.values())
+    _AGENT_CACHE.clear()
+    _WRITE_LOCKS.clear()
+    for agent in agents:
+        with contextlib.suppress(Exception):
+            await agent.close()
 
 
 def _assert_corpus_exists(corpus_id: str) -> Path:
@@ -108,8 +154,9 @@ async def list_corpora() -> dict[str, Any]:
     tags=("rag", "ingest", "filesystem"),
 )
 async def ingest_corpus_filesystem(corpus_id: str, root_path: str) -> dict[str, Any]:
-    source = LocalFolderSource(LocalFolderSourceConfig(folder=Path(root_path)))
-    async with _agent_for(corpus_id) as agent:
+    async with _write_lock_for(corpus_id):
+        source = LocalFolderSource(LocalFolderSourceConfig(folder=Path(root_path)))
+        agent = await _agent_for(corpus_id)
         summary = await agent.ingest_source(source)
     return {
         "corpus_id": corpus_id,
@@ -147,8 +194,8 @@ async def discover_corpus_schema(
 ) -> dict[str, Any]:
     target = Path(path)
     prior = TargetSchema.model_validate(previous_schema) if previous_schema is not None else None
-    async with _agent_for(corpus_id) as agent:
-        schema = await agent.discover_schema(target, corrections=corrections, previous_schema=prior)
+    agent = await _agent_for(corpus_id)
+    schema = await agent.discover_schema(target, corrections=corrections, previous_schema=prior)
     return {
         "corpus_id": corpus_id,
         "path": str(target),
@@ -180,17 +227,18 @@ async def ingest_corpus_structured(
     path: str,
     schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    target = Path(path)
-    target_schema = TargetSchema.model_validate(schema) if schema is not None else None
-    async with _agent_for(corpus_id) as agent:
+    async with _write_lock_for(corpus_id):
+        target = Path(path)
+        target_schema = TargetSchema.model_validate(schema) if schema is not None else None
+        agent = await _agent_for(corpus_id)
         if target.is_file():
             results = [await agent.ingest_one(target, mode="structured", schema=target_schema)]
         else:
             summary = await agent.ingest_folder(target, mode="structured", schema=target_schema)
             results = summary.results
-    ingested = sum(1 for r in results if r.status == "success")
-    skipped = sum(1 for r in results if r.status == "skipped")
-    failed = sum(1 for r in results if r.status not in {"success", "skipped"})
+        ingested = sum(1 for r in results if r.status == "success")
+        skipped = sum(1 for r in results if r.status == "skipped")
+        failed = sum(1 for r in results if r.status not in {"success", "skipped"})
     return {
         "corpus_id": corpus_id,
         "ingested": ingested,
@@ -239,9 +287,10 @@ async def ingest_corpus_sharepoint(
 
     try:
         async with (
+            _write_lock_for(corpus_id),
             SharePointSource(config, token_provider=token_provider) as source,
-            _agent_for(corpus_id) as agent,
         ):
+            agent = await _agent_for(corpus_id)
             summary = await agent.ingest_source(source)
     finally:
         await credential.close()
@@ -269,8 +318,8 @@ async def ingest_corpus_sharepoint(
 )
 async def corpus_retrieve(corpus_id: str, question: str, top_k: int = 5) -> dict[str, Any]:
     _assert_corpus_exists(corpus_id)
-    async with _agent_for(corpus_id) as agent:
-        hits = await agent.retrieve(question, top_k=top_k, rerank=True)
+    agent = await _agent_for(corpus_id)
+    hits = await agent.retrieve(question, top_k=top_k, rerank=True)
     return {
         "corpus_id": corpus_id,
         "question": question,
@@ -298,8 +347,8 @@ async def corpus_retrieve(corpus_id: str, question: str, top_k: int = 5) -> dict
 )
 async def corpus_query(corpus_id: str, question: str, top_k: int = 5) -> dict[str, Any]:
     _assert_corpus_exists(corpus_id)
-    async with _agent_for(corpus_id) as agent:
-        answer = await agent.query(question, top_k=top_k)
+    agent = await _agent_for(corpus_id)
+    answer = await agent.query(question, top_k=top_k)
     return {
         "corpus_id": corpus_id,
         "question": question,
