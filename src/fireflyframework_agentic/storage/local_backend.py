@@ -21,7 +21,6 @@ import contextlib
 import logging
 import os
 import shutil
-import sqlite3
 import time
 import uuid
 from datetime import UTC, datetime
@@ -38,37 +37,9 @@ from fireflyframework_agentic.storage.backend import StorageBackend
 log = logging.getLogger(__name__)
 
 
-_SQLITE_MAGIC = b"SQLite format 3\x00"
-
-
 def _stat_etag(path: Path) -> str:
     st = path.stat()
     return f"{st.st_mtime_ns}:{st.st_size}"
-
-
-def _copy_for_upload(src: Path, dst: Path) -> None:
-    """Copy *src* to *dst* for upload.
-
-    For SQLite databases uses the online backup API so that any
-    unflushed WAL frames are included in the destination copy.
-    Plain files are copied with shutil.copyfile.
-    """
-    try:
-        with src.open("rb") as f:
-            is_sqlite = f.read(16) == _SQLITE_MAGIC
-    except OSError:
-        is_sqlite = False
-
-    if is_sqlite:
-        src_conn = sqlite3.connect(str(src))
-        dst_conn = sqlite3.connect(str(dst))
-        try:
-            src_conn.backup(dst_conn)
-        finally:
-            src_conn.close()
-            dst_conn.close()
-    else:
-        shutil.copyfile(src, dst)
 
 
 class LocalBackend(StorageBackend):
@@ -139,7 +110,7 @@ class LocalBackend(StorageBackend):
                 )
         if src.resolve() != self._path.resolve():
             tmp = self._path.with_suffix(self._path.suffix + f".up.{uuid.uuid4().hex}")
-            _copy_for_upload(src, tmp)
+            shutil.copyfile(src, tmp)
             os.replace(tmp, self._path)
         # Re-stat after replace.
         return self._metadata_sync()
