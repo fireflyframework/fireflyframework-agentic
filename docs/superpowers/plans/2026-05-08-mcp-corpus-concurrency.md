@@ -46,7 +46,7 @@
 **Why first:** Foundational — the MCP filesystem ingest fix in Task 5 depends on this. No coupling to concurrency work, so it can land independently.
 
 **Files:**
-- Modify: `src/fireflyframework_agentic/content/sources/local_folder.py:30-68`
+- Modify: `src/fireflyframework_agentic/content/sources/local_folder.py` (`LocalFolderSourceConfig`)
 - Test: `tests/unit/content/sources/test_local_folder_exclude.py` (new)
 
 - [ ] **Step 1.1: Write the failing test**

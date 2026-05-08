@@ -39,7 +39,8 @@ class LocalFolderSourceConfig(BaseModel):
         description=(
             "Optional callable; when it returns True for a file path, the file is "
             "skipped. Used by callers that route certain extensions to a separate "
-            "pipeline (e.g. CSV/Excel handled by structured ingest)."
+            "pipeline (e.g. CSV / Excel handled by ingest_corpus_structured "
+            "alongside the unstructured walk that uses this source)."
         ),
         exclude=True,
     )

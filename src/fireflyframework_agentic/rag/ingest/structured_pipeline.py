@@ -113,8 +113,9 @@ def _read_rows(path: Path, table_name: str) -> tuple[list[str], list[list[Any]]]
         raise ValueError(
             f"could not decode {path.name} as UTF-8 (byte 0x{exc.object[exc.start]:02x} "
             f"at offset {exc.start}). If the file was exported from Excel on Windows "
-            "it may be Latin-1 / CP1252; re-save as UTF-8 or run "
-            "`iconv -f windows-1252 -t utf-8` on it."
+            "it may be Latin-1 / CP1252; re-save as UTF-8 or transcode "
+            "(e.g. `iconv -f windows-1252 -t utf-8 in.csv > out.csv`, or in Python: "
+            "`Path(p).write_bytes(Path(p).read_bytes().decode('cp1252').encode('utf-8'))`)."
         ) from exc
     return rows[0], rows[1:]
 

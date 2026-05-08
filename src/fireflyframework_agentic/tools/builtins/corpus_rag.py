@@ -123,6 +123,10 @@ async def _shutdown_agents() -> None:
 
 def _assert_corpus_exists(corpus_id: str) -> Path:
     """Raise CorpusNotFoundError if no SQLite file at the expected path."""
+    # TODO: this LocalBackend-shaped existence check assumes the corpus.sqlite
+    # on disk is canonical. Under AzureBlobBackend the canonical artifact
+    # lives in the blob; existence should route through _db_store.ensure_fresh()
+    # before consulting the local cache.
     sqlite_path = _corpus_root() / corpus_id / "corpus.sqlite"
     if not sqlite_path.exists():
         raise CorpusNotFoundError(corpus_id, str(sqlite_path))
@@ -147,6 +151,11 @@ async def list_corpora() -> dict[str, Any]:
     corpora: list[dict[str, Any]] = []
     if root.is_dir():
         for entry in sorted(root.iterdir()):
+            # TODO: walking the local filesystem assumes LocalBackend
+            # semantics where each entry / "corpus.sqlite" is the canonical
+            # artifact. Under AzureBlobBackend the source of truth is the
+            # blob container; enumeration should query the backend directly
+            # rather than CORPUS_ROOT.
             sqlite_path = entry / "corpus.sqlite"
             if not (entry.is_dir() and sqlite_path.is_file()):
                 continue
