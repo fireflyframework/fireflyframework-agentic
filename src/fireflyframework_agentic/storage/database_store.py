@@ -169,8 +169,15 @@ class DatabaseStore:
                     await asyncio.to_thread(_checkpoint_wal, self._cache_path)
                     await self._upload_with_retry(first_write=first_write)
         finally:
-            with contextlib.suppress(Exception):
+            try:
                 await self._backend.release_lock(token)
+            except Exception:
+                log.warning(
+                    "release_lock failed for store_id=%s — subsequent writers "
+                    "may block until the sentinel is reclaimed as stale",
+                    self._store_id,
+                    exc_info=True,
+                )
 
     async def _upload_with_retry(self, *, first_write: bool) -> None:
         self._sidecar.dirty = True

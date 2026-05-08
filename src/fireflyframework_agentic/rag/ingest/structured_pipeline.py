@@ -181,6 +181,11 @@ def _sync_ingest_table(
     table_spec: TableSpec,
     rows: list[dict[str, Any]],
 ) -> TableIngestResult:
+    # isolation_level=None puts the driver in autocommit so the BEGIN /
+    # COMMIT / ROLLBACK statements below are real SQL transactions rather
+    # than driver-level no-ops. busy_timeout=30000 PRAGMA defends against
+    # the rare case where another sqlite3 sidecar overrides the
+    # constructor's `timeout=` arg on this same connection.
     conn = sqlite3.connect(db_path, timeout=30.0, isolation_level=None)
     conn.execute("PRAGMA busy_timeout = 30000")
     try:
