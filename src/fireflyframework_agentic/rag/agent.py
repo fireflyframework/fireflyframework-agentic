@@ -83,24 +83,42 @@ def _collect_structured_candidates(folder: Path) -> list[Path]:
     lets a drop folder safely contain a mix of unstructured documents (PDF,
     PPTX, DOCX, …) and tabular sources without the structured discovery /
     ingest paths trying to read binaries as CSV.
+
+    Logs an INFO summary of skipped suffixes per call, and a WARNING when
+    the folder yields zero tabular candidates but contains non-tabular
+    files — that's a strong signal the operator pointed a structured tool
+    at an unstructured drop folder, which would otherwise look like a
+    silent no-op success.
     """
     watcher = FolderWatcher(folder=folder)
     candidates: list[Path] = []
-    skipped: list[Path] = []
+    skipped_suffixes: set[str] = set()
+    skipped_count = 0
     for p in folder.rglob("*"):
         if not p.is_file() or watcher.is_hidden(p):
             continue
         if is_tabular_file(p):
             candidates.append(p)
         else:
-            skipped.append(p)
+            skipped_suffixes.add(p.suffix.lower() or "<no-ext>")
+            skipped_count += 1
     candidates.sort()
-    if skipped:
+    if skipped_count:
         log.info(
             "structured walk skipped %d non-tabular file(s) under %s (e.g. %s)",
-            len(skipped),
+            skipped_count,
             folder,
-            ", ".join(sorted({p.suffix.lower() or "<no-ext>" for p in skipped})),
+            ", ".join(sorted(skipped_suffixes)),
+        )
+    if not candidates and skipped_count:
+        log.warning(
+            "structured walk found 0 tabular files (.csv/.xls/.xlsx) under %s "
+            "but %d non-tabular file(s) were present (suffixes: %s) — pointing "
+            "this tool at a folder of unstructured documents is a no-op; route "
+            "those through ingest_corpus_filesystem instead.",
+            folder,
+            skipped_count,
+            ", ".join(sorted(skipped_suffixes)),
         )
     return candidates
 
