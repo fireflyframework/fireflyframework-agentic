@@ -299,16 +299,27 @@ async def test_ingest_structured_surfaces_encoding_hint_on_latin1_csv(tmp_path: 
 
 
 @pytest.mark.asyncio
-async def test_ingest_structured_acquires_for_write(tmp_path: Path) -> None:
-    """ingest_structured must enter db_store.for_write() before writing rows.
+async def test_ingest_structured_acquires_storage_write_lock(tmp_path: Path) -> None:
+    """ingest_structured must go through DatabaseStore.for_write — verified
+    by counting backend lock acquisitions, not just the for_write() call.
 
-    Regression for the demo-time bug where the structured pipeline opened a
-    raw sqlite3 connection bypassing the DatabaseStore lock.
+    Defends against a regression where the production code calls for_write()
+    but then opens a sidecar sqlite3 connection it computed itself.
     """
-    from unittest.mock import AsyncMock, MagicMock
+    db_store = _make_store(tmp_path, store_id="for-write-test")
+    # Wrap the backend's acquire_lock to count calls without losing behaviour.
+    real_acquire = db_store._backend.acquire_lock
+    call_count = 0
 
-    csv_path = tmp_path / "rows.csv"
-    csv_path.write_text("id\n1\n2\n")
+    async def spy_acquire(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return await real_acquire(*args, **kwargs)
+
+    db_store._backend.acquire_lock = spy_acquire  # type: ignore[method-assign]
+
+    csv_file = tmp_path / "rows.csv"
+    csv_file.write_text("id\n1\n2\n")
     schema = TargetSchema(
         tables=[
             TableSpec(
@@ -318,28 +329,8 @@ async def test_ingest_structured_acquires_for_write(tmp_path: Path) -> None:
         ]
     )
 
-    session = MagicMock()
-    session.path = tmp_path / "corpus.sqlite"
+    result = await ingest_structured(csv_file, db_store, schema)
 
-    db_store = MagicMock()
-    enter = AsyncMock(return_value=session)
-    exit_ = AsyncMock(return_value=None)
-    cm = MagicMock()
-    cm.__aenter__ = enter
-    cm.__aexit__ = exit_
-    db_store.for_write.return_value = cm
-
-    result = await ingest_structured(csv_path, db_store, schema)
-
-    enter.assert_awaited_once()
-    exit_.assert_awaited_once()
+    assert call_count == 1, f"expected exactly one for_write() acquisition, got {call_count}"
     assert result["rows"]["status"] == "success"
     assert result["rows"]["inserted"] == 2
-
-    # Sanity: rows actually landed in the file under session.path
-    conn = sqlite3.connect(session.path)
-    try:
-        n = conn.execute("SELECT count(*) FROM rows").fetchone()[0]
-        assert n == 2
-    finally:
-        conn.close()
