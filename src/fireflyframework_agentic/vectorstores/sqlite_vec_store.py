@@ -206,6 +206,7 @@ class SqliteVecVectorStore(BaseVectorStore):
                     (rowid, serialize_float32(doc.embedding)),
                 )
             conn.execute("COMMIT")
+            conn.execute("PRAGMA wal_checkpoint(FULL)")
         except Exception:
             conn.execute("ROLLBACK")
             raise
