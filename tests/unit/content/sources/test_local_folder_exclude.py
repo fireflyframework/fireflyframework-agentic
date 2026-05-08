@@ -33,3 +33,11 @@ async def test_exclude_predicate_default_none_keeps_everything(tmp_path: Path) -
     source = LocalFolderSource(LocalFolderSourceConfig(folder=tmp_path))
     names = sorted([rf.name async for rf in source.list_changed(since=None)])
     assert names == ["a.md", "b.csv"]
+
+
+def test_exclude_predicate_rejects_async_callable(tmp_path: Path) -> None:
+    async def async_pred(p: Path) -> bool:
+        return False
+
+    with pytest.raises(ValueError, match="async"):
+        LocalFolderSourceConfig(folder=tmp_path, exclude_predicate=async_pred)

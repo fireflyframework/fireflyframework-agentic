@@ -13,13 +13,14 @@ is a future enhancement.
 
 from __future__ import annotations
 
+import inspect
 import logging
 import mimetypes
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from fireflyframework_agentic.content.sources.base import RawFile
 from fireflyframework_agentic.pipeline.triggers.folder_watcher import FolderWatcher
@@ -44,6 +45,23 @@ class LocalFolderSourceConfig(BaseModel):
     )
 
     model_config = {"arbitrary_types_allowed": True}
+
+    @field_validator("exclude_predicate")
+    @classmethod
+    def _reject_async_predicate(
+        cls,
+        v: Callable[[Path], bool] | None,
+    ) -> Callable[[Path], bool] | None:
+        """Reject async callables — list_changed calls the predicate
+        synchronously, so an async function would return a coroutine
+        (truthy) which would silently filter every file."""
+        if v is not None and inspect.iscoroutinefunction(v):
+            raise ValueError(
+                "exclude_predicate must be a sync callable; an async predicate "
+                "would return a coroutine which is truthy and would silently "
+                "filter every file"
+            )
+        return v
 
 
 class LocalFolderSource:
