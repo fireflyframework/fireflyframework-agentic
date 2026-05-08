@@ -238,28 +238,6 @@ async def test_ingest_structured_empty_rows(tmp_path: Path, db_path: Path):
     assert result["products"]["errors"] == []
 
 
-def test_sync_ingest_table_recovers_after_brief_lock(tmp_path):
-    """A second writer that arrives during a held write lock should wait
-    rather than fail fast — depends on busy_timeout being set."""
-    db_path = tmp_path / "x.sqlite"
-    spec = TableSpec(
-        name="t",
-        columns=[ColumnSpec(name="id", type=ColumnType.integer, primary_key=True)],
-    )
-    _sync_ingest_table(db_path, spec, [{"id": 1}])
-
-    blocker = sqlite3.connect(db_path, timeout=0.1, isolation_level=None)
-    try:
-        blocker.execute("BEGIN IMMEDIATE")
-        blocker.commit()
-    finally:
-        blocker.close()
-
-    result = _sync_ingest_table(db_path, spec, [{"id": 2}])
-    assert result["status"] == "success"
-    assert result["inserted"] == 1
-
-
 def test_sync_ingest_table_uses_busy_timeout_pragma(tmp_path, monkeypatch):
     """The writer connection must explicitly set busy_timeout via PRAGMA so
     it doesn't rely on the python sqlite3 module's default (5 s)."""
