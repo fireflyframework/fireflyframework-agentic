@@ -57,6 +57,20 @@ async def test_write_lock_is_per_corpus() -> None:
 
 
 @pytest.mark.asyncio
+async def test_write_lock_concurrent_callers_share_one_lock() -> None:
+    """Two concurrent first-time callers for the same corpus_id must
+    receive the same Lock instance — guards against the check-then-set
+    race in _write_lock_for."""
+    locks: list[asyncio.Lock] = []
+
+    async def grab() -> None:
+        locks.append(corpus_rag._write_lock_for("RACE"))
+
+    await asyncio.gather(*[grab() for _ in range(10)])
+    assert len({id(lock) for lock in locks}) == 1
+
+
+@pytest.mark.asyncio
 async def test_write_lock_serialises_concurrent_writers() -> None:
     """Two coroutines holding _write_lock_for('Z') run sequentially, not concurrently."""
     timeline: list[str] = []
