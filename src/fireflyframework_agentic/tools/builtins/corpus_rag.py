@@ -101,17 +101,22 @@ def _write_lock_for(corpus_id: str) -> asyncio.Lock:
 
 
 async def _shutdown_agents() -> None:
-    """Close every cached agent. Called by the MCP server's lifespan hook."""
-    agents = list(_AGENT_CACHE.values())
+    """Close every cached agent. Called by the MCP server's lifespan hook.
+
+    Clears the registries BEFORE awaiting close so a tool call that sneaks
+    in during shutdown gets a fresh agent rather than a half-closed one.
+    """
+    items = list(_AGENT_CACHE.items())
     _AGENT_CACHE.clear()
     _WRITE_LOCKS.clear()
-    log.debug("shutting down %d cached corpus agent(s)", len(agents))
-    for agent in agents:
+    log.debug("shutting down %d cached corpus agent(s)", len(items))
+    for corpus_id, agent in items:
         try:
             await agent.close()
         except Exception:
             log.warning(
-                "failed to close cached CorpusAgent during shutdown",
+                "failed to close cached CorpusAgent corpus_id=%s during shutdown",
+                corpus_id,
                 exc_info=True,
             )
 
