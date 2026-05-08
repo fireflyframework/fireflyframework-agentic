@@ -1,10 +1,14 @@
+import contextlib
 import csv
 import sqlite3
 from pathlib import Path
 
 import pytest
 
-from fireflyframework_agentic.rag.ingest.structured_pipeline import ingest_structured
+from fireflyframework_agentic.rag.ingest.structured_pipeline import (
+    _sync_ingest_table,
+    ingest_structured,
+)
 from fireflyframework_agentic.rag.ingest.structured_schema import (
     ColumnSpec,
     ColumnType,
@@ -232,3 +236,57 @@ async def test_ingest_structured_empty_rows(tmp_path: Path, db_path: Path):
     assert result["products"]["status"] == "success"
     assert result["products"]["inserted"] == 0
     assert result["products"]["errors"] == []
+
+
+def test_sync_ingest_table_recovers_after_brief_lock(tmp_path):
+    """A second writer that arrives during a held write lock should wait
+    rather than fail fast — depends on busy_timeout being set."""
+    db_path = tmp_path / "x.sqlite"
+    spec = TableSpec(
+        name="t",
+        columns=[ColumnSpec(name="id", type=ColumnType.integer, primary_key=True)],
+    )
+    _sync_ingest_table(db_path, spec, [{"id": 1}])
+
+    blocker = sqlite3.connect(db_path, timeout=0.1, isolation_level=None)
+    try:
+        blocker.execute("BEGIN IMMEDIATE")
+        blocker.commit()
+    finally:
+        blocker.close()
+
+    result = _sync_ingest_table(db_path, spec, [{"id": 2}])
+    assert result["status"] == "success"
+    assert result["inserted"] == 1
+
+
+def test_sync_ingest_table_uses_busy_timeout_pragma(tmp_path, monkeypatch):
+    """The writer connection must explicitly set busy_timeout via PRAGMA so
+    it doesn't rely on the python sqlite3 module's default (5 s)."""
+    db_path = tmp_path / "x.sqlite"
+    spec = TableSpec(
+        name="t",
+        columns=[ColumnSpec(name="id", type=ColumnType.integer, primary_key=True)],
+    )
+
+    captured_sql: list[str] = []
+    real_connect = sqlite3.connect
+
+    def spy_connect(*args, **kwargs):
+        conn = real_connect(*args, **kwargs)
+        conn.set_trace_callback(captured_sql.append)
+        return conn
+
+    monkeypatch.setattr(
+        "fireflyframework_agentic.rag.ingest.structured_pipeline.sqlite3.connect",
+        spy_connect,
+    )
+    _sync_ingest_table(db_path, spec, [{"id": 1}])
+
+    captured_timeouts: list[int] = []
+    for sql in captured_sql:
+        if "busy_timeout" in sql.lower():
+            with contextlib.suppress(IndexError, ValueError):
+                captured_timeouts.append(int(sql.split("=")[1].strip()))
+
+    assert 30000 in captured_timeouts, f"expected busy_timeout=30000, got {captured_timeouts}"

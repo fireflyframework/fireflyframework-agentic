@@ -21,6 +21,7 @@ according to a ``TargetSchema``.  No LLM calls — pure Python.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import csv
 import re
 import sqlite3
@@ -152,7 +153,8 @@ def _sync_ingest_table(
     table_spec: TableSpec,
     rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0, isolation_level=None)
+    conn.execute("PRAGMA busy_timeout = 30000")
     try:
         col_defs: list[str] = []
         fk_defs: list[str] = []
@@ -176,24 +178,30 @@ def _sync_ingest_table(
         col_names_str = ", ".join(_quote(c) for c in col_names)
         errors: list[str] = []
         inserted = 0
-        for row_num, row in enumerate(rows, start=2):
-            values = [row.get(c) for c in col_names]
-            # Skip section-header rows: all values are None (common in Excel).
-            if all(v is None for v in values):
-                continue
-            try:
-                conn.execute(
-                    f"INSERT INTO {_quote(table_spec.name)} ({col_names_str}) VALUES ({placeholders})",
-                    values,
-                )
-                inserted += 1
-            except sqlite3.Error as exc:
-                errors.append(f"row {row_num}: {exc}")
-        if errors:
-            conn.rollback()
-            return {"status": "failed", "inserted": 0, "errors": errors}
-        conn.commit()
-        return {"status": "success", "inserted": inserted, "errors": []}
+        conn.execute("BEGIN")
+        try:
+            for row_num, row in enumerate(rows, start=2):
+                values = [row.get(c) for c in col_names]
+                # Skip section-header rows: all values are None (common in Excel).
+                if all(v is None for v in values):
+                    continue
+                try:
+                    conn.execute(
+                        f"INSERT INTO {_quote(table_spec.name)} ({col_names_str}) VALUES ({placeholders})",
+                        values,
+                    )
+                    inserted += 1
+                except sqlite3.Error as exc:
+                    errors.append(f"row {row_num}: {exc}")
+            if errors:
+                conn.execute("ROLLBACK")
+                return {"status": "failed", "inserted": 0, "errors": errors}
+            conn.execute("COMMIT")
+            return {"status": "success", "inserted": inserted, "errors": []}
+        except BaseException:
+            with contextlib.suppress(sqlite3.Error):
+                conn.execute("ROLLBACK")
+            raise
     finally:
         conn.close()
 
