@@ -90,3 +90,30 @@ async def test_shutdown_agents_closes_and_clears() -> None:
     assert closed == [True]
     assert corpus_rag._AGENT_CACHE == {}
     assert corpus_rag._WRITE_LOCKS == {}
+
+
+@pytest.mark.asyncio
+async def test_create_mcp_app_accepts_lifespan() -> None:
+    """create_mcp_app must accept a lifespan and pass it to FastMCP."""
+    import contextlib
+
+    from fireflyframework_agentic.exposure.mcp.server import create_mcp_app
+    from fireflyframework_agentic.tools.registry import ToolRegistry
+
+    fired: list[str] = []
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app):
+        fired.append("startup")
+        try:
+            yield
+        finally:
+            fired.append("shutdown")
+
+    app = create_mcp_app(name="test", registry=ToolRegistry(), lifespan=lifespan)
+    # FastMCP stores the user-supplied lifespan on `_lifespan`; `app.lifespan`
+    # is a no-arg aggregate context manager that wraps it. Drive `_lifespan`
+    # directly so the assertion confirms the callable was passed through.
+    async with app._lifespan(app):
+        assert fired == ["startup"]
+    assert fired == ["startup", "shutdown"]

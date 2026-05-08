@@ -11,6 +11,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
+from typing import Any
 
 from fastmcp import FastMCP
 
@@ -25,6 +28,7 @@ def create_mcp_app(
     name: str = "firefly",
     version: str = "0.1.0",
     registry: ToolRegistry | None = None,
+    lifespan: Callable[[FastMCP], AbstractAsyncContextManager[None]] | None = None,
 ) -> FastMCP:
     """Build a :class:`fastmcp.FastMCP` server exposing every registered tool.
 
@@ -36,9 +40,15 @@ def create_mcp_app(
         version: Server version string.
         registry: Tool registry to enumerate. Defaults to the module-level
             singleton :data:`fireflyframework_agentic.tools.registry.tool_registry`.
+        lifespan: Optional async context manager invoked by FastMCP at server
+            startup/shutdown — use it to acquire and release process-wide
+            resources (e.g. closing cached agents on shutdown).
     """
     del version  # FastMCP 3.x reads version from the server name; kept for API stability.
-    mcp: FastMCP = FastMCP(name)
+    mcp_kwargs: dict[str, Any] = {}
+    if lifespan is not None:
+        mcp_kwargs["lifespan"] = lifespan
+    mcp: FastMCP = FastMCP(name, **mcp_kwargs)
     reg = registry if registry is not None else tool_registry
     for info in reg.list_tools():
         tool = reg.get(info.name)
