@@ -317,6 +317,21 @@ async def test_ingest_folder_structured_filters_to_tabular_files(tmp_path: Path)
     assert all(Path(r.source_path).suffix == ".csv" for r in summary.results)
 
 
+def test_collect_structured_candidates_warns_when_only_non_tabular_files(tmp_path: Path, caplog) -> None:
+    from fireflyframework_agentic.rag.agent import _collect_structured_candidates
+
+    folder = tmp_path / "no_tables"
+    folder.mkdir()
+    (folder / "deck.pptx").write_bytes(b"PK")
+    (folder / "manual.pdf").write_bytes(b"%PDF-1.4")
+
+    with caplog.at_level("WARNING"):
+        candidates = _collect_structured_candidates(folder)
+
+    assert candidates == []
+    assert any("found 0 tabular files" in rec.message and rec.levelname == "WARNING" for rec in caplog.records)
+
+
 @pytest.mark.asyncio
 async def test_ingest_one_structured_calls_interactive_when_on_review_provided(tmp_path: Path) -> None:
     """When on_review is passed, ingest_one must call discover_schema_interactive, not discover_schema."""
