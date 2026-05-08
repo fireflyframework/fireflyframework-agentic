@@ -42,6 +42,7 @@ from fireflyframework_agentic.content.sources.local_folder import (
 )
 from fireflyframework_agentic.rag import CorpusAgent, CorpusNotFoundError
 from fireflyframework_agentic.rag.ingest import TargetSchema
+from fireflyframework_agentic.rag.ingest.structured_registry import is_tabular_file
 from fireflyframework_agentic.tools.decorators import firefly_tool
 
 log = logging.getLogger(__name__)
@@ -163,7 +164,12 @@ async def list_corpora() -> dict[str, Any]:
 )
 async def ingest_corpus_filesystem(corpus_id: str, root_path: str) -> dict[str, Any]:
     async with _write_lock_for(corpus_id):
-        source = LocalFolderSource(LocalFolderSourceConfig(folder=Path(root_path)))
+        source = LocalFolderSource(
+            LocalFolderSourceConfig(
+                folder=Path(root_path),
+                exclude_predicate=is_tabular_file,
+            )
+        )
         agent = await _agent_for(corpus_id)
         summary = await agent.ingest_source(source)
     return {
