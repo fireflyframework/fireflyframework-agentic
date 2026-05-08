@@ -280,6 +280,25 @@ def test_sync_ingest_table_uses_busy_timeout_pragma(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_ingest_structured_surfaces_encoding_hint_on_latin1_csv(tmp_path: Path, db_store: DatabaseStore) -> None:
+    p = tmp_path / "products.csv"
+    p.write_bytes(b"id,nombre\n1,Caf\xbae\n")  # 0xBA is Latin-1 'masculine ordinal'
+    schema = TargetSchema(
+        tables=[
+            TableSpec(
+                name="products",
+                columns=[
+                    ColumnSpec(name="id", type=ColumnType.integer, primary_key=True),
+                    ColumnSpec(name="nombre", type=ColumnType.string),
+                ],
+            )
+        ]
+    )
+    with pytest.raises(ValueError, match="UTF-8|Latin-1|CP1252"):
+        await ingest_structured(p, db_store, schema)
+
+
+@pytest.mark.asyncio
 async def test_ingest_structured_acquires_for_write(tmp_path: Path) -> None:
     """ingest_structured must enter db_store.for_write() before writing rows.
 
