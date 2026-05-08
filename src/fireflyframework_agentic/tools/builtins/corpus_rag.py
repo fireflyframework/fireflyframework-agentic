@@ -20,7 +20,7 @@ instance. Write tools additionally serialise on a per-corpus
 concurrent writers in the same process. Read tools (``corpus_query`` /
 ``corpus_retrieve``) stay lock-free and rely on SQLite WAL for concurrent
 reader semantics. Cached agents are torn down via ``_shutdown_agents``,
-which is wired into the FastMCP server's lifespan hook.
+which the MCP server's lifespan hook is expected to call on shutdown.
 
 Auth: SharePoint ingestion uses the framework's managed-identity token
 provider against Microsoft Graph (zero-trust model — see
@@ -30,7 +30,7 @@ provider against Microsoft Graph (zero-trust model — see
 from __future__ import annotations
 
 import asyncio
-import contextlib
+import logging
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -43,6 +43,8 @@ from fireflyframework_agentic.content.sources.local_folder import (
 from fireflyframework_agentic.rag import CorpusAgent, CorpusNotFoundError
 from fireflyframework_agentic.rag.ingest import TargetSchema
 from fireflyframework_agentic.tools.decorators import firefly_tool
+
+log = logging.getLogger(__name__)
 
 _DEFAULT_CORPUS_ROOT = "/tmp/firefly/corpora"
 _GRAPH_SCOPE = "https://graph.microsoft.com/.default"
@@ -92,13 +94,19 @@ def _write_lock_for(corpus_id: str) -> asyncio.Lock:
 
 
 async def _shutdown_agents() -> None:
-    """Close every cached agent. Wired into FastMCP lifespan."""
+    """Close every cached agent. Called by the MCP server's lifespan hook."""
     agents = list(_AGENT_CACHE.values())
     _AGENT_CACHE.clear()
     _WRITE_LOCKS.clear()
+    log.debug("shutting down %d cached corpus agent(s)", len(agents))
     for agent in agents:
-        with contextlib.suppress(Exception):
+        try:
             await agent.close()
+        except Exception:
+            log.warning(
+                "failed to close cached CorpusAgent during shutdown",
+                exc_info=True,
+            )
 
 
 def _assert_corpus_exists(corpus_id: str) -> Path:
