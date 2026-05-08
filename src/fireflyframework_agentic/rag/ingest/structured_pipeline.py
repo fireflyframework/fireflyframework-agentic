@@ -26,7 +26,7 @@ import logging
 import re
 import sqlite3
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 from .structured_schema import ColumnType, TableSpec, TargetSchema
 
@@ -34,6 +34,21 @@ if TYPE_CHECKING:
     from fireflyframework_agentic.storage import DatabaseStore
 
 log = logging.getLogger(__name__)
+
+
+class TableIngestResult(TypedDict):
+    """Per-table outcome returned by :func:`ingest_structured`.
+
+    ``status`` is ``"success"`` when every row inserted, or ``"failed"``
+    when at least one row raised a ``sqlite3.Error`` (the whole table is
+    rolled back and ``inserted`` is 0). ``errors`` carries one entry per
+    failing row in ``f"row {row_num}: {sqlite_message}"`` form.
+    """
+
+    status: Literal["success", "failed"]
+    inserted: int
+    errors: list[str]
+
 
 try:
     import openpyxl as _openpyxl
@@ -157,7 +172,7 @@ def _sync_ingest_table(
     db_path: Path,
     table_spec: TableSpec,
     rows: list[dict[str, Any]],
-) -> dict[str, Any]:
+) -> TableIngestResult:
     conn = sqlite3.connect(db_path, timeout=30.0, isolation_level=None)
     conn.execute("PRAGMA busy_timeout = 30000")
     try:
@@ -250,15 +265,16 @@ async def ingest_structured(
     path: Path,
     db_store: DatabaseStore,
     schema: TargetSchema,
-) -> dict[str, Any]:
+) -> dict[str, TableIngestResult]:
     """Insert rows from *path* into the SQLite file owned by *db_store*.
 
     Routes through ``db_store.for_write()`` so the asyncio + sentinel locks
     inside the storage backend serialise this writer with anything else
-    talking to the same file. Returns ``{table_name: {status, inserted, errors}}``.
+    talking to the same file. Returns ``{table_name: TableIngestResult}``
+    (see :class:`TableIngestResult` for the per-table fields).
     """
     rows_by_table = _load_rows(path, schema)
-    results: dict[str, Any] = {}
+    results: dict[str, TableIngestResult] = {}
     async with db_store.for_write() as session:
         loop = asyncio.get_running_loop()
         for table_spec in _order_tables_by_fk(schema.tables):
