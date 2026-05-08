@@ -327,7 +327,7 @@ class CorpusAgent:
                     schema = await discover_schema_interactive(path, on_review=on_review, model=self._schema_model)
                 else:
                     schema = await discover_schema(path, model=self._schema_model)
-            ingest_result = await ingest_structured(path, self.root / "corpus.sqlite", schema)
+            ingest_result = await ingest_structured(path, self._db_store, schema)
             failed_tables = {name: meta for name, meta in ingest_result.items() if meta.get("status") != "success"}
             if failed_tables:
                 # Per-table rollback inside ingest_structured leaves nothing

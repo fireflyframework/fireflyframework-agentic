@@ -26,9 +26,12 @@ import logging
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .structured_schema import ColumnType, TableSpec, TargetSchema
+
+if TYPE_CHECKING:
+    from fireflyframework_agentic.storage import DatabaseStore
 
 log = logging.getLogger(__name__)
 
@@ -245,26 +248,29 @@ def _order_tables_by_fk(tables: list[TableSpec]) -> list[TableSpec]:
 
 async def ingest_structured(
     path: Path,
-    db_path: Path,
+    db_store: DatabaseStore,
     schema: TargetSchema,
 ) -> dict[str, Any]:
-    """Insert rows from *path* into *db_path* according to *schema*.
+    """Insert rows from *path* into the SQLite file owned by *db_store*.
 
-    Returns ``{table_name: {status, inserted, errors}}`` for each table.
-    Missing columns are reported without aborting other tables. When tables
-    declare ``foreign_key`` references they are created in dependency order.
+    Routes through ``db_store.for_write()`` so the asyncio + sentinel locks
+    inside the storage backend serialise this writer with anything else
+    talking to the same file. Returns ``{table_name: {status, inserted, errors}}``.
     """
     rows_by_table = _load_rows(path, schema)
-    loop = asyncio.get_running_loop()
     results: dict[str, Any] = {}
-    for table_spec in _order_tables_by_fk(schema.tables):
-        rows = rows_by_table.get(table_spec.name)
-        if rows is None:
-            results[table_spec.name] = {
-                "status": "failed",
-                "inserted": 0,
-                "errors": [f"missing columns for table {table_spec.name!r}"],
-            }
-            continue
-        results[table_spec.name] = await loop.run_in_executor(None, _sync_ingest_table, db_path, table_spec, rows)
+    async with db_store.for_write() as session:
+        loop = asyncio.get_running_loop()
+        for table_spec in _order_tables_by_fk(schema.tables):
+            rows = rows_by_table.get(table_spec.name)
+            if rows is None:
+                results[table_spec.name] = {
+                    "status": "failed",
+                    "inserted": 0,
+                    "errors": [f"missing columns for table {table_spec.name!r}"],
+                }
+                continue
+            results[table_spec.name] = await loop.run_in_executor(
+                None, _sync_ingest_table, session.path, table_spec, rows
+            )
     return results
