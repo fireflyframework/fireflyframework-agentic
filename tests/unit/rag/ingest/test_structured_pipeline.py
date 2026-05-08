@@ -288,16 +288,8 @@ async def test_ingest_structured_acquires_for_write(tmp_path: Path) -> None:
     """
     from unittest.mock import AsyncMock, MagicMock
 
-    from fireflyframework_agentic.rag.ingest.structured_pipeline import ingest_structured
-    from fireflyframework_agentic.rag.ingest.structured_schema import (
-        ColumnSpec,
-        ColumnType,
-        TableSpec,
-        TargetSchema,
-    )
-
-    csv = tmp_path / "rows.csv"
-    csv.write_text("id\n1\n2\n")
+    csv_path = tmp_path / "rows.csv"
+    csv_path.write_text("id\n1\n2\n")
     schema = TargetSchema(
         tables=[
             TableSpec(
@@ -318,7 +310,7 @@ async def test_ingest_structured_acquires_for_write(tmp_path: Path) -> None:
     cm.__aexit__ = exit_
     db_store.for_write.return_value = cm
 
-    result = await ingest_structured(csv, db_store, schema)
+    result = await ingest_structured(csv_path, db_store, schema)
 
     enter.assert_awaited_once()
     exit_.assert_awaited_once()
@@ -326,8 +318,6 @@ async def test_ingest_structured_acquires_for_write(tmp_path: Path) -> None:
     assert result["rows"]["inserted"] == 2
 
     # Sanity: rows actually landed in the file under session.path
-    import sqlite3
-
     conn = sqlite3.connect(session.path)
     try:
         n = conn.execute("SELECT count(*) FROM rows").fetchone()[0]
