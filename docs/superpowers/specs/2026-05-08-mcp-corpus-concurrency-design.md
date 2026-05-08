@@ -232,8 +232,11 @@ adding `exclude_predicate: Callable[[Path], bool] | None` is the
 minimal extension and benefits any other caller of the source. The MCP
 filesystem ingest passes
 `exclude_predicate=is_tabular_file` (re-exported from the structured
-registry). Skipped files are reported in the existing `summary.skipped`
-counter so users can see why a CSV/XLSX was bypassed.
+registry). Excluded files are filtered at the source level (they never
+produce a `RawFile`, so they don't reach the ingest pipeline at all).
+The agent-level `_collect_structured_candidates` helper logs a per-call
+summary of skipped suffixes at INFO level, and warns at WARNING if a
+folder yields zero tabular candidates.
 
 The `CorpusAgent.ingest_folder` (default `mode="unstructured"`) wires
 this through automatically. Direct CLI users who don't want the skip
@@ -277,10 +280,10 @@ consistent snapshot during a writer's transaction.
 
 ## Testing
 
-- **Unit (`tests/unit/corpus_search/test_agent_registry.py`):**
+- **Unit (`tests/unit/tools/builtins/test_corpus_rag_registry.py`):**
   - `test_agent_for_returns_cached_instance` — same id ⇒ same object.
-  - `test_agent_for_different_ids_are_isolated` — different objects with
-    different roots.
+  - `test_agent_for_different_corpus_ids_are_distinct` — different
+    objects with different roots.
   - `test_write_lock_serialises_concurrent_writers` — two coroutines
     enter `_write_lock_for("x")`; second only proceeds after the first
     releases. Validate via observable side-effects (e.g. an ordered
@@ -290,17 +293,17 @@ consistent snapshot during a writer's transaction.
 - **Unit (`tests/unit/rag/ingest/test_structured_pipeline.py`):**
   - `test_ingest_structured_acquires_for_write` — patch `db_store.for_write`
     to confirm it's entered before `_sync_ingest_table` is called.
-  - `test_sync_ingest_table_sets_busy_timeout` — open the connection,
-    assert `PRAGMA busy_timeout` returns 30000.
-- **Unit (`tests/unit/content/sources/test_local_folder.py`):**
-  - `test_exclude_predicate_filters_files` — predicate returning True
-    for a path means the source skips that file.
-- **Integration (`tests/integration/test_corpus_concurrency.py`,
+  - `test_sync_ingest_table_uses_busy_timeout_pragma` — open the
+    connection, assert `PRAGMA busy_timeout` returns 30000.
+- **Unit (`tests/unit/content/sources/test_local_folder_exclude.py`):**
+  - `test_exclude_predicate_skips_matching_files` — predicate returning
+    True for a path means the source skips that file.
+- **Integration (`tests/integration/test_mcp_corpus_concurrency.py`,
   marker `integration`):**
-  - `test_parallel_ingest_same_corpus_is_safe` — fire `ingest_one` for
-    a markdown file and `ingest_one(mode="structured")` for a CSV
-    concurrently; assert both succeed and the SQLite file passes
-    `PRAGMA integrity_check`.
+  - `test_parallel_filesystem_and_structured_ingest_do_not_corrupt` —
+    fire `ingest_one` for a markdown file and
+    `ingest_one(mode="structured")` for a CSV concurrently; assert both
+    succeed and the SQLite file passes `PRAGMA integrity_check`.
 - **Regression for finding #2:** the same integration test is the
   regression. Pre-fix it would non-deterministically hit "malformed
   image" or empty `ingestions` table; post-fix it always lands cleanly.
