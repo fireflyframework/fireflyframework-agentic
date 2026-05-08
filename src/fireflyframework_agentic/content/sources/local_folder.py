@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import mimetypes
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -33,6 +33,17 @@ class LocalFolderSourceConfig(BaseModel):
         default=False,
         description="When False (default), files whose name begins with '.' are skipped.",
     )
+    exclude_predicate: Callable[[Path], bool] | None = Field(
+        default=None,
+        description=(
+            "Optional callable; when it returns True for a file path, the file is "
+            "skipped. Used by callers that route certain extensions to a separate "
+            "pipeline (e.g. CSV/Excel handled by structured ingest)."
+        ),
+        exclude=True,
+    )
+
+    model_config = {"arbitrary_types_allowed": True}
 
 
 class LocalFolderSource:
@@ -41,6 +52,7 @@ class LocalFolderSource:
     def __init__(self, config: LocalFolderSourceConfig) -> None:
         self._folder = Path(config.folder).resolve()
         self._include_hidden = config.include_hidden
+        self._exclude_predicate = config.exclude_predicate
         self._watcher = FolderWatcher(folder=self._folder)
 
     async def list_changed(self, since: str | None) -> AsyncIterator[RawFile]:  # noqa: ARG002
@@ -49,6 +61,8 @@ class LocalFolderSource:
             if not path.is_file():
                 continue
             if not self._include_hidden and self._watcher.is_hidden(path):
+                continue
+            if self._exclude_predicate is not None and self._exclude_predicate(path):
                 continue
             try:
                 stat = path.stat()
