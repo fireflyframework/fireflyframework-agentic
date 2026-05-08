@@ -27,6 +27,7 @@ from fireflyframework_agentic.storage import (
     StorageTransientError,
     StorageUploadError,
 )
+from fireflyframework_agentic.storage.database_store import _checkpoint_wal
 from tests.unit.storage._fakes import InMemoryBackend
 
 
@@ -192,3 +193,57 @@ async def test_for_write_surfaces_lease_renew_failure(tmp_path: Path) -> None:
             session.path.touch()
     # The terminal upload failure wraps the original lease error
     assert isinstance(exc_info.value.__cause__, StorageLeaseError)
+
+
+# ---------- _checkpoint_wal direct tests ----------
+
+
+def test_checkpoint_wal_flushes_uncommitted_frames(tmp_path: Path) -> None:
+    """_checkpoint_wal must move WAL contents into the main DB file so a
+    later reader that ignores the WAL sidecar (e.g. a shutil.copyfile that
+    only copies the main file) sees the committed rows."""
+    db_path = tmp_path / "x.sqlite"
+    # Write some data via WAL, then close (leaving sidecars on disk).
+    writer = sqlite3.connect(db_path, isolation_level=None)
+    writer.execute("PRAGMA journal_mode=WAL")
+    writer.execute("CREATE TABLE t (id INTEGER PRIMARY KEY)")
+    writer.execute("BEGIN")
+    writer.execute("INSERT INTO t VALUES (1)")
+    writer.execute("INSERT INTO t VALUES (2)")
+    writer.execute("COMMIT")
+    writer.close()
+
+    # Simulate the upload path: copy ONLY the main DB file (no -wal/-shm).
+    copied = tmp_path / "uploaded.sqlite"
+    import shutil
+
+    shutil.copyfile(db_path, copied)
+
+    # Without _checkpoint_wal, the copy may be missing rows.
+    # Run _checkpoint_wal on the source first, then re-copy.
+    _checkpoint_wal(db_path)
+    shutil.copyfile(db_path, copied)
+
+    reader = sqlite3.connect(copied)
+    rows = reader.execute("SELECT id FROM t ORDER BY id").fetchall()
+    reader.close()
+    assert rows == [(1,), (2,)]
+
+
+def test_checkpoint_wal_returns_silently_on_missing_path(tmp_path: Path) -> None:
+    """No file at the path is a no-op, not an error."""
+    _checkpoint_wal(tmp_path / "does-not-exist.sqlite")  # must not raise
+
+
+def test_checkpoint_wal_logs_error_on_non_sqlite_file(tmp_path: Path, caplog) -> None:
+    """A non-SQLite file should produce an ERROR-level log, not raise.
+
+    The docstring promises 'failures are logged but not raised' so the upload
+    can still proceed; the log level is ERROR because checkpoint failure
+    means silent data loss in the uploaded artifact.
+    """
+    bogus = tmp_path / "bogus.sqlite"
+    bogus.write_bytes(b"not a sqlite database")
+    with caplog.at_level("ERROR"):
+        _checkpoint_wal(bogus)  # must not raise
+    assert any("WAL checkpoint failed" in rec.message and rec.levelname == "ERROR" for rec in caplog.records)

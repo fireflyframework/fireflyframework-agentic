@@ -251,7 +251,13 @@ def _checkpoint_wal(path: Path) -> None:
         finally:
             conn.close()
     except sqlite3.Error as exc:
-        logging.getLogger(__name__).warning("WAL checkpoint failed for %s before upload: %s", path, exc)
+        logging.getLogger(__name__).error(
+            "WAL checkpoint failed for %s before upload — uploaded artifact "
+            "may be missing committed rows still in -wal: %s",
+            path,
+            exc,
+            exc_info=True,
+        )
 
 
 def _compute_backoff(policy: RetryPolicy, attempt: int) -> float:
