@@ -51,6 +51,7 @@ from fireflyframework_agentic.rag.ingest import (
 )
 from fireflyframework_agentic.rag.ingest.ledger import IngestLedger
 from fireflyframework_agentic.rag.ingest.structured_pipeline import _normalize_sheet_name
+from fireflyframework_agentic.rag.ingest.structured_registry import is_tabular_file
 from fireflyframework_agentic.rag.ingest.unstructured_pipeline import (
     doc_id_for,
     hash_file,
@@ -72,6 +73,36 @@ class CorpusStats:
     doc_count: int
     chunk_count: int
     schema_count: int
+
+
+def _collect_structured_candidates(folder: Path) -> list[Path]:
+    """Walk *folder* recursively and return only tabular files.
+
+    Skips hidden files (via :class:`FolderWatcher.is_hidden`) and files whose
+    suffix isn't recognised by the structured pipeline (CSV / Excel). This
+    lets a drop folder safely contain a mix of unstructured documents (PDF,
+    PPTX, DOCX, …) and tabular sources without the structured discovery /
+    ingest paths trying to read binaries as CSV.
+    """
+    watcher = FolderWatcher(folder=folder)
+    candidates: list[Path] = []
+    skipped: list[Path] = []
+    for p in folder.rglob("*"):
+        if not p.is_file() or watcher.is_hidden(p):
+            continue
+        if is_tabular_file(p):
+            candidates.append(p)
+        else:
+            skipped.append(p)
+    candidates.sort()
+    if skipped:
+        log.info(
+            "structured walk skipped %d non-tabular file(s) under %s (e.g. %s)",
+            len(skipped),
+            folder,
+            ", ".join(sorted({p.suffix.lower() or "<no-ext>" for p in skipped})),
+        )
+    return candidates
 
 
 def _filter_schema_for_path(schema: TargetSchema, path: Path) -> TargetSchema | None:
@@ -372,8 +403,7 @@ class CorpusAgent:
                 corrections=corrections,
                 previous_schema=previous_schema,
             )
-        watcher = FolderWatcher(folder=target)
-        candidates = sorted(p for p in target.rglob("*") if p.is_file() and not watcher.is_hidden(p))
+        candidates = _collect_structured_candidates(target)
         return await discover_schema_for_paths(
             candidates,
             model=self._schema_model,
@@ -402,8 +432,7 @@ class CorpusAgent:
         """
         if mode == "structured":
             await self._ensure_corpus_ready()
-            watcher = FolderWatcher(folder=Path(folder))
-            candidates = sorted(p for p in Path(folder).rglob("*") if p.is_file() and not watcher.is_hidden(p))
+            candidates = _collect_structured_candidates(Path(folder))
             folder_schema = schema
             if folder_schema is None and len(candidates) > 1:
                 folder_schema = await discover_schema_for_paths(candidates, model=self._schema_model)
