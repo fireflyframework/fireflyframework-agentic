@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import random
+import sqlite3
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -160,6 +161,12 @@ class DatabaseStore:
                 raise
             finally:
                 if yielded_exception is None:
+                    # Force any uncommitted WAL frames into the main SQLite
+                    # file BEFORE the backend uploads it. The backend copies
+                    # the main file only — without this, writes left in -wal
+                    # by long-lived sqlite3 connections (e.g. SqliteCorpus)
+                    # would silently disappear from the uploaded artifact.
+                    await asyncio.to_thread(_checkpoint_wal, self._cache_path)
                     await self._upload_with_retry(first_write=first_write)
         finally:
             with contextlib.suppress(Exception):
@@ -221,6 +228,30 @@ class DatabaseStore:
     async def close(self) -> None:
         # Reserved for future symmetry. No-op today.
         return None
+
+
+def _checkpoint_wal(path: Path) -> None:
+    """Truncate any pending WAL frames into *path*.
+
+    Called by ``for_write`` before handing the file to the storage backend
+    for upload. ``shutil.copyfile`` (the backend's typical upload path)
+    only reads the main DB file; without this, any frames still in
+    ``<path>-wal`` from a long-lived writer connection would be silently
+    dropped from the uploaded artifact.
+
+    Failures are logged but not raised — checkpointing is best-effort and
+    must not abort the upload.
+    """
+    if not path.exists():
+        return
+    try:
+        conn = sqlite3.connect(path, timeout=5.0, isolation_level=None)
+        try:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        logging.getLogger(__name__).warning("WAL checkpoint failed for %s before upload: %s", path, exc)
 
 
 def _compute_backoff(policy: RetryPolicy, attempt: int) -> float:
