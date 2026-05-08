@@ -85,13 +85,19 @@ async def _agent_for(corpus_id: str) -> CorpusAgent:
 def _write_lock_for(corpus_id: str) -> asyncio.Lock:
     """Return the per-corpus write lock, creating one on first use.
 
-    Belt-and-braces serialisation for write tools at the MCP layer.
-    Reads (corpus_query / corpus_retrieve) do NOT take this lock — they
-    rely on SQLite's WAL mode for concurrent reader semantics.
+    Belt-and-braces serialisation for write tools at the MCP layer. Reads
+    (corpus_query / corpus_retrieve) do NOT take this lock — they rely on
+    SQLite's WAL mode for concurrent reader semantics.
+
+    We can't assume every future writer goes through DatabaseStore.for_write
+    (e.g. a sidecar tool opening a raw sqlite3 connection); this lock is at
+    the tool boundary so that assumption is no longer load-bearing.
+
+    Uses ``setdefault`` so two concurrent callers with a fresh corpus_id
+    converge on a single Lock instance even if a future change introduces
+    an ``await`` between the check and the assign.
     """
-    if corpus_id not in _WRITE_LOCKS:
-        _WRITE_LOCKS[corpus_id] = asyncio.Lock()
-    return _WRITE_LOCKS[corpus_id]
+    return _WRITE_LOCKS.setdefault(corpus_id, asyncio.Lock())
 
 
 async def _shutdown_agents() -> None:
