@@ -21,14 +21,16 @@ according to a ``TargetSchema``.  No LLM calls — pure Python.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import csv
+import logging
 import re
 import sqlite3
 from pathlib import Path
 from typing import Any
 
 from .structured_schema import ColumnType, TableSpec, TargetSchema
+
+log = logging.getLogger(__name__)
 
 try:
     import openpyxl as _openpyxl
@@ -199,8 +201,14 @@ def _sync_ingest_table(
             conn.execute("COMMIT")
             return {"status": "success", "inserted": inserted, "errors": []}
         except BaseException:
-            with contextlib.suppress(sqlite3.Error):
+            try:
                 conn.execute("ROLLBACK")
+            except sqlite3.Error as rb_exc:
+                log.warning(
+                    "rollback failed during error recovery on table %s: %s",
+                    table_spec.name,
+                    rb_exc,
+                )
             raise
     finally:
         conn.close()
