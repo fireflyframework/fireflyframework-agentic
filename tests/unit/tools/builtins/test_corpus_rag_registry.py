@@ -117,3 +117,41 @@ async def test_create_mcp_app_accepts_lifespan() -> None:
     async with app._lifespan(app):
         assert fired == ["startup"]
     assert fired == ["startup", "shutdown"]
+
+
+@pytest.mark.asyncio
+async def test_ingest_corpus_filesystem_skips_tabular_files(tmp_path: Path, monkeypatch) -> None:
+    """ingest_corpus_filesystem leaves CSV / XLS / XLSX to ingest_corpus_structured.
+
+    Regression: without this, spreadsheets ended up double-represented (chunks
+    via markitdown + SQL rows via the structured pipeline).
+    """
+    drop = tmp_path / "drop"
+    drop.mkdir()
+    (drop / "deck.md").write_text("hello")
+    (drop / "rows.csv").write_text("a,b\n1,2\n")
+    (drop / "sheet.xlsx").write_bytes(b"PK\x03\x04")
+
+    captured: dict[str, object] = {}
+
+    class _StubSummary:
+        results: list[object] = []
+        ingested = skipped = failed = 0
+        cursor: str | None = None
+
+    class _StubAgent:
+        async def ingest_source(self, source):
+            captured["source"] = source
+            return _StubSummary()
+
+        async def close(self):
+            pass
+
+    monkeypatch.setitem(corpus_rag._AGENT_CACHE, "T", _StubAgent())
+
+    await corpus_rag.ingest_corpus_filesystem.execute(corpus_id="T", root_path=str(drop))
+
+    source = captured["source"]
+    names = sorted([rf.name async for rf in source.list_changed(since=None)])
+    # Only the markdown file should be visible to the unstructured ingest path.
+    assert names == ["deck.md"]
