@@ -127,7 +127,8 @@ def _csv_sample(path: Path) -> str:
         raise ValueError(
             f"could not decode {path.name} as UTF-8 (byte 0x{exc.object[exc.start]:02x} at offset {exc.start}). "
             "If the file was exported from Excel on Windows it may be Latin-1 / CP1252; "
-            "re-save as UTF-8 or run `iconv -f windows-1252 -t utf-8` on it."
+            "re-save as UTF-8 or transcode (e.g. `iconv -f windows-1252 -t utf-8 in.csv > out.csv`, "
+            "or in Python: `Path(p).write_bytes(Path(p).read_bytes().decode('cp1252').encode('utf-8'))`)."
         ) from exc
     name = path.stem.replace(" ", "_").replace("-", "_").lower()
     lines = [f"Table: {name}", f"Headers: {rows[0]}"]

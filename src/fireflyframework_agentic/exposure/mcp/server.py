@@ -43,6 +43,10 @@ def create_mcp_app(
         lifespan: Optional async context manager invoked by FastMCP at server
             startup/shutdown — use it to acquire and release process-wide
             resources (e.g. closing cached agents on shutdown).
+
+    The lifespan context manager follows FastMCP's standard semantics —
+    ``__aenter__`` runs at server startup, ``__aexit__`` at shutdown. See
+    the FastMCP docs for the version you have installed.
     """
     del version  # FastMCP 3.x reads version from the server name; kept for API stability.
     mcp_kwargs: dict[str, Any] = {}
