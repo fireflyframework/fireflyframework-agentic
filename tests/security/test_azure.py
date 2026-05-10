@@ -17,9 +17,18 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from fireflyframework_agentic.config import FireflyAgenticConfig
-from fireflyframework_agentic.security.azure import EntraOBOClient, EntraTokenVerifier
-from fireflyframework_agentic.security.rbac import RBACManager
+# Skip the whole module when the optional ``azure`` extra is not installed.
+# Without this guard, ``pytest -q`` against a default ``--extra dev`` install
+# blows up at collection time on ``ModuleNotFoundError: No module named
+# 'azure'``, masking real test failures elsewhere in the suite.
+pytest.importorskip(
+    "azure.identity",
+    reason="Install with --extra azure to run Entra ID OBO tests.",
+)
+
+from fireflyframework_agentic.config import FireflyAgenticConfig  # noqa: E402
+from fireflyframework_agentic.security.azure import EntraOBOClient, EntraTokenVerifier  # noqa: E402
+from fireflyframework_agentic.security.rbac import RBACManager  # noqa: E402
 
 
 @pytest.fixture
