@@ -22,7 +22,7 @@ from fireflyframework_agentic.observability.cost import (
 )
 from fireflyframework_agentic.observability.decorators import metered, traced
 from fireflyframework_agentic.observability.events import FireflyEvent, FireflyEvents, default_events
-from fireflyframework_agentic.observability.exporters import configure_exporters
+from fireflyframework_agentic.observability.exporters import ProviderBundle, configure_exporters
 from fireflyframework_agentic.observability.metrics import FireflyMetrics, default_metrics
 from fireflyframework_agentic.observability.tracer import (
     FireflyTracer,
@@ -45,6 +45,7 @@ __all__ = [
     "FireflyMetrics",
     "FireflyTracer",
     "GenAIPricesCostCalculator",
+    "ProviderBundle",
     "StaticPriceCostCalculator",
     "UsageRecord",
     "UsageSummary",

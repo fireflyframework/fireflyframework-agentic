@@ -20,9 +20,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from examples.corpus_search.agent import CorpusAgent
-from examples.corpus_search.retrieval.answerer import Answer
 from fireflyframework_agentic.embeddings.types import EmbeddingResult
+from fireflyframework_agentic.rag.agent import CorpusAgent
+from fireflyframework_agentic.rag.retrieval.answerer import Answer
 
 # --- Stubs --------------------------------------------------------------
 
@@ -80,7 +80,7 @@ async def agent(tmp_path):
     mock_agent_instance = MagicMock()
     with (
         patch("fireflyframework_agentic.rag.retrieval.expander.FireflyAgent", return_value=mock_agent_instance),
-        patch("examples.corpus_search.retrieval.answerer.FireflyAgent", return_value=mock_agent_instance),
+        patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent", return_value=mock_agent_instance),
         patch("fireflyframework_agentic.rag.retrieval.reranker.FireflyAgent", return_value=mock_agent_instance),
     ):
         a = CorpusAgent(
@@ -121,9 +121,9 @@ async def test_ingest_folder_processes_each_file(agent, tmp_path):
     src.mkdir()
     (src / "a.txt").write_text("Content for section A with enough text to pass filter.")
     (src / "b.txt").write_text("Content for section B with enough text to pass filter.")
-    results = await agent.ingest_folder(src)
-    assert len(results) == 2
-    assert all(r.status == "success" for r in results)
+    summary = await agent.ingest_folder(src)
+    assert len(summary.results) == 2
+    assert all(r.status == "success" for r in summary.results)
 
 
 async def _passthrough_reranker(question, hits, *, top_k):

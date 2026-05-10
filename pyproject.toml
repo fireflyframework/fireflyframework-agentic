@@ -1,6 +1,6 @@
 [project]
 name = "fireflyframework-agentic"
-version = "26.04.30"
+version = "26.05.05"
 description = "A GenAI metaframework built on Pydantic AI for building production-grade GenAI applications with agents, reasoning patterns, prompt engineering, observability, and more."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -29,6 +29,7 @@ dependencies = [
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
     "jinja2>=3.1.0",
+    "httpx>=0.28.0",
     "opentelemetry-api>=1.29.0",
     "opentelemetry-sdk>=1.29.0",
 ]
@@ -63,17 +64,22 @@ security = [
     "pyjwt>=2.10.0",
     "cryptography>=44.0.0",
 ]
+storage-azure = [
+    "azure-storage-blob>=12.20.0",
+    "azure-identity>=1.19",
+]
 azure = [
     "azure-identity>=1.19",
     "msal>=1.31",
     "pyjwt[crypto]>=2.10.0",
-    "httpx>=0.28.0",
+    # Azure Monitor / Application Insights OpenTelemetry exporter (Quickpulse
+    # Live Metrics + traces / metrics / logs). Lives in the same umbrella as
+    # the AAD auth deps so a future "remove all Azure" is a single
+    # ``pyproject.toml`` block to delete and a single ``--extra azure`` to drop.
+    "azure-monitor-opentelemetry-exporter>=1.0.0b30",
 ]
 mcp = [
     "fastmcp>=3.2",
-]
-http = [
-    "httpx>=0.28.0",
 ]
 costs = [
     "genai-prices>=0.0.1",
@@ -130,7 +136,7 @@ vectorstores-qdrant = [
 ]
 watch = ["watchfiles>=0.24.0"]
 all = [
-    "fireflyframework-agentic[rest,queues,postgres,mongodb,security,http,costs,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,corpus-search,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,vectorstores-sqlite-vec,markitdown,watch]",
+    "fireflyframework-agentic[rest,queues,postgres,mongodb,security,azure,http,costs,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,corpus-search,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,vectorstores-sqlite-vec,markitdown,watch]",
 ]
 dev = [
     "pytest>=8.3.0",
@@ -150,6 +156,7 @@ dev = [
 
 [project.scripts]
 firefly-mcp = "fireflyframework_agentic.cli.mcp_server:main"
+firefly-mcp-http = "fireflyframework_agentic.cli.mcp_http:main"
 
 [project.urls]
 Homepage = "https://fireflyframework.org/"
@@ -178,6 +185,7 @@ pythonVersion = "3.13"
 typeCheckingMode = "basic"
 include = ["src"]
 exclude = ["tests/**", "examples/**"]
+extraPaths = ["src", "."]
 
 
 [tool.pytest.ini_options]

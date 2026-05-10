@@ -106,3 +106,35 @@ def test_no_headings_plain_text():
     assert len(chunks) == 1
     assert chunks[0].content == content
     assert chunks[0].metadata["breadcrumb"] == ""
+
+
+def test_giant_table_is_hard_split_under_max_tokens():
+    """Markdown tables can have a real BPE token count 5–20× higher than the
+    word-count heuristic. Without the hard-split safety pass, a single huge
+    table chunk gets through the word-bounded fallback and explodes when the
+    embedder actually counts BPE tokens. Verify the safety pass keeps every
+    chunk under max_chunk_tokens by tiktoken's own count.
+    """
+    try:
+        import tiktoken  # noqa: F401
+    except ImportError:
+        import pytest
+
+        pytest.skip("tiktoken not installed; safety pass is a no-op without it")
+
+    # Build a "table" big enough that the word-count heuristic underestimates
+    # by enough to push a single chunk past 600 BPE tokens.
+    rows = ["| 1.234 | 5.678 | 9.012 | 3.456 | 7.890 | 0.123 | 4.567 | 8.901 |"] * 250
+    content = "# Stats\n\n| a | b | c | d | e | f | g | h |\n|---|---|---|---|---|---|---|---|\n" + "\n".join(rows)
+
+    chunker = MarkdownChunker(max_chunk_tokens=600)
+    chunks = chunker.chunk(content)
+
+    from fireflyframework_agentic.content.markdown_chunker import _accurate_token_count
+
+    for c in chunks:
+        n = _accurate_token_count(c.content)
+        assert n is not None
+        # Allow a tiny slack for the breadcrumb prefix; the hard split
+        # bounds chunk content but not the prepended breadcrumb header.
+        assert n <= 600 + 50, f"chunk has {n} BPE tokens, exceeds 600+50 budget"

@@ -19,6 +19,10 @@ from collections.abc import Sequence
 from pydantic import BaseModel, Field
 
 from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.rag._telemetry import (
+    query_stage_duration,
+    timed_span,
+)
 from fireflyframework_agentic.rag.corpus import ChunkHit
 
 _NO_INFO_TEXT = "I don't have enough information."
@@ -107,6 +111,7 @@ class AnswerAgent:
     """
 
     def __init__(self, model: str) -> None:
+        self._model = model
         self._agent = FireflyAgent(
             name="answer_agent",
             model=model,
@@ -114,14 +119,39 @@ class AnswerAgent:
             instructions=_INSTRUCTIONS,
         )
 
-    async def answer(self, question: str, hits: Sequence[ChunkHit]) -> Answer:
-        if not hits:
-            return Answer(text=_NO_INFO_TEXT, citations=[], cited_sources=[])
-        formatted = format_chunks_for_prompt(hits)
-        prompt = f"Question: {question}\n\nSource chunks:\n\n{formatted}"
-        result = await self._agent.run(prompt)
-        answer = result.output
-        # Enrich with source-path metadata so callers (CLI, API consumers)
-        # can show users a filename rather than just an opaque chunk_id.
-        answer.cited_sources = _build_cited_sources(answer.citations, hits)
-        return answer
+    async def answer(
+        self,
+        question: str,
+        hits: Sequence[ChunkHit],
+        *,
+        sql_context: str | None = None,
+    ) -> Answer:
+        async with timed_span(
+            "firefly.rag.answer",
+            histogram=query_stage_duration,
+            attributes={
+                "n_hits": len(hits),
+                "model": self._model,
+            },
+            metric_labels={"stage": "answer"},
+        ) as span:
+            if not hits and sql_context is None:
+                span.set_attribute("firefly.rag.short_circuit", "no_hits")
+                return Answer(text=_NO_INFO_TEXT, citations=[], cited_sources=[])
+            parts: list[str] = [f"Question: {question}"]
+            if sql_context is not None:
+                parts.append(f"## Structured Data Results\n\n{sql_context}")
+            formatted = format_chunks_for_prompt(hits)
+            if formatted:
+                parts.append(f"## Retrieved Documents\n\n{formatted}")
+            prompt = "\n\n".join(parts)
+            result = await self._agent.run(prompt)
+            answer = result.output
+            # Enrich with source-path metadata post-call.
+            answer.cited_sources = _build_cited_sources(answer.citations, hits)
+            span.set_attribute("firefly.rag.citation_count", len(answer.cited_sources))
+            span.set_attribute(
+                "firefly.rag.hallucinated_citation_count",
+                max(0, len(answer.citations) - len(answer.cited_sources)),
+            )
+            return answer

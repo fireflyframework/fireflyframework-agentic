@@ -24,20 +24,63 @@ path returns results for realistic NL questions.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Sequence
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from examples.corpus_search.agent import CorpusAgent
-from examples.corpus_search.retrieval.answerer import Answer
 from fireflyframework_agentic.embeddings.types import EmbeddingResult
+from fireflyframework_agentic.rag.agent import CorpusAgent
 from fireflyframework_agentic.rag.corpus import (
     SqliteCorpus,
     StoredChunk,
     sanitize_fts_query,
 )
+from fireflyframework_agentic.rag.retrieval.answerer import Answer
+from tests.conftest import DB_STORE_BACKENDS, DB_STORE_LOCAL
+
+
+@pytest.fixture(params=DB_STORE_BACKENDS)
+def db_store(request, tmp_path):
+    """Parametrised over local and Azurite backends.
+
+    The "azurite" param lazily fetches ``azurite_connection_string``
+    (defined in ``tests/conftest.py``); that fixture either reads the
+    env var, auto-starts a Docker container, or skips. Tests using
+    ``db_store`` therefore run on "local" everywhere and add "azurite"
+    coverage wherever Azurite is reachable.
+    """
+    from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
+
+    if request.param == DB_STORE_LOCAL:
+        backend = LocalBackend(tmp_path / "corpus.sqlite")
+    else:
+        # Skip the azurite param when the [storage-azure] extra isn't
+        # installed (PR gate). importorskip raises Skipped without
+        # surfacing as a test error.
+        pytest.importorskip("azure.storage.blob")
+        from azure.storage.blob import BlobServiceClient  # type: ignore[import-not-found]
+
+        from fireflyframework_agentic.storage import AzureBlobBackend
+
+        conn_str = request.getfixturevalue("azurite_connection_string")
+        svc = BlobServiceClient.from_connection_string(conn_str)
+        container = f"e2e-{uuid.uuid4().hex}"
+        svc.create_container(container)
+        backend = AzureBlobBackend(
+            f"{svc.url}{container}",
+            "corpus.sqlite",
+            credential=svc.credential,
+        )
+        request.addfinalizer(lambda: svc.delete_container(container))
+    return DatabaseStore(
+        backend,
+        store_id=f"e2e-{request.param}",
+        cache_root=tmp_path / "cache",
+    )
+
 
 # --- sanitize_fts_query unit tests --------------------------------------
 
@@ -98,8 +141,9 @@ class TestSanitizeFtsQuery:
         assert sanitize_fts_query("?!.,;:") == ""
 
     def test_unicode_letters_preserved(self):
-        # Spanish characters survive (the Brazilian healthcare corpus has
-        # plenty of these).
+        # Non-ASCII letters (accents, ñ, ç, ü, …) must survive sanitisation
+        # so multilingual corpora can be searched without losing terms to
+        # the FTS5 punctuation strip.
         out = sanitize_fts_query("epidemiología y oncología")
         assert "epidemiología" in out
         assert "oncología" in out
@@ -121,9 +165,9 @@ class TestSanitizeFtsQuery:
 
 
 @pytest.fixture
-async def populated_corpus(tmp_path):
+async def populated_corpus(db_store):
     """A corpus with a few realistic chunks to search across."""
-    corpus = SqliteCorpus(tmp_path / "corpus.sqlite")
+    corpus = SqliteCorpus(db_store)
     await corpus.initialise()
     chunks = [
         StoredChunk(
@@ -253,7 +297,7 @@ async def agent(tmp_path):
     mock_agent_instance = MagicMock()
     with (
         patch("fireflyframework_agentic.rag.retrieval.expander.FireflyAgent", return_value=mock_agent_instance),
-        patch("examples.corpus_search.retrieval.answerer.FireflyAgent", return_value=mock_agent_instance),
+        patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent", return_value=mock_agent_instance),
         patch("fireflyframework_agentic.rag.retrieval.reranker.FireflyAgent", return_value=mock_agent_instance),
     ):
         a = CorpusAgent(

@@ -17,12 +17,12 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from examples.corpus_search.retrieval.answerer import (
+from fireflyframework_agentic.rag.corpus import ChunkHit
+from fireflyframework_agentic.rag.retrieval.answerer import (
     Answer,
     AnswerAgent,
     format_chunks_for_prompt,
 )
-from fireflyframework_agentic.rag.corpus import ChunkHit
 
 
 def _stub_run_result(answer: Answer) -> Any:
@@ -57,7 +57,7 @@ def test_format_chunks_empty_returns_empty_string():
     assert format_chunks_for_prompt([]) == ""
 
 
-@patch("examples.corpus_search.retrieval.answerer.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent")
 async def test_empty_hits_returns_no_info_without_llm_call(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -70,7 +70,7 @@ async def test_empty_hits_returns_no_info_without_llm_call(mock_agent_cls):
     answerer._agent.run.assert_not_awaited()
 
 
-@patch("examples.corpus_search.retrieval.answerer.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent")
 async def test_answer_returns_llm_output(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -89,7 +89,7 @@ async def test_answer_returns_llm_output(mock_agent_cls):
     assert result.citations == ["a-0"]
 
 
-@patch("examples.corpus_search.retrieval.answerer.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent")
 async def test_answer_passes_question_and_chunks_to_agent(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -119,7 +119,7 @@ def test_answer_pydantic_model_validates():
 # --- cited_sources enrichment ----------------------------------------------
 
 
-@patch("examples.corpus_search.retrieval.answerer.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent")
 async def test_cited_sources_enriched_from_hits(mock_agent_cls):
     """The LLM returns chunk_id citations; the agent should enrich them
     into CitedSource records with source_path + snippet pulled from the
@@ -130,26 +130,26 @@ async def test_cited_sources_enriched_from_hits(mock_agent_cls):
 
     answerer = AnswerAgent(model="anthropic:dummy")
     canned = Answer(
-        text="ANVISA's RDC 1.000 establishes [d-3] and updates rules [d-9].",
+        text="The regulator's resolution establishes [d-3] and updates rules [d-9].",
         citations=["d-3", "d-9"],
     )
     answerer._agent.run = AsyncMock(return_value=_stub_run_result(canned))
 
     hits = [
-        _hit("d-3", "Sistema Nacional de Controle de Receituários (SNCR)...", source="/tmp/RDC1000.pdf"),
-        _hit("d-9", "Modifies RDC 58/2007 to permit electronic notifications.", source="/tmp/RDC1000.pdf"),
+        _hit("d-3", "Source chunk text describing the new procedure.", source="/tmp/regulation.pdf"),
+        _hit("d-9", "Source chunk text describing the rule update.", source="/tmp/regulation.pdf"),
         _hit("d-99", "Unrelated chunk that wasn't cited.", source="/tmp/other.pdf"),
     ]
-    result = await answerer.answer("What is RDC 1000?", hits)
+    result = await answerer.answer("What does the regulation establish?", hits)
 
     assert {s.chunk_id for s in result.cited_sources} == {"d-3", "d-9"}
     by_id = {s.chunk_id: s for s in result.cited_sources}
-    assert by_id["d-3"].source_path == "/tmp/RDC1000.pdf"
-    assert by_id["d-3"].snippet.startswith("Sistema Nacional")
-    assert by_id["d-9"].source_path == "/tmp/RDC1000.pdf"
+    assert by_id["d-3"].source_path == "/tmp/regulation.pdf"
+    assert by_id["d-3"].snippet.startswith("Source chunk text")
+    assert by_id["d-9"].source_path == "/tmp/regulation.pdf"
 
 
-@patch("examples.corpus_search.retrieval.answerer.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent")
 async def test_cited_sources_drops_hallucinated_chunk_ids(mock_agent_cls):
     """If the LLM cites a chunk_id that wasn't in the hits, drop it from
     cited_sources rather than fabricating a record.
@@ -170,7 +170,7 @@ async def test_cited_sources_drops_hallucinated_chunk_ids(mock_agent_cls):
     assert [s.chunk_id for s in result.cited_sources] == ["a-0"]
 
 
-@patch("examples.corpus_search.retrieval.answerer.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent")
 async def test_cited_sources_dedupes_repeated_citations(mock_agent_cls):
     mock_agent = MagicMock()
     mock_agent_cls.return_value = mock_agent
@@ -188,7 +188,7 @@ async def test_cited_sources_dedupes_repeated_citations(mock_agent_cls):
     assert [s.chunk_id for s in result.cited_sources] == ["a-0"]
 
 
-@patch("examples.corpus_search.retrieval.answerer.FireflyAgent")
+@patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent")
 async def test_empty_hits_returns_no_info_with_empty_cited_sources(mock_agent_cls):
     """No hits -> short-circuit to no-info answer with cited_sources=[]."""
     mock_agent = MagicMock()
