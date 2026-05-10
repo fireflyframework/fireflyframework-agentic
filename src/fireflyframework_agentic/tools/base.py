@@ -206,6 +206,20 @@ class BaseTool(ABC):
                 raise ToolError(f"Guard rejected execution of tool '{self._name}': {result.reason}")
 
         logger.debug("Executing tool '%s' with kwargs=%s", self._name, list(kwargs.keys()))
+        # ``ModelRetry`` is Pydantic-AI's way of telling the agent
+        # runtime "the tool didn't succeed; tell the model so it can
+        # try again or report it to the user". Catching it as a plain
+        # ``Exception`` and re-raising as ``ToolError`` (the previous
+        # behaviour) hid that signal: pydantic-ai never saw the
+        # ``RetryPromptPart`` it would otherwise emit, the LLM never
+        # got a chance to react, and the entire ``agent.run()`` turn
+        # crashed instead. Operators reported "the agent says HTTP 401
+        # but doesn't show the call in the audit panel" -- that's
+        # because the call never reached the model history at all.
+        try:
+            from pydantic_ai import ModelRetry as _ModelRetry  # type: ignore[import-not-found]
+        except Exception:  # pragma: no cover - pydantic-ai unavailable in some hosts
+            _ModelRetry = None  # type: ignore[assignment]
         try:
             if self._timeout is not None:
                 return await asyncio.wait_for(
@@ -218,6 +232,11 @@ class BaseTool(ABC):
         except ToolError:
             raise
         except Exception as exc:
+            # Let pydantic-ai's retry signalling propagate untouched so
+            # the agent runtime can record the call as a failed
+            # attempt and surface it to the model.
+            if _ModelRetry is not None and isinstance(exc, _ModelRetry):
+                raise
             raise ToolError(f"Tool '{self._name}' failed: {exc}") from exc
 
     def pydantic_handler(self) -> Any:
