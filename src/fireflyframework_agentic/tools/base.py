@@ -57,6 +57,7 @@ def _is_model_retry(exc: BaseException) -> bool:
         return False
     return isinstance(exc, ModelRetry)
 
+
 # Mapping from ParameterSpec.type_annotation strings to Python types.
 _TYPE_MAP: dict[str, type] = {
     "str": str,
