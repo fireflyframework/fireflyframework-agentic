@@ -119,7 +119,7 @@ _DEFAULT_REVISION_TEMPLATE = (
 )
 
 
-def _parse_grader_response(text: str, rubric: list[str]) -> "ValidationReport":
+def _parse_grader_response(text: str, rubric: list[str]) -> ValidationReport:
     """Parse a grader's free-text response into a ValidationReport.
 
     Looks for NOT MET lines and a terminal SATISFIED / NEEDS_REVISION keyword.
@@ -224,7 +224,7 @@ class RubricReviewer:
         self._revision_prompt = revision_prompt or _DEFAULT_REVISION_TEMPLATE
 
     @classmethod
-    def from_rubric_file(cls, path: str | Path, **kwargs: Any) -> "RubricReviewer":
+    def from_rubric_file(cls, path: str | Path, **kwargs: Any) -> RubricReviewer:
         """Load rubric criteria from a Markdown file.
 
         Bullet list items (``- `` or ``* ``) become criteria. The H1
@@ -283,9 +283,7 @@ class RubricReviewer:
                 )
 
             gaps = [r.message for r in report.errors if r.message]
-            retry_history.append(
-                RetryAttempt(attempt=attempt, raw_output=raw_str[:500], errors=gaps)
-            )
+            retry_history.append(RetryAttempt(attempt=attempt, raw_output=raw_str[:500], errors=gaps))
             if attempt < self._max_iterations:
                 current_prompt = self._build_revision_prompt(prompt, gaps)
                 logger.debug(
@@ -310,9 +308,7 @@ class RubricReviewer:
 
     def _build_revision_prompt(self, original_prompt: Any, gaps: list[str]) -> str:
         gap_text = "\n".join(f"- {g}" for g in gaps)
-        return self._revision_prompt.format(
-            gaps=gap_text, original_prompt=str(original_prompt)
-        )
+        return self._revision_prompt.format(gaps=gap_text, original_prompt=str(original_prompt))
 
     def _make_default_grader(self, generator: AgentLike) -> AgentLike:
         model = getattr(generator, "_model_identifier", None)

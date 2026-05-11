@@ -186,9 +186,7 @@ def test_parse_grader_satisfied():
 
 def test_parse_grader_needs_revision():
     rubric = ["Every claim cites at least one [chunk_id]."]
-    report = _parse_grader_response(
-        "NOT MET: 1 — no inline citation found\nNEEDS_REVISION", rubric
-    )
+    report = _parse_grader_response("NOT MET: 1 — no inline citation found\nNEEDS_REVISION", rubric)
     assert report.valid is False
     assert report.error_count == 1
     assert report.errors[0].message == "no inline citation found"
@@ -266,10 +264,12 @@ async def test_rubric_reviewer_satisfied_first_try():
 
 async def test_rubric_reviewer_revision_then_satisfied():
     generator = MockAgent(["No citations here.", "The answer is 42 [chunk_1]."])
-    grader = MockAgent([
-        "NOT MET: 1 — no citation found\nNEEDS_REVISION",
-        "MET: 1\nSATISFIED",
-    ])
+    grader = MockAgent(
+        [
+            "NOT MET: 1 — no citation found\nNEEDS_REVISION",
+            "MET: 1\nSATISFIED",
+        ]
+    )
     reviewer = RubricReviewer(
         rubric=["Every claim cites at least one [chunk_id]."],
         grader=grader,
@@ -342,10 +342,12 @@ async def test_rubric_reviewer_custom_revision_prompt():
             return MockResult(output=resp)
 
     generator = CapturingAgent(["bad", "good [chunk_1]."])
-    grader = MockAgent([
-        "NOT MET: 1 — missing citation\nNEEDS_REVISION",
-        "MET: 1\nSATISFIED",
-    ])
+    grader = MockAgent(
+        [
+            "NOT MET: 1 — missing citation\nNEEDS_REVISION",
+            "MET: 1\nSATISFIED",
+        ]
+    )
     reviewer = RubricReviewer(
         rubric=["Every claim cites at least one [chunk_id]."],
         grader=grader,
@@ -365,11 +367,7 @@ async def test_rubric_reviewer_custom_revision_prompt():
 
 def test_from_rubric_file_dash_bullets(tmp_path):
     md = tmp_path / "rubric.md"
-    md.write_text(
-        "# My Rubric\n\nSome description.\n\n"
-        "- Every claim cites a source.\n"
-        "- No contradictions.\n"
-    )
+    md.write_text("# My Rubric\n\nSome description.\n\n- Every claim cites a source.\n- No contradictions.\n")
     reviewer = RubricReviewer.from_rubric_file(md)
     assert reviewer._rubric == ["Every claim cites a source.", "No contradictions."]
 
