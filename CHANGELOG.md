@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.05.11] - 2026-05-11
+
+### Changed (BREAKING)
+
+- **Repo layout flattened.** `src/fireflyframework_agentic/` moved to
+  `fireflyframework_agentic/` at the repo root. Vendor- and example-specific
+  code (`cli/`, vendor backends, SharePoint source, the `corpus_search`
+  reference agent's CLI) moved under `examples/corpus_search/`. The
+  `storage-azure` extra and the previous top-level `[project.scripts]`
+  block were removed (#134, #137).
+- **`corpus_retrieve` → `knowledge_search`.** The MCP corpus retrieval tool
+  was renamed for clarity (#134). Update any client code or MCP wiring that
+  referenced `corpus_retrieve`.
+- **`firefly-mcp-http` entry point relocated.** Now registered as
+  `fireflyframework_agentic.exposure.mcp.http_cli:main` in
+  `[project.scripts]`. The MCP HTTP server is a first-class deliverable of
+  the package, not an example (#139). Closes #138.
+
+### Added
+
+- **Unified structured + unstructured ingestion in `corpus_search`.**
+  `CorpusAgent.ingest_source` accepts both tabular and document sources
+  through a single pipeline, with separate retrievers feeding the
+  answerer's prompt (#108).
+- **Schema-aware structured ingestion.** Discover-review-ingest workflow
+  for tabular sources: schema discovery first, then per-column review,
+  then ingest only the approved columns. Closes #117 (#118).
+- **`RubricReviewer`.** Rubric-based grader loop for validation; LLM judges
+  candidate outputs against an explicit rubric and feeds back deltas for
+  retry. Exposed from `validation` (#130).
+- **Managed SQLite storage backends.** Local-file and Azure Blob backends
+  expose a uniform managed-SQLite surface for memory and other persistence
+  needs (#112).
+- **`list_corpora` MCP tool.** Discovery endpoint that enumerates available
+  corpora; nightly e2e test added to keep it honest (#115).
+
+### Fixed
+
+- **Nightly auth via Key Vault + OIDC.** Replaced direct
+  `${{ secrets.ANTHROPIC_API_KEY }}` injection with `azure/login` (OIDC)
+  followed by `az keyvault secret show` against `kv-firefly-signature`.
+  The previous wiring resolved to empty strings and broke every
+  Anthropic-using test on the nightly (#120, follow-up #137). Closes #125.
+- **MCP container deploy.** Repaired the `Dockerfile` `COPY` paths and
+  console-script entry point so `deploy-mcp` builds and pushes again
+  after the flat-layout move (#139). Closes #138.
+- **Retrieval benchmark.** `runner.py` now ingests only `*.md` files; the
+  25,870-row billing-ledger CSV was being fed through the markdown
+  chunker, producing ~24k chunks and corrupting the SQLite-vec store.
+  Smoke test updated for the 12-doc corpus (#140).
+- **Structured ingest folder walks.** Filter to tabular file types so
+  non-tabular files in mixed corpora don't trip the structured loader
+  (#123).
+- **Real-LLM e2e tests.** Switched `test_e2e_real_llm` to Azure OpenAI
+  embeddings to align with the production embedder path (#119).
+
+### Changed
+
+- **No hardcoded VERSION constants in installers.** `install.sh`,
+  `install.ps1`, and their `uninstall.*` counterparts no longer carry a
+  hand-bumped `VERSION` string; the post-install verify reads
+  `fireflyframework_agentic.__version__` from package metadata (#136).
+- **`.python-version` removed.** `pyproject.toml`'s
+  `requires-python = ">=3.13"` is the sole source of truth (#136).
+- **`CLAUDE.md` gitignored.** Developer-local agent guidance is no longer
+  tracked (#136).
+- **Dependabot bumps.** `urllib3` 2.6.3 → 2.7.0 (#135);
+  `langchain-core` 1.3.2 → 1.3.3 (#124).
+- **CI hardening.** `deploy-mcp.yml` bumped `actions/checkout@v4 → @v6`
+  and SHA-pinned `docker/setup-buildx-action` to v4.0.0 to clear the
+  Node 20 deprecation (#137).
+
+### Tests
+
+- **`tests/examples/corpus_search/` consolidated.** Vendor backend tests
+  and the structured-ingestion ledger test moved under the example's tree
+  alongside their production code (#110, #111).
+- **Benchmark smoke test** updated to assert the new 12-md corpus shape
+  after the runner fix (#140).
+
 ## [26.04.30] - 2026-04-30
 
 ### Added
