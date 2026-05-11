@@ -3,7 +3,7 @@
   "use_rerank": false,
   "use_expansion": false,
   "n_queries": 32,
-  "n_corpus_docs": 12,
+  "n_corpus_docs": 14,
   "n_corpus_chunks": 34,
   "queries": [
     {
@@ -757,7 +757,7 @@
       "hit_at_5": true,
       "hit_at_20": true,
       "doc_match": true,
-      "substring_match": true,
+      "substring_match": false,
       "rank_of_first_match": 3,
       "rejected_correctly": null
     },
@@ -1159,7 +1159,7 @@
   "hit_at_20_rate": 1.0,
   "mean_reciprocal_rank": 0.8988095238095238,
   "doc_match_rate": 1.0,
-  "substring_match_rate": 1.0,
+  "substring_match_rate": 0.9642857142857143,
   "correct_rejection_rate": 1.0,
   "by_category": {
     "cross_doc_synthesis": {
@@ -1214,7 +1214,7 @@
       "n": 3.0,
       "hit_at_5": 1.0,
       "doc_match": 1.0,
-      "substring_match": 1.0
+      "substring_match": 0.6666666666666666
     }
   }
 }
