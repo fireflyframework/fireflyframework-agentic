@@ -52,7 +52,7 @@ def credential(azurite_connection_string: str) -> object:
 
 
 async def test_round_trip_upload_download(container_url, credential, tmp_path: Path) -> None:
-    from fireflyframework_agentic.storage import AzureBlobBackend
+    from azure_backend import AzureBlobBackend
 
     backend = AzureBlobBackend(container_url, "x.sqlite", credential=credential)
     src = tmp_path / "src.bin"
