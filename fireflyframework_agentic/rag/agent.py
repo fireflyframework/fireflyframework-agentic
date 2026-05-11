@@ -633,11 +633,11 @@ class CorpusAgent:
             },
         ) as span:
             schemas = await self._schema_registry.list_schemas()
-            top_hits, sql_context = await asyncio.gather(
+            top_hits, sql_outcome = await asyncio.gather(
                 self.retrieve(question, top_k=top_k, rerank=True),
                 self._structured_retriever.retrieve(question, schemas),
             )
-            answer = await self._answerer.answer(question, top_hits, sql_context=sql_context)
+            answer = await self._answerer.answer(question, top_hits, sql_outcome=sql_outcome)
             outcome = "no_info" if not answer.cited_sources else "answered"
             elapsed_ms = (time.perf_counter() - query_start) * 1000.0
             query_total_duration.record(elapsed_ms, {"outcome": outcome})

@@ -142,8 +142,10 @@ async def test_structured_ingest_writes_rows_to_sqlite(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_query_sql_context_reaches_answer_agent(tmp_path: Path):
-    """After structured ingest, query() must pass sql_context to AnswerAgent."""
+async def test_query_sql_outcome_reaches_answer_agent(tmp_path: Path):
+    """After structured ingest, query() must pass sql_outcome to AnswerAgent."""
+    from fireflyframework_agentic.rag.retrieval.sql import SqlRetrievalOutcome
+
     agent = _make_agent(tmp_path)
     csv_path = _make_csv(tmp_path)
     schema = _make_schema()
@@ -160,35 +162,42 @@ async def test_query_sql_context_reaches_answer_agent(tmp_path: Path):
     await agent._ensure_query_ready()
     mock_answer = Answer(text="2 products", citations=[], cited_sources=[])
 
-    captured_sql_context: list[str | None] = []
+    captured_sql_outcome: list[SqlRetrievalOutcome | None] = []
 
     async def capture_answer(
         question: str,
         hits: Any,
         *,
-        sql_context: str | None = None,
+        sql_outcome: SqlRetrievalOutcome | None = None,
     ) -> Answer:
-        captured_sql_context.append(sql_context)
+        captured_sql_outcome.append(sql_outcome)
         return mock_answer
 
-    # Provide a fixed SQL result so StructuredRetriever.retrieve returns structured
-    # data without making a real LLM call to generate the SELECT statement.
-    sql_table = "id | name\n--- | ---\n1 | Widget\n2 | Gadget"
+    # Provide a fixed SQL outcome so StructuredRetriever.retrieve returns
+    # structured data without making a real LLM call.
+    stub_outcome = SqlRetrievalOutcome(
+        outcome="answered",
+        result_markdown="id | name\n--- | ---\n1 | Widget\n2 | Gadget",
+        attempted_sql="SELECT id, name FROM products",
+        probe_trail=[],
+    )
 
     with (
         patch.object(agent._expander, "expand", new_callable=AsyncMock, return_value=["q"]),
         patch.object(agent._retriever, "retrieve", new_callable=AsyncMock, return_value=[]),
         patch.object(agent._reranker, "rerank", new_callable=AsyncMock, return_value=[]),
         patch.object(agent._answerer, "answer", side_effect=capture_answer),
-        patch.object(agent._structured_retriever, "retrieve", new_callable=AsyncMock, return_value=sql_table),
+        patch.object(agent._structured_retriever, "retrieve", new_callable=AsyncMock, return_value=stub_outcome),
     ):
         await agent.query("How many products?")
 
-    assert len(captured_sql_context) == 1
-    sql_ctx = captured_sql_context[0]
-    assert sql_ctx is not None
-    assert "Widget" in sql_ctx
-    assert "Gadget" in sql_ctx
+    assert len(captured_sql_outcome) == 1
+    outcome = captured_sql_outcome[0]
+    assert outcome is not None
+    assert outcome.outcome == "answered"
+    assert outcome.result_markdown is not None
+    assert "Widget" in outcome.result_markdown
+    assert "Gadget" in outcome.result_markdown
 
 
 @pytest.mark.asyncio
