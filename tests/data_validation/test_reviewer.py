@@ -243,3 +243,101 @@ def test_parse_grader_first_terminal_keyword_wins():
     # SATISFIED appears first — second keyword should be ignored
     report = _parse_grader_response("MET: 1\nSATISFIED\nNEEDS_REVISION", rubric)
     assert report.valid is True
+
+
+# ---------------------------------------------------------------------------
+# RubricReviewer — loop
+# ---------------------------------------------------------------------------
+
+
+async def test_rubric_reviewer_satisfied_first_try():
+    generator = MockAgent(["The answer is 42 [chunk_1]."])
+    grader = MockAgent(["MET: 1\nSATISFIED"])
+    reviewer = RubricReviewer(
+        rubric=["Every claim cites at least one [chunk_id]."],
+        grader=grader,
+        max_iterations=3,
+    )
+    result = await reviewer.review(generator, "What is the answer?")
+    assert result.attempts == 1
+    assert result.validation_report.valid is True
+    assert result.retry_history == []
+
+
+async def test_rubric_reviewer_revision_then_satisfied():
+    generator = MockAgent(["No citations here.", "The answer is 42 [chunk_1]."])
+    grader = MockAgent([
+        "NOT MET: 1 — no citation found\nNEEDS_REVISION",
+        "MET: 1\nSATISFIED",
+    ])
+    reviewer = RubricReviewer(
+        rubric=["Every claim cites at least one [chunk_id]."],
+        grader=grader,
+        max_iterations=3,
+    )
+    result = await reviewer.review(generator, "What is the answer?")
+    assert result.attempts == 2
+    assert result.validation_report.valid is True
+    assert len(result.retry_history) == 1
+    assert result.retry_history[0].attempt == 1
+    assert "no citation found" in result.retry_history[0].errors[0]
+
+
+async def test_rubric_reviewer_exhausted_raises():
+    generator = MockAgent(["bad output"] * 4)
+    grader = MockAgent(["NOT MET: 1 — no citation\nNEEDS_REVISION"] * 4)
+    reviewer = RubricReviewer(
+        rubric=["Every claim cites at least one [chunk_id]."],
+        grader=grader,
+        max_iterations=3,
+    )
+    with pytest.raises(OutputReviewError):
+        await reviewer.review(generator, "question")
+
+
+async def test_rubric_reviewer_empty_rubric_raises_at_construction():
+    with pytest.raises(ValueError, match="at least one criterion"):
+        RubricReviewer(rubric=[])
+
+
+async def test_rubric_reviewer_malformed_grader_response_continues_loop():
+    generator = MockAgent(["output", "fixed output"])
+    grader = MockAgent(["this is not a valid grader response", "MET: 1\nSATISFIED"])
+    reviewer = RubricReviewer(
+        rubric=["The output is correct."],
+        grader=grader,
+        max_iterations=3,
+    )
+    result = await reviewer.review(generator, "question")
+    assert result.attempts == 2
+
+
+async def test_rubric_reviewer_custom_revision_prompt():
+    prompts_seen: list[str] = []
+
+    class CapturingAgent:
+        def __init__(self, responses: list[str]) -> None:
+            self._responses = responses
+            self._idx = 0
+
+        async def run(self, prompt: Any, **kwargs: Any) -> MockResult:
+            prompts_seen.append(str(prompt))
+            resp = self._responses[self._idx] if self._idx < len(self._responses) else self._responses[-1]
+            self._idx += 1
+            return MockResult(output=resp)
+
+    generator = CapturingAgent(["bad", "good [chunk_1]."])
+    grader = MockAgent([
+        "NOT MET: 1 — missing citation\nNEEDS_REVISION",
+        "MET: 1\nSATISFIED",
+    ])
+    reviewer = RubricReviewer(
+        rubric=["Every claim cites at least one [chunk_id]."],
+        grader=grader,
+        max_iterations=3,
+        revision_prompt="FIX: {gaps}\nORIGINAL: {original_prompt}",
+    )
+    result = await reviewer.review(generator, "question")
+    assert result.attempts == 2
+    assert "FIX:" in prompts_seen[1]
+    assert "ORIGINAL:" in prompts_seen[1]
