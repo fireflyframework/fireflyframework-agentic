@@ -4,9 +4,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from fireflyframework_agentic.rag.ingest.structured_registry import (
+    TABULAR_SUFFIXES,
+    _csv_sample,
+    _sample_for,
     discover_schema,
     discover_schema_for_paths,
     discover_schema_interactive,
+    is_tabular_file,
 )
 from fireflyframework_agentic.rag.ingest.structured_schema import (
     ColumnSpec,
@@ -235,6 +239,43 @@ async def test_discover_schema_for_paths_with_corrections(tmp_path: Path):
     assert "User corrections" in prompt
     assert "mark id as primary_key" in prompt
     assert "Previous schema attempt" in prompt
+
+
+def test_tabular_suffixes_contents() -> None:
+    assert frozenset({".csv", ".xls", ".xlsx"}) == TABULAR_SUFFIXES
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("a.csv", True),
+        ("a.CSV", True),
+        ("a.xlsx", True),
+        ("a.xls", True),
+        ("a.pptx", False),
+        ("a.pdf", False),
+        ("a.docx", False),
+        ("noext", False),
+    ],
+)
+def test_is_tabular_file(tmp_path: Path, name: str, expected: bool) -> None:
+    assert is_tabular_file(tmp_path / name) is expected
+
+
+def test_sample_for_raises_on_unsupported_suffix(tmp_path: Path) -> None:
+    pptx = tmp_path / "deck.pptx"
+    pptx.write_bytes(b"PK\x03\x04binary-zip-bytes")
+    with pytest.raises(ValueError, match="unsupported file type"):
+        _sample_for(pptx)
+
+
+def test_csv_sample_wraps_decoding_error_with_hint(tmp_path: Path) -> None:
+    """A Latin-1 CSV (Windows export) should fail with a hint, not a raw UnicodeDecodeError."""
+    p = tmp_path / "sales.csv"
+    # \xba is the masculine ordinal in Latin-1 / CP1252 — invalid in UTF-8.
+    p.write_bytes(b"id,producto\n1,Caf\xbae\n")
+    with pytest.raises(ValueError, match="UTF-8|Latin-1|CP1252"):
+        _csv_sample(p)
 
 
 @pytest.mark.asyncio

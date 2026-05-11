@@ -1,4 +1,7 @@
-from fireflyframework_agentic.rag.ingest.structured_pipeline import ingest_structured
+from fireflyframework_agentic.rag.ingest.structured_pipeline import (
+    TableIngestResult,
+    ingest_structured,
+)
 from fireflyframework_agentic.rag.ingest.structured_registry import (
     SchemaRegistry,
     discover_schema,
@@ -24,6 +27,7 @@ __all__ = [
     "IngestionResult",
     "SchemaFeedback",
     "SchemaRegistry",
+    "TableIngestResult",
     "TableSpec",
     "TargetSchema",
     "discover_schema",
