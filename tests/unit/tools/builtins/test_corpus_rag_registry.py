@@ -155,6 +155,9 @@ async def test_create_mcp_app_accepts_lifespan() -> None:
     assert fired == ["startup", "shutdown"]
 
 
+@pytest.mark.skip(
+    reason="ingest_corpus_sharepoint was removed because SharePointSource was moved to examples/corpus_search"
+)
 @pytest.mark.asyncio
 async def test_ingest_corpus_sharepoint_acquires_write_lock(monkeypatch, tmp_path: Path) -> None:
     """The SharePoint ingest path must hold _write_lock_for(corpus_id) for the
