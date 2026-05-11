@@ -47,7 +47,6 @@ from fireflyframework_agentic.tools.decorators import firefly_tool
 log = logging.getLogger(__name__)
 
 _DEFAULT_CORPUS_ROOT = "/tmp/firefly/corpora"
-_GRAPH_SCOPE = "https://graph.microsoft.com/.default"
 
 _AGENT_CACHE: dict[str, CorpusAgent] = {}
 _WRITE_LOCKS: dict[str, asyncio.Lock] = {}
