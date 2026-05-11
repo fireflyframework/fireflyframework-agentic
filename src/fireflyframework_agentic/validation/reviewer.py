@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, Field, ValidationError
@@ -87,6 +88,106 @@ _DEFAULT_RETRY_TEMPLATE = (
     "Please try again, ensuring your response exactly matches the "
     "required output schema."
 )
+
+
+# ---------------------------------------------------------------------------
+# Grader prompt templates (used by RubricReviewer)
+# ---------------------------------------------------------------------------
+
+_GRADER_SYSTEM_PROMPT = (
+    "You are a strict evaluator. Your job is to assess whether an output satisfies "
+    "a rubric of pass/fail criteria. Be precise and objective. "
+    "Never rationalise or give partial credit."
+)
+
+_GRADER_PROMPT_TEMPLATE = (
+    "Rubric:\n{rubric}\n\n"
+    "Output to evaluate:\n{output}\n\n"
+    "For each criterion, state MET or NOT MET followed by a colon and brief explanation "
+    "if NOT MET. End your response with either SATISFIED or NEEDS_REVISION on its own line.\n\n"
+    "Example:\n"
+    "MET: 1\n"
+    "NOT MET: 2 — no inline citation found\n"
+    "SATISFIED"
+)
+
+_DEFAULT_REVISION_TEMPLATE = (
+    "Your previous response did not satisfy the following criteria:\n{gaps}\n\n"
+    "Original request:\n{original_prompt}\n\n"
+    "Please revise your response addressing these specific gaps."
+)
+
+
+def _parse_grader_response(text: str, rubric: list[str]) -> "ValidationReport":
+    """Parse a grader's free-text response into a ValidationReport.
+
+    Looks for NOT MET lines and a terminal SATISFIED / NEEDS_REVISION keyword.
+    Malformed responses (neither keyword found) are treated as NEEDS_REVISION
+    with a single generic gap so the loop continues rather than crashing.
+    """
+    from fireflyframework_agentic.validation.rules import ValidationReport, ValidationRuleResult
+
+    lines = text.strip().splitlines()
+    satisfied: bool | None = None
+    failed: list[ValidationRuleResult] = []
+
+    for line in lines:
+        stripped = line.strip()
+        upper = stripped.upper()
+        if upper == "SATISFIED":
+            satisfied = True
+        elif upper == "NEEDS_REVISION":
+            satisfied = False
+        elif upper.startswith("NOT MET"):
+            rest = stripped[7:].lstrip(":").strip()
+            parts = rest.split("—", 1)
+            if len(parts) == 1:
+                parts = rest.split("-", 1)
+            try:
+                idx = int(parts[0].strip()) - 1
+                criterion = rubric[idx] if 0 <= idx < len(rubric) else parts[0].strip()
+            except (ValueError, IndexError):
+                criterion = parts[0].strip()
+            gap = parts[1].strip() if len(parts) > 1 else "criterion not met"
+            failed.append(
+                ValidationRuleResult(
+                    rule_name=criterion,
+                    field_name=f"criterion_{parts[0].strip()}",
+                    passed=False,
+                    message=gap,
+                )
+            )
+
+    if satisfied is None:
+        satisfied = False
+        if not failed:
+            failed.append(
+                ValidationRuleResult(
+                    rule_name="parse_error",
+                    field_name="grader_response",
+                    passed=False,
+                    message="grader response could not be parsed",
+                )
+            )
+
+    return ValidationReport(
+        valid=bool(satisfied),
+        results=failed,
+        error_count=len(failed),
+        field_count=len(rubric),
+    )
+
+
+# ---------------------------------------------------------------------------
+# RubricReviewer (placeholder — full implementation in subsequent tasks)
+# ---------------------------------------------------------------------------
+
+
+class RubricReviewer:
+    """Rubric-based reviewer that uses a grader LLM to evaluate outputs.
+
+    Not yet implemented — stub present for import compatibility.
+    """
 
 
 # ---------------------------------------------------------------------------
