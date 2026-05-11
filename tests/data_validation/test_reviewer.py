@@ -356,3 +356,48 @@ async def test_rubric_reviewer_custom_revision_prompt():
     assert result.attempts == 2
     assert "FIX:" in prompts_seen[1]
     assert "ORIGINAL:" in prompts_seen[1]
+
+
+# ---------------------------------------------------------------------------
+# RubricReviewer.from_rubric_file
+# ---------------------------------------------------------------------------
+
+
+def test_from_rubric_file_dash_bullets(tmp_path):
+    md = tmp_path / "rubric.md"
+    md.write_text(
+        "# My Rubric\n\nSome description.\n\n"
+        "- Every claim cites a source.\n"
+        "- No contradictions.\n"
+    )
+    reviewer = RubricReviewer.from_rubric_file(md)
+    assert reviewer._rubric == ["Every claim cites a source.", "No contradictions."]
+
+
+def test_from_rubric_file_star_bullets(tmp_path):
+    md = tmp_path / "rubric.md"
+    md.write_text("* Criterion one.\n* Criterion two.\n")
+    reviewer = RubricReviewer.from_rubric_file(md)
+    assert len(reviewer._rubric) == 2
+    assert reviewer._rubric[0] == "Criterion one."
+
+
+def test_from_rubric_file_no_criteria_raises(tmp_path):
+    md = tmp_path / "rubric.md"
+    md.write_text("# Just a heading\n\nSome prose, no bullets.\n")
+    with pytest.raises(ValueError, match="No bullet list criteria"):
+        RubricReviewer.from_rubric_file(md)
+
+
+def test_from_rubric_file_passes_kwargs(tmp_path):
+    md = tmp_path / "rubric.md"
+    md.write_text("- Only criterion.\n")
+    reviewer = RubricReviewer.from_rubric_file(md, max_iterations=1)
+    assert reviewer._max_iterations == 1
+
+
+def test_from_rubric_file_blank_bullet_ignored(tmp_path):
+    md = tmp_path / "rubric.md"
+    md.write_text("- Valid criterion.\n-   \n- Another criterion.\n")
+    reviewer = RubricReviewer.from_rubric_file(md)
+    assert reviewer._rubric == ["Valid criterion.", "Another criterion."]
