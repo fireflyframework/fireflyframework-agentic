@@ -21,7 +21,7 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -67,6 +67,91 @@ class SqlRetrievalOutcome:
 
 MAX_ROWS_IN_RESULT = 100
 MAX_ROWS_PER_PROBE = 20
+
+
+@dataclass(slots=True)
+class _LoopContext:
+    """Mutable per-query state shared between the loop tools.
+
+    Built fresh on each :meth:`StructuredRetriever.retrieve` call. Tools close
+    over this object; the loop driver reads its final state to build the
+    :class:`SqlRetrievalOutcome`.
+    """
+
+    db_path: Path
+    schemas: list[TargetSchema]
+    probe_trail: list[ProbeRecord] = field(default_factory=list)
+    attempted_sql: str | None = None
+    last_result_markdown: str | None = None
+    last_result_was_empty: bool = False
+    last_result_was_sentinel: bool = False
+    run_select_call_count: int = 0
+
+
+_SENTINEL_SQL_PATTERN = re.compile(r"^\s*SELECT\s+1\s+WHERE\s+1\s*=\s*0\s*;?\s*$", re.IGNORECASE)
+
+
+def _allowed_columns(schemas: list[TargetSchema]) -> dict[str, set[str]]:
+    """Build a {table_name: {column_names}} allow-list from the registered schemas."""
+    allowed: dict[str, set[str]] = {}
+    for schema in schemas:
+        for table in schema.tables:
+            allowed[table.name] = {c.name for c in table.columns}
+    return allowed
+
+
+def _build_inspect_tool(ctx: _LoopContext) -> Any:
+    """Return an async ``inspect_table(table, column, op)`` tool bound to *ctx*.
+
+    The tool runs parametric SQL — table/column are validated against the
+    schema allow-list and quoted; ``op`` selects one of four fixed queries.
+    The LLM never composes SQL at inspect time, so injection risk is zero
+    by construction.
+    """
+
+    allowed = _allowed_columns(ctx.schemas)
+
+    async def inspect_table(
+        table: str,
+        column: str,
+        op: Literal["distinct_values", "count", "sample_rows", "value_range"],
+    ) -> str:
+        """Peek at the corpus DB before composing the final SELECT.
+
+        Ops:
+          - ``distinct_values``: up to MAX_ROWS_PER_PROBE distinct values of *column*
+          - ``count``: COUNT(*) of *table*
+          - ``sample_rows``: first 5 rows of *table*
+          - ``value_range``: MIN/MAX of *column*
+
+        Raises ValueError if *table* or *column* is not in the registered
+        schemas (this is surfaced back to the LLM as a tool error).
+        """
+        if table not in allowed:
+            raise ValueError(f"table '{table}' not in registered schemas; available tables: {sorted(allowed)}")
+        cols = allowed[table]
+        if op != "count" and column not in cols:
+            raise ValueError(f"column '{column}' not in '{table}'; available: {sorted(cols)}")
+        # Identifier quoting: sqlite uses "..." for identifiers; double up any
+        # embedded quote chars. Allow-list already gates non-existent names,
+        # so this is belt-and-braces.
+        t = '"' + table.replace('"', '""') + '"'
+        c = '"' + column.replace('"', '""') + '"'
+        if op == "distinct_values":
+            sql = f"SELECT DISTINCT {c} FROM {t} WHERE {c} IS NOT NULL LIMIT {MAX_ROWS_PER_PROBE}"
+        elif op == "count":
+            sql = f"SELECT COUNT(*) FROM {t}"
+        elif op == "sample_rows":
+            sql = f"SELECT * FROM {t} LIMIT 5"
+        elif op == "value_range":
+            sql = f"SELECT MIN({c}), MAX({c}) FROM {t}"
+        else:
+            raise ValueError(f"unknown op '{op}'")
+        result = _execute(ctx.db_path, sql) or "(no rows)"
+        ctx.probe_trail.append(ProbeRecord(table=table, column=column, op=op, result=result[:500]))
+        return result
+
+    return inspect_table
 
 
 _SYSTEM = """\

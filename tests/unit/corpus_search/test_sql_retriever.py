@@ -29,8 +29,10 @@ from fireflyframework_agentic.rag.retrieval.sql import (
     ProbeRecord,
     SqlRetrievalOutcome,
     StructuredRetriever,
+    _build_inspect_tool,
     _build_schema_context,
     _execute,
+    _LoopContext,
 )
 
 
@@ -162,3 +164,93 @@ def test_execute_caps_rows_and_appends_truncation_footer(tmp_path: Path):
     # header + sep + capped rows + footer
     assert len(body_lines) == 2 + MAX_ROWS_IN_RESULT + 1
     assert body_lines[-1] == f"(+5 more rows; result capped at {MAX_ROWS_IN_RESULT})"
+
+
+# ---- Task 3: inspect_table tool -----------------------------------------
+
+
+def _seeded_db(tmp_path: Path) -> Path:
+    db = tmp_path / "corpus.sqlite"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE sales (period TEXT, region TEXT, product_name TEXT, revenue REAL)")
+    conn.executemany(
+        "INSERT INTO sales VALUES (?, ?, ?, ?)",
+        [
+            ("2025-Q4", "EU-North", "MX-3000 Wireless Mouse", 1200.0),
+            ("2025-Q4", "EU-South", "K10 Keyboard", 800.0),
+            ("2025-Q3", "NA", "MX-3000 Wireless Mouse", 950.0),
+        ],
+    )
+    conn.commit()
+    conn.close()
+    return db
+
+
+def _sales_schema() -> TargetSchema:
+    return TargetSchema(
+        tables=[
+            TableSpec(
+                name="sales",
+                columns=[
+                    ColumnSpec(name="period", type=ColumnType.string),
+                    ColumnSpec(name="region", type=ColumnType.string),
+                    ColumnSpec(name="product_name", type=ColumnType.string),
+                    ColumnSpec(name="revenue", type=ColumnType.float_),
+                ],
+            )
+        ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_inspect_table_distinct_values(tmp_path: Path):
+    ctx = _LoopContext(db_path=_seeded_db(tmp_path), schemas=[_sales_schema()])
+    inspect = _build_inspect_tool(ctx)
+    result = await inspect("sales", "region", "distinct_values")
+    assert "EU-North" in result
+    assert "EU-South" in result
+    assert "NA" in result
+    assert len(ctx.probe_trail) == 1
+    assert ctx.probe_trail[0].column == "region"
+    assert ctx.probe_trail[0].op == "distinct_values"
+
+
+@pytest.mark.asyncio
+async def test_inspect_table_count(tmp_path: Path):
+    ctx = _LoopContext(db_path=_seeded_db(tmp_path), schemas=[_sales_schema()])
+    inspect = _build_inspect_tool(ctx)
+    result = await inspect("sales", "period", "count")
+    assert "3" in result
+
+
+@pytest.mark.asyncio
+async def test_inspect_table_sample_rows(tmp_path: Path):
+    ctx = _LoopContext(db_path=_seeded_db(tmp_path), schemas=[_sales_schema()])
+    inspect = _build_inspect_tool(ctx)
+    result = await inspect("sales", "period", "sample_rows")
+    assert "EU-North" in result or "EU-South" in result
+
+
+@pytest.mark.asyncio
+async def test_inspect_table_value_range(tmp_path: Path):
+    ctx = _LoopContext(db_path=_seeded_db(tmp_path), schemas=[_sales_schema()])
+    inspect = _build_inspect_tool(ctx)
+    result = await inspect("sales", "revenue", "value_range")
+    assert "800" in result
+    assert "1200" in result
+
+
+@pytest.mark.asyncio
+async def test_inspect_table_rejects_unknown_table(tmp_path: Path):
+    ctx = _LoopContext(db_path=_seeded_db(tmp_path), schemas=[_sales_schema()])
+    inspect = _build_inspect_tool(ctx)
+    with pytest.raises(ValueError, match="not in registered schemas"):
+        await inspect("sqlite_master", "name", "distinct_values")
+
+
+@pytest.mark.asyncio
+async def test_inspect_table_rejects_unknown_column(tmp_path: Path):
+    ctx = _LoopContext(db_path=_seeded_db(tmp_path), schemas=[_sales_schema()])
+    inspect = _build_inspect_tool(ctx)
+    with pytest.raises(ValueError, match="column 'phantom' not in"):
+        await inspect("sales", "phantom", "distinct_values")
