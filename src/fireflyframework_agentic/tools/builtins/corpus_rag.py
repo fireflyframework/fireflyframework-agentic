@@ -3,12 +3,11 @@
 
 """Corpus RAG tools exposed via MCP.
 
-Seven tools:
+Six tools:
     - list_corpora()
     - ingest_corpus_filesystem(corpus_id, root_path)
     - discover_corpus_schema(corpus_id, path)
     - ingest_corpus_structured(corpus_id, path, schema?)
-    - ingest_corpus_sharepoint(corpus_id, drive_id, root_folder?)
     - corpus_retrieve(corpus_id, question, top_k)
     - corpus_query(corpus_id, question, top_k)
 
@@ -281,61 +280,65 @@ async def ingest_corpus_structured(
     }
 
 
-@firefly_tool(
-    "ingest_corpus_sharepoint",
-    description=(
-        "Ingest every changed file from a SharePoint drive into the corpus "
-        "identified by corpus_id. Auth uses the runtime's managed identity to "
-        "obtain a Microsoft Graph token. Returns counts of ingested / skipped / "
-        "failed documents and the new delta cursor."
-    ),
-    tags=("rag", "ingest", "sharepoint"),
-)
-async def ingest_corpus_sharepoint(
-    corpus_id: str,
-    drive_id: str,
-    root_folder: str | None = None,
-) -> dict[str, Any]:
-    from azure.identity.aio import ManagedIdentityCredential
-
-    from fireflyframework_agentic.content.sources.sharepoint import (
-        SharePointSource,
-        SharePointSourceConfig,
-    )
-
-    cache_dir = _corpus_root() / corpus_id / "sharepoint" / "cache"
-    delta_file = _corpus_root() / corpus_id / "sharepoint" / "delta.json"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-
-    config = SharePointSourceConfig(
-        drive_id=drive_id,
-        root_folder=root_folder,
-        cache_dir=cache_dir,
-        delta_file=delta_file,
-    )
-    credential = ManagedIdentityCredential()
-
-    async def token_provider() -> str:
-        token = await credential.get_token(_GRAPH_SCOPE)
-        return token.token
-
-    try:
-        async with (
-            _write_lock_for(corpus_id),
-            SharePointSource(config, token_provider=token_provider) as source,
-        ):
-            agent = await _agent_for(corpus_id)
-            summary = await agent.ingest_source(source)
-    finally:
-        await credential.close()
-
-    return {
-        "corpus_id": corpus_id,
-        "ingested": summary.ingested,
-        "skipped": summary.skipped,
-        "failed": summary.failed,
-        "cursor": summary.cursor,
-    }
+# NOTE: ingest_corpus_sharepoint was removed because SharePointSource was moved to
+# examples/corpus_search. If SharePoint ingestion is needed in the main framework,
+# it should be re-architected to avoid vendor-specific dependencies in src/.
+#
+# @firefly_tool(
+#     "ingest_corpus_sharepoint",
+#     description=(
+#         "Ingest every changed file from a SharePoint drive into the corpus "
+#         "identified by corpus_id. Auth uses the runtime's managed identity to "
+#         "obtain a Microsoft Graph token. Returns counts of ingested / skipped / "
+#         "failed documents and the new delta cursor."
+#     ),
+#     tags=("rag", "ingest", "sharepoint"),
+# )
+# async def ingest_corpus_sharepoint(
+#     corpus_id: str,
+#     drive_id: str,
+#     root_folder: str | None = None,
+# ) -> dict[str, Any]:
+#     from azure.identity.aio import ManagedIdentityCredential
+#
+#     from fireflyframework_agentic.content.sources.sharepoint import (
+#         SharePointSource,
+#         SharePointSourceConfig,
+#     )
+#
+#     cache_dir = _corpus_root() / corpus_id / "sharepoint" / "cache"
+#     delta_file = _corpus_root() / corpus_id / "sharepoint" / "delta.json"
+#     cache_dir.mkdir(parents=True, exist_ok=True)
+#
+#     config = SharePointSourceConfig(
+#         drive_id=drive_id,
+#         root_folder=root_folder,
+#         cache_dir=cache_dir,
+#         delta_file=delta_file,
+#     )
+#     credential = ManagedIdentityCredential()
+#
+#     async def token_provider() -> str:
+#         token = await credential.get_token(_GRAPH_SCOPE)
+#         return token.token
+#
+#     try:
+#         async with (
+#             _write_lock_for(corpus_id),
+#             SharePointSource(config, token_provider=token_provider) as source,
+#         ):
+#             agent = await _agent_for(corpus_id)
+#             summary = await agent.ingest_source(source)
+#     finally:
+#         await credential.close()
+#
+#     return {
+#         "corpus_id": corpus_id,
+#         "ingested": summary.ingested,
+#         "skipped": summary.skipped,
+#         "failed": summary.failed,
+#         "cursor": summary.cursor,
+#     }
 
 
 # ---------- retrieve / query -----------------------------------------------
@@ -399,7 +402,6 @@ __all__ = [
     "corpus_retrieve",
     "discover_corpus_schema",
     "ingest_corpus_filesystem",
-    "ingest_corpus_sharepoint",
     "ingest_corpus_structured",
     "list_corpora",
 ]
