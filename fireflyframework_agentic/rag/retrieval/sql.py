@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import re
 import sqlite3
@@ -23,12 +24,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from pydantic_ai.exceptions import ModelRetry
 from pydantic_ai.usage import UsageLimits
 
 from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.rag.ingest.structured_schema import TargetSchema
 
 log = logging.getLogger(__name__)
+
+# Shared heading for the empty-SQL prompt section. The answerer's instructions
+# reference this literal to gate the 'don't say I-don't-have-enough-info'
+# behaviour, so the two must stay in sync.
+EMPTY_SQL_HEADING = "## SQL attempt (no matching rows)"
 
 
 @dataclass(slots=True, frozen=True)
@@ -124,14 +131,16 @@ def _build_inspect_tool(ctx: _LoopContext) -> Any:
           - ``sample_rows``: first 5 rows of *table*
           - ``value_range``: MIN/MAX of *column*
 
-        Raises ValueError if *table* or *column* is not in the registered
-        schemas (this is surfaced back to the LLM as a tool error).
+        Raises :class:`pydantic_ai.exceptions.ModelRetry` if *table* or *column*
+        is not in the registered schemas — pydantic-ai surfaces the message
+        back to the LLM as a tool error so it can pick a valid name and retry,
+        rather than terminating the loop on a typo.
         """
         if table not in allowed:
-            raise ValueError(f"table '{table}' not in registered schemas; available tables: {sorted(allowed)}")
+            raise ModelRetry(f"table '{table}' not in registered schemas; available tables: {sorted(allowed)}")
         cols = allowed[table]
         if op != "count" and column not in cols:
-            raise ValueError(f"column '{column}' not in '{table}'; available: {sorted(cols)}")
+            raise ModelRetry(f"column '{column}' not in '{table}'; available: {sorted(cols)}")
         # Identifier quoting: sqlite uses "..." for identifiers; double up any
         # embedded quote chars. Allow-list already gates non-existent names,
         # so this is belt-and-braces.
@@ -248,44 +257,49 @@ Rules:
 
 
 _DEFAULT_SQL_MODEL = "anthropic:claude-haiku-4-5-20251001"
-_MAX_STEPS = 8
+_MAX_TOOL_CALLS = 8
+
+# Per-call loop context, scoped via ContextVar so concurrent retrieve() calls
+# on the same retriever instance (e.g. when a single CorpusAgent fields two
+# in-flight corpus_query requests) don't cross-pollute their probe trails or
+# attempted-SQL records. The tool closures registered on _sql_agent read from
+# this var; retrieve() sets it within a token scope and resets on exit.
+_CURRENT_CTX: contextvars.ContextVar[_LoopContext | None] = contextvars.ContextVar("firefly_sql_loop_ctx", default=None)
 
 
 class StructuredRetriever:
     """Agentic text-to-SQL retriever.
 
-    Builds a fresh ``_LoopContext`` per query, exposes ``inspect_table`` and
-    ``run_select`` as tools, and lets the LLM drive the loop. The terminal
-    ``SqlRetrievalOutcome`` is built from the context's final state — the
-    agent's natural-language closing message is discarded.
+    Builds a fresh ``_LoopContext`` per query (scoped via :data:`_CURRENT_CTX`),
+    exposes ``inspect_table`` and ``run_select`` as tools, and lets the LLM
+    drive the loop. The terminal :class:`SqlRetrievalOutcome` is built from
+    the context's final state — the agent's natural-language closing message
+    is discarded.
     """
 
     def __init__(self, db_path: Path, *, sql_model: str = _DEFAULT_SQL_MODEL) -> None:
         self._db_path = db_path
         self._sql_model = sql_model
-        # The active per-query context; set by retrieve() and read by the
-        # closures registered as tools below. Set to None when no query is
-        # in flight so concurrent misuse fails loudly.
-        self._current_ctx: _LoopContext | None = None
 
         async def inspect_table(
             table: str,
             column: str,
             op: Literal["distinct_values", "count", "sample_rows", "value_range"],
         ) -> str:
-            ctx = self._current_ctx
+            ctx = _CURRENT_CTX.get()
             assert ctx is not None, "inspect_table called outside retrieve()"
             return await _build_inspect_tool(ctx)(table, column, op)
 
         async def run_select(sql: str) -> str:
-            ctx = self._current_ctx
+            ctx = _CURRENT_CTX.get()
             assert ctx is not None, "run_select called outside retrieve()"
             return await _build_run_select_tool(ctx)(sql)
 
-        # Test hook: tools exposed for deterministic loop replay in unit
-        # tests that patch _sql_agent.run. Production callers should not
-        # invoke these directly — the agent does.
-        self._tools: dict[str, Any] = {
+        # Test hook: tools exposed for deterministic loop replay in unit tests
+        # that patch _sql_agent.run. Production callers MUST NOT invoke these
+        # directly — the agent does, and a direct call outside retrieve() will
+        # trip the `ctx is not None` assertion in each closure.
+        self._test_tools: dict[str, Any] = {
             "inspect_table": inspect_table,
             "run_select": run_select,
         }
@@ -305,8 +319,10 @@ class StructuredRetriever:
     ) -> SqlRetrievalOutcome:
         """Run the inspect-and-select loop.
 
-        Returns a :class:`SqlRetrievalOutcome` describing what happened.
-        Never raises on tool errors — those become ``'unsupported'`` outcomes.
+        Returns a :class:`SqlRetrievalOutcome` describing what happened. Never
+        raises on tool errors or agent failures — both produce a structured
+        outcome built from whatever progress the loop made. If a ``run_select``
+        succeeded before a later failure, the ``answered`` state is preserved.
         """
         if not schemas:
             return SqlRetrievalOutcome(
@@ -317,22 +333,19 @@ class StructuredRetriever:
             )
         ctx = _LoopContext(db_path=self._db_path, schemas=schemas)
         prompt = f"{_build_schema_context(schemas)}\n\nQuestion: {question}"
-        self._current_ctx = ctx
+        token = _CURRENT_CTX.set(ctx)
         try:
             await self._sql_agent.run(
                 prompt,
-                usage_limits=UsageLimits(request_limit=_MAX_STEPS),
+                usage_limits=UsageLimits(tool_calls_limit=_MAX_TOOL_CALLS),
             )
         except Exception as exc:
+            # Loop terminated abnormally (e.g. UsageLimitExceeded, model error,
+            # network blip). Don't discard progress — the context may already
+            # carry a successful run_select that we should report as answered.
             log.warning("SQL agent loop failed: %s", exc)
-            return SqlRetrievalOutcome(
-                outcome="unsupported",
-                result_markdown=None,
-                attempted_sql=ctx.attempted_sql,
-                probe_trail=list(ctx.probe_trail),
-            )
         finally:
-            self._current_ctx = None
+            _CURRENT_CTX.reset(token)
         return _build_outcome(ctx)
 
 

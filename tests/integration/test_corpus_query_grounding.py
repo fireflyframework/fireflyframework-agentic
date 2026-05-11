@@ -82,7 +82,7 @@ async def test_inspect_loop_recovers_from_synonym_and_overload(tmp_path: Path):
     # pattern a correctly-functioning Haiku agent would follow on this
     # fixture: probe the ambiguous columns, then run the disambiguated SELECT.
     async def replay(prompt, **kwargs):
-        tools = retriever._tools
+        tools = retriever._test_tools
         # 1. The agent doesn't know what product_name values exist — probe.
         await tools["inspect_table"]("sales", "product_name", "distinct_values")
         # 2. period column is text — probe its format.
@@ -121,7 +121,7 @@ async def test_inspect_loop_reports_empty_when_data_truly_absent(tmp_path: Path)
     retriever = StructuredRetriever(db)
 
     async def replay(prompt, **kwargs):
-        tools = retriever._tools
+        tools = retriever._test_tools
         await tools["inspect_table"]("sales", "region", "distinct_values")
         await tools["run_select"]("SELECT * FROM sales WHERE region='Antarctica'")
         return type("R", (), {"output": "no rows"})()

@@ -203,17 +203,23 @@ async def test_inspect_table_value_range(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_inspect_table_rejects_unknown_table(tmp_path: Path):
+    from pydantic_ai.exceptions import ModelRetry
+
     ctx = _LoopContext(db_path=_seeded_db(tmp_path), schemas=[_sales_schema()])
     inspect = _build_inspect_tool(ctx)
-    with pytest.raises(ValueError, match="not in registered schemas"):
+    # ModelRetry is pydantic-ai's hook for "tell the LLM and let it retry"
+    # rather than terminating the loop on a typo'd name.
+    with pytest.raises(ModelRetry, match="not in registered schemas"):
         await inspect("sqlite_master", "name", "distinct_values")
 
 
 @pytest.mark.asyncio
 async def test_inspect_table_rejects_unknown_column(tmp_path: Path):
+    from pydantic_ai.exceptions import ModelRetry
+
     ctx = _LoopContext(db_path=_seeded_db(tmp_path), schemas=[_sales_schema()])
     inspect = _build_inspect_tool(ctx)
-    with pytest.raises(ValueError, match="column 'phantom' not in"):
+    with pytest.raises(ModelRetry, match="column 'phantom' not in"):
         await inspect("sales", "phantom", "distinct_values")
 
 
@@ -288,7 +294,7 @@ async def test_retrieve_answered_after_probes(tmp_path: Path):
     retriever = StructuredRetriever(db)
 
     async def fake_agent_run(prompt, **kwargs):
-        tools = retriever._tools
+        tools = retriever._test_tools
         await tools["inspect_table"]("sales", "region", "distinct_values")
         await tools["run_select"]("SELECT period, region FROM sales WHERE region='EU-North'")
         return MagicMock(output="done")
@@ -310,7 +316,7 @@ async def test_retrieve_empty_when_select_matches_nothing(tmp_path: Path):
     retriever = StructuredRetriever(db)
 
     async def fake_agent_run(prompt, **kwargs):
-        tools = retriever._tools
+        tools = retriever._test_tools
         await tools["inspect_table"]("sales", "region", "distinct_values")
         await tools["run_select"]("SELECT * FROM sales WHERE region='Antarctica'")
         return MagicMock(output="no rows")
@@ -330,7 +336,7 @@ async def test_retrieve_unsupported_on_sentinel(tmp_path: Path):
     retriever = StructuredRetriever(db)
 
     async def fake_agent_run(prompt, **kwargs):
-        tools = retriever._tools
+        tools = retriever._test_tools
         await tools["run_select"]("SELECT 1 WHERE 1=0")
         return MagicMock(output="give up")
 
@@ -361,3 +367,91 @@ def test_build_schema_context_has_no_sample_values_section():
     assert "sales" in ctx
     assert "region" in ctx
     assert "sample" not in ctx.lower()
+
+
+# ---- Reviewer fixes: concurrency, exception-recovery, ModelRetry --------
+
+
+@pytest.mark.asyncio
+async def test_retrieve_preserves_answered_when_agent_later_raises(tmp_path: Path):
+    """If run_select succeeded and then the loop raises, outcome stays 'answered'.
+
+    Reviewer C3: the broad `except Exception` previously discarded the
+    successful run_select state and returned 'unsupported'. After the fix the
+    terminal context state drives the outcome regardless of how the loop
+    ended.
+    """
+    db = _seeded_db(tmp_path)
+    retriever = StructuredRetriever(db)
+
+    async def fake_agent_run(prompt, **kwargs):
+        tools = retriever._test_tools
+        await tools["run_select"]("SELECT period, region FROM sales WHERE region='EU-North'")
+        # Now simulate the agent's loop blowing up after the successful query
+        # (e.g. UsageLimitExceeded, a model error, a network blip).
+        raise RuntimeError("simulated post-success loop failure")
+
+    with patch.object(retriever._sql_agent, "run", new=AsyncMock(side_effect=fake_agent_run)):
+        outcome = await retriever.retrieve("EU-North sales?", schemas=[_sales_schema()])
+
+    assert outcome.outcome == "answered", outcome
+    assert outcome.result_markdown is not None
+    assert "EU-North" in outcome.result_markdown
+
+
+@pytest.mark.asyncio
+async def test_retrieve_is_re_entrant_under_concurrent_calls(tmp_path: Path):
+    """Two overlapping retrieve() calls on the same retriever must have isolated trails.
+
+    Reviewer C1: `self._current_ctx` was shared across calls and the production
+    MCP path caches one retriever per corpus_id. After the ContextVar fix each
+    coroutine sees its own context.
+    """
+    import asyncio
+
+    db = _seeded_db(tmp_path)
+    retriever = StructuredRetriever(db)
+
+    started_a = asyncio.Event()
+    can_finish_a = asyncio.Event()
+
+    async def fake_run_a(prompt, **kwargs):
+        tools = retriever._test_tools
+        await tools["inspect_table"]("sales", "region", "distinct_values")
+        started_a.set()
+        await can_finish_a.wait()
+        await tools["run_select"]("SELECT period, region FROM sales WHERE region='EU-North'")
+        return MagicMock(output="done")
+
+    async def fake_run_b(prompt, **kwargs):
+        tools = retriever._test_tools
+        await tools["inspect_table"]("sales", "product_name", "distinct_values")
+        await tools["run_select"]("SELECT period, region FROM sales WHERE region='EU-South'")
+        return MagicMock(output="done")
+
+    # Replace one agent on call A, another on call B — but since they share an
+    # agent instance, alternate via a counter that picks the right side.
+    call_idx = [0]
+
+    async def dispatch(prompt, **kwargs):
+        idx = call_idx[0]
+        call_idx[0] += 1
+        if idx == 0:
+            return await fake_run_a(prompt, **kwargs)
+        return await fake_run_b(prompt, **kwargs)
+
+    with patch.object(retriever._sql_agent, "run", new=AsyncMock(side_effect=dispatch)):
+        task_a = asyncio.create_task(retriever.retrieve("a", schemas=[_sales_schema()]))
+        # Wait for A to hit its mid-call barrier (one probe registered),
+        # then start B in parallel and let it run to completion first.
+        await started_a.wait()
+        outcome_b = await retriever.retrieve("b", schemas=[_sales_schema()])
+        # Now let A finish.
+        can_finish_a.set()
+        outcome_a = await task_a
+
+    # Each outcome must see only its own probes and its own SELECT.
+    assert {p.column for p in outcome_a.probe_trail} == {"region"}, outcome_a.probe_trail
+    assert outcome_a.attempted_sql == "SELECT period, region FROM sales WHERE region='EU-North'"
+    assert {p.column for p in outcome_b.probe_trail} == {"product_name"}, outcome_b.probe_trail
+    assert outcome_b.attempted_sql == "SELECT period, region FROM sales WHERE region='EU-South'"
