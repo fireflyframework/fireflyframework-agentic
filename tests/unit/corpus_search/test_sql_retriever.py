@@ -30,6 +30,7 @@ from fireflyframework_agentic.rag.retrieval.sql import (
     SqlRetrievalOutcome,
     StructuredRetriever,
     _build_inspect_tool,
+    _build_run_select_tool,
     _build_schema_context,
     _execute,
     _LoopContext,
@@ -254,3 +255,55 @@ async def test_inspect_table_rejects_unknown_column(tmp_path: Path):
     inspect = _build_inspect_tool(ctx)
     with pytest.raises(ValueError, match="column 'phantom' not in"):
         await inspect("sales", "phantom", "distinct_values")
+
+
+# ---- Task 4: run_select tool --------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_select_returns_markdown_and_records_sql(tmp_path: Path):
+    ctx = _LoopContext(db_path=_seeded_db(tmp_path), schemas=[_sales_schema()])
+    run_select = _build_run_select_tool(ctx)
+    result = await run_select("SELECT period, region FROM sales WHERE region='EU-North'")
+    assert "EU-North" in result
+    assert "2025-Q4" in result
+    assert ctx.attempted_sql == "SELECT period, region FROM sales WHERE region='EU-North'"
+    assert ctx.last_result_was_empty is False
+    assert ctx.run_select_call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_run_select_rejects_non_select(tmp_path: Path):
+    ctx = _LoopContext(db_path=_seeded_db(tmp_path), schemas=[_sales_schema()])
+    run_select = _build_run_select_tool(ctx)
+    result = await run_select("DROP TABLE sales")
+    assert "must start with SELECT" in result
+    # The attempt is still recorded so cap-exhausted outcomes carry the SQL.
+    assert ctx.attempted_sql == "DROP TABLE sales"
+
+
+@pytest.mark.asyncio
+async def test_run_select_returns_error_message_on_sql_error(tmp_path: Path):
+    ctx = _LoopContext(db_path=_seeded_db(tmp_path), schemas=[_sales_schema()])
+    run_select = _build_run_select_tool(ctx)
+    result = await run_select("SELECT * FROM phantom_table")
+    assert "SQL error" in result
+    assert "no such table" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_run_select_sets_empty_flag_on_zero_rows(tmp_path: Path):
+    ctx = _LoopContext(db_path=_seeded_db(tmp_path), schemas=[_sales_schema()])
+    run_select = _build_run_select_tool(ctx)
+    result = await run_select("SELECT * FROM sales WHERE region='Antarctica'")
+    assert "0 rows" in result or "no rows" in result.lower()
+    assert ctx.last_result_was_empty is True
+    assert ctx.attempted_sql == "SELECT * FROM sales WHERE region='Antarctica'"
+
+
+@pytest.mark.asyncio
+async def test_run_select_detects_sentinel(tmp_path: Path):
+    ctx = _LoopContext(db_path=_seeded_db(tmp_path), schemas=[_sales_schema()])
+    run_select = _build_run_select_tool(ctx)
+    await run_select("SELECT 1 WHERE 1=0")
+    assert ctx.last_result_was_sentinel is True

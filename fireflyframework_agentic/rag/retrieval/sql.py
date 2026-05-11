@@ -154,6 +154,49 @@ def _build_inspect_tool(ctx: _LoopContext) -> Any:
     return inspect_table
 
 
+def _build_run_select_tool(ctx: _LoopContext) -> Any:
+    """Return an async ``run_select(sql)`` tool bound to *ctx*.
+
+    Each call updates ``ctx.attempted_sql`` and ``ctx.last_result_*`` so the
+    loop driver can read the terminal state when the agent stops.
+    """
+
+    async def run_select(sql: str) -> str:
+        """Execute the final SELECT statement against the corpus DB.
+
+        - Must start with SELECT (case-insensitive, leading whitespace
+          allowed). Returns ``'SQL must start with SELECT.'`` on violation —
+          the LLM can revise and retry.
+        - Returns ``'SQL error: ...'`` on sqlite3 errors so the LLM can self-
+          correct (the loop is not terminated on a single error).
+        - Returns ``'Query returned 0 rows.'`` on a clean run with no matches —
+          this marks the outcome as 'empty' if it's the last SELECT.
+        - Otherwise returns a markdown table, capped at MAX_ROWS_IN_RESULT.
+        """
+        ctx.attempted_sql = sql
+        ctx.run_select_call_count += 1
+        # Reset per-call flags so the *last* run_select determines the outcome.
+        ctx.last_result_was_empty = False
+        ctx.last_result_was_sentinel = False
+        ctx.last_result_markdown = None
+        if _SENTINEL_SQL_PATTERN.match(sql):
+            ctx.last_result_was_sentinel = True
+            return "Acknowledged: no answer is possible from this schema."
+        if not re.match(r"(?i)^\s*SELECT\b", sql):
+            return "SQL must start with SELECT. Other statements are not allowed."
+        result = _execute(ctx.db_path, sql)
+        if result is None:
+            ctx.last_result_was_empty = True
+            return "Query returned 0 rows."
+        if result.startswith("SQL error:"):
+            # Don't store as result; let the LLM retry.
+            return result
+        ctx.last_result_markdown = result
+        return result
+
+    return run_select
+
+
 _SYSTEM = """\
 You generate a single SQLite SELECT statement to answer the user's question.
 Rules:
