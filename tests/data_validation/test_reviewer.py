@@ -23,7 +23,13 @@ import pytest
 from pydantic import BaseModel, Field
 
 from fireflyframework_agentic.exceptions import OutputReviewError
-from fireflyframework_agentic.validation.reviewer import OutputReviewer, RetryAttempt, ReviewResult
+from fireflyframework_agentic.validation.reviewer import (
+    OutputReviewer,
+    RetryAttempt,
+    ReviewResult,
+    RubricReviewer,
+    _parse_grader_response,
+)
 from fireflyframework_agentic.validation.rules import EnumRule, OutputValidator
 
 
@@ -164,3 +170,232 @@ class TestReviewResultModel:
         assert r.output == "ok"
         assert r.retry_history == []
         assert r.validation_report is None
+
+
+# ---------------------------------------------------------------------------
+# _parse_grader_response
+# ---------------------------------------------------------------------------
+
+
+def test_parse_grader_satisfied():
+    rubric = ["Criterion A", "Criterion B"]
+    report = _parse_grader_response("MET: 1\nMET: 2\nSATISFIED", rubric)
+    assert report.valid is True
+    assert report.error_count == 0
+
+
+def test_parse_grader_needs_revision():
+    rubric = ["Every claim cites at least one [chunk_id]."]
+    report = _parse_grader_response("NOT MET: 1 — no inline citation found\nNEEDS_REVISION", rubric)
+    assert report.valid is False
+    assert report.error_count == 1
+    assert report.errors[0].message == "no inline citation found"
+    assert report.errors[0].passed is False
+    assert report.errors[0].rule_name == "Every claim cites at least one [chunk_id]."
+
+
+def test_parse_grader_malformed_treated_as_needs_revision():
+    rubric = ["Criterion A"]
+    report = _parse_grader_response("I have no idea what to say here", rubric)
+    assert report.valid is False
+    assert report.error_count == 1
+    assert "could not be parsed" in report.errors[0].message
+
+
+def test_parse_grader_field_count_matches_rubric():
+    rubric = ["A", "B", "C"]
+    report = _parse_grader_response("MET: 1\nMET: 2\nMET: 3\nSATISFIED", rubric)
+    assert report.field_count == 3
+
+
+def test_parse_grader_satisfied_results_empty():
+    rubric = ["Criterion A"]
+    report = _parse_grader_response("MET: 1\nSATISFIED", rubric)
+    assert report.results == []
+
+
+def test_parse_grader_field_count_in_failing_path():
+    rubric = ["A", "B"]
+    report = _parse_grader_response("NOT MET: 1 — missing\nNEEDS_REVISION", rubric)
+    assert report.field_count == 2
+
+
+def test_parse_grader_hyphen_separator():
+    rubric = ["Every claim cites a source."]
+    report = _parse_grader_response("NOT MET: 1 - no citation found\nNEEDS_REVISION", rubric)
+    assert report.valid is False
+    assert report.error_count == 1
+    assert report.errors[0].message == "no citation found"
+
+
+def test_parse_grader_non_numeric_criterion():
+    rubric = ["A"]
+    report = _parse_grader_response("NOT MET: conclusion missing\nNEEDS_REVISION", rubric)
+    assert report.valid is False
+    assert report.error_count == 1
+    assert report.errors[0].field_name == "criterion_unknown"
+
+
+def test_parse_grader_first_terminal_keyword_wins():
+    rubric = ["A"]
+    # SATISFIED appears first — second keyword should be ignored
+    report = _parse_grader_response("MET: 1\nSATISFIED\nNEEDS_REVISION", rubric)
+    assert report.valid is True
+
+
+# ---------------------------------------------------------------------------
+# RubricReviewer — loop
+# ---------------------------------------------------------------------------
+
+
+async def test_rubric_reviewer_satisfied_first_try():
+    generator = MockAgent(["The answer is 42 [chunk_1]."])
+    grader = MockAgent(["MET: 1\nSATISFIED"])
+    reviewer = RubricReviewer(
+        rubric=["Every claim cites at least one [chunk_id]."],
+        grader=grader,
+        max_iterations=3,
+    )
+    result = await reviewer.review(generator, "What is the answer?")
+    assert result.attempts == 1
+    assert result.validation_report.valid is True
+    assert result.retry_history == []
+
+
+async def test_rubric_reviewer_revision_then_satisfied():
+    generator = MockAgent(["No citations here.", "The answer is 42 [chunk_1]."])
+    grader = MockAgent(
+        [
+            "NOT MET: 1 — no citation found\nNEEDS_REVISION",
+            "MET: 1\nSATISFIED",
+        ]
+    )
+    reviewer = RubricReviewer(
+        rubric=["Every claim cites at least one [chunk_id]."],
+        grader=grader,
+        max_iterations=3,
+    )
+    result = await reviewer.review(generator, "What is the answer?")
+    assert result.attempts == 2
+    assert result.validation_report.valid is True
+    assert len(result.retry_history) == 1
+    assert result.retry_history[0].attempt == 1
+    assert "no citation found" in result.retry_history[0].errors[0]
+
+
+async def test_rubric_reviewer_exhausted_raises():
+    generator = MockAgent(["bad output"] * 4)
+    grader = MockAgent(["NOT MET: 1 — no citation\nNEEDS_REVISION"] * 4)
+    reviewer = RubricReviewer(
+        rubric=["Every claim cites at least one [chunk_id]."],
+        grader=grader,
+        max_iterations=3,
+    )
+    with pytest.raises(OutputReviewError, match="failed after 3 attempts"):
+        await reviewer.review(generator, "question")
+
+
+async def test_rubric_reviewer_empty_rubric_raises_at_construction():
+    with pytest.raises(ValueError, match="at least one criterion"):
+        RubricReviewer(rubric=[])
+
+
+async def test_rubric_reviewer_malformed_grader_response_continues_loop():
+    generator = MockAgent(["output", "fixed output"])
+    grader = MockAgent(["this is not a valid grader response", "MET: 1\nSATISFIED"])
+    reviewer = RubricReviewer(
+        rubric=["The output is correct."],
+        grader=grader,
+        max_iterations=3,
+    )
+    result = await reviewer.review(generator, "question")
+    assert result.attempts == 2
+
+
+def test_rubric_reviewer_default_grader_construction():
+    from unittest.mock import MagicMock, patch
+
+    mock_agent_instance = MagicMock()
+
+    with patch(
+        "fireflyframework_agentic.validation.reviewer.RubricReviewer._make_default_grader",
+        return_value=mock_agent_instance,
+    ) as mock_make:
+        reviewer = RubricReviewer(rubric=["Criterion A."])
+        # _make_default_grader is lazy — called on first review(), not at construction
+        assert reviewer._grader is None
+        mock_make.assert_not_called()
+
+
+async def test_rubric_reviewer_custom_revision_prompt():
+    prompts_seen: list[str] = []
+
+    class CapturingAgent:
+        def __init__(self, responses: list[str]) -> None:
+            self._responses = responses
+            self._idx = 0
+
+        async def run(self, prompt: Any, **kwargs: Any) -> MockResult:
+            prompts_seen.append(str(prompt))
+            resp = self._responses[self._idx] if self._idx < len(self._responses) else self._responses[-1]
+            self._idx += 1
+            return MockResult(output=resp)
+
+    generator = CapturingAgent(["bad", "good [chunk_1]."])
+    grader = MockAgent(
+        [
+            "NOT MET: 1 — missing citation\nNEEDS_REVISION",
+            "MET: 1\nSATISFIED",
+        ]
+    )
+    reviewer = RubricReviewer(
+        rubric=["Every claim cites at least one [chunk_id]."],
+        grader=grader,
+        max_iterations=3,
+        revision_prompt="FIX: {gaps}\nORIGINAL: {original_prompt}",
+    )
+    result = await reviewer.review(generator, "question")
+    assert result.attempts == 2
+    assert "FIX:" in prompts_seen[1]
+    assert "ORIGINAL:" in prompts_seen[1]
+
+
+# ---------------------------------------------------------------------------
+# RubricReviewer.from_rubric_file
+# ---------------------------------------------------------------------------
+
+
+def test_from_rubric_file_dash_bullets(tmp_path):
+    md = tmp_path / "rubric.md"
+    md.write_text("# My Rubric\n\nSome description.\n\n- Every claim cites a source.\n- No contradictions.\n")
+    reviewer = RubricReviewer.from_rubric_file(md)
+    assert reviewer._rubric == ["Every claim cites a source.", "No contradictions."]
+
+
+def test_from_rubric_file_star_bullets(tmp_path):
+    md = tmp_path / "rubric.md"
+    md.write_text("* Criterion one.\n* Criterion two.\n")
+    reviewer = RubricReviewer.from_rubric_file(md)
+    assert len(reviewer._rubric) == 2
+    assert reviewer._rubric[0] == "Criterion one."
+
+
+def test_from_rubric_file_no_criteria_raises(tmp_path):
+    md = tmp_path / "rubric.md"
+    md.write_text("# Just a heading\n\nSome prose, no bullets.\n")
+    with pytest.raises(ValueError, match="No bullet list criteria"):
+        RubricReviewer.from_rubric_file(md)
+
+
+def test_from_rubric_file_passes_kwargs(tmp_path):
+    md = tmp_path / "rubric.md"
+    md.write_text("- Only criterion.\n")
+    reviewer = RubricReviewer.from_rubric_file(md, max_iterations=1)
+    assert reviewer._max_iterations == 1
+
+
+def test_from_rubric_file_blank_bullet_ignored(tmp_path):
+    md = tmp_path / "rubric.md"
+    md.write_text("- Valid criterion.\n-   \n- Another criterion.\n")
+    reviewer = RubricReviewer.from_rubric_file(md)
+    assert reviewer._rubric == ["Valid criterion.", "Another criterion."]
