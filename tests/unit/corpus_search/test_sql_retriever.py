@@ -62,46 +62,6 @@ def _populated_db(tmp_path: Path) -> Path:
     return db
 
 
-@pytest.mark.asyncio
-async def test_retrieve_returns_none_for_empty_schemas(tmp_path: Path):
-    retriever = StructuredRetriever(tmp_path / "corpus.sqlite")
-    result = await retriever.retrieve("How many products?", schemas=[])
-    assert result is None
-
-
-@pytest.mark.asyncio
-async def test_retrieve_returns_markdown_table(tmp_path: Path):
-    db = _populated_db(tmp_path)
-    retriever = StructuredRetriever(db)
-    mock_result = MagicMock()
-    mock_result.output.sql = "SELECT id, name FROM products"
-    with patch.object(retriever, "_sql_agent") as mock_agent:
-        mock_agent.run = AsyncMock(return_value=mock_result)
-        result = await retriever.retrieve("List all products", schemas=[_schema()])
-    assert result is not None
-    assert "Widget" in result
-    assert "Gadget" in result
-
-
-@pytest.mark.asyncio
-async def test_retrieve_rejects_non_select_sql(tmp_path: Path):
-    db = _populated_db(tmp_path)
-    retriever = StructuredRetriever(db)
-    mock_result = MagicMock()
-    mock_result.output.sql = "DROP TABLE products"
-    with patch.object(retriever, "_sql_agent") as mock_agent:
-        mock_agent.run = AsyncMock(return_value=mock_result)
-        result = await retriever.retrieve("drop table", schemas=[_schema()])
-    assert result is None
-
-
-def test_build_schema_context():
-    ctx = _build_schema_context([_schema()])
-    assert "products" in ctx
-    assert "id" in ctx
-    assert "name" in ctx
-
-
 def test_execute_returns_none_for_empty_result(tmp_path: Path):
     db = _populated_db(tmp_path)
     result = _execute(db, "SELECT * FROM products WHERE 1=0")
@@ -307,3 +267,97 @@ async def test_run_select_detects_sentinel(tmp_path: Path):
     run_select = _build_run_select_tool(ctx)
     await run_select("SELECT 1 WHERE 1=0")
     assert ctx.last_result_was_sentinel is True
+
+
+# ---- Task 5: StructuredRetriever loop driver ----------------------------
+
+
+@pytest.mark.asyncio
+async def test_retrieve_empty_schemas_returns_unsupported(tmp_path: Path):
+    retriever = StructuredRetriever(tmp_path / "corpus.sqlite")
+    outcome = await retriever.retrieve("Anything?", schemas=[])
+    assert outcome.outcome == "unsupported"
+    assert outcome.result_markdown is None
+    assert outcome.attempted_sql is None
+    assert outcome.probe_trail == []
+
+
+@pytest.mark.asyncio
+async def test_retrieve_answered_after_probes(tmp_path: Path):
+    db = _seeded_db(tmp_path)
+    retriever = StructuredRetriever(db)
+
+    async def fake_agent_run(prompt, **kwargs):
+        tools = retriever._tools
+        await tools["inspect_table"]("sales", "region", "distinct_values")
+        await tools["run_select"]("SELECT period, region FROM sales WHERE region='EU-North'")
+        return MagicMock(output="done")
+
+    with patch.object(retriever._sql_agent, "run", new=AsyncMock(side_effect=fake_agent_run)):
+        outcome = await retriever.retrieve("Which periods saw EU-North sales?", schemas=[_sales_schema()])
+
+    assert outcome.outcome == "answered"
+    assert outcome.result_markdown is not None
+    assert "EU-North" in outcome.result_markdown
+    assert outcome.attempted_sql == "SELECT period, region FROM sales WHERE region='EU-North'"
+    assert len(outcome.probe_trail) == 1
+    assert outcome.probe_trail[0].column == "region"
+
+
+@pytest.mark.asyncio
+async def test_retrieve_empty_when_select_matches_nothing(tmp_path: Path):
+    db = _seeded_db(tmp_path)
+    retriever = StructuredRetriever(db)
+
+    async def fake_agent_run(prompt, **kwargs):
+        tools = retriever._tools
+        await tools["inspect_table"]("sales", "region", "distinct_values")
+        await tools["run_select"]("SELECT * FROM sales WHERE region='Antarctica'")
+        return MagicMock(output="no rows")
+
+    with patch.object(retriever._sql_agent, "run", new=AsyncMock(side_effect=fake_agent_run)):
+        outcome = await retriever.retrieve("Antarctica sales?", schemas=[_sales_schema()])
+
+    assert outcome.outcome == "empty"
+    assert outcome.result_markdown is None
+    assert outcome.attempted_sql == "SELECT * FROM sales WHERE region='Antarctica'"
+    assert len(outcome.probe_trail) == 1
+
+
+@pytest.mark.asyncio
+async def test_retrieve_unsupported_on_sentinel(tmp_path: Path):
+    db = _seeded_db(tmp_path)
+    retriever = StructuredRetriever(db)
+
+    async def fake_agent_run(prompt, **kwargs):
+        tools = retriever._tools
+        await tools["run_select"]("SELECT 1 WHERE 1=0")
+        return MagicMock(output="give up")
+
+    with patch.object(retriever._sql_agent, "run", new=AsyncMock(side_effect=fake_agent_run)):
+        outcome = await retriever.retrieve("Something off-topic.", schemas=[_sales_schema()])
+
+    assert outcome.outcome == "unsupported"
+
+
+@pytest.mark.asyncio
+async def test_retrieve_unsupported_when_agent_makes_no_tool_calls(tmp_path: Path):
+    db = _seeded_db(tmp_path)
+    retriever = StructuredRetriever(db)
+
+    async def fake_agent_run(prompt, **kwargs):
+        return MagicMock(output="I have nothing to do.")
+
+    with patch.object(retriever._sql_agent, "run", new=AsyncMock(side_effect=fake_agent_run)):
+        outcome = await retriever.retrieve("Question?", schemas=[_sales_schema()])
+
+    assert outcome.outcome == "unsupported"
+    assert outcome.attempted_sql is None
+
+
+def test_build_schema_context_has_no_sample_values_section():
+    """Sample values are now the agent's job — context should not include them."""
+    ctx = _build_schema_context([_sales_schema()])
+    assert "sales" in ctx
+    assert "region" in ctx
+    assert "sample" not in ctx.lower()
