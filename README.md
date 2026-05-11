@@ -517,7 +517,6 @@ uv sync --all-extras # or: pip install -e ".[all]"
 
 ```bash
 python -c "import fireflyframework_agentic; print(fireflyframework_agentic.__version__)"
-# 26.02.07
 ```
 
 ### Uninstall

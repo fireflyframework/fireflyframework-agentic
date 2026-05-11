@@ -45,8 +45,8 @@ $ErrorActionPreference = "Stop"
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-$script:VERSION = "26.01.01"
 $script:PACKAGE = "fireflyframework-agentic"
+$script:InstalledVersion = ""
 $script:REPO_URL = "https://github.com/fireflyframework/fireflyframework-agentic.git"
 $script:MIN_PYTHON_MAJOR = 3
 $script:MIN_PYTHON_MINOR = 13
@@ -88,8 +88,7 @@ function Show-Banner {
     Write-Host " \______  /\___  >___|  /\____|__  /__|" -ForegroundColor Cyan
     Write-Host "        \/     \/     \/         \/" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  fireflyframework-agentic" -ForegroundColor White -NoNewline
-    Write-Host " v$script:VERSION" -ForegroundColor DarkGray
+    Write-Host "  fireflyframework-agentic" -ForegroundColor White
     Write-Host "  The production-grade GenAI metaframework built on Pydantic AI" -ForegroundColor DarkGray
     Write-Host "  Copyright 2026 Firefly Software Foundation. Apache License 2.0." -ForegroundColor DarkGray
     Write-Host ""
@@ -388,7 +387,8 @@ function Test-Installation {
     try {
         $ver = & $script:PythonCmd -c "import fireflyframework_agentic; print(fireflyframework_agentic.__version__)" 2>&1
         if ($LASTEXITCODE -eq 0) {
-            Write-Ok "fireflyframework-agentic v$ver is ready"
+            $script:InstalledVersion = "$ver".Trim()
+            Write-Ok "fireflyframework-agentic v$($script:InstalledVersion) is ready"
             return $true
         }
     } catch { }
@@ -402,7 +402,8 @@ function Show-Summary {
 
     Write-Host "  ╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Green
     Write-Host "  ║" -ForegroundColor Green -NoNewline
-    Write-Host "  fireflyframework-agentic v$($script:VERSION)" -ForegroundColor White -NoNewline
+    $label = if ($script:InstalledVersion) { "fireflyframework-agentic v$($script:InstalledVersion)" } else { "fireflyframework-agentic" }
+    Write-Host "  $label" -ForegroundColor White -NoNewline
     Write-Host " installed successfully!       " -NoNewline
     Write-Host "║" -ForegroundColor Green
     Write-Host "  ╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Green
