@@ -1083,7 +1083,7 @@ wheels = [
 
 [[package]]
 name = "fireflyframework-agentic"
-version = "26.5.5"
+version = "26.5.11"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
