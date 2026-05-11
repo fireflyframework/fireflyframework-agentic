@@ -65,6 +65,10 @@ class SqlRetrievalOutcome:
     probe_trail: list[ProbeRecord] = field(default_factory=list)
 
 
+MAX_ROWS_IN_RESULT = 100
+MAX_ROWS_PER_PROBE = 20
+
+
 _SYSTEM = """\
 You generate a single SQLite SELECT statement to answer the user's question.
 Rules:
@@ -149,6 +153,18 @@ def _sample_values(db_path: Path, table: str, column: str, limit: int = 8) -> li
 
 
 def _execute(db_path: Path, sql: str) -> str | None:
+    """Execute *sql* and return a markdown table.
+
+    Returns:
+      - markdown table (possibly with a truncation footer) on success with rows
+      - None if the SELECT ran successfully but matched 0 rows
+      - a human-readable message starting with ``SQL error:`` on failure
+
+    The 'error string vs None vs table' distinction lets the caller decide what
+    state to record on the outcome: an error means the LLM should retry; None
+    means the caller marks ``outcome='empty'``; a table means ``outcome=
+    'answered'``.
+    """
     try:
         with sqlite3.connect(db_path) as conn:
             cur = conn.execute(sql)
@@ -156,10 +172,15 @@ def _execute(db_path: Path, sql: str) -> str | None:
             col_names = [d[0] for d in cur.description] if cur.description else []
     except sqlite3.Error as exc:
         log.warning("SQL execution failed: %s", exc)
-        return None
+        return f"SQL error: {exc}"
     if not rows:
         return None
+    truncated_count = max(0, len(rows) - MAX_ROWS_IN_RESULT)
+    kept = rows[:MAX_ROWS_IN_RESULT]
     header = " | ".join(col_names)
     sep = " | ".join("---" for _ in col_names)
-    body = "\n".join(" | ".join(str(v) for v in row) for row in rows)
-    return f"{header}\n{sep}\n{body}"
+    body = "\n".join(" | ".join(str(v) for v in row) for row in kept)
+    table = f"{header}\n{sep}\n{body}"
+    if truncated_count:
+        table += f"\n(+{truncated_count} more rows; result capped at {MAX_ROWS_IN_RESULT})"
+    return table
