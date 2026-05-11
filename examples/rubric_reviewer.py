@@ -23,6 +23,7 @@ Demonstrates:
 Usage::
 
     uv run python examples/rubric_reviewer.py --question "What is the capital of France?"
+    uv run python examples/rubric_reviewer.py --question "Explain quantum entanglement"
 """
 
 from __future__ import annotations
