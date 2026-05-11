@@ -18,7 +18,7 @@ pytest.importorskip("uvicorn", reason="HTTP CLI requires uvicorn")
 
 from fastapi.testclient import TestClient
 
-from fireflyframework_agentic.cli.mcp_http import build_app
+from mcp_http_server import build_app
 
 
 def test_healthz_returns_ok() -> None:
