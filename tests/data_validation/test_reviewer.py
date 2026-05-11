@@ -193,6 +193,7 @@ def test_parse_grader_needs_revision():
     assert report.error_count == 1
     assert report.errors[0].message == "no inline citation found"
     assert report.errors[0].passed is False
+    assert report.errors[0].rule_name == "Every claim cites at least one [chunk_id]."
 
 
 def test_parse_grader_malformed_treated_as_needs_revision():
@@ -207,3 +208,38 @@ def test_parse_grader_field_count_matches_rubric():
     rubric = ["A", "B", "C"]
     report = _parse_grader_response("MET: 1\nMET: 2\nMET: 3\nSATISFIED", rubric)
     assert report.field_count == 3
+
+
+def test_parse_grader_satisfied_results_empty():
+    rubric = ["Criterion A"]
+    report = _parse_grader_response("MET: 1\nSATISFIED", rubric)
+    assert report.results == []
+
+
+def test_parse_grader_field_count_in_failing_path():
+    rubric = ["A", "B"]
+    report = _parse_grader_response("NOT MET: 1 — missing\nNEEDS_REVISION", rubric)
+    assert report.field_count == 2
+
+
+def test_parse_grader_hyphen_separator():
+    rubric = ["Every claim cites a source."]
+    report = _parse_grader_response("NOT MET: 1 - no citation found\nNEEDS_REVISION", rubric)
+    assert report.valid is False
+    assert report.error_count == 1
+    assert report.errors[0].message == "no citation found"
+
+
+def test_parse_grader_non_numeric_criterion():
+    rubric = ["A"]
+    report = _parse_grader_response("NOT MET: conclusion missing\nNEEDS_REVISION", rubric)
+    assert report.valid is False
+    assert report.error_count == 1
+    assert report.errors[0].field_name == "criterion_unknown"
+
+
+def test_parse_grader_first_terminal_keyword_wins():
+    rubric = ["A"]
+    # SATISFIED appears first — second keyword should be ignored
+    report = _parse_grader_response("MET: 1\nSATISFIED\nNEEDS_REVISION", rubric)
+    assert report.valid is True
