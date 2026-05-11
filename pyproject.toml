@@ -150,6 +150,9 @@ dev = [
     "sqlite-vec>=0.1.6",
 ]
 
+[project.scripts]
+firefly-mcp-http = "fireflyframework_agentic.exposure.mcp.http_cli:main"
+
 [project.urls]
 Homepage = "https://fireflyframework.org/"
 Documentation = "https://github.com/fireflyframework/fireflyframework-agentic/tree/main/docs"
