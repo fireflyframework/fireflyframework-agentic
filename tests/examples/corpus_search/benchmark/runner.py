@@ -194,8 +194,12 @@ async def _ingest_corpus(
     chunker = MarkdownChunker(max_chunk_tokens=200, chunk_overlap=30)
     loader = MarkitdownLoader()
     n_chunks = 0
+    # Retrieval benchmark only ingests unstructured markdown documents. Structured
+    # files (CSV / XLSX) in the corpus folder are exercised by the separate
+    # structured-ingestion pipeline and would otherwise produce tens of thousands
+    # of row-level chunks that overwhelm the embedder and the SQLite store.
     for path in sorted(_CORPUS_DIR.iterdir()):
-        if path.is_file() and not path.name.startswith("."):
+        if path.is_file() and not path.name.startswith(".") and path.suffix.lower() == ".md":
             result = await ingest_one(
                 path=path,
                 corpus=corpus,
@@ -273,7 +277,7 @@ async def run_benchmark(
             ledger = IngestLedger(corpus)
 
             n_chunks = await _ingest_corpus(corpus, vector_store, embedder, ledger)
-            n_docs = sum(1 for p in _CORPUS_DIR.iterdir() if p.is_file())
+            n_docs = sum(1 for p in _CORPUS_DIR.iterdir() if p.is_file() and p.suffix.lower() == ".md")
 
             retriever = HybridRetriever(
                 corpus=corpus,
