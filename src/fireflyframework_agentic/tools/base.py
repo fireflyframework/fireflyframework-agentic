@@ -42,6 +42,22 @@ from fireflyframework_agentic.exceptions import ToolError, ToolTimeoutError
 
 logger = logging.getLogger(__name__)
 
+
+def _is_model_retry(exc: BaseException) -> bool:
+    """Return True when ``exc`` is a ``pydantic_ai.ModelRetry`` instance.
+
+    Imported lazily so hosts that bundle the toolkit without
+    pydantic-ai still load cleanly. When pydantic-ai is unavailable
+    nothing can be a ``ModelRetry``, so the helper just returns False
+    and the legacy wrap-as-``ToolError`` behaviour stays intact.
+    """
+    try:
+        from pydantic_ai import ModelRetry  # type: ignore[import-not-found]
+    except Exception:  # pragma: no cover - pydantic-ai unavailable
+        return False
+    return isinstance(exc, ModelRetry)
+
+
 # Mapping from ParameterSpec.type_annotation strings to Python types.
 _TYPE_MAP: dict[str, type] = {
     "str": str,
@@ -218,6 +234,20 @@ class BaseTool(ABC):
         except ToolError:
             raise
         except Exception as exc:
+            # ``ModelRetry`` is Pydantic-AI's way of telling the agent
+            # runtime "the tool didn't succeed; tell the model so it
+            # can try again or report it to the user". Catching it as
+            # a plain ``Exception`` and re-raising as ``ToolError``
+            # hid that signal: pydantic-ai never saw the
+            # ``RetryPromptPart`` it would otherwise emit, the LLM
+            # never got a chance to react, and the entire
+            # ``agent.run()`` turn crashed instead. Operators reported
+            # "the agent says HTTP 401 but doesn't show the call in
+            # the audit panel" -- because the call never reached the
+            # model history at all. Letting it propagate untouched
+            # restores the documented contract.
+            if _is_model_retry(exc):
+                raise
             raise ToolError(f"Tool '{self._name}' failed: {exc}") from exc
 
     def pydantic_handler(self) -> Any:
