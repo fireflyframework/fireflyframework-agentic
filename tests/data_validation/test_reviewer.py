@@ -291,7 +291,7 @@ async def test_rubric_reviewer_exhausted_raises():
         grader=grader,
         max_iterations=3,
     )
-    with pytest.raises(OutputReviewError):
+    with pytest.raises(OutputReviewError, match="failed after 3 attempts"):
         await reviewer.review(generator, "question")
 
 
@@ -310,6 +310,21 @@ async def test_rubric_reviewer_malformed_grader_response_continues_loop():
     )
     result = await reviewer.review(generator, "question")
     assert result.attempts == 2
+
+
+def test_rubric_reviewer_default_grader_construction():
+    from unittest.mock import MagicMock, patch
+
+    mock_agent_instance = MagicMock()
+
+    with patch(
+        "fireflyframework_agentic.validation.reviewer.RubricReviewer._make_default_grader",
+        return_value=mock_agent_instance,
+    ) as mock_make:
+        reviewer = RubricReviewer(rubric=["Criterion A."])
+        # _make_default_grader is lazy — called on first review(), not at construction
+        assert reviewer._grader is None
+        mock_make.assert_not_called()
 
 
 async def test_rubric_reviewer_custom_revision_prompt():

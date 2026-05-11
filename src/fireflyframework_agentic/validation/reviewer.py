@@ -237,7 +237,9 @@ class RubricReviewer:
         for line in Path(path).read_text(encoding="utf-8").splitlines():
             stripped = line.strip()
             if stripped.startswith("- ") or stripped.startswith("* "):
-                criteria.append(stripped[2:].strip())
+                criterion = stripped[2:].strip()
+                if criterion:
+                    criteria.append(criterion)
         if not criteria:
             raise ValueError(f"No bullet list criteria found in {path}")
         return cls(criteria, **kwargs)
@@ -314,7 +316,7 @@ class RubricReviewer:
 
     def _make_default_grader(self, generator: AgentLike) -> AgentLike:
         model = getattr(generator, "_model_identifier", None)
-        return FireflyAgent(model=model, system_prompt=_GRADER_SYSTEM_PROMPT)
+        return FireflyAgent("rubric-grader", model=model, instructions=_GRADER_SYSTEM_PROMPT)
 
 
 # ---------------------------------------------------------------------------
