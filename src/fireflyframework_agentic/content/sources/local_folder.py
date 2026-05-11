@@ -13,13 +13,14 @@ is a future enhancement.
 
 from __future__ import annotations
 
+import inspect
 import logging
 import mimetypes
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from fireflyframework_agentic.content.sources.base import RawFile
 from fireflyframework_agentic.pipeline.triggers.folder_watcher import FolderWatcher
@@ -33,6 +34,35 @@ class LocalFolderSourceConfig(BaseModel):
         default=False,
         description="When False (default), files whose name begins with '.' are skipped.",
     )
+    exclude_predicate: Callable[[Path], bool] | None = Field(
+        default=None,
+        description=(
+            "Optional callable; when it returns True for a file path, the file is "
+            "skipped. Used by callers that route certain extensions to a separate "
+            "pipeline (e.g. CSV / Excel handled by ingest_corpus_structured "
+            "alongside the unstructured walk that uses this source)."
+        ),
+        exclude=True,
+    )
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    @field_validator("exclude_predicate")
+    @classmethod
+    def _reject_async_predicate(
+        cls,
+        v: Callable[[Path], bool] | None,
+    ) -> Callable[[Path], bool] | None:
+        """Reject async callables — list_changed calls the predicate
+        synchronously, so an async function would return a coroutine
+        (truthy) which would silently filter every file."""
+        if v is not None and inspect.iscoroutinefunction(v):
+            raise ValueError(
+                "exclude_predicate must be a sync callable; an async predicate "
+                "would return a coroutine which is truthy and would silently "
+                "filter every file"
+            )
+        return v
 
 
 class LocalFolderSource:
@@ -41,6 +71,7 @@ class LocalFolderSource:
     def __init__(self, config: LocalFolderSourceConfig) -> None:
         self._folder = Path(config.folder).resolve()
         self._include_hidden = config.include_hidden
+        self._exclude_predicate = config.exclude_predicate
         self._watcher = FolderWatcher(folder=self._folder)
 
     async def list_changed(self, since: str | None) -> AsyncIterator[RawFile]:  # noqa: ARG002
@@ -49,6 +80,8 @@ class LocalFolderSource:
             if not path.is_file():
                 continue
             if not self._include_hidden and self._watcher.is_hidden(path):
+                continue
+            if self._exclude_predicate is not None and self._exclude_predicate(path):
                 continue
             try:
                 stat = path.stat()

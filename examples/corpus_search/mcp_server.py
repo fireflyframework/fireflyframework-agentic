@@ -35,15 +35,19 @@ protocol owns stdout; any stray ``print()`` would corrupt frames.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import sys
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 from dotenv import load_dotenv
+from fastmcp import FastMCP
 
 from fireflyframework_agentic.exposure.mcp.server import create_mcp_app
 from fireflyframework_agentic.tools.builtins import corpus_rag
+from fireflyframework_agentic.tools.builtins.corpus_rag import _shutdown_agents
 from fireflyframework_agentic.tools.registry import ToolRegistry
 
 _REQUIRED_ENV_VARS = ("EMBEDDING_BINDING_HOST", "EMBEDDING_BINDING_API_KEY", "ANTHROPIC_API_KEY")
@@ -61,6 +65,16 @@ def _build_registry() -> ToolRegistry:
     ):
         reg.register(getattr(corpus_rag, name))
     return reg
+
+
+@contextlib.asynccontextmanager
+async def _lifespan(_app: FastMCP) -> AsyncIterator[None]:
+    log = logging.getLogger("firefly.mcp_server")
+    try:
+        yield
+    finally:
+        log.info("shutting down — closing cached corpus agents")
+        await _shutdown_agents()
 
 
 def _ensure_env() -> None:
@@ -98,7 +112,11 @@ def main() -> int:
     corpus_root = os.environ.get("CORPUS_ROOT", "/tmp/firefly/corpora")
     log.info("starting firefly corpus_rag MCP server (CORPUS_ROOT=%s)", corpus_root)
 
-    app = create_mcp_app(name="firefly-corpus", registry=_build_registry())
+    app = create_mcp_app(
+        name="firefly-corpus",
+        registry=_build_registry(),
+        lifespan=_lifespan,
+    )
     # FastMCP.run() defaults to stdio transport — exactly what local MCP
     # clients (Claude Desktop / Code, mcp-cli) expect when invoked as a
     # subprocess.

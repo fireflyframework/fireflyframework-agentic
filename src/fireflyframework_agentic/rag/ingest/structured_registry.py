@@ -46,6 +46,17 @@ log = logging.getLogger(__name__)
 
 _SAMPLE_ROWS = 5
 
+# File extensions the structured pipeline knows how to sample. Callers walking
+# folders should filter to this set so non-tabular files (PPTX, PDF, DOCX, …)
+# don't end up being read as CSV.
+TABULAR_SUFFIXES: frozenset[str] = frozenset({".csv", ".xls", ".xlsx"})
+
+
+def is_tabular_file(path: Path) -> bool:
+    """Return True if *path*'s suffix is one the structured pipeline can sample."""
+    return path.suffix.lower() in TABULAR_SUFFIXES
+
+
 _SKILL = (
     "You are a data schema analyst. Given tabular data (headers + sample rows), "
     "infer the best relational schema.\n\n"
@@ -106,8 +117,19 @@ class SchemaRegistry:
 
 
 def _csv_sample(path: Path) -> str:
-    with open(path, newline="") as f:
-        rows = list(csv.reader(f))[: _SAMPLE_ROWS + 1]
+    try:
+        with open(path, newline="", encoding="utf-8") as f:
+            rows = list(csv.reader(f))[: _SAMPLE_ROWS + 1]
+    except UnicodeDecodeError as exc:
+        # Common case on Excel-exported CSVs from Windows: Latin-1 / CP1252.
+        # We don't transparently fall back because that would mask real
+        # encoding bugs; surface a clear hint instead.
+        raise ValueError(
+            f"could not decode {path.name} as UTF-8 (byte 0x{exc.object[exc.start]:02x} at offset {exc.start}). "
+            "If the file was exported from Excel on Windows it may be Latin-1 / CP1252; "
+            "re-save as UTF-8 or transcode (e.g. `iconv -f windows-1252 -t utf-8 in.csv > out.csv`, "
+            "or in Python: `Path(p).write_bytes(Path(p).read_bytes().decode('cp1252').encode('utf-8'))`)."
+        ) from exc
     name = path.stem.replace(" ", "_").replace("-", "_").lower()
     lines = [f"Table: {name}", f"Headers: {rows[0]}"]
     lines += [f"  {r}" for r in rows[1:]]
@@ -141,7 +163,14 @@ def _excel_sample(path: Path) -> str:
 
 def _sample_for(path: Path) -> str:
     suffix = path.suffix.lower()
-    return _excel_sample(path) if suffix in (".xls", ".xlsx") else _csv_sample(path)
+    if suffix in (".xls", ".xlsx"):
+        return _excel_sample(path)
+    if suffix == ".csv":
+        return _csv_sample(path)
+    raise ValueError(
+        f"unsupported file type for structured ingest: {path.name!r} (suffix={suffix!r}). "
+        f"Expected one of {sorted(TABULAR_SUFFIXES)}."
+    )
 
 
 def _multi_file_sample(paths: list[Path]) -> str:
