@@ -22,12 +22,33 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import logging
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 from .structured_schema import ColumnType, TableSpec, TargetSchema
+
+if TYPE_CHECKING:
+    from fireflyframework_agentic.storage import DatabaseStore
+
+log = logging.getLogger(__name__)
+
+
+class TableIngestResult(TypedDict):
+    """Per-table outcome returned by :func:`ingest_structured`.
+
+    ``status`` is ``"success"`` when every row inserted, or ``"failed"``
+    when at least one row raised a ``sqlite3.Error`` (the whole table is
+    rolled back and ``inserted`` is 0). ``errors`` carries one entry per
+    failing row in ``f"row {row_num}: {sqlite_message}"`` form.
+    """
+
+    status: Literal["success", "failed"]
+    inserted: int
+    errors: list[str]
+
 
 try:
     import openpyxl as _openpyxl
@@ -85,8 +106,17 @@ def _read_rows(path: Path, table_name: str) -> tuple[list[str], list[list[Any]]]
         return [str(h) if h is not None else "" for h in all_rows[header_idx]], [
             list(r) for r in all_rows[header_idx + 1 :]
         ]
-    with open(path, newline="") as f:
-        rows = list(csv.reader(f))
+    try:
+        with open(path, newline="", encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            f"could not decode {path.name} as UTF-8 (byte 0x{exc.object[exc.start]:02x} "
+            f"at offset {exc.start}). If the file was exported from Excel on Windows "
+            "it may be Latin-1 / CP1252; re-save as UTF-8 or transcode "
+            "(e.g. `iconv -f windows-1252 -t utf-8 in.csv > out.csv`, or in Python: "
+            "`Path(p).write_bytes(Path(p).read_bytes().decode('cp1252').encode('utf-8'))`)."
+        ) from exc
     return rows[0], rows[1:]
 
 
@@ -151,8 +181,14 @@ def _sync_ingest_table(
     db_path: Path,
     table_spec: TableSpec,
     rows: list[dict[str, Any]],
-) -> dict[str, Any]:
-    conn = sqlite3.connect(db_path)
+) -> TableIngestResult:
+    # isolation_level=None puts the driver in autocommit so the BEGIN /
+    # COMMIT / ROLLBACK statements below are real SQL transactions rather
+    # than driver-level no-ops. busy_timeout=30000 PRAGMA defends against
+    # the rare case where another sqlite3 sidecar overrides the
+    # constructor's `timeout=` arg on this same connection.
+    conn = sqlite3.connect(db_path, timeout=30.0, isolation_level=None)
+    conn.execute("PRAGMA busy_timeout = 30000")
     try:
         col_defs: list[str] = []
         fk_defs: list[str] = []
@@ -176,24 +212,36 @@ def _sync_ingest_table(
         col_names_str = ", ".join(_quote(c) for c in col_names)
         errors: list[str] = []
         inserted = 0
-        for row_num, row in enumerate(rows, start=2):
-            values = [row.get(c) for c in col_names]
-            # Skip section-header rows: all values are None (common in Excel).
-            if all(v is None for v in values):
-                continue
+        conn.execute("BEGIN")
+        try:
+            for row_num, row in enumerate(rows, start=2):
+                values = [row.get(c) for c in col_names]
+                # Skip section-header rows: all values are None (common in Excel).
+                if all(v is None for v in values):
+                    continue
+                try:
+                    conn.execute(
+                        f"INSERT INTO {_quote(table_spec.name)} ({col_names_str}) VALUES ({placeholders})",
+                        values,
+                    )
+                    inserted += 1
+                except sqlite3.Error as exc:
+                    errors.append(f"row {row_num}: {exc}")
+            if errors:
+                conn.execute("ROLLBACK")
+                return {"status": "failed", "inserted": 0, "errors": errors}
+            conn.execute("COMMIT")
+            return {"status": "success", "inserted": inserted, "errors": []}
+        except BaseException:
             try:
-                conn.execute(
-                    f"INSERT INTO {_quote(table_spec.name)} ({col_names_str}) VALUES ({placeholders})",
-                    values,
+                conn.execute("ROLLBACK")
+            except sqlite3.Error as rb_exc:
+                log.warning(
+                    "rollback failed during error recovery on table %s: %s",
+                    table_spec.name,
+                    rb_exc,
                 )
-                inserted += 1
-            except sqlite3.Error as exc:
-                errors.append(f"row {row_num}: {exc}")
-        if errors:
-            conn.rollback()
-            return {"status": "failed", "inserted": 0, "errors": errors}
-        conn.commit()
-        return {"status": "success", "inserted": inserted, "errors": []}
+            raise
     finally:
         conn.close()
 
@@ -229,26 +277,30 @@ def _order_tables_by_fk(tables: list[TableSpec]) -> list[TableSpec]:
 
 async def ingest_structured(
     path: Path,
-    db_path: Path,
+    db_store: DatabaseStore,
     schema: TargetSchema,
-) -> dict[str, Any]:
-    """Insert rows from *path* into *db_path* according to *schema*.
+) -> dict[str, TableIngestResult]:
+    """Insert rows from *path* into the SQLite file owned by *db_store*.
 
-    Returns ``{table_name: {status, inserted, errors}}`` for each table.
-    Missing columns are reported without aborting other tables. When tables
-    declare ``foreign_key`` references they are created in dependency order.
+    Routes through ``db_store.for_write()`` so the asyncio + sentinel locks
+    inside the storage backend serialise this writer with anything else
+    talking to the same file. Returns ``{table_name: TableIngestResult}``
+    (see :class:`TableIngestResult` for the per-table fields).
     """
     rows_by_table = _load_rows(path, schema)
-    loop = asyncio.get_running_loop()
-    results: dict[str, Any] = {}
-    for table_spec in _order_tables_by_fk(schema.tables):
-        rows = rows_by_table.get(table_spec.name)
-        if rows is None:
-            results[table_spec.name] = {
-                "status": "failed",
-                "inserted": 0,
-                "errors": [f"missing columns for table {table_spec.name!r}"],
-            }
-            continue
-        results[table_spec.name] = await loop.run_in_executor(None, _sync_ingest_table, db_path, table_spec, rows)
+    results: dict[str, TableIngestResult] = {}
+    async with db_store.for_write() as session:
+        loop = asyncio.get_running_loop()
+        for table_spec in _order_tables_by_fk(schema.tables):
+            rows = rows_by_table.get(table_spec.name)
+            if rows is None:
+                results[table_spec.name] = {
+                    "status": "failed",
+                    "inserted": 0,
+                    "errors": [f"missing columns for table {table_spec.name!r}"],
+                }
+                continue
+            results[table_spec.name] = await loop.run_in_executor(
+                None, _sync_ingest_table, session.path, table_spec, rows
+            )
     return results

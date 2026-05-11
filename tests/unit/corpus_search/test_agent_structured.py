@@ -243,6 +243,96 @@ async def test_ingest_folder_structured_processes_all_files(tmp_path: Path) -> N
 
 
 @pytest.mark.asyncio
+async def test_discover_schema_folder_filters_to_tabular_files(tmp_path: Path) -> None:
+    """discover_schema on a folder must only sample CSV/Excel files, not PPTX/PDF/etc."""
+    agent = _make_agent(tmp_path)
+    folder = tmp_path / "mixed"
+    (folder / "structured").mkdir(parents=True)
+    (folder / "structured" / "sales.csv").write_text("id,amount\n1,9.99\n")
+    (folder / "structured" / "stock.xlsx").write_bytes(b"PK\x03\x04")  # not actually opened, mocked
+    (folder / "deck.pptx").write_bytes(b"PK\x03\x04binary-zip-bytes")
+    (folder / "manual.pdf").write_bytes(b"%PDF-1.4\nbinary")
+
+    schema = _stub_schema()
+    with patch(
+        "fireflyframework_agentic.rag.agent.discover_schema_for_paths",
+        new=AsyncMock(return_value=schema),
+    ) as mock_multi:
+        await agent.discover_schema(folder)
+
+    paths_passed = mock_multi.await_args.args[0]
+    names = sorted(p.name for p in paths_passed)
+    assert names == ["sales.csv", "stock.xlsx"]
+
+
+@pytest.mark.asyncio
+async def test_discover_schema_folder_recurses_into_subfolders(tmp_path: Path) -> None:
+    """Tabular files in nested subfolders are still discovered."""
+    agent = _make_agent(tmp_path)
+    folder = tmp_path / "tree"
+    (folder / "a" / "b" / "c").mkdir(parents=True)
+    (folder / "top.csv").write_text("x\n1\n")
+    (folder / "a" / "mid.csv").write_text("x\n2\n")
+    (folder / "a" / "b" / "deep.xlsx").write_bytes(b"PK")
+
+    schema = _stub_schema()
+    with patch(
+        "fireflyframework_agentic.rag.agent.discover_schema_for_paths",
+        new=AsyncMock(return_value=schema),
+    ) as mock_multi:
+        await agent.discover_schema(folder)
+
+    paths_passed = mock_multi.await_args.args[0]
+    names = sorted(p.name for p in paths_passed)
+    assert names == ["deep.xlsx", "mid.csv", "top.csv"]
+
+
+@pytest.mark.asyncio
+async def test_ingest_folder_structured_filters_to_tabular_files(tmp_path: Path) -> None:
+    """ingest_folder(mode='structured') must skip non-tabular files in mixed folders."""
+    agent = _make_agent(tmp_path)
+    folder = tmp_path / "mixed"
+    folder.mkdir()
+    (folder / "a.csv").write_text("x,y\n1,2\n")
+    (folder / "b.csv").write_text("x,y\n3,4\n")
+    (folder / "deck.pptx").write_bytes(b"PK\x03\x04binary-zip-bytes")
+
+    schema = _stub_schema()
+    with (
+        patch("fireflyframework_agentic.rag.agent.discover_schema", new=AsyncMock(return_value=schema)),
+        patch(
+            "fireflyframework_agentic.rag.agent.discover_schema_for_paths",
+            new=AsyncMock(return_value=schema),
+        ),
+        patch(
+            "fireflyframework_agentic.rag.agent.ingest_structured",
+            new=AsyncMock(return_value=_STUB_INGEST_OK),
+        ),
+    ):
+        summary = await agent.ingest_folder(folder, mode="structured")
+
+    # Only the two CSVs are processed; the PPTX is silently skipped.
+    assert len(summary.results) == 2
+    assert all(r.status == "success" for r in summary.results)
+    assert all(Path(r.source_path).suffix == ".csv" for r in summary.results)
+
+
+def test_collect_structured_candidates_warns_when_only_non_tabular_files(tmp_path: Path, caplog) -> None:
+    from fireflyframework_agentic.rag.agent import _collect_structured_candidates
+
+    folder = tmp_path / "no_tables"
+    folder.mkdir()
+    (folder / "deck.pptx").write_bytes(b"PK")
+    (folder / "manual.pdf").write_bytes(b"%PDF-1.4")
+
+    with caplog.at_level("WARNING"):
+        candidates = _collect_structured_candidates(folder)
+
+    assert candidates == []
+    assert any("found 0 tabular files" in rec.message and rec.levelname == "WARNING" for rec in caplog.records)
+
+
+@pytest.mark.asyncio
 async def test_ingest_one_structured_calls_interactive_when_on_review_provided(tmp_path: Path) -> None:
     """When on_review is passed, ingest_one must call discover_schema_interactive, not discover_schema."""
     agent = _make_agent(tmp_path)
