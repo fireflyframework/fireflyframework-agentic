@@ -44,7 +44,6 @@ $ErrorActionPreference = "Stop"
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-$script:VERSION = "26.01.01"
 $script:PACKAGE = "fireflyframework-agentic"
 $script:PACKAGE_IMPORT = "fireflyframework_agentic"
 
