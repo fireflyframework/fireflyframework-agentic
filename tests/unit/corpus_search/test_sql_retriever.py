@@ -24,7 +24,13 @@ from fireflyframework_agentic.rag.ingest.structured_schema import (
     TableSpec,
     TargetSchema,
 )
-from fireflyframework_agentic.rag.retrieval.sql import StructuredRetriever, _build_schema_context, _execute
+from fireflyframework_agentic.rag.retrieval.sql import (
+    ProbeRecord,
+    SqlRetrievalOutcome,
+    StructuredRetriever,
+    _build_schema_context,
+    _execute,
+)
 
 
 def _schema() -> TargetSchema:
@@ -107,3 +113,37 @@ def test_execute_returns_none_for_empty_result(tmp_path: Path):
     db = _populated_db(tmp_path)
     result = _execute(db, "SELECT * FROM products WHERE 1=0")
     assert result is None
+
+
+# ---- Task 1: data model -------------------------------------------------
+
+
+def test_probe_record_is_frozen_dataclass():
+    from dataclasses import FrozenInstanceError
+
+    r = ProbeRecord(table="t", column="c", op="distinct_values", result="a | b")
+    assert r.table == "t"
+    with pytest.raises(FrozenInstanceError):
+        r.table = "u"  # type: ignore[misc]
+
+
+def test_sql_retrieval_outcome_answered():
+    out = SqlRetrievalOutcome(
+        outcome="answered",
+        result_markdown="col\n---\nval",
+        attempted_sql="SELECT col FROM t",
+        probe_trail=[],
+    )
+    assert out.outcome == "answered"
+    assert out.result_markdown == "col\n---\nval"
+
+
+def test_sql_retrieval_outcome_unsupported_default_shape():
+    out = SqlRetrievalOutcome(
+        outcome="unsupported",
+        result_markdown=None,
+        attempted_sql=None,
+        probe_trail=[],
+    )
+    assert out.outcome == "unsupported"
+    assert out.result_markdown is None
