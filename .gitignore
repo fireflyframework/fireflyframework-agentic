@@ -112,6 +112,7 @@ logs/
 
 # Claude Code
 .claude/
+CLAUDE.md
 
 # AntiGravity / misc tools
 .antigravity/

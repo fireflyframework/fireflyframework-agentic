@@ -19,7 +19,6 @@ set -euo pipefail
 #  fireflyframework-agentic — Interactive Uninstaller
 # ══════════════════════════════════════════════════════════════════════════════
 
-readonly VERSION="26.01.01"
 readonly PACKAGE="fireflyframework-agentic"
 readonly PACKAGE_IMPORT="fireflyframework_agentic"
 readonly TOTAL_STEPS=4
