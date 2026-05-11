@@ -52,7 +52,7 @@ def credential(azurite_connection_string: str) -> object:
 
 
 async def test_round_trip_upload_download(container_url, credential, tmp_path: Path) -> None:
-    from azure_backend import AzureBlobBackend
+    from examples.corpus_search.azure_backend import AzureBlobBackend
 
     backend = AzureBlobBackend(container_url, "x.sqlite", credential=credential)
     src = tmp_path / "src.bin"
@@ -65,7 +65,7 @@ async def test_round_trip_upload_download(container_url, credential, tmp_path: P
 
 
 async def test_lease_acquire_release(container_url, credential, tmp_path: Path) -> None:
-    from fireflyframework_agentic.storage import AzureBlobBackend
+    from examples.corpus_search.azure_backend import AzureBlobBackend
 
     backend = AzureBlobBackend(container_url, "y.sqlite", credential=credential)
     src = tmp_path / "src.bin"
@@ -78,7 +78,8 @@ async def test_lease_acquire_release(container_url, credential, tmp_path: Path) 
 async def test_database_store_e2e_against_azurite(container_url, credential, tmp_path: Path) -> None:
     import sqlite3
 
-    from fireflyframework_agentic.storage import AzureBlobBackend, DatabaseStore
+    from examples.corpus_search.azure_backend import AzureBlobBackend
+    from fireflyframework_agentic.storage import DatabaseStore
 
     backend = AzureBlobBackend(container_url, "e2e.sqlite", credential=credential)
     store = DatabaseStore(backend, store_id="azurite-e2e", cache_root=tmp_path / "cache")

@@ -23,11 +23,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from s3_source import (
+
+from examples.corpus_search.s3_source import (
     S3Source,
     S3SourceConfig,
 )
-
 from fireflyframework_agentic.content.sources import (
     ContentSource,
 )

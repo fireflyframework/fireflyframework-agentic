@@ -17,7 +17,8 @@ pytest.importorskip("fastapi", reason="MCP HTTP transport requires fastapi")
 pytest.importorskip("uvicorn", reason="HTTP CLI requires uvicorn")
 
 from fastapi.testclient import TestClient
-from mcp_http_server import build_app
+
+from examples.corpus_search.mcp_http_server import build_app
 
 
 def test_healthz_returns_ok() -> None:

@@ -24,11 +24,11 @@ from pathlib import Path
 
 import httpx
 import pytest
-from sharepoint_source import (
+
+from examples.corpus_search.sharepoint_source import (
     SharePointSource,
     SharePointSourceConfig,
 )
-
 from fireflyframework_agentic.content.sources import (
     ContentSource,
     RawFile,
