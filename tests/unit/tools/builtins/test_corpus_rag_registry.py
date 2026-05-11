@@ -155,72 +155,6 @@ async def test_create_mcp_app_accepts_lifespan() -> None:
     assert fired == ["startup", "shutdown"]
 
 
-@pytest.mark.skip(
-    reason="ingest_corpus_sharepoint was removed because SharePointSource was moved to examples/corpus_search"
-)
-@pytest.mark.asyncio
-async def test_ingest_corpus_sharepoint_acquires_write_lock(monkeypatch, tmp_path: Path) -> None:
-    """The SharePoint ingest path must hold _write_lock_for(corpus_id) for the
-    duration of its work — same coordination contract as the filesystem and
-    structured ingest tools."""
-    lock_state: dict[str, bool] = {"held_during_call": False}
-
-    class _StubAgent:
-        async def ingest_source(self, _source):
-            lock_state["held_during_call"] = corpus_rag._write_lock_for("SP").locked()
-
-            class _S:
-                results: list = []
-                ingested = skipped = failed = 0
-                cursor = None
-
-            return _S()
-
-        async def close(self):
-            pass
-
-    class _StubSource:
-        def __init__(self, *_args, **_kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_):
-            return None
-
-    class _StubCredential:
-        async def get_token(self, *_args, **_kwargs):
-            class _Tok:
-                token = "fake-token"
-
-            return _Tok()
-
-        async def close(self):
-            return None
-
-    monkeypatch.setitem(corpus_rag._AGENT_CACHE, "SP", _StubAgent())
-    monkeypatch.setattr(
-        "fireflyframework_agentic.content.sources.sharepoint.SharePointSource",
-        _StubSource,
-    )
-    monkeypatch.setattr(
-        "azure.identity.aio.ManagedIdentityCredential",
-        lambda *_a, **_k: _StubCredential(),
-    )
-
-    await corpus_rag.ingest_corpus_sharepoint.execute(
-        corpus_id="SP",
-        drive_id="drive123",
-    )
-
-    assert lock_state["held_during_call"], (
-        "ingest_corpus_sharepoint should hold _write_lock_for(corpus_id) while the agent ingests"
-    )
-    # Lock released after the tool returns
-    assert not corpus_rag._write_lock_for("SP").locked()
-
-
 @pytest.mark.asyncio
 async def test_ingest_corpus_filesystem_skips_tabular_files(tmp_path: Path, monkeypatch) -> None:
     """ingest_corpus_filesystem leaves CSV / XLS / XLSX to ingest_corpus_structured.
@@ -234,7 +168,9 @@ async def test_ingest_corpus_filesystem_skips_tabular_files(tmp_path: Path, monk
     (drop / "rows.csv").write_text("a,b\n1,2\n")
     (drop / "sheet.xlsx").write_bytes(b"PK\x03\x04")
 
-    captured: dict[str, object] = {}
+    from fireflyframework_agentic.content.sources.base import ContentSource
+
+    captured: dict[str, ContentSource] = {}
 
     class _StubSummary:
         results: list[object] = []
