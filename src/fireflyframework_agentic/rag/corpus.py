@@ -241,6 +241,7 @@ class SqliteCorpus:
                     },
                 )
             conn.execute("COMMIT")
+            conn.execute("PRAGMA wal_checkpoint(FULL)")
         except Exception:
             conn.execute("ROLLBACK")
             raise

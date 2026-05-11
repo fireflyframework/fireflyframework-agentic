@@ -5,14 +5,14 @@ on:
     - cron: "0 3 * * *"
   workflow_dispatch: {}
 
-permissions:
-  contents: read
-  issues: write
-
 jobs:
   test:
     name: Test (nightly)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
     env:
       # Default Azurite dev account; the key is a public well-known constant.
       AZURITE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
@@ -43,20 +43,30 @@ jobs:
             sleep 1
           done
       - run: uv sync --extra dev --extra azure --extra storage-azure --extra mcp --extra rest
-      - name: Run pytest (with real-LLM secrets when available)
-        env:
-          # Real-LLM nightly tests auto-skip when these are absent. Inject the
-          # same secrets the benchmark job uses so they actually run.
-          EMBEDDING_BINDING_HOST: ${{ secrets.EMBEDDING_BINDING_HOST }}
-          EMBEDDING_BINDING_API_KEY: ${{ secrets.EMBEDDING_BINDING_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: uv run pytest --cov --cov-report=term-missing --durations=50
+      - name: Azure login (OIDC)
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CI_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Fetch secrets from Key Vault
+        run: |
+          for secret in ANTHROPIC-API-KEY EMBEDDING-BINDING-HOST EMBEDDING-BINDING-API-KEY; do
+            value=$(az keyvault secret show --vault-name kv-firefly-signature --name "$secret" --query value -o tsv)
+            echo "::add-mask::$value"
+            env_name="${secret//-/_}"
+            echo "$env_name=$value" >> "$GITHUB_ENV"
+          done
+      - run: uv run pytest --cov --cov-report=term-missing --durations=50
 
   report-failure:
     name: Report failure
     needs: test
     if: failure()
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/github-script@v9
         with:
@@ -112,6 +122,9 @@ jobs:
     needs: test
     if: success()
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/github-script@v9
         with:
@@ -139,9 +152,13 @@ jobs:
                 state_reason: 'completed',
               });
             }
+
   benchmark:
     name: Benchmark (corpus-search, real mode)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -151,28 +168,21 @@ jobs:
         with:
           python-version: '3.13'
       - run: uv sync --extra corpus-search
-
-      # Detect whether the embedding secrets are present without printing their
-      # values. Secrets are mapped to env vars first so they never appear in
-      # the if-expression itself.
-      - name: Check embedding secrets
-        id: secrets
+      - name: Azure login (OIDC)
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CI_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Fetch embedding secrets from Key Vault
         run: |
-          if [[ -n "$EMBEDDING_HOST" && -n "$EMBEDDING_KEY" ]]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "EMBEDDING_BINDING_HOST / EMBEDDING_BINDING_API_KEY not configured -- skipping real-mode benchmark."
-          fi
-        env:
-          EMBEDDING_HOST: ${{ secrets.EMBEDDING_BINDING_HOST }}
-          EMBEDDING_KEY: ${{ secrets.EMBEDDING_BINDING_API_KEY }}
-
+          for secret in EMBEDDING-BINDING-HOST EMBEDDING-BINDING-API-KEY; do
+            value=$(az keyvault secret show --vault-name kv-firefly-signature --name "$secret" --query value -o tsv)
+            echo "::add-mask::$value"
+            env_name="${secret//-/_}"
+            echo "$env_name=$value" >> "$GITHUB_ENV"
+          done
       - name: Run real-mode benchmark
-        if: steps.secrets.outputs.available == 'true'
-        env:
-          EMBEDDING_BINDING_HOST: ${{ secrets.EMBEDDING_BINDING_HOST }}
-          EMBEDDING_BINDING_API_KEY: ${{ secrets.EMBEDDING_BINDING_API_KEY }}
         run: |
           uv run python tests/examples/corpus_search/benchmark/runner.py \
             --mode real \
