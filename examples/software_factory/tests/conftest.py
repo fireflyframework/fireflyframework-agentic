@@ -1,6 +1,6 @@
 # Copyright 2026 Firefly Software Foundation
 # Licensed under the Apache License, Version 2.0
-"""Shared fixtures for action_runtime tests."""
+"""Shared fixtures for software_factory action_runtime tests."""
 
 from __future__ import annotations
 

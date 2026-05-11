@@ -9,27 +9,19 @@ import logging
 from typing import Any
 
 from fireflyframework_agentic.agents.registry import agent_registry
-from fireflyframework_agentic.factory.action_runtime.artifact import ArtifactStore
-from fireflyframework_agentic.factory.action_runtime.env import read_action_inputs
-from fireflyframework_agentic.factory.action_runtime.feedback import (
-    FeedbackContext,
-    load_feedback,
-)
-from fireflyframework_agentic.factory.action_runtime.github_outputs import write_output
-from fireflyframework_agentic.factory.action_runtime.io_models import RunResult
 from fireflyframework_agentic.security import default_output_guard
+
+from .artifact import ArtifactStore
+from .env import read_action_inputs
+from .feedback import FeedbackContext, load_feedback
+from .github_outputs import write_output
+from .io_models import RunResult
 
 logger = logging.getLogger(__name__)
 
 
 def _compose_prompt(inputs: dict[str, str], feedback: FeedbackContext | None) -> str:
-    """Build a default prompt from raw inputs + optional feedback.
-
-    Specialized agents (Spec 3) typically override this by setting their own
-    system prompt and using retrieval-augmented context. This default is the
-    minimum contract: the input dict rendered as markdown, plus the prior
-    QA report when retrying.
-    """
+    """Build a default prompt from raw inputs + optional feedback."""
     lines = ["# Inputs", ""]
     for k, v in sorted(inputs.items()):
         lines.append(f"## {k}\n\n{v}\n")
@@ -90,9 +82,6 @@ async def run_agent(name: str) -> RunResult:
         text = scan.sanitised_output
 
     tokens_in, tokens_out = _extract_usage(result)
-    # Cost is computed by UsageTracker middleware (when configured). The
-    # runtime surfaces 0.0 here when no calculator was attached; specialized
-    # agents can override by writing a richer cost summary themselves.
     cost_usd = 0.0
 
     write_output("agent", name)

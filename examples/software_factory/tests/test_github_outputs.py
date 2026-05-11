@@ -8,9 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from fireflyframework_agentic.factory.action_runtime.github_outputs import (
-    write_output,
-)
+from software_factory.action_runtime.github_outputs import write_output
 
 
 def test_write_single_line_value(tmp_github_output: Path) -> None:
@@ -33,7 +31,6 @@ def test_write_multiline_uses_heredoc(tmp_github_output: Path) -> None:
     text = tmp_github_output.read_text()
     assert "summary<<" in text
     assert "line one\nline two" in text
-    # heredoc terminator on its own line
     delim = text.split("<<", 1)[1].split("\n", 1)[0]
     assert text.endswith(f"\n{delim}\n")
 
@@ -56,5 +53,4 @@ def test_heredoc_delimiter_avoids_collision(tmp_github_output: Path) -> None:
     text = tmp_github_output.read_text()
     delim = text.split("<<", 1)[1].split("\n", 1)[0]
     assert delim != "EOF"
-    # value preserved verbatim
     assert "before\nEOF\nafter" in text

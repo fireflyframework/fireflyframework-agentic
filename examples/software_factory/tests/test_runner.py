@@ -14,7 +14,7 @@ import pytest
 from fireflyframework_agentic.agents.base import FireflyAgent
 from fireflyframework_agentic.agents.registry import agent_registry
 from fireflyframework_agentic.exceptions import AgentNotFoundError
-from fireflyframework_agentic.factory.action_runtime.runner import run_agent
+from software_factory.action_runtime.runner import run_agent
 
 
 @pytest.fixture
@@ -55,7 +55,6 @@ def test_run_agent_writes_outputs(
     assert int(outputs["tokens_out"]) >= 0
     assert outputs["iteration"] == "1"
     assert outputs["feedback_used"] == "false"
-    # cost_usd is formatted as a fixed-point string
     assert "cost_usd" in outputs
 
 

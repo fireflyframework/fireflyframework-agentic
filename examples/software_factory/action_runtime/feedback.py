@@ -14,7 +14,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from fireflyframework_agentic.factory.action_runtime.artifact import ArtifactStore
+from .artifact import ArtifactStore
 
 
 class FeedbackContext(BaseModel):

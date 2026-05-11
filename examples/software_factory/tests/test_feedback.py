@@ -7,11 +7,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fireflyframework_agentic.factory.action_runtime.artifact import ArtifactStore
-from fireflyframework_agentic.factory.action_runtime.feedback import (
-    FeedbackContext,
-    load_feedback,
-)
+from software_factory.action_runtime.artifact import ArtifactStore
+from software_factory.action_runtime.feedback import FeedbackContext, load_feedback
 
 
 def test_returns_none_when_iteration_is_one(tmp_runner_temp: Path) -> None:

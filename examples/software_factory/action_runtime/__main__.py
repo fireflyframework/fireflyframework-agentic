@@ -1,6 +1,6 @@
 # Copyright 2026 Firefly Software Foundation
 # Licensed under the Apache License, Version 2.0
-"""CLI entry point: `python -m fireflyframework_agentic.factory.action_runtime`."""
+"""CLI entry point: `python -m software_factory.action_runtime`."""
 
 from __future__ import annotations
 
@@ -10,10 +10,9 @@ import logging
 import sys
 
 from fireflyframework_agentic.exceptions import AgentNotFoundError
-from fireflyframework_agentic.factory.action_runtime.exceptions import (
-    ActionRuntimeError,
-)
-from fireflyframework_agentic.factory.action_runtime.runner import run_agent
+
+from .exceptions import ActionRuntimeError
+from .runner import run_agent
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +30,6 @@ def main(argv: list[str] | None = None) -> int:
         asyncio.run(run_agent(args.agent))
         return 0
     except ActionRuntimeError as e:
-        # MissingArtifactError → exit 78, ActionInputError → 1, etc.
         sys.stderr.write(f"::error::{type(e).__name__}: {e}\n")
         return e.exit_code
     except AgentNotFoundError as e:

@@ -21,13 +21,18 @@ RUN apt-get update \
 RUN useradd -u 1001 -m runner
 WORKDIR /home/runner
 
-# Copy the source tree (built once per agentic-library release).
+# Copy the framework source tree and the software_factory example.
 COPY --chown=runner:runner pyproject.toml uv.lock README.md /home/runner/
 COPY --chown=runner:runner src /home/runner/src
+COPY --chown=runner:runner examples/software_factory /home/runner/software_factory
 
-# Install the agentic library with the [factory] extra.
+# Install the framework + factory runtime deps.
 RUN pip install --no-cache-dir uv \
-    && uv pip install --system --no-cache ".[factory]"
+    && uv pip install --system --no-cache "." \
+    && uv pip install --system --no-cache "sqlite-vec>=0.1.0" "pyyaml>=6.0"
+
+# Make software_factory importable.
+ENV PYTHONPATH=/home/runner
 
 USER runner
-ENTRYPOINT ["python", "-m", "fireflyframework_agentic.factory.action_runtime"]
+ENTRYPOINT ["python", "-m", "software_factory.action_runtime"]

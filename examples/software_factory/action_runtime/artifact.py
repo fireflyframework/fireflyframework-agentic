@@ -10,9 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from fireflyframework_agentic.factory.action_runtime.exceptions import (
-    MissingArtifactError,
-)
+from .exceptions import MissingArtifactError
 
 ARTIFACT_SUBDIR = "factory"
 

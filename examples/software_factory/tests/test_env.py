@@ -8,7 +8,7 @@ import os
 
 import pytest
 
-from fireflyframework_agentic.factory.action_runtime.env import read_action_inputs
+from software_factory.action_runtime.env import read_action_inputs
 
 
 def test_returns_lowercased_keys(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -19,7 +19,6 @@ def test_returns_lowercased_keys(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_ignores_non_input_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Clear any pre-existing INPUT_* vars
     for k in list(os.environ.keys()):
         if k.startswith("INPUT_"):
             monkeypatch.delenv(k, raising=False)
