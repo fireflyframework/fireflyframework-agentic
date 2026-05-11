@@ -23,7 +23,13 @@ import pytest
 from pydantic import BaseModel, Field
 
 from fireflyframework_agentic.exceptions import OutputReviewError
-from fireflyframework_agentic.validation.reviewer import OutputReviewer, RetryAttempt, ReviewResult
+from fireflyframework_agentic.validation.reviewer import (
+    OutputReviewer,
+    RetryAttempt,
+    ReviewResult,
+    RubricReviewer,
+    _parse_grader_response,
+)
 from fireflyframework_agentic.validation.rules import EnumRule, OutputValidator
 
 
@@ -164,3 +170,40 @@ class TestReviewResultModel:
         assert r.output == "ok"
         assert r.retry_history == []
         assert r.validation_report is None
+
+
+# ---------------------------------------------------------------------------
+# _parse_grader_response
+# ---------------------------------------------------------------------------
+
+
+def test_parse_grader_satisfied():
+    rubric = ["Criterion A", "Criterion B"]
+    report = _parse_grader_response("MET: 1\nMET: 2\nSATISFIED", rubric)
+    assert report.valid is True
+    assert report.error_count == 0
+
+
+def test_parse_grader_needs_revision():
+    rubric = ["Every claim cites at least one [chunk_id]."]
+    report = _parse_grader_response(
+        "NOT MET: 1 — no inline citation found\nNEEDS_REVISION", rubric
+    )
+    assert report.valid is False
+    assert report.error_count == 1
+    assert report.errors[0].message == "no inline citation found"
+    assert report.errors[0].passed is False
+
+
+def test_parse_grader_malformed_treated_as_needs_revision():
+    rubric = ["Criterion A"]
+    report = _parse_grader_response("I have no idea what to say here", rubric)
+    assert report.valid is False
+    assert report.error_count == 1
+    assert "could not be parsed" in report.errors[0].message
+
+
+def test_parse_grader_field_count_matches_rubric():
+    rubric = ["A", "B", "C"]
+    report = _parse_grader_response("MET: 1\nMET: 2\nMET: 3\nSATISFIED", rubric)
+    assert report.field_count == 3
