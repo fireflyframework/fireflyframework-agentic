@@ -35,7 +35,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from fireflyframework_agentic.exceptions import OutputReviewError
 from fireflyframework_agentic.types import AgentLike
-from fireflyframework_agentic.validation.rules import OutputValidator, ValidationReport
+from fireflyframework_agentic.validation.rules import OutputValidator, ValidationReport, ValidationRuleResult
 
 logger = logging.getLogger(__name__)
 
@@ -125,8 +125,6 @@ def _parse_grader_response(text: str, rubric: list[str]) -> "ValidationReport":
     Malformed responses (neither keyword found) are treated as NEEDS_REVISION
     with a single generic gap so the loop continues rather than crashing.
     """
-    from fireflyframework_agentic.validation.rules import ValidationReport, ValidationRuleResult
-
     lines = text.strip().splitlines()
     satisfied: bool | None = None
     failed: list[ValidationRuleResult] = []
@@ -136,23 +134,27 @@ def _parse_grader_response(text: str, rubric: list[str]) -> "ValidationReport":
         upper = stripped.upper()
         if upper == "SATISFIED":
             satisfied = True
+            break
         elif upper == "NEEDS_REVISION":
             satisfied = False
-        elif upper.startswith("NOT MET"):
+            break
+        elif upper.startswith("NOT MET:"):
             rest = stripped[7:].lstrip(":").strip()
             parts = rest.split("—", 1)
             if len(parts) == 1:
-                parts = rest.split("-", 1)
+                parts = rest.split(" - ", 1)
             try:
                 idx = int(parts[0].strip()) - 1
                 criterion = rubric[idx] if 0 <= idx < len(rubric) else parts[0].strip()
+                field_name = f"criterion_{idx + 1}"
             except (ValueError, IndexError):
                 criterion = parts[0].strip()
+                field_name = "criterion_unknown"
             gap = parts[1].strip() if len(parts) > 1 else "criterion not met"
             failed.append(
                 ValidationRuleResult(
                     rule_name=criterion,
-                    field_name=f"criterion_{parts[0].strip()}",
+                    field_name=field_name,
                     passed=False,
                     message=gap,
                 )
