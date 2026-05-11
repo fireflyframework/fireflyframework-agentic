@@ -24,10 +24,12 @@ from pathlib import Path
 
 import pytest
 
-from fireflyframework_agentic.content.sources import (
-    ContentSource,
+from examples.corpus_search.s3_source import (
     S3Source,
     S3SourceConfig,
+)
+from fireflyframework_agentic.content.sources import (
+    ContentSource,
 )
 
 

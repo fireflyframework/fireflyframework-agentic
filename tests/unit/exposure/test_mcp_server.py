@@ -100,26 +100,3 @@ def test_mount_http_attaches_at_custom_path() -> None:
     mount_http(fastapi_app, mcp, path="/firefly-mcp")
     paths = [r.path for r in fastapi_app.routes]
     assert "/firefly-mcp" in paths
-
-
-# --- CLI entry point --------------------------------------------------------
-
-
-def test_cli_main_creates_app_and_runs_stdio(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_app = MagicMock()
-    fake_create = MagicMock(return_value=fake_app)
-    fake_run_stdio = MagicMock()
-    monkeypatch.setattr(
-        "fireflyframework_agentic.cli.mcp_server.create_mcp_app",
-        fake_create,
-    )
-    monkeypatch.setattr(
-        "fireflyframework_agentic.cli.mcp_server.run_stdio",
-        fake_run_stdio,
-    )
-
-    from fireflyframework_agentic.cli.mcp_server import main
-
-    main()
-    fake_create.assert_called_once_with()
-    fake_run_stdio.assert_called_once_with(fake_app)

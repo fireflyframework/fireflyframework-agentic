@@ -64,10 +64,6 @@ security = [
     "pyjwt>=2.10.0",
     "cryptography>=44.0.0",
 ]
-storage-azure = [
-    "azure-storage-blob>=12.20.0",
-    "azure-identity>=1.19",
-]
 azure = [
     "azure-identity>=1.19",
     "msal>=1.31",
@@ -154,10 +150,6 @@ dev = [
     "sqlite-vec>=0.1.6",
 ]
 
-[project.scripts]
-firefly-mcp = "fireflyframework_agentic.cli.mcp_server:main"
-firefly-mcp-http = "fireflyframework_agentic.cli.mcp_http:main"
-
 [project.urls]
 Homepage = "https://fireflyframework.org/"
 Documentation = "https://github.com/fireflyframework/fireflyframework-agentic/tree/main/docs"
@@ -168,6 +160,9 @@ Changelog = "https://github.com/fireflyframework/fireflyframework-agentic/blob/m
 [build-system]
 requires = ["uv_build>=0.9.5,<0.12.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
 
 [tool.ruff]
 target-version = "py313"
@@ -183,15 +178,15 @@ known-first-party = ["fireflyframework_agentic"]
 [tool.pyright]
 pythonVersion = "3.13"
 typeCheckingMode = "basic"
-include = ["src"]
+include = ["fireflyframework_agentic"]
 exclude = ["tests/**", "examples/**"]
-extraPaths = ["src", "."]
+extraPaths = ["."]
 
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-pythonpath = ["src", "."]
+pythonpath = ["."]
 markers = [
     "nightly: runs only in nightly CI. Long-running tests: benchmarks, real LLM/DB/HTTP, or anything not suitable for the PR gate.",
     "integration: runs against the real CorpusAgent / DatabaseStore stack (no external network — embedders / LLM agents are stubbed or mocked).",
