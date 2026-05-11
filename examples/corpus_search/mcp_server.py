@@ -60,7 +60,7 @@ def _build_registry() -> ToolRegistry:
         "ingest_corpus_filesystem",
         "discover_corpus_schema",
         "ingest_corpus_structured",
-        "corpus_retrieve",
+        "knowledge_search",
         "corpus_query",
     ):
         reg.register(getattr(corpus_rag, name))
