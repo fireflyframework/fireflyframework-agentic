@@ -25,6 +25,7 @@ from fireflyframework_agentic.rag.ingest.structured_schema import (
     TargetSchema,
 )
 from fireflyframework_agentic.rag.retrieval.sql import (
+    MAX_ROWS_IN_RESULT,
     ProbeRecord,
     SqlRetrievalOutcome,
     StructuredRetriever,
@@ -91,17 +92,6 @@ async def test_retrieve_rejects_non_select_sql(tmp_path: Path):
     assert result is None
 
 
-@pytest.mark.asyncio
-async def test_retrieve_returns_none_on_sql_error(tmp_path: Path):
-    retriever = StructuredRetriever(tmp_path / "corpus.sqlite")  # empty DB
-    mock_result = MagicMock()
-    mock_result.output.sql = "SELECT * FROM nonexistent_table"
-    with patch.object(retriever, "_sql_agent") as mock_agent:
-        mock_agent.run = AsyncMock(return_value=mock_result)
-        result = await retriever.retrieve("something", schemas=[_schema()])
-    assert result is None
-
-
 def test_build_schema_context():
     ctx = _build_schema_context([_schema()])
     assert "products" in ctx
@@ -147,3 +137,28 @@ def test_sql_retrieval_outcome_unsupported_default_shape():
     )
     assert out.outcome == "unsupported"
     assert out.result_markdown is None
+
+
+# ---- Task 2: _execute extensions ----------------------------------------
+
+
+def test_execute_returns_error_message_on_sql_error(tmp_path: Path):
+    db = _populated_db(tmp_path)
+    result = _execute(db, "SELECT * FROM does_not_exist")
+    assert result is not None
+    assert "no such table" in result.lower()
+
+
+def test_execute_caps_rows_and_appends_truncation_footer(tmp_path: Path):
+    db = tmp_path / "corpus.sqlite"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE t (n INTEGER)")
+    conn.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(MAX_ROWS_IN_RESULT + 5)])
+    conn.commit()
+    conn.close()
+    result = _execute(db, "SELECT n FROM t ORDER BY n")
+    assert result is not None
+    body_lines = result.split("\n")
+    # header + sep + capped rows + footer
+    assert len(body_lines) == 2 + MAX_ROWS_IN_RESULT + 1
+    assert body_lines[-1] == f"(+5 more rows; result capped at {MAX_ROWS_IN_RESULT})"
