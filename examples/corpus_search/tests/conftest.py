@@ -1,4 +1,5 @@
 """Put examples/corpus_search/ on sys.path so tests can import moved backends."""
+
 from __future__ import annotations
 
 import os

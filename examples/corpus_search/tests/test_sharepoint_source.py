@@ -24,14 +24,14 @@ from pathlib import Path
 
 import httpx
 import pytest
+from sharepoint_source import (
+    SharePointSource,
+    SharePointSourceConfig,
+)
 
 from fireflyframework_agentic.content.sources import (
     ContentSource,
     RawFile,
-)
-from sharepoint_source import (
-    SharePointSource,
-    SharePointSourceConfig,
 )
 
 GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
