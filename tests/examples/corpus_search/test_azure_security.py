@@ -26,8 +26,7 @@ pytest.importorskip(
     reason="Install with --extra azure to run Entra ID OBO tests.",
 )
 
-from azure_security import EntraOBOClient, EntraTokenVerifier  # noqa: E402
-
+from examples.corpus_search.azure_security import EntraOBOClient, EntraTokenVerifier  # noqa: E402
 from fireflyframework_agentic.config import FireflyAgenticConfig  # noqa: E402
 from fireflyframework_agentic.security.rbac import RBACManager  # noqa: E402
 
