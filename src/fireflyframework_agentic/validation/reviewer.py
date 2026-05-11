@@ -28,13 +28,15 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, Field, ValidationError
 
+from fireflyframework_agentic.agents.base import FireflyAgent
 from fireflyframework_agentic.exceptions import OutputReviewError
 from fireflyframework_agentic.types import AgentLike
-from fireflyframework_agentic.validation.rules import OutputValidator, ValidationReport
+from fireflyframework_agentic.validation.rules import OutputValidator, ValidationReport, ValidationRuleResult
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +89,230 @@ _DEFAULT_RETRY_TEMPLATE = (
     "Please try again, ensuring your response exactly matches the "
     "required output schema."
 )
+
+
+# ---------------------------------------------------------------------------
+# Grader prompt templates (used by RubricReviewer)
+# ---------------------------------------------------------------------------
+
+_GRADER_SYSTEM_PROMPT = (
+    "You are a strict evaluator. Your job is to assess whether an output satisfies "
+    "a rubric of pass/fail criteria. Be precise and objective. "
+    "Never rationalise or give partial credit."
+)
+
+_GRADER_PROMPT_TEMPLATE = (
+    "Rubric:\n{rubric}\n\n"
+    "Output to evaluate:\n{output}\n\n"
+    "For each criterion, state MET or NOT MET followed by a colon and brief explanation "
+    "if NOT MET. End your response with either SATISFIED or NEEDS_REVISION on its own line.\n\n"
+    "Example:\n"
+    "MET: 1\n"
+    "NOT MET: 2 — no inline citation found\n"
+    "SATISFIED"
+)
+
+_DEFAULT_REVISION_TEMPLATE = (
+    "Your previous response did not satisfy the following criteria:\n{gaps}\n\n"
+    "Original request:\n{original_prompt}\n\n"
+    "Please revise your response addressing these specific gaps."
+)
+
+
+def _parse_grader_response(text: str, rubric: list[str]) -> ValidationReport:
+    """Parse a grader's free-text response into a ValidationReport.
+
+    Looks for NOT MET lines and a terminal SATISFIED / NEEDS_REVISION keyword.
+    Malformed responses (neither keyword found) are treated as NEEDS_REVISION
+    with a single generic gap so the loop continues rather than crashing.
+    """
+    lines = text.strip().splitlines()
+    satisfied: bool | None = None
+    failed: list[ValidationRuleResult] = []
+
+    for line in lines:
+        stripped = line.strip()
+        upper = stripped.upper()
+        if upper == "SATISFIED":
+            satisfied = True
+            break
+        elif upper == "NEEDS_REVISION":
+            satisfied = False
+            break
+        elif upper.startswith("NOT MET:"):
+            rest = stripped[7:].lstrip(":").strip()
+            parts = rest.split("—", 1)
+            if len(parts) == 1:
+                parts = rest.split(" - ", 1)
+            try:
+                idx = int(parts[0].strip()) - 1
+                criterion = rubric[idx] if 0 <= idx < len(rubric) else parts[0].strip()
+                field_name = f"criterion_{idx + 1}"
+            except (ValueError, IndexError):
+                criterion = parts[0].strip()
+                field_name = "criterion_unknown"
+            gap = parts[1].strip() if len(parts) > 1 else "criterion not met"
+            failed.append(
+                ValidationRuleResult(
+                    rule_name=criterion,
+                    field_name=field_name,
+                    passed=False,
+                    message=gap,
+                )
+            )
+
+    if satisfied is None:
+        satisfied = False
+        if not failed:
+            failed.append(
+                ValidationRuleResult(
+                    rule_name="parse_error",
+                    field_name="grader_response",
+                    passed=False,
+                    message="grader response could not be parsed",
+                )
+            )
+
+    return ValidationReport(
+        valid=bool(satisfied),
+        results=failed,
+        error_count=len(failed),
+        field_count=len(rubric),
+    )
+
+
+# ---------------------------------------------------------------------------
+# RubricReviewer (placeholder — full implementation in subsequent tasks)
+# ---------------------------------------------------------------------------
+
+
+class RubricReviewer:
+    """Evaluate and revise LLM outputs against a natural-language rubric.
+
+    Runs a grader agent in an isolated context window that assesses the
+    output against each criterion. When criteria are not met, a revision
+    prompt is sent to the generator and the loop repeats.
+
+    Parameters:
+        rubric: Ordered list of pass/fail criteria in natural language.
+            Must be non-empty.
+        grader: A separate agent used to evaluate outputs. When ``None``,
+            a default :class:`FireflyAgent` is created with a rubric
+            evaluation system prompt, using the generator's model if
+            available.
+        max_iterations: Maximum generation attempts (default 3). Raises
+            :class:`OutputReviewError` on exhaustion.
+        revision_prompt: Custom template for the revision prompt sent to
+            the generator. Must contain ``{gaps}`` and
+            ``{original_prompt}`` placeholders. Defaults to
+            ``_DEFAULT_REVISION_TEMPLATE``.
+    """
+
+    def __init__(
+        self,
+        rubric: list[str],
+        *,
+        grader: AgentLike | None = None,
+        max_iterations: int = 3,
+        revision_prompt: str | None = None,
+    ) -> None:
+        if not rubric:
+            raise ValueError("rubric must contain at least one criterion")
+        self._rubric = list(rubric)
+        self._grader = grader
+        self._max_iterations = max(1, max_iterations)
+        self._revision_prompt = revision_prompt or _DEFAULT_REVISION_TEMPLATE
+
+    @classmethod
+    def from_rubric_file(cls, path: str | Path, **kwargs: Any) -> RubricReviewer:
+        """Load rubric criteria from a Markdown file.
+
+        Bullet list items (``- `` or ``* ``) become criteria. The H1
+        heading and any prose paragraphs are ignored.
+
+        Raises:
+            ValueError: If no bullet list items are found in the file.
+        """
+        criteria: list[str] = []
+        for line in Path(path).read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("- ") or stripped.startswith("* "):
+                criterion = stripped[2:].strip()
+                if criterion:
+                    criteria.append(criterion)
+        if not criteria:
+            raise ValueError(f"No bullet list criteria found in {path}")
+        return cls(criteria, **kwargs)
+
+    async def review(
+        self,
+        agent: AgentLike,
+        prompt: str | Sequence[Any],
+        **kwargs: Any,
+    ) -> ReviewResult:
+        """Run the generator and iterate until the rubric is satisfied.
+
+        Parameters:
+            agent: The generator agent to run.
+            prompt: The initial prompt.
+            **kwargs: Forwarded to ``agent.run()``.
+
+        Returns:
+            A :class:`ReviewResult` with the accepted output.
+
+        Raises:
+            OutputReviewError: If ``max_iterations`` is exhausted.
+        """
+        grader = self._grader or self._make_default_grader(agent)
+        retry_history: list[RetryAttempt] = []
+        current_prompt = prompt
+
+        for attempt in range(1, self._max_iterations + 1):
+            result = await agent.run(current_prompt, **kwargs)
+            raw = result.output if hasattr(result, "output") else result
+            raw_str = str(raw)
+
+            report = await self._evaluate_rubric(raw_str, grader)
+
+            if report.valid:
+                return ReviewResult(
+                    output=raw,
+                    attempts=attempt,
+                    validation_report=report,
+                    retry_history=retry_history,
+                )
+
+            gaps = [r.message for r in report.errors if r.message]
+            retry_history.append(RetryAttempt(attempt=attempt, raw_output=raw_str[:500], errors=gaps))
+            if attempt < self._max_iterations:
+                current_prompt = self._build_revision_prompt(prompt, gaps)
+                logger.debug(
+                    "RubricReviewer attempt %d/%d: gaps=%s",
+                    attempt,
+                    self._max_iterations,
+                    gaps,
+                )
+
+        all_errors = [e for r in retry_history for e in r.errors]
+        raise OutputReviewError(
+            f"Rubric review failed after {self._max_iterations} attempts. "
+            f"Last gaps: {all_errors[-3:] if all_errors else ['unknown']}"
+        )
+
+    async def _evaluate_rubric(self, output: str, grader: AgentLike) -> ValidationReport:
+        rubric_text = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(self._rubric))
+        grader_prompt = _GRADER_PROMPT_TEMPLATE.format(rubric=rubric_text, output=output)
+        result = await grader.run(grader_prompt)
+        text = str(result.output if hasattr(result, "output") else result)
+        return _parse_grader_response(text, self._rubric)
+
+    def _build_revision_prompt(self, original_prompt: Any, gaps: list[str]) -> str:
+        gap_text = "\n".join(f"- {g}" for g in gaps)
+        return self._revision_prompt.format(gaps=gap_text, original_prompt=str(original_prompt))
+
+    def _make_default_grader(self, generator: AgentLike) -> AgentLike:
+        model = getattr(generator, "_model_identifier", None)
+        return FireflyAgent("rubric-grader", model=model, instructions=_GRADER_SYSTEM_PROMPT)
 
 
 # ---------------------------------------------------------------------------
