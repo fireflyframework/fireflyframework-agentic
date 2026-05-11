@@ -1,12 +1,15 @@
 # Copyright 2026 Firefly Software Foundation
 # Licensed under the Apache License, Version 2.0
-"""Bicep-based deployment targets.
+"""Bicep deployment target.
 
-`render()` generates a Bicep template for the requested resource type.
-`apply()` submits it via `az deployment group create` and reads the outputs.
+`BicepTarget` applies any Bicep template — SWA, Container App, Key Vault,
+database, or any combination. The template content comes from the artifact
+path produced by the architect/codegen steps; this class only knows how to
+parametrise and submit it.
 
-Adding a new Azure resource type = adding a new Bicep template constant and
-a subclass that sets `_TEMPLATE` and extracts the right output key.
+Usage:
+    target = BicepTarget(resource_group="rg-myapp")
+    result = await target.deploy(Path("infra/"), environment="staging")
 """
 
 from __future__ import annotations
@@ -15,58 +18,32 @@ import asyncio
 import json
 import os
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import ClassVar
 
 from .base import DeployError, DeployResult, DeployTarget, InfraSpec
 
 _PROVIDER = "azure-bicep"
 
-# ---------------------------------------------------------------------------
-# Bicep templates
-# ---------------------------------------------------------------------------
-
-_SWA_BICEP = """\
-@description('Name of the Static Web App resource.')
-param appName string
-
-@description('Azure region.')
-param location string = resourceGroup().location
-
-@description('SWA SKU (Free or Standard).')
-param sku string = 'Free'
-
-resource swa 'Microsoft.Web/staticSites@2022-09-01' = {
-  name: appName
-  location: location
-  sku: {
-    name: sku
-    tier: sku
-  }
-  properties: {}
-}
-
-output url string = 'https://${swa.properties.defaultHostname}'
-output deploymentToken string = swa.listSecrets().properties.apiKey
-"""
-
-
-# ---------------------------------------------------------------------------
-# Base Bicep target
-# ---------------------------------------------------------------------------
 
 @dataclass
 class BicepTarget(DeployTarget):
-    """Generic Bicep deployment target.
+    """Apply any Bicep template via ``az deployment group create``.
 
-    Subclasses supply `_TEMPLATE` (the Bicep content) and override
-    `_parameters()` to return the `az deployment` parameter values.
-    Subclasses may also override `_extract_url()` if the output key differs.
+    Args:
+        resource_group: Azure resource group to deploy into.
+        subscription_id: Azure subscription. Defaults to
+            ``$AZURE_SUBSCRIPTION_ID``.
+        parameters: Extra Bicep parameter overrides (name=value pairs) merged
+            with whatever ``render()`` derives from the artifact.
+        location: Fallback location written into parameters if the template
+            needs it and none is provided.
     """
 
     resource_group: str
     subscription_id: str = ""
+    parameters: dict[str, str] = field(default_factory=dict)
+    location: str = "spaincentral"
 
     def __post_init__(self) -> None:
         if not self.subscription_id:
@@ -76,37 +53,41 @@ class BicepTarget(DeployTarget):
     def provider(self) -> str:
         return _PROVIDER
 
-    # -- subclass API -------------------------------------------------------
-
-    _TEMPLATE: ClassVar[str] = ""
-
-    def _parameters(self, artifact_path: Path, environment: str) -> dict[str, str]:
-        """Return Bicep parameter values for this deployment."""
-        return {}
-
-    def _extract_url(self, az_outputs: dict) -> str:
-        """Extract the deployment URL from `az deployment` outputs dict."""
-        return az_outputs.get("url", {}).get("value", "")
-
-    # -- DeployTarget -------------------------------------------------------
-
     def render(self, artifact_path: Path, *, environment: str) -> InfraSpec:
+        """Read the Bicep template from ``artifact_path`` and parametrise it.
+
+        ``artifact_path`` may be:
+        - a ``.bicep`` file — used directly.
+        - a directory — ``main.bicep`` inside it is used.
+
+        Parameters merged (in order, later wins):
+        1. ``location`` and ``environment`` defaults.
+        2. Extra ``self.parameters`` set on the target.
+        """
+        bicep_file = _resolve_bicep(artifact_path)
+        content = bicep_file.read_text(encoding="utf-8")
+
+        params = {"location": self.location, "environment": environment, **self.parameters}
+
         return InfraSpec(
             format="bicep",
-            content=self._TEMPLATE,
-            parameters=self._parameters(artifact_path, environment),
-            source_template=type(self).__name__,
+            content=content,
+            parameters=params,
+            source_template=str(bicep_file),
         )
 
     async def apply(self, spec: InfraSpec) -> DeployResult:
-        with tempfile.NamedTemporaryFile(suffix=".bicep", mode="w", delete=False) as f:
+        """Submit the Bicep spec and return the deployment result.
+
+        The URL is read from the ``url`` output of the Bicep template.
+        Templates that expose a different output key should subclass and
+        override ``_extract_url()``.
+        """
+        with tempfile.NamedTemporaryFile(suffix=".bicep", mode="w", delete=False, encoding="utf-8") as f:
             f.write(spec.content)
             bicep_file = f.name
 
-        params_args = []
-        for k, v in spec.parameters.items():
-            params_args += [f"{k}={v}"]
-
+        params_args = [f"{k}={v}" for k, v in spec.parameters.items()]
         cmd = [
             "az", "deployment", "group", "create",
             "--resource-group", self.resource_group,
@@ -138,57 +119,28 @@ class BicepTarget(DeployTarget):
             metadata={"resource_group": self.resource_group},
         )
 
+    def _extract_url(self, outputs: dict) -> str:
+        """Extract the deployment URL from az deployment outputs.
 
-# ---------------------------------------------------------------------------
-# Azure Static Web Apps
-# ---------------------------------------------------------------------------
+        Looks for an output named ``url`` by convention. Override this method
+        if the Bicep template uses a different output key.
+        """
+        return outputs.get("url", {}).get("value", "")
 
-@dataclass
-class BicepSWATarget(BicepTarget):
-    """Deploy an Azure Static Web App via Bicep.
 
-    Renders a Bicep template that provisions (or updates) the SWA resource,
-    then uploads static content using the deployment token from the Bicep
-    output. The static files are expected in `artifact_path`.
-    """
-
-    app_name: str = ""
-    location: str = "spaincentral"
-
-    _TEMPLATE: ClassVar[str] = _SWA_BICEP
-
-    def _parameters(self, artifact_path: Path, environment: str) -> dict[str, str]:
-        return {
-            "appName": self.app_name,
-            "location": self.location,
-            "environment": environment,
-        }
-
-    async def apply(self, spec: InfraSpec) -> DeployResult:
-        result = await super().apply(spec)
-
-        # Upload static content using the deployment token from Bicep output.
-        # The token is written to $GITHUB_OUTPUT by the Bicep step; here we
-        # read it from the spec parameters if pre-provisioned, or from env.
-        token = spec.parameters.get("deploymentToken") or os.environ.get("AZURE_STATIC_WEB_APPS_API_TOKEN", "")
-        if token and spec.parameters.get("artifact_path"):
-            await self._upload_content(Path(spec.parameters["artifact_path"]), token, result.environment)
-
-        return result
-
-    async def _upload_content(self, artifact_path: Path, token: str, environment: str) -> None:
-        cmd = [
-            "az", "staticwebapp", "deploy",
-            "--name", self.app_name,
-            "--resource-group", self.resource_group,
-            "--source", str(artifact_path),
-            "--deployment-token", token,
-            "--environment-name", environment,
-            "--no-wait",
-        ]
-        exit_code, _, stderr = await _run(cmd)
-        if exit_code != 0:
-            raise DeployError(self.provider, f"static content upload failed:\n{stderr}", exit_code=exit_code)
+def _resolve_bicep(artifact_path: Path) -> Path:
+    if artifact_path.is_file() and artifact_path.suffix == ".bicep":
+        return artifact_path
+    if artifact_path.is_dir():
+        main = artifact_path / "main.bicep"
+        if main.is_file():
+            return main
+        bicep_files = list(artifact_path.glob("*.bicep"))
+        if len(bicep_files) == 1:
+            return bicep_files[0]
+        if bicep_files:
+            raise DeployError(_PROVIDER, f"multiple .bicep files in {artifact_path} — add a main.bicep")
+    raise DeployError(_PROVIDER, f"no .bicep template found at {artifact_path}")
 
 
 async def _run(cmd: list[str]) -> tuple[int, str, str]:

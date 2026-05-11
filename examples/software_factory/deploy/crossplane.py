@@ -1,16 +1,22 @@
 # Copyright 2026 Firefly Software Foundation
 # Licensed under the Apache License, Version 2.0
-"""Crossplane-based deployment targets.
+"""Crossplane deployment target.
 
-`render()` generates a Crossplane Composite Resource (XR) manifest.
-`apply()` submits it via `kubectl apply` and waits for the `Ready` condition.
+`CrossplaneTarget` applies any set of Crossplane Composite Resource (XR)
+manifests — SWA, databases, key vaults, networking, or any combination.
+The manifest content comes from the artifact path produced by the
+architect/codegen steps; this class only knows how to submit and wait.
 
-Crossplane works across clouds: Azure, AWS, and GCP all have Crossplane
-providers that accept the same `kubectl apply` workflow. Adding a new cloud
-= adding a new XR template and subclass; the apply logic is unchanged.
+Crossplane is cloud-agnostic: the same ``kubectl apply`` + wait workflow
+works for Azure (provider-azure), AWS (provider-aws), GCP (provider-gcp),
+and any other Upbound provider. The manifests themselves encode the cloud.
 
-Requires a Kubernetes cluster with Crossplane installed and a configured
-provider (e.g. `provider-azure-web` for Azure Static Web Apps).
+Usage:
+    target = CrossplaneTarget(
+        url_resource_ref="staticwebapp.azure.upbound.io/myapp",
+        url_jsonpath="{.status.atProvider.defaultHostname}",
+    )
+    result = await target.deploy(Path("infra/"), environment="staging")
 """
 
 from __future__ import annotations
@@ -19,168 +25,121 @@ import asyncio
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar
 
 from .base import DeployError, DeployResult, DeployTarget, InfraSpec
 
 _PROVIDER = "crossplane"
 
-# ---------------------------------------------------------------------------
-# XR templates
-# ---------------------------------------------------------------------------
-
-_SWA_XR = """\
-apiVersion: azure.upbound.io/v1beta1
-kind: StaticWebApp
-metadata:
-  name: {app_name}
-  annotations:
-    crossplane.io/external-name: {app_name}
-spec:
-  forProvider:
-    location: {location}
-    resourceGroupName: {resource_group}
-    skuSize: Free
-    skuTier: Free
-    tags:
-      environment: {environment}
-      managed-by: firefly-factory
-  providerConfigRef:
-    name: {provider_config}
-  writeConnectionSecretToRef:
-    name: {app_name}-connection
-    namespace: crossplane-system
-"""
-
-
-# ---------------------------------------------------------------------------
-# Base Crossplane target
-# ---------------------------------------------------------------------------
 
 @dataclass
 class CrossplaneTarget(DeployTarget):
-    """Generic Crossplane deployment target.
+    """Apply any Crossplane XR manifests via ``kubectl apply``.
 
-    Subclasses supply `_XR_TEMPLATE` and implement `_template_vars()`.
-    The `apply()` method is shared: `kubectl apply` + wait for Ready.
+    Args:
+        url_resource_ref: The ``kubectl`` resource reference for the primary
+            workload, e.g. ``staticwebapp.azure.upbound.io/myapp``. Used for
+            ``kubectl wait --for=condition=Ready`` and URL extraction.
+        url_jsonpath: JSONPath expression to extract the live URL from the
+            primary resource status, e.g.
+            ``{.status.atProvider.defaultHostname}``.
+        kubectl_context: Optional kubeconfig context name.
+        provider_config: Crossplane ProviderConfig name injected into
+            manifests that reference ``{provider_config}``.
+        wait_timeout: Seconds to wait for resources to become Ready.
     """
 
-    provider_config: str = "azure-provider"
+    url_resource_ref: str = ""
+    url_jsonpath: str = "{.status.atProvider.defaultHostname}"
     kubectl_context: str = ""
+    provider_config: str = "default"
+    wait_timeout: int = 300
 
     @property
     def provider(self) -> str:
         return _PROVIDER
 
-    _XR_TEMPLATE: ClassVar[str] = ""
-
-    def _template_vars(self, artifact_path: Path, environment: str) -> dict[str, str]:
-        return {}
-
     def render(self, artifact_path: Path, *, environment: str) -> InfraSpec:
-        vars_ = self._template_vars(artifact_path, environment)
-        content = self._XR_TEMPLATE.format(**vars_)
+        """Read Crossplane manifests from ``artifact_path`` and return an InfraSpec.
+
+        ``artifact_path`` may be:
+        - a single ``.yaml`` / ``.yml`` file — used directly.
+        - a directory — all ``.yaml`` / ``.yml`` files are concatenated with
+          ``---`` separators into a single manifest bundle.
+
+        Template variables ``{environment}`` and ``{provider_config}`` are
+        substituted in the manifest content.
+        """
+        content = _read_manifests(artifact_path)
+        content = content.replace("{environment}", environment).replace(
+            "{provider_config}", self.provider_config
+        )
         return InfraSpec(
             format="crossplane",
             content=content,
-            parameters=vars_,
-            source_template=type(self).__name__,
+            parameters={"environment": environment, "provider_config": self.provider_config},
+            source_template=str(artifact_path),
         )
 
     async def apply(self, spec: InfraSpec) -> DeployResult:
-        with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+        """Apply the manifests, wait for Ready, then extract the URL."""
+        with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False, encoding="utf-8") as f:
             f.write(spec.content)
             manifest_file = f.name
 
-        base_cmd = ["kubectl"]
-        if self.kubectl_context:
-            base_cmd += ["--context", self.kubectl_context]
+        base = self._base_cmd()
 
-        apply_cmd = base_cmd + ["apply", "-f", manifest_file]
-        exit_code, _, stderr = await _run(apply_cmd)
+        exit_code, _, stderr = await _run(base + ["apply", "-f", manifest_file])
         Path(manifest_file).unlink(missing_ok=True)
-
         if exit_code != 0:
             raise DeployError(_PROVIDER, f"kubectl apply failed (exit {exit_code}):\n{stderr}", exit_code=exit_code)
 
-        resource_ref = self._resource_ref(spec)
-        url = await self._wait_for_ready(base_cmd, resource_ref, spec)
+        url = ""
+        if self.url_resource_ref:
+            await self._wait_ready(base)
+            url = await self._read_url(base)
 
         return DeployResult(
             url=url,
             environment=spec.parameters.get("environment", "production"),
             provider=self.provider,
             spec=spec,
-            metadata={"resource_ref": resource_ref},
+            metadata={"resource_ref": self.url_resource_ref},
         )
 
-    def _resource_ref(self, spec: InfraSpec) -> str:
-        """Return the kubectl resource reference for wait/get commands."""
-        return ""
+    def _base_cmd(self) -> list[str]:
+        cmd = ["kubectl"]
+        if self.kubectl_context:
+            cmd += ["--context", self.kubectl_context]
+        return cmd
 
-    async def _wait_for_ready(self, base_cmd: list[str], resource_ref: str, spec: InfraSpec) -> str:
-        """Wait for the Crossplane resource to reach Ready=True and return its URL."""
-        if not resource_ref:
-            return ""
-
-        wait_cmd = base_cmd + [
-            "wait", resource_ref,
+    async def _wait_ready(self, base: list[str]) -> None:
+        cmd = base + [
+            "wait", self.url_resource_ref,
             "--for=condition=Ready",
-            "--timeout=300s",
+            f"--timeout={self.wait_timeout}s",
         ]
-        exit_code, _, stderr = await _run(wait_cmd)
+        exit_code, _, stderr = await _run(cmd)
         if exit_code != 0:
-            raise DeployError(_PROVIDER, f"resource did not become ready:\n{stderr}", exit_code=exit_code)
+            raise DeployError(_PROVIDER, f"resource did not become Ready:\n{stderr}", exit_code=exit_code)
 
-        return await self._get_url(base_cmd, resource_ref, spec)
-
-    async def _get_url(self, base_cmd: list[str], resource_ref: str, spec: InfraSpec) -> str:
-        """Read the deployment URL from the resource status."""
-        return ""
-
-
-# ---------------------------------------------------------------------------
-# Azure Static Web Apps via Crossplane
-# ---------------------------------------------------------------------------
-
-@dataclass
-class CrossplaneSWATarget(CrossplaneTarget):
-    """Deploy an Azure Static Web App using the Crossplane Azure provider.
-
-    Renders a `StaticWebApp` XR manifest, applies it, and waits for the
-    resource to reconcile. The live URL is read from the resource status.
-
-    Requires `provider-azure-web` installed in the cluster.
-    """
-
-    app_name: str = ""
-    resource_group: str = ""
-    location: str = "spaincentral"
-
-    _XR_TEMPLATE: ClassVar[str] = _SWA_XR
-
-    def _template_vars(self, artifact_path: Path, environment: str) -> dict[str, str]:
-        return {
-            "app_name": self.app_name,
-            "resource_group": self.resource_group,
-            "location": self.location,
-            "environment": environment,
-            "provider_config": self.provider_config,
-        }
-
-    def _resource_ref(self, spec: InfraSpec) -> str:
-        return f"staticwebapp.azure.upbound.io/{self.app_name}"
-
-    async def _get_url(self, base_cmd: list[str], resource_ref: str, spec: InfraSpec) -> str:
-        cmd = base_cmd + [
-            "get", resource_ref,
-            "-o", "jsonpath={.status.atProvider.defaultHostname}",
-        ]
+    async def _read_url(self, base: list[str]) -> str:
+        cmd = base + ["get", self.url_resource_ref, "-o", f"jsonpath={self.url_jsonpath}"]
         exit_code, stdout, _ = await _run(cmd)
         hostname = stdout.strip()
         if exit_code == 0 and hostname:
-            return f"https://{hostname}"
+            return f"https://{hostname}" if not hostname.startswith("http") else hostname
         return ""
+
+
+def _read_manifests(artifact_path: Path) -> str:
+    if artifact_path.is_file() and artifact_path.suffix in {".yaml", ".yml"}:
+        return artifact_path.read_text(encoding="utf-8")
+    if artifact_path.is_dir():
+        files = sorted(artifact_path.glob("*.yaml")) + sorted(artifact_path.glob("*.yml"))
+        if not files:
+            raise DeployError(_PROVIDER, f"no .yaml manifests found in {artifact_path}")
+        return "\n---\n".join(f.read_text(encoding="utf-8") for f in files)
+    raise DeployError(_PROVIDER, f"no Crossplane manifests found at {artifact_path}")
 
 
 async def _run(cmd: list[str]) -> tuple[int, str, str]:

@@ -2,17 +2,18 @@
 # Licensed under the Apache License, Version 2.0
 """Declarative deployment targets for the software factory.
 
-The deployer agent generates an `InfraSpec` (Bicep or Crossplane XR) and
-submits it to the platform. No agent code calls cloud CLIs directly.
+The deployer agent generates an `InfraSpec` from templates produced by the
+architect/codegen steps, then submits it to the target platform. No agent
+code calls cloud CLIs directly.
 
 Targets:
-- `BicepSWATarget` — Azure Static Web Apps via Bicep + az deployment
-- `CrossplaneSWATarget` — Azure Static Web Apps via Crossplane XR + kubectl
+- `BicepTarget`      — applies any Bicep template via ``az deployment group create``
+- `CrossplaneTarget` — applies any Crossplane XR manifests via ``kubectl apply``
 """
 
 from .base import DeployError, DeployResult, DeployTarget, InfraSpec
-from .bicep import BicepSWATarget, BicepTarget
-from .crossplane import CrossplaneSWATarget, CrossplaneTarget
+from .bicep import BicepTarget
+from .crossplane import CrossplaneTarget
 
 __all__ = [
     "DeployError",
@@ -20,7 +21,5 @@ __all__ = [
     "DeployTarget",
     "InfraSpec",
     "BicepTarget",
-    "BicepSWATarget",
     "CrossplaneTarget",
-    "CrossplaneSWATarget",
 ]
