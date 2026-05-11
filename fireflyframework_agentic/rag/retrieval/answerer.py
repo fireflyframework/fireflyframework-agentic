@@ -25,6 +25,7 @@ from fireflyframework_agentic.rag._telemetry import (
     timed_span,
 )
 from fireflyframework_agentic.rag.corpus import ChunkHit
+from fireflyframework_agentic.rag.retrieval.sql import EMPTY_SQL_HEADING
 
 if TYPE_CHECKING:
     from fireflyframework_agentic.rag.retrieval.sql import SqlRetrievalOutcome
@@ -37,7 +38,7 @@ _INSTRUCTIONS = (
     "claim that the chunk supports. If the chunks do not support an answer, "
     "reply exactly: 'I don't have enough information.' Populate the "
     "`citations` field with the unique chunk_ids you actually cited in `text`. "
-    "If a 'SQL attempt (no matching rows)' section is present, do NOT reply "
+    f"If a '{EMPTY_SQL_HEADING}' section is present, do NOT reply "
     "'I don't have enough information.' Instead, tell the user the closest "
     "available values from the probe records and suggest a refined query."
 )
@@ -175,7 +176,7 @@ class AnswerAgent:
 
 def _format_empty_sql_section(outcome: SqlRetrievalOutcome) -> str:
     """Format the prompt section that surfaces an empty-SQL attempt + probe trail."""
-    lines = ["## SQL attempt (no matching rows)"]
+    lines = [EMPTY_SQL_HEADING]
     if outcome.attempted_sql is not None:
         lines.append(f"Tried: {outcome.attempted_sql}")
     if outcome.probe_trail:
