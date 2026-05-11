@@ -29,6 +29,7 @@ from fireflyframework_agentic.validation.reviewer import (
     OutputReviewer,
     RetryAttempt,
     ReviewResult,
+    RubricReviewer,
 )
 from fireflyframework_agentic.validation.rules import (
     CustomRule,
@@ -59,6 +60,7 @@ __all__ = [
     "RegexRule",
     "RetryAttempt",
     "ReviewResult",
+    "RubricReviewer",
     "ValidationReport",
     "ValidationRule",
     "ValidationRuleResult",
