@@ -14,7 +14,7 @@ import pytest
 from fireflyframework_agentic.agents.base import FireflyAgent
 from fireflyframework_agentic.agents.registry import agent_registry
 from fireflyframework_agentic.exceptions import AgentNotFoundError
-from software_factory.action_runtime.runner import run_agent
+from software_factory.runner import run_agent
 
 
 @pytest.fixture

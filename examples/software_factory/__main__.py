@@ -1,6 +1,6 @@
 # Copyright 2026 Firefly Software Foundation
 # Licensed under the Apache License, Version 2.0
-"""CLI entry point: `python -m software_factory.action_runtime`."""
+"""CLI entry point: `python -m software_factory`."""
 
 from __future__ import annotations
 

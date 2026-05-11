@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from software_factory.action_runtime.artifact import ArtifactStore
-from software_factory.action_runtime.exceptions import MissingArtifactError
+from software_factory.artifact import ArtifactStore
+from software_factory.exceptions import MissingArtifactError
 
 
 def test_factory_dir_uses_runner_temp(tmp_runner_temp: Path) -> None:

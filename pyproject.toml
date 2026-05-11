@@ -179,7 +179,7 @@ exclude = ["tests/**", "examples/**"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests", "examples/software_factory/tests"]
+testpaths = ["tests"]
 pythonpath = ["src", ".", "examples"]
 markers = [
     "nightly: runs only in nightly CI. Long-running tests: benchmarks, real LLM/DB/HTTP, or anything not suitable for the PR gate.",

@@ -35,4 +35,4 @@ RUN pip install --no-cache-dir uv \
 ENV PYTHONPATH=/home/runner
 
 USER runner
-ENTRYPOINT ["python", "-m", "software_factory.action_runtime"]
+ENTRYPOINT ["python", "-m", "software_factory"]

@@ -1,20 +1,20 @@
 # Copyright 2026 Firefly Software Foundation
 # Licensed under the Apache License, Version 2.0
-"""Smoke import test for the software_factory action_runtime package."""
+"""Smoke import test for the software_factory package."""
 
 from __future__ import annotations
 
-import software_factory.action_runtime as rt
-from software_factory.action_runtime.exceptions import (
+import software_factory as sf
+from software_factory.exceptions import (
     ActionInputError,
     ActionRuntimeError,
     MissingArtifactError,
 )
-from software_factory.action_runtime.io_models import RunResult
+from software_factory.io_models import RunResult
 
 
-def test_action_runtime_package_imports() -> None:
-    assert rt is not None
+def test_software_factory_package_imports() -> None:
+    assert sf is not None
 
 
 def test_exceptions_import() -> None:

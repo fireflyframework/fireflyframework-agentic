@@ -6,8 +6,14 @@ Example application showing how to run `FireflyAgent` instances as GitHub Action
 
 ```
 software_factory/
-├── action_runtime/      # Runtime that bridges GitHub Actions env ↔ FireflyAgent
-├── tests/               # Unit tests for the action_runtime
+├── artifact.py          # $RUNNER_TEMP-backed artifact store
+├── env.py               # GitHub Actions INPUT_* env var reader
+├── exceptions.py        # ActionRuntimeError hierarchy
+├── feedback.py          # QA feedback loader for retry iterations
+├── github_outputs.py    # $GITHUB_OUTPUT writer
+├── io_models.py         # RunResult Pydantic model
+├── runner.py            # Orchestrates a full agent run
+├── __main__.py          # CLI: python -m software_factory --agent <name>
 └── Dockerfile           # Base image: FROM this + CMD ["--agent", "<name>"]
 ```
 
@@ -28,7 +34,7 @@ The base image ships:
 - `gh` CLI + `git`
 - A non-root `runner` user
 
-The entrypoint is `python -m software_factory.action_runtime`.
+The entrypoint is `python -m software_factory`.
 Tag scheme: CalVer (`YYYY.MM.PP`) plus `<sha>`.
 
 ## Running tests
@@ -36,5 +42,5 @@ Tag scheme: CalVer (`YYYY.MM.PP`) plus `<sha>`.
 From the repo root:
 
 ```bash
-pytest examples/software_factory/tests
+pytest tests/examples/software_factory
 ```

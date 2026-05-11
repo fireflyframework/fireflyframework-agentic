@@ -8,7 +8,7 @@ import os
 
 import pytest
 
-from software_factory.action_runtime.env import read_action_inputs
+from software_factory.env import read_action_inputs
 
 
 def test_returns_lowercased_keys(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -12,8 +12,8 @@ import pytest
 
 from fireflyframework_agentic.agents.base import FireflyAgent
 from fireflyframework_agentic.agents.registry import agent_registry
-from software_factory.action_runtime.__main__ import main
-from software_factory.action_runtime.exceptions import MissingArtifactError
+from software_factory.__main__ import main
+from software_factory.exceptions import MissingArtifactError
 
 
 @pytest.fixture

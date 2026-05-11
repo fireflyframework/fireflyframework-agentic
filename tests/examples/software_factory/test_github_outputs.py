@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from software_factory.action_runtime.github_outputs import write_output
+from software_factory.github_outputs import write_output
 
 
 def test_write_single_line_value(tmp_github_output: Path) -> None:
