@@ -28,6 +28,8 @@ import pytest
 from fireflyframework_agentic.content.sources import (
     ContentSource,
     RawFile,
+)
+from sharepoint_source import (
     SharePointSource,
     SharePointSourceConfig,
 )

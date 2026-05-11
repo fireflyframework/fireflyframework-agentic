@@ -26,6 +26,8 @@ import pytest
 
 from fireflyframework_agentic.content.sources import (
     ContentSource,
+)
+from s3_source import (
     S3Source,
     S3SourceConfig,
 )

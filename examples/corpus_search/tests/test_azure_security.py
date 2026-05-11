@@ -27,7 +27,7 @@ pytest.importorskip(
 )
 
 from fireflyframework_agentic.config import FireflyAgenticConfig  # noqa: E402
-from fireflyframework_agentic.security.azure import EntraOBOClient, EntraTokenVerifier  # noqa: E402
+from azure_security import EntraOBOClient, EntraTokenVerifier  # noqa: E402
 from fireflyframework_agentic.security.rbac import RBACManager  # noqa: E402
 
 
