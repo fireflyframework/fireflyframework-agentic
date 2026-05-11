@@ -194,4 +194,5 @@ testpaths = ["tests"]
 pythonpath = ["src", "."]
 markers = [
     "nightly: runs only in nightly CI. Long-running tests: benchmarks, real LLM/DB/HTTP, or anything not suitable for the PR gate.",
+    "integration: runs against the real CorpusAgent / DatabaseStore stack (no external network — embedders / LLM agents are stubbed or mocked).",
 ]
