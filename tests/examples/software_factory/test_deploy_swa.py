@@ -1,109 +1,144 @@
 # Copyright 2026 Firefly Software Foundation
 # Licensed under the Apache License, Version 2.0
-"""Tests for the Azure SWA deployment target."""
+"""Tests for the Bicep and Crossplane SWA deployment targets."""
 
 from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+
 import pytest
 
-from software_factory.deploy.base import DeployError
-from software_factory.deploy.swa import AzureSWATarget
+from software_factory.deploy.base import DeployError, InfraSpec
+from software_factory.deploy.bicep import BicepSWATarget
+from software_factory.deploy.crossplane import CrossplaneSWATarget
 
 
-def test_provider_name() -> None:
-    target = AzureSWATarget(app_name="my-app", resource_group="my-rg", deployment_token="tok")
-    assert target.provider == "azure-swa"
+# ---------------------------------------------------------------------------
+# BicepSWATarget
+# ---------------------------------------------------------------------------
+
+def test_bicep_provider_name() -> None:
+    t = BicepSWATarget(app_name="myapp", resource_group="myrg")
+    assert t.provider == "azure-bicep"
 
 
-def test_token_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AZURE_STATIC_WEB_APPS_API_TOKEN", "env-token")
-    target = AzureSWATarget(app_name="app", resource_group="rg")
-    assert target.deployment_token == "env-token"
+def test_bicep_render_produces_bicep_spec(tmp_path: Path) -> None:
+    t = BicepSWATarget(app_name="myapp", resource_group="myrg")
+    spec = t.render(tmp_path, environment="staging")
+    assert spec.format == "bicep"
+    assert "Microsoft.Web/staticSites" in spec.content
+    assert spec.parameters["appName"] == "myapp"
+    assert spec.parameters["environment"] == "staging"
+    assert spec.source_template == "BicepSWATarget"
 
 
-def test_raises_without_token(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("AZURE_STATIC_WEB_APPS_API_TOKEN", raising=False)
-    target = AzureSWATarget(app_name="app", resource_group="rg")
-    with pytest.raises(DeployError, match="API_TOKEN"):
-        asyncio.run(target.deploy(tmp_path))
+def test_bicep_render_content_is_valid_bicep(tmp_path: Path) -> None:
+    t = BicepSWATarget(app_name="myapp", resource_group="myrg")
+    spec = t.render(tmp_path, environment="production")
+    assert "param appName string" in spec.content
+    assert "output url string" in spec.content
 
 
-def test_raises_when_artifact_missing() -> None:
-    target = AzureSWATarget(app_name="app", resource_group="rg", deployment_token="tok")
-    with pytest.raises(DeployError, match="does not exist"):
-        asyncio.run(target.deploy(Path("/nonexistent/path")))
-
-
-def test_deploy_uses_swa_cli_when_available(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """When `swa` is on PATH, the command uses the swa CLI."""
+def test_bicep_apply_calls_az_deployment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     captured: list[list[str]] = []
 
     async def fake_run(cmd: list[str]) -> tuple[int, str, str]:
         captured.append(cmd)
-        return 0, "Deployed to https://happy-tree.azurestaticapps.net", ""
+        payload = '{"properties": {"outputs": {"url": {"value": "https://myapp.azurestaticapps.net"}}}}'
+        return 0, payload, ""
 
-    monkeypatch.setattr("software_factory.deploy.swa._run", fake_run)
-    monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/swa")
+    monkeypatch.setattr("software_factory.deploy.bicep._run", fake_run)
 
-    target = AzureSWATarget(app_name="app", resource_group="rg", deployment_token="tok")
+    t = BicepSWATarget(app_name="myapp", resource_group="myrg")
+    spec = t.render(tmp_path, environment="production")
 
     async def no_smoke(result: object) -> bool:
         return True
 
-    monkeypatch.setattr(target, "smoke_test", no_smoke)
+    monkeypatch.setattr(t, "smoke_test", no_smoke)
+    result = asyncio.run(t.apply(spec))
 
-    result = asyncio.run(target.deploy(tmp_path))
-    assert result.url == "https://happy-tree.azurestaticapps.net"
-    assert captured[0][0] == "swa"
+    assert result.url == "https://myapp.azurestaticapps.net"
+    assert any("az" in c[0] and "deployment" in c for c in captured)
 
 
-def test_deploy_falls_back_to_az_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """When `swa` is not on PATH, falls back to `az staticwebapp`."""
+def test_bicep_apply_raises_on_nonzero_exit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_run(cmd: list[str]) -> tuple[int, str, str]:
+        return 1, "", "ERROR: deployment failed"
+
+    monkeypatch.setattr("software_factory.deploy.bicep._run", fake_run)
+
+    t = BicepSWATarget(app_name="myapp", resource_group="myrg")
+    spec = t.render(tmp_path, environment="production")
+    with pytest.raises(DeployError, match="az deployment failed"):
+        asyncio.run(t.apply(spec))
+
+
+# ---------------------------------------------------------------------------
+# CrossplaneSWATarget
+# ---------------------------------------------------------------------------
+
+def test_crossplane_provider_name() -> None:
+    t = CrossplaneSWATarget(app_name="myapp", resource_group="myrg")
+    assert t.provider == "crossplane"
+
+
+def test_crossplane_render_produces_xr_manifest(tmp_path: Path) -> None:
+    t = CrossplaneSWATarget(app_name="myapp", resource_group="myrg", location="eastus")
+    spec = t.render(tmp_path, environment="staging")
+    assert spec.format == "crossplane"
+    assert "StaticWebApp" in spec.content
+    assert "myapp" in spec.content
+    assert "eastus" in spec.content
+    assert spec.source_template == "CrossplaneSWATarget"
+
+
+def test_crossplane_render_is_valid_yaml(tmp_path: Path) -> None:
+    import yaml  # noqa: PLC0415 — intentional: yaml is a test-only dep here
+    t = CrossplaneSWATarget(app_name="myapp", resource_group="myrg")
+    spec = t.render(tmp_path, environment="production")
+    parsed = yaml.safe_load(spec.content)
+    assert parsed["kind"] == "StaticWebApp"
+    assert parsed["metadata"]["name"] == "myapp"
+
+
+def test_crossplane_apply_calls_kubectl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     captured: list[list[str]] = []
+    call_count = 0
 
     async def fake_run(cmd: list[str]) -> tuple[int, str, str]:
+        nonlocal call_count
         captured.append(cmd)
-        if cmd[0] == "az" and "deploy" in cmd:
+        call_count += 1
+        if "wait" in cmd:
             return 0, "", ""
-        if cmd[0] == "az" and "show" in cmd:
-            return 0, "happy-tree.azurestaticapps.net\n", ""
+        if "jsonpath" in " ".join(cmd):
+            return 0, "myapp.azurestaticapps.net\n", ""
         return 0, "", ""
 
-    monkeypatch.setattr("software_factory.deploy.swa._run", fake_run)
-    monkeypatch.setattr("shutil.which", lambda _: None)
+    monkeypatch.setattr("software_factory.deploy.crossplane._run", fake_run)
 
-    target = AzureSWATarget(app_name="app", resource_group="rg", deployment_token="tok")
+    t = CrossplaneSWATarget(app_name="myapp", resource_group="myrg")
+    spec = t.render(tmp_path, environment="production")
 
     async def no_smoke(result: object) -> bool:
         return True
 
-    monkeypatch.setattr(target, "smoke_test", no_smoke)
+    monkeypatch.setattr(t, "smoke_test", no_smoke)
+    result = asyncio.run(t.apply(spec))
 
-    result = asyncio.run(target.deploy(tmp_path))
-    assert result.url == "https://happy-tree.azurestaticapps.net"
-    assert any(c[0] == "az" for c in captured)
+    assert result.url == "https://myapp.azurestaticapps.net"
+    assert any("apply" in c for c in captured)
 
 
-def test_deploy_raises_on_nonzero_exit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_crossplane_apply_raises_on_kubectl_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_run(cmd: list[str]) -> tuple[int, str, str]:
-        return 1, "", "fatal: deploy failed"
+        return 1, "", "Error: connection refused"
 
-    monkeypatch.setattr("software_factory.deploy.swa._run", fake_run)
-    monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/swa")
+    monkeypatch.setattr("software_factory.deploy.crossplane._run", fake_run)
 
-    target = AzureSWATarget(app_name="app", resource_group="rg", deployment_token="tok")
-    with pytest.raises(DeployError, match="swa deploy failed"):
-        asyncio.run(target.deploy(tmp_path))
-
-
-def test_extract_url_parses_swa_domain() -> None:
-    target = AzureSWATarget(app_name="app", resource_group="rg", deployment_token="tok")
-    line = "Deployment complete: https://proud-ocean.azurestaticapps.net"
-    assert target._extract_url(line) == "https://proud-ocean.azurestaticapps.net"
-
-
-def test_extract_url_returns_empty_when_no_match() -> None:
-    target = AzureSWATarget(app_name="app", resource_group="rg", deployment_token="tok")
-    assert target._extract_url("no url here") == ""
+    t = CrossplaneSWATarget(app_name="myapp", resource_group="myrg")
+    spec = t.render(tmp_path, environment="production")
+    with pytest.raises(DeployError, match="kubectl apply failed"):
+        asyncio.run(t.apply(spec))

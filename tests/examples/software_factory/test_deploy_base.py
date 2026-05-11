@@ -1,6 +1,6 @@
 # Copyright 2026 Firefly Software Foundation
 # Licensed under the Apache License, Version 2.0
-"""Tests for the DeployTarget abstraction."""
+"""Tests for the InfraSpec / DeployTarget abstraction."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from software_factory.deploy.base import DeployError, DeployResult, DeployTarget
+from software_factory.deploy.base import DeployError, DeployResult, DeployTarget, InfraSpec
 
 
 class _OKTarget(DeployTarget):
@@ -17,14 +17,20 @@ class _OKTarget(DeployTarget):
     def provider(self) -> str:
         return "test-ok"
 
-    async def deploy(self, artifact_path: Path, *, environment: str = "production") -> DeployResult:
+    def render(self, artifact_path: Path, *, environment: str) -> InfraSpec:
+        return InfraSpec(format="bicep", content="param x string", parameters={"x": "1"})
+
+    async def apply(self, spec: InfraSpec) -> DeployResult:
         return DeployResult(
             url="https://example.com",
-            environment=environment,
+            environment="production",
             provider=self.provider,
-            artifact_ref=str(artifact_path),
-            smoke_passed=True,
+            spec=spec,
+            smoke_passed=False,
         )
+
+    async def smoke_test(self, result: DeployResult) -> bool:
+        return True
 
 
 class _FailTarget(DeployTarget):
@@ -32,33 +38,43 @@ class _FailTarget(DeployTarget):
     def provider(self) -> str:
         return "test-fail"
 
-    async def deploy(self, artifact_path: Path, *, environment: str = "production") -> DeployResult:
-        raise DeployError(self.provider, "deploy failed", exit_code=1)
+    def render(self, artifact_path: Path, *, environment: str) -> InfraSpec:
+        return InfraSpec(format="crossplane", content="apiVersion: v1", parameters={})
+
+    async def apply(self, spec: InfraSpec) -> DeployResult:
+        raise DeployError(self.provider, "apply failed", exit_code=1)
 
 
-def test_deploy_result_defaults() -> None:
-    r = DeployResult(url="https://x.com", environment="prod", provider="p", artifact_ref="/a")
-    assert r.smoke_passed is False
-    assert r.metadata == {}
+def test_infra_spec_defaults() -> None:
+    spec = InfraSpec(format="bicep", content="param x string")
+    assert spec.parameters == {}
+    assert spec.source_template == ""
 
 
-def test_ok_target_returns_result(tmp_path: Path) -> None:
+def test_deploy_result_carries_spec() -> None:
+    spec = InfraSpec(format="bicep", content="x")
+    result = DeployResult(url="https://x.com", environment="prod", provider="p", spec=spec)
+    assert result.spec is spec
+    assert result.smoke_passed is False
+
+
+def test_ok_target_deploy_chains_render_apply_smoke(tmp_path: Path) -> None:
     target = _OKTarget()
     result = asyncio.run(target.deploy(tmp_path))
     assert result.url == "https://example.com"
     assert result.smoke_passed is True
-    assert result.provider == "test-ok"
+    assert result.spec.format == "bicep"
 
 
 def test_fail_target_raises_deploy_error(tmp_path: Path) -> None:
     target = _FailTarget()
     with pytest.raises(DeployError) as exc_info:
         asyncio.run(target.deploy(tmp_path))
-    assert "deploy failed" in str(exc_info.value)
+    assert "apply failed" in str(exc_info.value)
     assert exc_info.value.exit_code == 1
 
 
 def test_deploy_error_includes_provider() -> None:
     err = DeployError("my-provider", "something went wrong")
     assert "my-provider" in str(err)
-    assert "something went wrong" in str(err)
+    assert err.exit_code == 1

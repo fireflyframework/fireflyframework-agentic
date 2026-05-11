@@ -7,7 +7,7 @@ and orchestrates deploy → smoke → report. All provider-specific logic lives
 in the `deploy/` module.
 
 Usage (from the action runtime):
-    target = AzureSWATarget(app_name=..., resource_group=...)
+    target = BicepSWATarget(app_name=..., resource_group=...)
     result = await deploy(artifact_path=Path("dist/"), target=target)
 """
 
@@ -70,7 +70,8 @@ def result_to_artifact(result: DeployResult) -> str:
             "url": result.url,
             "environment": result.environment,
             "provider": result.provider,
-            "artifact_ref": result.artifact_ref,
+            "spec_format": result.spec.format,
+            "spec_template": result.spec.source_template,
             "smoke_passed": result.smoke_passed,
             "metadata": result.metadata,
         },
