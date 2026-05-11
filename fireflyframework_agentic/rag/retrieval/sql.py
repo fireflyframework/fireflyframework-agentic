@@ -19,7 +19,9 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -27,6 +29,41 @@ from fireflyframework_agentic.agents.templates import create_extractor_agent
 from fireflyframework_agentic.rag.ingest.structured_schema import TargetSchema
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(slots=True, frozen=True)
+class ProbeRecord:
+    """Record of a single ``inspect_table`` tool call.
+
+    ``result`` is the markdown string the tool returned to the LLM, truncated
+    to ~500 chars to keep observability payloads bounded.
+    """
+
+    table: str
+    column: str
+    op: str
+    result: str
+
+
+@dataclass(slots=True, frozen=True)
+class SqlRetrievalOutcome:
+    """Structured result of running the agentic SQL retrieval loop.
+
+    States:
+      - ``answered``: ``run_select`` returned >=1 row. ``result_markdown`` is
+        the markdown table; ``attempted_sql`` is the SELECT that produced it.
+      - ``empty``: ``run_select`` ran cleanly but returned 0 rows on the last
+        attempt. ``result_markdown=None``; ``attempted_sql`` is the last
+        SELECT; ``probe_trail`` records what the LLM inspected.
+      - ``unsupported``: cap exhausted, sentinel ``SELECT 1 WHERE 1=0``, every
+        attempt errored, or ``schemas`` was empty.
+    """
+
+    outcome: Literal["answered", "empty", "unsupported"]
+    result_markdown: str | None
+    attempted_sql: str | None
+    probe_trail: list[ProbeRecord] = field(default_factory=list)
+
 
 _SYSTEM = """\
 You generate a single SQLite SELECT statement to answer the user's question.
