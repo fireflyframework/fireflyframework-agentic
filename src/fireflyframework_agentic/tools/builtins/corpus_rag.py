@@ -8,7 +8,7 @@ Six tools:
     - ingest_corpus_filesystem(corpus_id, root_path)
     - discover_corpus_schema(corpus_id, path)
     - ingest_corpus_structured(corpus_id, path, schema?)
-    - corpus_retrieve(corpus_id, question, top_k)
+    - knowledge_search(corpus_id, question, top_k)
     - corpus_query(corpus_id, question, top_k)
 
 Each tool resolves a process-wide cached :class:`CorpusAgent` via
@@ -17,13 +17,9 @@ DatabaseStore / LocalBackend / SqliteCorpus (and one ``asyncio.Lock``)
 instance. Write tools additionally serialise on a per-corpus
 ``asyncio.Lock`` from ``_WRITE_LOCKS`` as belt-and-braces against
 concurrent writers in the same process. Read tools (``corpus_query`` /
-``corpus_retrieve``) stay lock-free and rely on SQLite WAL for concurrent
+``knowledge_search``) stay lock-free and rely on SQLite WAL for concurrent
 reader semantics. Cached agents are torn down via ``_shutdown_agents``,
 which the MCP server's lifespan hook is expected to call on shutdown.
-
-Auth: SharePoint ingestion uses the framework's managed-identity token
-provider against Microsoft Graph (zero-trust model — see
-:mod:`fireflyframework_agentic.security.azure`).
 """
 
 from __future__ import annotations
@@ -84,7 +80,7 @@ def _write_lock_for(corpus_id: str) -> asyncio.Lock:
     """Return the per-corpus write lock, creating one on first use.
 
     Belt-and-braces serialisation for write tools at the MCP layer. Reads
-    (corpus_query / corpus_retrieve) do NOT take this lock — they rely on
+    (corpus_query / knowledge_search) do NOT take this lock — they rely on
     SQLite's WAL mode for concurrent reader semantics.
 
     We can't assume every future writer goes through DatabaseStore.for_write
@@ -279,72 +275,11 @@ async def ingest_corpus_structured(
     }
 
 
-# NOTE: ingest_corpus_sharepoint was removed because SharePointSource was moved to
-# examples/corpus_search. If SharePoint ingestion is needed in the main framework,
-# it should be re-architected to avoid vendor-specific dependencies in src/.
-#
-# @firefly_tool(
-#     "ingest_corpus_sharepoint",
-#     description=(
-#         "Ingest every changed file from a SharePoint drive into the corpus "
-#         "identified by corpus_id. Auth uses the runtime's managed identity to "
-#         "obtain a Microsoft Graph token. Returns counts of ingested / skipped / "
-#         "failed documents and the new delta cursor."
-#     ),
-#     tags=("rag", "ingest", "sharepoint"),
-# )
-# async def ingest_corpus_sharepoint(
-#     corpus_id: str,
-#     drive_id: str,
-#     root_folder: str | None = None,
-# ) -> dict[str, Any]:
-#     from azure.identity.aio import ManagedIdentityCredential
-#
-#     from fireflyframework_agentic.content.sources.sharepoint import (
-#         SharePointSource,
-#         SharePointSourceConfig,
-#     )
-#
-#     cache_dir = _corpus_root() / corpus_id / "sharepoint" / "cache"
-#     delta_file = _corpus_root() / corpus_id / "sharepoint" / "delta.json"
-#     cache_dir.mkdir(parents=True, exist_ok=True)
-#
-#     config = SharePointSourceConfig(
-#         drive_id=drive_id,
-#         root_folder=root_folder,
-#         cache_dir=cache_dir,
-#         delta_file=delta_file,
-#     )
-#     credential = ManagedIdentityCredential()
-#
-#     async def token_provider() -> str:
-#         token = await credential.get_token(_GRAPH_SCOPE)
-#         return token.token
-#
-#     try:
-#         async with (
-#             _write_lock_for(corpus_id),
-#             SharePointSource(config, token_provider=token_provider) as source,
-#         ):
-#             agent = await _agent_for(corpus_id)
-#             summary = await agent.ingest_source(source)
-#     finally:
-#         await credential.close()
-#
-#     return {
-#         "corpus_id": corpus_id,
-#         "ingested": summary.ingested,
-#         "skipped": summary.skipped,
-#         "failed": summary.failed,
-#         "cursor": summary.cursor,
-#     }
-
-
 # ---------- retrieve / query -----------------------------------------------
 
 
 @firefly_tool(
-    "corpus_retrieve",
+    "knowledge_search",
     description=(
         "Run hybrid retrieval (BM25 + dense) with optional reranking over a "
         "corpus and return the top-K matching chunks with score, source path, "
@@ -352,7 +287,7 @@ async def ingest_corpus_structured(
     ),
     tags=("rag", "query"),
 )
-async def corpus_retrieve(corpus_id: str, question: str, top_k: int = 5) -> dict[str, Any]:
+async def knowledge_search(corpus_id: str, question: str, top_k: int = 5) -> dict[str, Any]:
     _assert_corpus_exists(corpus_id)
     agent = await _agent_for(corpus_id)
     hits = await agent.retrieve(question, top_k=top_k, rerank=True)
@@ -398,9 +333,9 @@ async def corpus_query(corpus_id: str, question: str, top_k: int = 5) -> dict[st
 
 __all__ = [
     "corpus_query",
-    "corpus_retrieve",
     "discover_corpus_schema",
     "ingest_corpus_filesystem",
     "ingest_corpus_structured",
+    "knowledge_search",
     "list_corpora",
 ]

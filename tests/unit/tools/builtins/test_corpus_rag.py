@@ -328,13 +328,13 @@ async def test_ingest_corpus_structured_skips_discovery_when_schema_supplied(
 
 
 @pytest.mark.asyncio
-async def test_corpus_retrieve_raises_for_unknown_corpus(configured_env: Path, stub_backends: None) -> None:
-    from fireflyframework_agentic.tools.builtins.corpus_rag import corpus_retrieve
+async def test_knowledge_search_raises_for_unknown_corpus(configured_env: Path, stub_backends: None) -> None:
+    from fireflyframework_agentic.tools.builtins.corpus_rag import knowledge_search
 
     # BaseTool.execute wraps domain exceptions in ToolError; the original
     # CorpusNotFoundError is available as ToolError.__cause__.
     with pytest.raises(ToolError) as exc_info:
-        await corpus_retrieve.execute(corpus_id="never-ingested", question="anything", top_k=3)
+        await knowledge_search.execute(corpus_id="never-ingested", question="anything", top_k=3)
     assert isinstance(exc_info.value.__cause__, CorpusNotFoundError)
 
 
