@@ -22,11 +22,12 @@ Demonstrates:
 
 Usage::
 
-    uv run python examples/rubric_reviewer.py
+    uv run python examples/rubric_reviewer.py --question "What is the capital of France?"
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import os
 
@@ -46,7 +47,14 @@ RUBRIC = [
 ]
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="RubricReviewer example")
+    parser.add_argument("--question", default="What is the capital of France?")
+    return parser.parse_args()
+
+
 async def main() -> None:
+    args = _parse_args()
     generator = FireflyAgent("generator", model=MODEL)
     grader = FireflyAgent(
         "grader",
@@ -59,8 +67,7 @@ async def main() -> None:
 
     reviewer = RubricReviewer(rubric=RUBRIC, grader=grader, max_iterations=3)
 
-    question = "What is the capital of France?"
-    result = await reviewer.review(generator, question)
+    result = await reviewer.review(generator, args.question)
 
     print(f"Answer: {result.output}")
     print(f"Attempts: {result.attempts}")
