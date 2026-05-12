@@ -9,6 +9,19 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 
 ## [Unreleased]
 
+### Changed (BREAKING for clients of the auth flag)
+
+- **`firefly-mcp-http` per-corpus auth now requires the
+  `X-Firefly-Corpus-Id` header on every gated request** (in addition to
+  `Authorization: Bearer …`). The middleware validates the bearer against
+  Key Vault before letting any request through — including the
+  JSON-RPC handshake, `tools/list`, and `list_corpora` — closing the gap
+  where an outsider could enumerate tool schemas or corpus_ids by
+  sending only a bearer-shaped string. Body-side `arguments.corpus_id`
+  must match the header value for corpus-scoped tools. Update Claude
+  Desktop / `mcp-remote` entries to pass `--header
+  X-Firefly-Corpus-Id: <id>`.
+
 ### Added
 
 - **Fuzzy entity matching in the SQL retriever.** The agentic inspect-loop
