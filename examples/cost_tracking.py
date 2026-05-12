@@ -28,16 +28,16 @@ from fireflyframework_agentic.observability.budget import (
     ScopeContext,
 )
 from fireflyframework_agentic.observability.cost import (
+    DEFAULT_RESOLVERS,
     CallTier,
     CostContext,
-    DEFAULT_RESOLVERS,
 )
 from fireflyframework_agentic.observability.sinks import (
     EventBusSink,
     JSONLFileSink,
     OTelMetricsSink,
 )
-from fireflyframework_agentic.observability.usage import UsageRecord, UsageTracker
+from fireflyframework_agentic.observability.usage import UsageTracker
 
 _FIXED_PRICES = {"acme:internal-llm": (0.5e-6, 2.0e-6)}  # (input, output) per token.
 

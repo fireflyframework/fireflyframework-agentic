@@ -149,7 +149,9 @@ def test_webhook_sink_retries_5xx_then_succeeds() -> None:
 
 def test_webhook_sink_drops_after_max_retries(caplog: pytest.LogCaptureFixture) -> None:
     def always_fail(url: str, json: list[dict], headers: dict, timeout: float) -> MagicMock:
-        m = MagicMock(); m.status_code = 500; return m
+        m = MagicMock()
+        m.status_code = 500
+        return m
 
     sink = WebhookSink("https://x", batch_size=1, flush_interval_s=10.0,
                       max_retries=2, _post=always_fail)

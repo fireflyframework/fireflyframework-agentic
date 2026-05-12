@@ -61,7 +61,7 @@ def test_rule_matches_single_key() -> None:
     assert not _rule_matches(rule, ScopeContext(tenant="other"))
 
 
-def test_rule_matches_is_AND_of_keys() -> None:
+def test_rule_matches_is_and_of_keys() -> None:
     rule = BudgetRule(name="prod-writer", limit_usd=10.0,
                       match={"agent": "writer", "env": "prod"})
     assert _rule_matches(rule, ScopeContext(agent="writer", labels={"env": "prod"}))
