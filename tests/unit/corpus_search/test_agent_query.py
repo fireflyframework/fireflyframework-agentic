@@ -41,24 +41,31 @@ async def test_query_calls_structured_retriever_in_parallel(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_query_passes_sql_context_to_answerer(tmp_path: Path):
+async def test_query_passes_sql_outcome_to_answerer(tmp_path: Path):
     """When SQL retrieval returns data, it must be forwarded to AnswerAgent."""
+    from fireflyframework_agentic.rag.retrieval.sql import SqlRetrievalOutcome
+
     agent = _make_agent(tmp_path)
     await agent._ensure_started()
 
     mock_answer = MagicMock()
     mock_answer.cited_sources = ["src1"]
-    sql_table = "id | name\n--- | ---\n1 | Widget"
+    stub_outcome = SqlRetrievalOutcome(
+        outcome="answered",
+        result_markdown="id | name\n--- | ---\n1 | Widget",
+        attempted_sql="SELECT id, name FROM products",
+        probe_trail=[],
+    )
 
     with (
         patch.object(agent._expander, "expand", new_callable=AsyncMock, return_value=["q"]),
         patch.object(agent._retriever, "retrieve", new_callable=AsyncMock, return_value=[]),
         patch.object(agent._reranker, "rerank", new_callable=AsyncMock, return_value=[]),
         patch.object(agent._answerer, "answer", new_callable=AsyncMock, return_value=mock_answer) as mock_answer_fn,
-        patch.object(agent._structured_retriever, "retrieve", new_callable=AsyncMock, return_value=sql_table),
+        patch.object(agent._structured_retriever, "retrieve", new_callable=AsyncMock, return_value=stub_outcome),
         patch.object(agent._schema_registry, "list_schemas", new_callable=AsyncMock, return_value=[]),
     ):
         await agent.query("How many products?")
 
     _, kwargs = mock_answer_fn.call_args
-    assert kwargs.get("sql_context") == sql_table
+    assert kwargs.get("sql_outcome") is stub_outcome
