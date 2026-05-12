@@ -139,7 +139,7 @@ async def _cmd_revoke(args: argparse.Namespace) -> int:
             return 2
     finally:
         await client.close()
-    print(f"revoked {name}", file=sys.stderr)
+    print("revoked secret", file=sys.stderr)
     return 0
 
 
