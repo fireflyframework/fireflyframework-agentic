@@ -73,12 +73,10 @@ class UsageSummary(BaseModel):
 
 def _aggregate(records: list[UsageRecord]) -> UsageSummary:
     by_agent: dict[str, dict[str, Any]] = defaultdict(
-        lambda: {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
-                 "cost_usd": 0.0, "requests": 0}
+        lambda: {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost_usd": 0.0, "requests": 0}
     )
     by_model: dict[str, dict[str, Any]] = defaultdict(
-        lambda: {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
-                 "cost_usd": 0.0, "requests": 0}
+        lambda: {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost_usd": 0.0, "requests": 0}
     )
     total_in = total_out = total_tok = total_req = 0
     total_cost = total_lat = 0.0

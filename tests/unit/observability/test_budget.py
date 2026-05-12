@@ -22,16 +22,16 @@ def test_budget_mode_values() -> None:
 
 def test_budget_window_values() -> None:
     assert {BudgetWindow.LIFETIME, BudgetWindow.MONTHLY, BudgetWindow.DAILY} == {
-        "lifetime", "monthly", "daily",
+        "lifetime",
+        "monthly",
+        "daily",
     }
 
 
 def test_scope_context_to_match_dict_builtin_keys() -> None:
-    ctx = ScopeContext(tenant="acme", agent="writer", model="openai:gpt-4o",
-                       correlation_id="run-1")
+    ctx = ScopeContext(tenant="acme", agent="writer", model="openai:gpt-4o", correlation_id="run-1")
     d = ctx.to_match_dict()
-    assert d == {"tenant": "acme", "agent": "writer", "model": "openai:gpt-4o",
-                 "correlation_id": "run-1"}
+    assert d == {"tenant": "acme", "agent": "writer", "model": "openai:gpt-4o", "correlation_id": "run-1"}
 
 
 def test_scope_context_to_match_dict_merges_labels() -> None:
@@ -62,8 +62,7 @@ def test_rule_matches_single_key() -> None:
 
 
 def test_rule_matches_is_and_of_keys() -> None:
-    rule = BudgetRule(name="prod-writer", limit_usd=10.0,
-                      match={"agent": "writer", "env": "prod"})
+    rule = BudgetRule(name="prod-writer", limit_usd=10.0, match={"agent": "writer", "env": "prod"})
     assert _rule_matches(rule, ScopeContext(agent="writer", labels={"env": "prod"}))
     assert not _rule_matches(rule, ScopeContext(agent="writer", labels={"env": "dev"}))
     assert not _rule_matches(rule, ScopeContext(agent="reader", labels={"env": "prod"}))

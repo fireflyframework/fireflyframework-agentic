@@ -61,8 +61,7 @@ try:
     from genai_prices import calc_price  # type: ignore[import-untyped]
 except ImportError as exc:  # pragma: no cover
     raise RuntimeError(
-        "genai-prices is a required dependency; install with "
-        "`pip install fireflyframework-agentic`"
+        "genai-prices is a required dependency; install with `pip install fireflyframework-agentic`"
     ) from exc
 
 _UNKNOWN_MODEL_WARNED: set[str] = set()

@@ -111,8 +111,7 @@ class BudgetGate:
                 projected = accumulated + estimated_cost_usd
                 if projected > rule.limit_usd and rule.mode == BudgetMode.HARD:
                     raise BudgetExceededError(
-                        f"Budget '{rule.name}' would be exceeded: "
-                        f"${projected:.4f} > ${rule.limit_usd:.4f}",
+                        f"Budget '{rule.name}' would be exceeded: ${projected:.4f} > ${rule.limit_usd:.4f}",
                         rule_name=rule.name,
                         spend_usd=projected,
                         limit_usd=rule.limit_usd,
@@ -137,10 +136,7 @@ class BudgetGate:
                 accumulated += cost
                 self._state[rule.name] = (bk, accumulated)
                 if accumulated > rule.limit_usd:
-                    msg = (
-                        f"Budget '{rule.name}' exceeded: "
-                        f"${accumulated:.4f} > ${rule.limit_usd:.4f}"
-                    )
+                    msg = f"Budget '{rule.name}' exceeded: ${accumulated:.4f} > ${rule.limit_usd:.4f}"
                     if rule.mode == BudgetMode.HARD:
                         to_raise = BudgetExceededError(
                             msg,

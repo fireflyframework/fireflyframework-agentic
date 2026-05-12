@@ -216,8 +216,10 @@ class TestBoundedUsageTracker:
 class _Capturing:
     def __init__(self) -> None:
         self.received: list[UsageRecord] = []
+
     def emit(self, record: UsageRecord) -> None:
         self.received.append(record)
+
     def flush(self) -> None: ...
     def close(self) -> None: ...
 
@@ -234,13 +236,13 @@ def test_record_call_invokes_gate_commit() -> None:
     sink = _Capturing()
     gate = BudgetGate([BudgetRule(name="g", limit_usd=10.0)])
     tracker = UsageTracker(sinks=[sink], resolver=lambda ctx: 0.5, gate=gate)
-    tracker.record_call(model="x", input_tokens=1, output_tokens=1,
-                        scope_ctx=ScopeContext(tenant="acme"))
+    tracker.record_call(model="x", input_tokens=1, output_tokens=1, scope_ctx=ScopeContext(tenant="acme"))
     assert gate.spend("g") == pytest.approx(0.5)
 
 
 def test_record_call_propagates_budget_exception() -> None:
     from fireflyframework_agentic.exceptions import BudgetExceededError
+
     sink = _Capturing()
     gate = BudgetGate([BudgetRule(name="g", limit_usd=0.1)])
     tracker = UsageTracker(sinks=[sink], resolver=lambda ctx: 1.0, gate=gate)
