@@ -6,6 +6,9 @@
 from __future__ import annotations
 
 import logging
+import threading
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from fireflyframework_agentic.observability.events import default_events
@@ -87,6 +90,54 @@ class EventBusSink:
             input_tokens=record.input_tokens,
             output_tokens=record.output_tokens,
         )
+
+    def flush(self) -> None: ...
+    def close(self) -> None: ...
+
+
+class LoggingSink:
+    """Log each record at INFO via the module logger."""
+
+    def __init__(self, level: int = logging.INFO) -> None:
+        self._level = level
+
+    def emit(self, record: UsageRecord) -> None:
+        logger.log(self._level, "cost_record %s", record.model_dump_json())
+
+    def flush(self) -> None: ...
+    def close(self) -> None: ...
+
+
+class JSONLFileSink:
+    """Append-only JSONL writer with optional size-based rotation.
+
+    Parameters:
+        path: Output file path. Created on first emit if missing.
+        rotate_bytes: When set, rotate the file to ``path.N`` once it exceeds
+            this size. Rotation is checked on each emit (O(1) ``stat``).
+    """
+
+    def __init__(self, path: Path | str, *, rotate_bytes: int | None = None) -> None:
+        self._path = Path(path)
+        self._rotate_bytes = rotate_bytes
+        self._lock = threading.Lock()
+
+    def emit(self, record: UsageRecord) -> None:
+        line = record.model_dump_json() + "\n"
+        with self._lock:
+            self._maybe_rotate(len(line))
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            with self._path.open("a", encoding="utf-8") as fh:
+                fh.write(line)
+
+    def _maybe_rotate(self, incoming_bytes: int) -> None:
+        if self._rotate_bytes is None or not self._path.exists():
+            return
+        if self._path.stat().st_size + incoming_bytes <= self._rotate_bytes:
+            return
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")
+        rotated = self._path.with_suffix(self._path.suffix + f".{stamp}")
+        self._path.rename(rotated)
 
     def flush(self) -> None: ...
     def close(self) -> None: ...

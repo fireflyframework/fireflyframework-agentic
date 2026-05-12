@@ -3,7 +3,9 @@
 
 """Tests for cost sinks."""
 
+import json
 import logging
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -11,6 +13,8 @@ import pytest
 from fireflyframework_agentic.observability.sinks import (
     CostSink,
     EventBusSink,
+    JSONLFileSink,
+    LoggingSink,
     OTelMetricsSink,
     _emit_safely,
 )
@@ -77,3 +81,33 @@ def test_event_bus_sink_calls_agent_completed() -> None:
             "a", tokens=10, latency_ms=50.0, model="x",
             cost_usd=0.01, input_tokens=6, output_tokens=4,
         )
+
+
+def test_logging_sink_emits_at_info(caplog: pytest.LogCaptureFixture) -> None:
+    rec = UsageRecord(agent="a", total_tokens=5, cost_usd=0.001)
+    with caplog.at_level(logging.INFO, logger="fireflyframework_agentic.observability.sinks"):
+        LoggingSink().emit(rec)
+    assert any('"agent":"a"' in r.message or "'agent': 'a'" in r.message
+               or "a" in r.message for r in caplog.records)
+
+
+def test_jsonl_file_sink_writes_one_line_per_record(tmp_path: Path) -> None:
+    path = tmp_path / "cost.jsonl"
+    sink = JSONLFileSink(path)
+    sink.emit(UsageRecord(agent="a1", cost_usd=0.1))
+    sink.emit(UsageRecord(agent="a2", cost_usd=0.2))
+    sink.close()
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    assert json.loads(lines[0])["agent"] == "a1"
+    assert json.loads(lines[1])["agent"] == "a2"
+
+
+def test_jsonl_file_sink_rotation(tmp_path: Path) -> None:
+    path = tmp_path / "cost.jsonl"
+    sink = JSONLFileSink(path, rotate_bytes=64)  # tiny size to force rotation
+    for i in range(20):
+        sink.emit(UsageRecord(agent=f"a{i}"))
+    sink.close()
+    rotated = list(tmp_path.glob("cost.jsonl*"))
+    assert len(rotated) > 1
