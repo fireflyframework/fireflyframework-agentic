@@ -285,9 +285,10 @@ class UsageTracker:
         max_records: int = 0,
     ) -> None: ...
 
-    # NOTE: the legacy `record(usage)` method is removed. All call sites
-    # (tests, examples) migrate to `record_call(...)`. No production code
-    # in agents/reasoning/pipeline core calls it today.
+    def record(self, usage: UsageRecord, scope_ctx: ScopeContext | None = None) -> None:
+        """Low-level entry: assumes cost_usd is already set on `usage`.
+        Fans out to BudgetGate.commit + sink chain. Existing production call sites
+        in agents/reasoning/experiments that already build a UsageRecord keep working."""
 
     def record_call(
         self,
@@ -366,9 +367,9 @@ All tests are plain `pytest` functions (no test classes). Test files use the `te
 Single PR, no deprecation cycle (module is pre-1.0):
 
 1. Add new files: `observability/cost/{__init__,resolvers,tiers}.py`, `observability/budget.py`, `observability/sinks.py`, `observability/_windows.py`, `examples/cost_tracking.py`.
-2. Delete: `observability/cost.py` (whole file), `_DEFAULT_PRICES`, `StaticPriceCostCalculator`, old `GenAIPricesCostCalculator`, `_cross_provider_lookup`, `get_cost_calculator`, config fields `cost_calculator` and `budget_alert_threshold_usd`, the legacy `UsageTracker.record(usage)` method.
-3. Modify: `observability/usage.py` (thin orchestrator + new `record_call`; legacy `record` removed), `observability/quota.py` (drop budget code; `RateLimiter` consumes `_windows.bucket_key`), `agents/builtin_middleware.py::CostGuardMiddleware` (delegate to `BudgetGate`), `exceptions.py::BudgetExceededError` (extend in place with structured fields and `__init__` accepting them as kwargs).
-4. Migrate existing call sites in tests and examples from `tracker.record(usage)` to `tracker.record_call(...)`. Affected files: `examples/observability_usage.py`, `tests/unit/observability/test_usage.py`, `tests/unit/pipeline/test_pipeline_usage.py`.
+2. Delete: `observability/cost.py` (whole file), `_DEFAULT_PRICES`, `StaticPriceCostCalculator`, old `GenAIPricesCostCalculator`, `_cross_provider_lookup`, `get_cost_calculator`, config fields `cost_calculator` and `budget_alert_threshold_usd`.
+3. Modify: `observability/usage.py` (thin orchestrator: keeps `record(usage)` as the low-level fan-out path; adds `record_call(...)` that resolves cost and delegates), `observability/quota.py` (drop budget code; `RateLimiter` consumes `_windows.bucket_key`), `agents/builtin_middleware.py::CostGuardMiddleware` (delegate to `BudgetGate`), `exceptions.py::BudgetExceededError` (extend in place with structured fields and `__init__` accepting them as kwargs).
+4. Migrate production call sites in `agents/base.py:461`, `reasoning/base.py:511`, `experiments/runner.py:98` from "manually build `UsageRecord` + call `get_cost_calculator` + `tracker.record(record)`" to a single `tracker.record_call(...)` call. The legacy `record(usage)` method stays available but in-tree producers prefer the high-level entry.
 5. `pyproject.toml`: move `genai-prices` from `[costs]` extra to core dependencies; remove the `[costs]` extra.
 6. Docs: rewrite the "Cost Calculation" section of `docs/observability.md`; add new "Budgets" and "Cost Sinks" sections.
 7. `CHANGELOG.md`: **Breaking changes** entry listing the removed config fields, removed classes, and removed `record(usage)` method.
@@ -388,5 +389,5 @@ None at design time. Implementation may surface minor questions about `genai-pri
 - `BudgetExceededError` extended **in place** in `exceptions.py:191` rather than redefined.
 - `bucket_key` window utility extracted to `observability/_windows.py` and shared with `RateLimiter`.
 - `WebhookSink` **kept in core** (user decision; overrides reviewer recommendation to move to example).
-- Legacy `UsageTracker.record(usage)` method removed; test/example call sites migrate to `record_call(...)`.
+- Legacy `UsageTracker.record(usage)` method **kept** (correction: it has live production call sites in `agents/base.py`, `reasoning/base.py`, `experiments/runner.py`). It becomes the low-level fan-out path. The new `record_call(...)` is a high-level convenience that resolves cost then delegates. Production call sites migrate to `record_call(...)` because they currently duplicate cost-resolution logic that the new entry point owns.
 - `ScopeContext` kept separate from `agents/context.py::AgentContext` (different concerns: filter shape vs. runtime carrier); the call site populates one from the other.
