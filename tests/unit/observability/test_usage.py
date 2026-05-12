@@ -16,9 +16,9 @@
 
 from __future__ import annotations
 
-import logging
+import pytest
 
-from fireflyframework_agentic.config import reset_config
+from fireflyframework_agentic.observability.budget import BudgetGate, BudgetRule, ScopeContext
 from fireflyframework_agentic.observability.usage import (
     UsageRecord,
     UsageSummary,
@@ -169,45 +169,6 @@ class TestUsageTracker:
         assert tracker.cumulative_cost_usd == 0.0
         assert tracker.get_summary().record_count == 0
 
-    def test_budget_alert_logged(self, monkeypatch, caplog):
-        """Budget alert warning should be logged when threshold is exceeded."""
-        monkeypatch.setenv("FIREFLY_AGENTIC_COST_TRACKING_ENABLED", "true")
-        monkeypatch.setenv("FIREFLY_AGENTIC_BUDGET_ALERT_THRESHOLD_USD", "0.005")
-        reset_config()
-
-        tracker = self._make_tracker()
-        with caplog.at_level(logging.WARNING):
-            tracker.record(UsageRecord(cost_usd=0.01, agent="test"))
-
-        reset_config()
-        assert any("Budget alert" in msg for msg in caplog.messages)
-
-    def test_budget_limit_logged(self, monkeypatch, caplog):
-        """Budget limit warning should be logged when limit is exceeded."""
-        monkeypatch.setenv("FIREFLY_AGENTIC_COST_TRACKING_ENABLED", "true")
-        monkeypatch.setenv("FIREFLY_AGENTIC_BUDGET_LIMIT_USD", "0.005")
-        reset_config()
-
-        tracker = self._make_tracker()
-        with caplog.at_level(logging.WARNING):
-            tracker.record(UsageRecord(cost_usd=0.01, agent="test"))
-
-        reset_config()
-        assert any("Budget EXCEEDED" in msg for msg in caplog.messages)
-
-    def test_cost_tracking_disabled_skips_budget(self, monkeypatch, caplog):
-        """No budget warnings when cost tracking is disabled."""
-        monkeypatch.setenv("FIREFLY_AGENTIC_COST_TRACKING_ENABLED", "false")
-        monkeypatch.setenv("FIREFLY_AGENTIC_BUDGET_LIMIT_USD", "0.001")
-        reset_config()
-
-        tracker = self._make_tracker()
-        with caplog.at_level(logging.WARNING):
-            tracker.record(UsageRecord(cost_usd=1.0))
-
-        reset_config()
-        assert not any("Budget" in msg for msg in caplog.messages)
-
 
 # -- Bounded UsageTracker tests -----------------------------------------------
 
@@ -247,3 +208,58 @@ class TestBoundedUsageTracker:
         for i in range(3):
             tracker.record(UsageRecord(agent=f"a{i}"))
         assert len(tracker.records) == 3
+
+
+# -- New tests: resolver / gate / sinks wiring --------------------------------
+
+
+class _Capturing:
+    def __init__(self) -> None:
+        self.received: list[UsageRecord] = []
+    def emit(self, record: UsageRecord) -> None:
+        self.received.append(record)
+    def flush(self) -> None: ...
+    def close(self) -> None: ...
+
+
+def test_record_call_resolves_cost_and_emits_to_sinks() -> None:
+    sink = _Capturing()
+    tracker = UsageTracker(sinks=[sink], resolver=lambda ctx: 1.23, gate=None)
+    rec = tracker.record_call(model="x", input_tokens=1, output_tokens=1, agent="a")
+    assert rec.cost_usd == 1.23
+    assert sink.received == [rec]
+
+
+def test_record_call_invokes_gate_commit() -> None:
+    sink = _Capturing()
+    gate = BudgetGate([BudgetRule(name="g", limit_usd=10.0)])
+    tracker = UsageTracker(sinks=[sink], resolver=lambda ctx: 0.5, gate=gate)
+    tracker.record_call(model="x", input_tokens=1, output_tokens=1,
+                        scope_ctx=ScopeContext(tenant="acme"))
+    assert gate.spend("g") == pytest.approx(0.5)
+
+
+def test_record_call_propagates_budget_exception() -> None:
+    from fireflyframework_agentic.exceptions import BudgetExceededError
+    sink = _Capturing()
+    gate = BudgetGate([BudgetRule(name="g", limit_usd=0.1)])
+    tracker = UsageTracker(sinks=[sink], resolver=lambda ctx: 1.0, gate=gate)
+    with pytest.raises(BudgetExceededError):
+        tracker.record_call(model="x", input_tokens=1, output_tokens=1)
+
+
+def test_record_legacy_path_still_works() -> None:
+    sink = _Capturing()
+    tracker = UsageTracker(sinks=[sink], resolver=None, gate=None)
+    tracker.record(UsageRecord(agent="a", cost_usd=0.01))
+    assert sink.received[0].cost_usd == 0.01
+
+
+def test_add_sink_appends_to_chain() -> None:
+    s1 = _Capturing()
+    s2 = _Capturing()
+    tracker = UsageTracker(sinks=[s1], resolver=None, gate=None)
+    tracker.add_sink(s2)
+    tracker.record(UsageRecord(cost_usd=0.0))
+    assert len(s1.received) == 1
+    assert len(s2.received) == 1

@@ -12,13 +12,15 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from queue import Empty, Queue
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import httpx
 
 from fireflyframework_agentic.observability.events import default_events
 from fireflyframework_agentic.observability.metrics import default_metrics
-from fireflyframework_agentic.observability.usage import UsageRecord
+
+if TYPE_CHECKING:
+    from fireflyframework_agentic.observability.usage import UsageRecord
 
 logger = logging.getLogger(__name__)
 
