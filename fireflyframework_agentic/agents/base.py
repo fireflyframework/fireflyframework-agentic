@@ -35,6 +35,8 @@ from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
 
 from fireflyframework_agentic.config import get_config
+from fireflyframework_agentic.observability.budget import ScopeContext
+from fireflyframework_agentic.observability.usage import default_usage_tracker
 from fireflyframework_agentic.types import AgentDepsT, Metadata, OutputT, UserContent
 
 if TYPE_CHECKING:
@@ -431,34 +433,28 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             if usage is None:
                 return
 
-            from fireflyframework_agentic.observability.cost import get_cost_calculator
-            from fireflyframework_agentic.observability.usage import UsageRecord, default_usage_tracker
-
             input_tokens = getattr(usage, "input_tokens", 0) or 0
             output_tokens = getattr(usage, "output_tokens", 0) or 0
-            total_tokens = getattr(usage, "total_tokens", 0) or (input_tokens + output_tokens)
             request_count = getattr(usage, "request_count", 0) or 0
             cache_creation = getattr(usage, "cache_creation_tokens", 0) or 0
             cache_read = getattr(usage, "cache_read_tokens", 0) or 0
 
-            model_name = self._model_identifier
-            calculator = get_cost_calculator(cfg.cost_calculator)
-            cost = calculator.estimate(model_name, input_tokens, output_tokens)
-
-            record = UsageRecord(
-                agent=self._name,
-                model=model_name,
+            default_usage_tracker.record_call(
+                model=self._model_identifier,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
-                total_tokens=total_tokens,
                 cache_creation_tokens=cache_creation,
                 cache_read_tokens=cache_read,
                 request_count=request_count,
-                cost_usd=cost,
-                latency_ms=elapsed_ms,
+                agent=self._name,
                 correlation_id=correlation_id,
+                latency_ms=elapsed_ms,
+                scope_ctx=ScopeContext(
+                    agent=self._name,
+                    model=self._model_identifier,
+                    correlation_id=correlation_id,
+                ),
             )
-            default_usage_tracker.record(record)
         except Exception:  # noqa: BLE001
             logger.debug("Failed to record usage for agent '%s'", self._name, exc_info=True)
 
