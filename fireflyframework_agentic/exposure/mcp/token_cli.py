@@ -123,7 +123,7 @@ async def _cmd_revoke(args: argparse.Namespace) -> int:
     name = _secret_name(args.prefix, args.corpus_id)
     if not args.yes:
         print(
-            f"about to disable secret {name!r}. Existing clients will fail with "
+            "about to disable the secret for this corpus. Existing clients will fail with "
             "403 after the cache TTL. Re-run with --yes to confirm.",
             file=sys.stderr,
         )
