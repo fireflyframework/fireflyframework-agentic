@@ -89,7 +89,7 @@ async def _cmd_create(args: argparse.Namespace) -> int:
             return 2
         token = secrets.token_urlsafe(args.bytes)
         await client.set_secret(name, token)
-        print(f"created {name} (token written to stdout)", file=sys.stderr)
+        print("created secret (token written to stdout)", file=sys.stderr)
         _emit_token(token)
     finally:
         await client.close()
