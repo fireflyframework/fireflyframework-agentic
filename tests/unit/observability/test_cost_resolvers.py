@@ -1,4 +1,17 @@
-from fireflyframework_agentic.observability.cost.resolvers import CostContext
+import dataclasses
+from decimal import Decimal
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from fireflyframework_agentic.observability.cost import resolvers as _resolvers_mod
+from fireflyframework_agentic.observability.cost.resolvers import (
+    DEFAULT_RESOLVERS,
+    CostContext,
+    genai_prices_cost,
+    provider_reported_cost,
+    resolve_cost,
+)
 from fireflyframework_agentic.observability.cost.tiers import CallTier
 
 
@@ -12,16 +25,9 @@ def test_cost_context_defaults() -> None:
 
 
 def test_cost_context_is_frozen() -> None:
-    import dataclasses
-
     ctx = CostContext(model="x", input_tokens=1, output_tokens=1)
     with pytest.raises(dataclasses.FrozenInstanceError):
         ctx.model = "y"  # type: ignore[misc]
-
-
-import pytest  # noqa: E402
-
-from fireflyframework_agentic.observability.cost.resolvers import provider_reported_cost
 
 
 def test_provider_reported_cost_openrouter() -> None:
@@ -49,12 +55,6 @@ def test_provider_reported_cost_malformed_returns_none() -> None:
         provider_payload={"usage": {"cost": "not-a-number"}},
     )
     assert provider_reported_cost(ctx) is None
-
-
-from decimal import Decimal  # noqa: E402
-from unittest.mock import MagicMock, patch  # noqa: E402
-
-from fireflyframework_agentic.observability.cost.resolvers import genai_prices_cost  # noqa: E402
 
 
 def _price_calc(total: float) -> MagicMock:
@@ -138,8 +138,7 @@ def test_genai_prices_batch_tier_halves() -> None:
 
 
 def test_genai_prices_unknown_model_returns_none(caplog: pytest.LogCaptureFixture) -> None:
-    from fireflyframework_agentic.observability.cost import resolvers as mod
-    mod._UNKNOWN_MODEL_WARNED.clear()
+    _resolvers_mod._UNKNOWN_MODEL_WARNED.clear()
     with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price",
                side_effect=LookupError("not found")):
         with caplog.at_level("WARNING"):
@@ -171,12 +170,6 @@ def test_genai_prices_no_provider_prefix_passes_none_provider() -> None:
         genai_prices_cost(CostContext(model="gpt-4o", input_tokens=1, output_tokens=1))
     assert captured["model_ref"] == "gpt-4o"
     assert captured["provider_id"] is None
-
-
-from fireflyframework_agentic.observability.cost.resolvers import (  # noqa: E402
-    DEFAULT_RESOLVERS,
-    resolve_cost,
-)
 
 
 def test_resolve_cost_uses_first_non_none() -> None:

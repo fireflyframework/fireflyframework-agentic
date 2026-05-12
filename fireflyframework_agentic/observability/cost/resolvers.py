@@ -112,6 +112,7 @@ def genai_prices_cost(ctx: CostContext) -> float | None:
     )
     try:
         result = calc_price(usage, model_ref, provider_id=provider)
+    # genai-prices raises LookupError specifically when the model cannot be matched.
     except LookupError:
         _warn_unknown_model_once(ctx.model)
         return None
