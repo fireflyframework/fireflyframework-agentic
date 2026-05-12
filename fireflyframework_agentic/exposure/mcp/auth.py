@@ -46,6 +46,12 @@ _LIFECYCLE_METHODS: frozenset[str] = frozenset(
     {"initialize", "initialized", "ping", "tools/list", "resources/list", "prompts/list"}
 )
 
+# Tools that intentionally do not take a ``corpus_id`` argument because they
+# operate above the corpus boundary (discovery / metadata). They are allowed
+# through with bearer presence only; corpus-scoping of their output (e.g.
+# ``list_corpora`` filtering) is handled by the tool itself.
+_NO_CORPUS_TOOLS: frozenset[str] = frozenset({"list_corpora"})
+
 
 def _err(status: int, detail: str) -> JSONResponse:
     return JSONResponse(
@@ -99,10 +105,23 @@ class CorpusAuthMiddleware(BaseHTTPMiddleware):
         if bearer is None:
             return _err(401, "Missing or malformed Authorization header")
 
+        # Non-POST requests (notably the GET that opens the Streamable HTTP
+        # SSE channel) carry no JSON-RPC body. They are part of the
+        # transport and pass through once the bearer is present.
+        if request.method != "POST":
+            return await call_next(request)
+
         body = await request.body()
         method = self._extract_method(body)
         if method is not None and (method in _LIFECYCLE_METHODS or method.startswith("notifications/")):
             # Lifecycle / discovery / notification — no per-corpus check.
+            request._body = body  # type: ignore[attr-defined]
+            return await call_next(request)
+
+        tool_name = self._extract_tool_name(body)
+        if tool_name in _NO_CORPUS_TOOLS:
+            # Cross-corpus discovery tool. No corpus binding; the tool
+            # itself decides what (if anything) to expose.
             request._body = body  # type: ignore[attr-defined]
             return await call_next(request)
 
@@ -128,6 +147,22 @@ class CorpusAuthMiddleware(BaseHTTPMiddleware):
             return None
         token = header[7:].strip()
         return token or None
+
+    @staticmethod
+    def _extract_tool_name(body: bytes) -> str | None:
+        if not body:
+            return None
+        try:
+            doc = json.loads(body)
+        except json.JSONDecodeError:
+            return None
+        first = doc[0] if isinstance(doc, list) else doc
+        params = first.get("params") if isinstance(first, dict) else None
+        if isinstance(params, dict):
+            name = params.get("name")
+            if isinstance(name, str):
+                return name
+        return None
 
     @staticmethod
     def _extract_method(body: bytes) -> str | None:
