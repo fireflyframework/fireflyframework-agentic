@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [Unreleased]
+
+### Added
+
+- **Per-corpus capability tokens for `firefly-mcp-http`.** When
+  `FIREFLY_MCP_CORPUS_AUTH_ENABLED=true`, every MCP tool call must
+  present a bearer matching the `firefly-mcp-corpus-token-<corpus_id>`
+  secret in the Azure Key Vault at `FIREFLY_MCP_KEYVAULT_URL`. A token
+  leak now exposes one corpus, not the whole server. `list_corpora` is
+  filtered to the caller's authorised corpora. Off by default; stdio
+  transport and existing ingress-fronted HTTP deployments are
+  unaffected. See `docs/deploy/mcp-corpus-auth.md`.
+
 ## [26.05.11] - 2026-05-11
 
 ### Changed (BREAKING)
