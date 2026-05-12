@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
@@ -24,6 +25,10 @@ from fireflyframework_agentic.rag._telemetry import (
     timed_span,
 )
 from fireflyframework_agentic.rag.corpus import ChunkHit
+from fireflyframework_agentic.rag.retrieval.sql import EMPTY_SQL_HEADING
+
+if TYPE_CHECKING:
+    from fireflyframework_agentic.rag.retrieval.sql import SqlRetrievalOutcome
 
 _NO_INFO_TEXT = "I don't have enough information."
 
@@ -32,7 +37,10 @@ _INSTRUCTIONS = (
     "Cite chunks inline using [chunk_id] notation immediately after each "
     "claim that the chunk supports. If the chunks do not support an answer, "
     "reply exactly: 'I don't have enough information.' Populate the "
-    "`citations` field with the unique chunk_ids you actually cited in `text`."
+    "`citations` field with the unique chunk_ids you actually cited in `text`. "
+    f"If a '{EMPTY_SQL_HEADING}' section is present, do NOT reply "
+    "'I don't have enough information.' Instead, tell the user the closest "
+    "available values from the probe records and suggest a refined query."
 )
 
 
@@ -124,7 +132,7 @@ class AnswerAgent:
         question: str,
         hits: Sequence[ChunkHit],
         *,
-        sql_context: str | None = None,
+        sql_outcome: SqlRetrievalOutcome | None = None,
     ) -> Answer:
         async with timed_span(
             "firefly.rag.answer",
@@ -135,12 +143,21 @@ class AnswerAgent:
             },
             metric_labels={"stage": "answer"},
         ) as span:
-            if not hits and sql_context is None:
-                span.set_attribute("firefly.rag.short_circuit", "no_hits")
+            # Short-circuit only when no chunks AND no useful SQL signal. An
+            # 'empty' SQL outcome still carries the attempted SQL + probe trail
+            # so the LLM can produce a helpful "closest values" response.
+            sql_has_signal = sql_outcome is not None and sql_outcome.outcome in (
+                "answered",
+                "empty",
+            )
+            if not hits and not sql_has_signal:
+                span.set_attribute("firefly.rag.short_circuit", "no_hits_no_sql")
                 return Answer(text=_NO_INFO_TEXT, citations=[], cited_sources=[])
             parts: list[str] = [f"Question: {question}"]
-            if sql_context is not None:
-                parts.append(f"## Structured Data Results\n\n{sql_context}")
+            if sql_outcome is not None and sql_outcome.outcome == "answered":
+                parts.append(f"## Structured Data Results\n\n{sql_outcome.result_markdown}")
+            elif sql_outcome is not None and sql_outcome.outcome == "empty":
+                parts.append(_format_empty_sql_section(sql_outcome))
             formatted = format_chunks_for_prompt(hits)
             if formatted:
                 parts.append(f"## Retrieved Documents\n\n{formatted}")
@@ -155,3 +172,16 @@ class AnswerAgent:
                 max(0, len(answer.citations) - len(answer.cited_sources)),
             )
             return answer
+
+
+def _format_empty_sql_section(outcome: SqlRetrievalOutcome) -> str:
+    """Format the prompt section that surfaces an empty-SQL attempt + probe trail."""
+    lines = [EMPTY_SQL_HEADING]
+    if outcome.attempted_sql is not None:
+        lines.append(f"Tried: {outcome.attempted_sql}")
+    if outcome.probe_trail:
+        lines.append("")
+        lines.append("Observations from inspect_table:")
+        for rec in outcome.probe_trail:
+            lines.append(f"  {rec.table}.{rec.column} {rec.op} → {rec.result}")
+    return "\n".join(lines)
