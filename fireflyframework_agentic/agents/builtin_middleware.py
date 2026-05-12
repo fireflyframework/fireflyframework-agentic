@@ -45,6 +45,17 @@ import time
 from typing import Any
 
 from fireflyframework_agentic.agents.middleware import MiddlewareContext
+from fireflyframework_agentic.exceptions import BudgetExceededError
+from fireflyframework_agentic.observability.budget import (
+    BudgetGate,
+    BudgetMode,
+    BudgetRule,
+    ScopeContext,
+)
+from fireflyframework_agentic.observability.usage import (
+    UsageRecord,
+    default_usage_tracker,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +71,9 @@ class OutputGuardError(RuntimeError):
     """Raised when :class:`OutputGuardMiddleware` detects unsafe output."""
 
 
-class BudgetExceededError(RuntimeError):
-    """Raised when :class:`CostGuardMiddleware` detects budget overrun."""
+# ``BudgetExceededError`` is re-exported above from
+# :mod:`fireflyframework_agentic.exceptions` for backward compatibility
+# with the historical ``builtin_middleware`` import path.
 
 
 # -- LoggingMiddleware -------------------------------------------------------
@@ -223,20 +235,17 @@ class PromptGuardMiddleware:
 class CostGuardMiddleware:
     """Enforces a cumulative cost budget before each agent run.
 
-    Checks the global :class:`UsageTracker` and raises
-    :class:`BudgetExceededError` if cumulative spending has already
-    reached *budget_usd*.
+    Backed internally by
+    :class:`~fireflyframework_agentic.observability.budget.BudgetGate`.
+    The public constructor signature is unchanged.
 
     Parameters:
         budget_usd: Maximum cumulative spend in USD.
-        tracker: A :class:`UsageTracker` instance.  Defaults to the
-            module-level ``default_usage_tracker``.
-        warn_only: When *True*, log a warning instead of raising on
-            budget overrun.  Useful for soft enforcement / monitoring.
-        per_call_limit_usd: Optional per-call spending cap.  When set,
-            ``after_run`` checks whether a single call exceeded this
-            limit and logs a warning (or raises if *warn_only* is
-            ``False``).
+        tracker: A :class:`UsageTracker` whose ``cumulative_cost_usd`` is
+            consulted.  Defaults to the module-level
+            ``default_usage_tracker``.
+        warn_only: When *True*, log a warning instead of raising.
+        per_call_limit_usd: Optional per-call spending cap.
     """
 
     def __init__(
@@ -251,36 +260,34 @@ class CostGuardMiddleware:
         self._tracker = tracker
         self._warn_only = warn_only
         self._per_call_limit = per_call_limit_usd
+        mode = BudgetMode.SOFT if warn_only else BudgetMode.HARD
+        self._gate = BudgetGate(
+            [BudgetRule(name="costguard", limit_usd=budget_usd, mode=mode)]
+        )
 
     def _get_tracker(self) -> Any:
         if self._tracker is not None:
             return self._tracker
-        from fireflyframework_agentic.observability.usage import default_usage_tracker
-
         return default_usage_tracker
 
     async def before_run(self, context: MiddlewareContext) -> None:
-        """Block (or warn) if cumulative cost exceeds the budget."""
         tracker = self._get_tracker()
         current = tracker.cumulative_cost_usd
-        # Snapshot cost before the call for per-call tracking
         context.metadata["_cost_before"] = current
-        if current >= self._budget:
-            msg = f"Budget exceeded for agent '{context.agent_name}': ${current:.4f} >= ${self._budget:.4f}"
-            if self._warn_only:
-                logger.warning("CostGuardMiddleware (warn-only): %s", msg)
-            else:
-                raise BudgetExceededError(msg)
+        # Seed the gate's lifetime accumulator with the tracker's current spend
+        # so it raises consistently with the legacy semantics.
+        self._gate.reset()
+        self._gate.commit(
+            UsageRecord(cost_usd=current),
+            ScopeContext(agent=context.agent_name),
+        )
 
     async def after_run(self, context: MiddlewareContext, result: Any) -> Any:
-        """Check per-call cost limit after the run completes."""
         if self._per_call_limit is None:
             return result
-
         cost_before = context.metadata.get("_cost_before", 0.0)
         cost_after = self._get_tracker().cumulative_cost_usd
         call_cost = cost_after - cost_before
-
         if call_cost > self._per_call_limit:
             msg = (
                 f"Per-call cost limit exceeded for agent '{context.agent_name}': "
@@ -289,8 +296,12 @@ class CostGuardMiddleware:
             if self._warn_only:
                 logger.warning("CostGuardMiddleware (warn-only): %s", msg)
             else:
-                raise BudgetExceededError(msg)
-
+                raise BudgetExceededError(
+                    msg,
+                    rule_name="costguard.per_call",
+                    spend_usd=call_cost,
+                    limit_usd=self._per_call_limit,
+                )
         return result
 
 
