@@ -17,10 +17,13 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from fireflyframework_agentic.exceptions import BudgetExceededError
 from fireflyframework_agentic.observability._windows import bucket_key
-from fireflyframework_agentic.observability.usage import UsageRecord
+
+if TYPE_CHECKING:
+    from fireflyframework_agentic.observability.usage import UsageRecord
 
 logger = logging.getLogger(__name__)
 
