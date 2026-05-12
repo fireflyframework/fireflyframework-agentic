@@ -103,7 +103,7 @@ async def _cmd_rotate(args: argparse.Namespace) -> int:
     try:
         if not await _secret_exists(client, name):
             print(
-                f"error: secret {name!r} does not exist yet. Use 'create' for the first token.",
+                "error: secret does not exist yet. Use 'create' for the first token.",
                 file=sys.stderr,
             )
             return 2
