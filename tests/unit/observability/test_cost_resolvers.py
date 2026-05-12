@@ -20,3 +20,32 @@ def test_cost_context_is_frozen() -> None:
 
 
 import pytest  # noqa: E402
+
+from fireflyframework_agentic.observability.cost.resolvers import provider_reported_cost
+
+
+def test_provider_reported_cost_openrouter() -> None:
+    ctx = CostContext(
+        model="openrouter:any/model",
+        input_tokens=1, output_tokens=1,
+        provider_payload={"usage": {"cost": 0.0123}},
+    )
+    assert provider_reported_cost(ctx) == 0.0123
+
+
+def test_provider_reported_cost_absent_returns_none() -> None:
+    ctx = CostContext(model="x", input_tokens=1, output_tokens=1, provider_payload={})
+    assert provider_reported_cost(ctx) is None
+
+
+def test_provider_reported_cost_no_payload_returns_none() -> None:
+    ctx = CostContext(model="x", input_tokens=1, output_tokens=1, provider_payload=None)
+    assert provider_reported_cost(ctx) is None
+
+
+def test_provider_reported_cost_malformed_returns_none() -> None:
+    ctx = CostContext(
+        model="x", input_tokens=1, output_tokens=1,
+        provider_payload={"usage": {"cost": "not-a-number"}},
+    )
+    assert provider_reported_cost(ctx) is None
