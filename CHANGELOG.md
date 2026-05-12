@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [Unreleased]
+
+### Changed (BREAKING)
+- Cost tracking redesigned around `resolve_cost` chain, `BudgetGate`, and pluggable `CostSink`s. See `docs/observability.md` for the new API and `examples/cost_tracking.py` for a walkthrough.
+- `genai-prices` promoted from optional `[costs]` extra to a required dependency. The static price table and the `cost_calculator` config field are removed.
+- The `budget_alert_threshold_usd` config field is removed (paired with the simpler rule-based budget model). Setting it raises `ConfigError`.
+
+### Removed
+- `StaticPriceCostCalculator`, `GenAIPricesCostCalculator`, `CostCalculator`, `get_cost_calculator` (replaced by `resolve_cost` + `CostFn` callables).
+- `QuotaManager.daily_budget_usd` and `QuotaManager.check_budget_available` (use a `BudgetRule(window=DAILY)`).
+
+### Added
+- `fireflyframework_agentic.observability.cost.resolve_cost` and `CostContext`.
+- `fireflyframework_agentic.observability.budget.{BudgetGate,BudgetRule,ScopeContext,BudgetMode,BudgetWindow}`.
+- `fireflyframework_agentic.observability.sinks.{CostSink,OTelMetricsSink,EventBusSink,LoggingSink,JSONLFileSink,WebhookSink}`.
+- `fireflyframework_agentic.observability._windows.bucket_key` (internal, shared by BudgetGate and RateLimiter).
+- New `UsageTracker.record_call(...)` high-level entry that resolves cost and delegates to `record(usage)`.
+
 ## [26.05.11] - 2026-05-11
 
 ### Changed (BREAKING)
