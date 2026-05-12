@@ -11,6 +11,14 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 
 ### Added
 
+- **Fuzzy entity matching in the SQL retriever.** The agentic inspect-loop
+  gains a `find_similar` op on `inspect_table` that tokenises the user's
+  value on whitespace and matches accent-folded, case-insensitive
+  substrings (AND-of-LIKEs, with OR fallback). A new `unaccent_lower(col)`
+  SQL UDF is registered on every connection so the LLM can write
+  diacritic-tolerant filters in `run_select`. The system prompt now
+  steers the LLM to probe `find_similar` for free-text entity columns
+  and to retry rather than stop when an equality filter returns 0 rows.
 - **Per-corpus capability tokens for `firefly-mcp-http`.** When
   `FIREFLY_MCP_CORPUS_AUTH_ENABLED=true`, every MCP tool call must
   present a bearer matching the `firefly-mcp-corpus-token-<corpus_id>`
