@@ -76,8 +76,11 @@ class CorpusTokenCache:
 
 
 class _SecretClientLike(Protocol):
-    async def get_secret(self, name: str) -> object: ...
-    async def close(self) -> None: ...
+    async def get_secret(self, name: str) -> object:
+        pass
+
+    async def close(self) -> None:
+        pass
 
 
 class KeyVaultTokenStore:
