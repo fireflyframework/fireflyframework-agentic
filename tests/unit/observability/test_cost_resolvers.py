@@ -140,12 +140,11 @@ def test_genai_prices_batch_tier_halves() -> None:
 def test_genai_prices_unknown_model_returns_none(caplog: pytest.LogCaptureFixture) -> None:
     _resolvers_mod._UNKNOWN_MODEL_WARNED.clear()
     with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price",
-               side_effect=LookupError("not found")):
-        with caplog.at_level("WARNING"):
-            assert genai_prices_cost(CostContext(
-                model="unknown:foo", input_tokens=1, output_tokens=1)) is None
-            assert genai_prices_cost(CostContext(
-                model="unknown:foo", input_tokens=1, output_tokens=1)) is None
+               side_effect=LookupError("not found")), caplog.at_level("WARNING"):
+        assert genai_prices_cost(CostContext(
+            model="unknown:foo", input_tokens=1, output_tokens=1)) is None
+        assert genai_prices_cost(CostContext(
+            model="unknown:foo", input_tokens=1, output_tokens=1)) is None
     warnings = [r for r in caplog.records if "unknown" in r.message.lower()]
     assert len(warnings) == 1  # deduplicated
 
