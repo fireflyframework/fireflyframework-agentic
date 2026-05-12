@@ -146,13 +146,16 @@ def _assert_corpus_exists(corpus_id: str) -> Path:
         "List every corpus_id available on this server. A corpus_id is the name "
         "of a subdirectory of CORPUS_ROOT that contains a corpus.sqlite file. "
         "Call this first when you don't know which corpus to query. Returns "
-        "an empty list if CORPUS_ROOT does not exist or contains no corpora."
+        "an empty list if CORPUS_ROOT does not exist or contains no corpora. "
+        "When per-corpus auth is enabled, the response is filtered to the "
+        "corpora the caller's bearer token authorises."
     ),
     tags=("rag", "discovery"),
 )
 async def list_corpora() -> dict[str, Any]:
     root = _corpus_root()
     corpora: list[dict[str, Any]] = []
+    allowed = authorised_corpora_var.get()
     if root.is_dir():
         for entry in sorted(root.iterdir()):
             # TODO: walking the local filesystem assumes LocalBackend
@@ -162,6 +165,8 @@ async def list_corpora() -> dict[str, Any]:
             # rather than CORPUS_ROOT.
             sqlite_path = entry / "corpus.sqlite"
             if not (entry.is_dir() and sqlite_path.is_file()):
+                continue
+            if allowed is not None and entry.name not in allowed:
                 continue
             st = sqlite_path.stat()
             corpora.append(
