@@ -431,100 +431,147 @@ git -C /home/u/signature/fireflyframework-agentic add fireflyframework_agentic/o
 git -C /home/u/signature/fireflyframework-agentic commit -m "feat(observability): add provider_reported_cost resolver"
 ```
 
-### Task 2.4: Implement `genai_prices_cost` with stubbed `find_model`
+### Task 2.4: Implement `genai_prices_cost` with `calc_price`
 
 **Files:**
 - Modify: `fireflyframework_agentic/observability/cost/resolvers.py`
 - Modify: `tests/unit/observability/test_cost_resolvers.py`
 
-`genai-prices` v0.0.x exposes `find_model(model_name, provider=None) -> ModelPrice | None`. Each `ModelPrice` exposes (depending on version): `input_price`, `output_price`, optionally `cache_write_price`, `cache_read_price`, `reasoning_price` — all priced **per token** (not per million). We treat missing attributes as zero.
+`genai-prices` v0.0.57 exposes `calc_price(usage, model_ref, *, provider_id=None) -> PriceCalculation` (NOT `find_model`). The `Usage` dataclass takes `input_tokens` (TOTAL prompt including cache_read), `cache_write_tokens`, `cache_read_tokens`, `output_tokens`. The library subtracts cache portions from `input_tokens` internally — passing `input_tokens < cache_read_tokens` raises `ValueError`. `PriceCalculation.total_price` is the USD cost as a `Decimal`. Unknown models raise `LookupError`. Reasoning tokens are billed at the output rate (industry standard), so we add them into `output_tokens` when constructing `Usage`.
 
-- [ ] **Step 1: Inspect installed `genai-prices` API**
+- [ ] **Step 1: Confirm the installed API matches**
 
 ```bash
-python -c "from genai_prices import find_model; m = find_model('gpt-4o', provider='openai'); print(type(m).__name__); print([f for f in dir(m) if 'price' in f.lower()])"
+python -c "from genai_prices import calc_price, Usage; import inspect; print(inspect.signature(calc_price)); print(inspect.signature(Usage))"
 ```
 
-Record the actual attribute names printed. If a field below differs (e.g. `cache_input_price` instead of `cache_read_price`), substitute the real names everywhere they appear in this and subsequent tasks. **Do not skip this step.**
+Expected: `calc_price(usage, model_ref, *, provider_id=..., ...)` and `Usage(input_tokens=None, cache_write_tokens=None, cache_read_tokens=None, output_tokens=None, ...)`.
 
 - [ ] **Step 2: Write failing tests for `genai_prices_cost`**
 
 Append to `tests/unit/observability/test_cost_resolvers.py`:
 
 ```python
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from fireflyframework_agentic.observability.cost.resolvers import genai_prices_cost
 
 
-def _make_price(**kw: float) -> MagicMock:
-    """Build a stand-in ModelPrice with given per-token prices."""
-    m = MagicMock(spec=["input_price", "output_price", "cache_write_price",
-                       "cache_read_price", "reasoning_price"])
-    m.input_price = kw.get("input_price", 0.0)
-    m.output_price = kw.get("output_price", 0.0)
-    m.cache_write_price = kw.get("cache_write_price", 0.0)
-    m.cache_read_price = kw.get("cache_read_price", 0.0)
-    m.reasoning_price = kw.get("reasoning_price", 0.0)
+def _price_calc(total: float) -> MagicMock:
+    """Build a stand-in PriceCalculation with the given total_price."""
+    m = MagicMock()
+    m.total_price = Decimal(str(total))
     return m
 
 
 def test_genai_prices_basic_input_output() -> None:
-    price = _make_price(input_price=2.5e-6, output_price=10e-6)
-    with patch("fireflyframework_agentic.observability.cost.resolvers.find_model", return_value=price):
-        cost = genai_prices_cost(CostContext(model="openai:gpt-4o", input_tokens=1000, output_tokens=500))
-    # 1000 * 2.5e-6 + 500 * 10e-6 = 0.0025 + 0.005 = 0.0075
+    captured: dict = {}
+
+    def fake_calc(usage, model_ref, *, provider_id=None, **_):
+        captured["usage"] = usage
+        captured["model_ref"] = model_ref
+        captured["provider_id"] = provider_id
+        return _price_calc(0.0075)
+
+    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price",
+               side_effect=fake_calc):
+        cost = genai_prices_cost(CostContext(
+            model="openai:gpt-4o", input_tokens=1000, output_tokens=500,
+        ))
     assert cost == pytest.approx(0.0075)
+    assert captured["model_ref"] == "gpt-4o"
+    assert captured["provider_id"] == "openai"
+    # No cache, no reasoning: Usage.input_tokens should equal ctx.input_tokens.
+    assert captured["usage"].input_tokens == 1000
+    assert captured["usage"].output_tokens == 500
 
 
-def test_genai_prices_honors_cache_tokens() -> None:
-    price = _make_price(input_price=3e-6, output_price=15e-6,
-                        cache_write_price=3.75e-6, cache_read_price=0.3e-6)
+def test_genai_prices_folds_cache_tokens_into_usage_input() -> None:
+    """Usage.input_tokens must be TOTAL prompt (uncached + cache_creation + cache_read).
+
+    genai-prices subtracts cache portions internally; passing only the
+    uncached portion makes it raise ValueError.
+    """
+    captured: dict = {}
+
+    def fake_calc(usage, model_ref, *, provider_id=None, **_):
+        captured["usage"] = usage
+        return _price_calc(0.0)
+
     ctx = CostContext(
         model="anthropic:claude-3-5-sonnet-latest",
         input_tokens=100, output_tokens=50,
         cache_creation_tokens=1000, cache_read_tokens=5000,
     )
-    with patch("fireflyframework_agentic.observability.cost.resolvers.find_model", return_value=price):
-        cost = genai_prices_cost(ctx)
-    # 100*3e-6 + 50*15e-6 + 1000*3.75e-6 + 5000*0.3e-6
-    # = 0.0003 + 0.00075 + 0.00375 + 0.0015 = 0.006300
-    assert cost == pytest.approx(0.0063)
+    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price",
+               side_effect=fake_calc):
+        genai_prices_cost(ctx)
+    u = captured["usage"]
+    assert u.input_tokens == 100 + 1000 + 5000
+    assert u.cache_write_tokens == 1000
+    assert u.cache_read_tokens == 5000
 
 
-def test_genai_prices_honors_reasoning_tokens() -> None:
-    price = _make_price(input_price=1e-6, output_price=4e-6, reasoning_price=4e-6)
-    ctx = CostContext(model="openai:o3", input_tokens=100, output_tokens=50, reasoning_tokens=200)
-    with patch("fireflyframework_agentic.observability.cost.resolvers.find_model", return_value=price):
-        cost = genai_prices_cost(ctx)
-    # 100*1e-6 + 50*4e-6 + 200*4e-6 = 0.0001 + 0.0002 + 0.0008 = 0.0011
-    assert cost == pytest.approx(0.0011)
+def test_genai_prices_folds_reasoning_into_output() -> None:
+    captured: dict = {}
+
+    def fake_calc(usage, model_ref, *, provider_id=None, **_):
+        captured["usage"] = usage
+        return _price_calc(0.0)
+
+    ctx = CostContext(model="openai:o3", input_tokens=100, output_tokens=50,
+                      reasoning_tokens=200)
+    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price",
+               side_effect=fake_calc):
+        genai_prices_cost(ctx)
+    assert captured["usage"].output_tokens == 50 + 200
 
 
 def test_genai_prices_batch_tier_halves() -> None:
-    price = _make_price(input_price=2e-6, output_price=8e-6)
-    ctx = CostContext(model="openai:gpt-4.1", input_tokens=1000, output_tokens=500, tier=CallTier.BATCH)
-    with patch("fireflyframework_agentic.observability.cost.resolvers.find_model", return_value=price):
-        cost = genai_prices_cost(ctx)
-    # (1000*2e-6 + 500*8e-6) * 0.5 = (0.002 + 0.004) * 0.5 = 0.003
+    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price",
+               return_value=_price_calc(0.006)):
+        cost = genai_prices_cost(CostContext(
+            model="openai:gpt-4.1", input_tokens=1000, output_tokens=500,
+            tier=CallTier.BATCH,
+        ))
     assert cost == pytest.approx(0.003)
 
 
 def test_genai_prices_unknown_model_returns_none(caplog: pytest.LogCaptureFixture) -> None:
     from fireflyframework_agentic.observability.cost import resolvers as mod
-    mod._UNKNOWN_MODEL_WARNED.clear()  # reset dedup
-    with patch("fireflyframework_agentic.observability.cost.resolvers.find_model", return_value=None):
+    mod._UNKNOWN_MODEL_WARNED.clear()
+    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price",
+               side_effect=LookupError("not found")):
         with caplog.at_level("WARNING"):
-            assert genai_prices_cost(CostContext(model="unknown:foo", input_tokens=1, output_tokens=1)) is None
-            assert genai_prices_cost(CostContext(model="unknown:foo", input_tokens=1, output_tokens=1)) is None
+            assert genai_prices_cost(CostContext(
+                model="unknown:foo", input_tokens=1, output_tokens=1)) is None
+            assert genai_prices_cost(CostContext(
+                model="unknown:foo", input_tokens=1, output_tokens=1)) is None
     warnings = [r for r in caplog.records if "unknown" in r.message.lower()]
     assert len(warnings) == 1  # deduplicated
 
 
-def test_genai_prices_swallows_exceptions() -> None:
-    with patch("fireflyframework_agentic.observability.cost.resolvers.find_model",
+def test_genai_prices_swallows_other_exceptions() -> None:
+    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price",
                side_effect=RuntimeError("boom")):
-        assert genai_prices_cost(CostContext(model="x", input_tokens=1, output_tokens=1)) is None
+        assert genai_prices_cost(CostContext(
+            model="x", input_tokens=1, output_tokens=1)) is None
+
+
+def test_genai_prices_no_provider_prefix_passes_none_provider() -> None:
+    captured: dict = {}
+
+    def fake_calc(usage, model_ref, *, provider_id=None, **_):
+        captured["model_ref"] = model_ref
+        captured["provider_id"] = provider_id
+        return _price_calc(0.0)
+
+    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price",
+               side_effect=fake_calc):
+        genai_prices_cost(CostContext(model="gpt-4o", input_tokens=1, output_tokens=1))
+    assert captured["model_ref"] == "gpt-4o"
+    assert captured["provider_id"] is None
 ```
 
 - [ ] **Step 3: Run, expect failures**
@@ -539,7 +586,8 @@ Append to `fireflyframework_agentic/observability/cost/resolvers.py`:
 
 ```python
 try:
-    from genai_prices import find_model  # type: ignore[import-untyped]
+    from genai_prices import Usage as _GenAIUsage  # type: ignore[import-untyped]
+    from genai_prices import calc_price  # type: ignore[import-untyped]
 except ImportError as exc:  # pragma: no cover
     raise RuntimeError(
         "genai-prices is a required dependency; install with "
@@ -557,54 +605,62 @@ def _warn_unknown_model_once(model: str) -> None:
     try:
         from fireflyframework_agentic.observability.metrics import default_metrics
 
-        default_metrics.record_error(operation="cost_unknown", model=model)
+        default_metrics.record_error(operation="cost_unknown")
     except Exception:  # noqa: BLE001
         logger.debug("Failed to emit cost_unknown metric", exc_info=True)
 
 
 def genai_prices_cost(ctx: CostContext) -> float | None:
-    """Compute cost from the ``genai-prices`` model record, else ``None``.
+    """Compute cost via :func:`genai_prices.calc_price`, else return ``None``.
 
-    Honors cache_creation_tokens (cache_write_price), cache_read_tokens
-    (cache_read_price), and reasoning_tokens (reasoning_price). Applies a
-    0.5x multiplier when ``ctx.tier == CallTier.BATCH``.
+    Token mapping:
+      * ``Usage.input_tokens`` = ctx.input_tokens + cache_creation_tokens + cache_read_tokens
+        (genai-prices subtracts cache portions internally).
+      * ``Usage.cache_write_tokens`` = ctx.cache_creation_tokens.
+      * ``Usage.cache_read_tokens`` = ctx.cache_read_tokens.
+      * ``Usage.output_tokens`` = ctx.output_tokens + ctx.reasoning_tokens
+        (reasoning tokens bill at the output rate).
+
+    The ``CallTier.BATCH`` modifier is applied as a 0.5x post-multiplier
+    since the library does not natively price batch tiers.
+
+    On unknown model (LookupError): emits ``cost_unknown`` metric +
+    WARNING once per model, returns None.
     """
     parts = ctx.model.split(":", 1)
-    provider, model_name = (parts[0], parts[1]) if len(parts) == 2 else (None, ctx.model)
+    if len(parts) == 2:
+        provider, model_ref = parts
+    else:
+        provider, model_ref = None, ctx.model
+
+    usage = _GenAIUsage(
+        input_tokens=ctx.input_tokens + ctx.cache_creation_tokens + ctx.cache_read_tokens,
+        cache_write_tokens=ctx.cache_creation_tokens or None,
+        cache_read_tokens=ctx.cache_read_tokens or None,
+        output_tokens=ctx.output_tokens + ctx.reasoning_tokens,
+    )
     try:
-        price = find_model(model_name, provider=provider or None)
+        result = calc_price(usage, model_ref, provider_id=provider)
+    except LookupError:
+        _warn_unknown_model_once(ctx.model)
+        return None
     except Exception:  # noqa: BLE001
         logger.debug("genai-prices lookup raised for '%s'", ctx.model, exc_info=True)
         return None
-    if price is None:
-        _warn_unknown_model_once(ctx.model)
-        return None
 
-    input_price = getattr(price, "input_price", 0.0) or 0.0
-    output_price = getattr(price, "output_price", 0.0) or 0.0
-    cache_write = getattr(price, "cache_write_price", 0.0) or 0.0
-    cache_read = getattr(price, "cache_read_price", 0.0) or 0.0
-    reasoning = getattr(price, "reasoning_price", 0.0) or 0.0
-
-    total = (
-        ctx.input_tokens * input_price
-        + ctx.output_tokens * output_price
-        + ctx.cache_creation_tokens * cache_write
-        + ctx.cache_read_tokens * cache_read
-        + ctx.reasoning_tokens * reasoning
-    )
+    total = float(result.total_price)
     if ctx.tier == CallTier.BATCH:
         total *= 0.5
-    return float(total)
+    return total
 ```
 
-If Step 1 revealed different attribute names, update the five `getattr(price, "...", ...)` lines accordingly.
-
-Add a `record_error` helper if needed: check `fireflyframework_agentic/observability/metrics.py::FireflyMetrics.record_error` exists. If it does not accept `model=...`, change the metric call to `default_metrics.record_error(operation="cost_unknown")` and drop the label. Verify with:
+Verify `record_error` accepts no extra kwargs (the plan above uses bare `operation="cost_unknown"`):
 
 ```bash
 grep -n "def record_error" fireflyframework_agentic/observability/metrics.py
 ```
+
+If its signature accepts arbitrary kwargs, you may add `model=ctx.model` as a label; if not, the bare form above is correct.
 
 - [ ] **Step 5: Run tests, expect green**
 
