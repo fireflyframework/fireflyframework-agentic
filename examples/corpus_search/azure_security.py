@@ -31,6 +31,10 @@ from azure.identity import DefaultAzureCredential
 from jwt import PyJWKClient
 from msal import ConfidentialClientApplication
 
+from fireflyframework_agentic.security.corpus_token import (
+    CorpusTokenStore,
+    validate_corpus_id,
+)
 from fireflyframework_agentic.security.rbac import RBACManager
 
 logger = logging.getLogger(__name__)
@@ -200,3 +204,69 @@ class EntraOBOClient:
             error = result.get("error_description") or result.get("error", "unknown")
             raise ValueError(f"OBO exchange failed: {error}")
         return result["access_token"]
+
+
+# ----------------------------------------------------------------------------
+# Per-corpus capability tokens — Key Vault backend
+# ----------------------------------------------------------------------------
+#
+# Concrete implementation of ``CorpusTokenStore`` (defined in
+# ``fireflyframework_agentic.security.corpus_token``) backed by Azure Key Vault.
+# Lives here, not in the framework, so the framework stays
+# provider-agnostic — operators on a non-Azure back-end can swap this for
+# their own ``CorpusTokenStore`` without touching the middleware.
+
+
+class KeyVaultTokenStore:
+    """Async fetcher for per-corpus tokens from Azure Key Vault.
+
+    Implements the :class:`CorpusTokenStore` Protocol. Returns ``None``
+    for not-found / disabled secrets so the caller can map those to
+    ``403 Forbidden`` without revealing whether the secret exists.
+    Other Azure errors propagate so the caller can fail closed (``503``).
+
+    ``client`` is typed as ``Any`` because the real
+    ``azure.keyvault.secrets.aio.SecretClient`` has a richer
+    ``get_secret`` signature than the subset we use; the tests duck-type
+    a stub that matches the same shape.
+    """
+
+    def __init__(self, *, client: Any, prefix: str) -> None:
+        self._client = client
+        self._prefix = prefix
+
+    async def get_corpus_token(self, corpus_id: str) -> str | None:
+        validate_corpus_id(corpus_id)
+        from azure.core.exceptions import ResourceNotFoundError
+
+        name = f"{self._prefix}{corpus_id}"
+        try:
+            secret = await self._client.get_secret(name)
+        except ResourceNotFoundError:
+            return None
+        return getattr(secret, "value", None)
+
+    async def aclose(self) -> None:
+        await self._client.close()
+
+
+def build_default_store(
+    *,
+    vault_url: str,
+    prefix: str = "firefly-mcp-corpus-token-",
+) -> CorpusTokenStore:
+    """Construct a :class:`KeyVaultTokenStore` wired to the real Azure SDK.
+
+    Uses managed identity in Azure Container Apps; falls back to
+    ``az login`` locally. The credential needs **Key Vault Secrets User**
+    (``get``) — no ``list`` / ``set`` / ``delete``.
+
+    This is the default factory wired into ``firefly-mcp-http`` when the
+    operator enables per-corpus auth without setting
+    ``FIREFLY_MCP_TOKEN_STORE_FACTORY`` to a custom callable.
+    """
+    from azure.keyvault.secrets.aio import SecretClient
+
+    credential = DefaultAzureCredential()
+    client = SecretClient(vault_url=vault_url, credential=credential)
+    return KeyVaultTokenStore(client=client, prefix=prefix)

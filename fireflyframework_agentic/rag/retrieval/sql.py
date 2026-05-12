@@ -20,6 +20,7 @@ import contextvars
 import logging
 import re
 import sqlite3
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -76,6 +77,27 @@ MAX_ROWS_IN_RESULT = 100
 MAX_ROWS_PER_PROBE = 20
 
 
+def _unaccent_lower(value: str | None) -> str | None:
+    """Strip combining diacritics and lowercase ``value``.
+
+    Registered as a SQLite UDF on every connection (see :func:`_connect`).
+    Lets ``unaccent_lower(col) LIKE '%alvarez%'`` match rows that contain
+    ``Álvarez`` portably, without needing the SQLite ICU extension. The
+    function is pure and deterministic — safe to register with the
+    ``deterministic=True`` flag.
+    """
+    if value is None:
+        return None
+    return "".join(c for c in unicodedata.normalize("NFKD", value) if not unicodedata.combining(c)).lower()
+
+
+def _connect(db_path: Path) -> sqlite3.Connection:
+    """Open a connection with the framework's SQL UDFs registered."""
+    conn = sqlite3.connect(db_path)
+    conn.create_function("unaccent_lower", 1, _unaccent_lower, deterministic=True)
+    return conn
+
+
 @dataclass(slots=True)
 class _LoopContext:
     """Mutable per-query state shared between the loop tools.
@@ -121,7 +143,8 @@ def _build_inspect_tool(ctx: _LoopContext) -> Any:
     async def inspect_table(
         table: str,
         column: str,
-        op: Literal["distinct_values", "count", "sample_rows", "value_range"],
+        op: Literal["distinct_values", "count", "sample_rows", "value_range", "find_similar"],
+        value: str | None = None,
     ) -> str:
         """Peek at the corpus DB before composing the final SELECT.
 
@@ -130,6 +153,12 @@ def _build_inspect_tool(ctx: _LoopContext) -> Any:
           - ``count``: COUNT(*) of *table*
           - ``sample_rows``: first 5 rows of *table*
           - ``value_range``: MIN/MAX of *column*
+          - ``find_similar``: case-insensitive, accent-folded substring match
+            against the literal *value*. The value is tokenised on whitespace
+            and matched as AND-of-LIKEs (so ``"Javier Alvarez"`` matches
+            ``"Francisco Javier Álvarez Fernández"``). Falls back to OR-of-
+            tokens if AND yields zero matches. Use this for free-text filters
+            on names / entities where the user's spelling may not be exact.
 
         Raises :class:`pydantic_ai.exceptions.ModelRetry` if *table* or *column*
         is not in the registered schemas — pydantic-ai surfaces the message
@@ -146,6 +175,7 @@ def _build_inspect_tool(ctx: _LoopContext) -> Any:
         # so this is belt-and-braces.
         t = '"' + table.replace('"', '""') + '"'
         c = '"' + column.replace('"', '""') + '"'
+        params: list[Any] = []
         if op == "distinct_values":
             sql = f"SELECT DISTINCT {c} FROM {t} WHERE {c} IS NOT NULL LIMIT {MAX_ROWS_PER_PROBE}"
         elif op == "count":
@@ -154,13 +184,50 @@ def _build_inspect_tool(ctx: _LoopContext) -> Any:
             sql = f"SELECT * FROM {t} LIMIT 5"
         elif op == "value_range":
             sql = f"SELECT MIN({c}), MAX({c}) FROM {t}"
+        elif op == "find_similar":
+            if not value or not value.strip():
+                raise ModelRetry("find_similar requires a non-empty 'value' argument")
+            tokens = [tok for tok in re.split(r"\s+", value.strip()) if tok]
+            sql, params = _build_find_similar_sql(t, c, tokens)
         else:
             raise ValueError(f"unknown op '{op}'")
-        result = _execute(ctx.db_path, sql) or "(no rows)"
+        result = _execute(ctx.db_path, sql, params) or "(no rows)"
+        if op == "find_similar" and result == "(no rows)" and len(params) > 1:
+            # Relax AND → OR so the LLM sees what's nearby even if no single
+            # value contains every token.
+            sql, params = _build_find_similar_sql(t, c, tokens, combinator="OR")
+            result = _execute(ctx.db_path, sql, params) or "(no rows)"
         ctx.probe_trail.append(ProbeRecord(table=table, column=column, op=op, result=result[:500]))
         return result
 
     return inspect_table
+
+
+def _build_find_similar_sql(
+    quoted_table: str,
+    quoted_column: str,
+    tokens: list[str],
+    *,
+    combinator: str = "AND",
+) -> tuple[str, list[Any]]:
+    """Build the parametric SQL for ``find_similar``.
+
+    All tokens are accent-folded + lowercased before binding, and matched
+    against ``unaccent_lower(column)`` on the row side. ``combinator`` is
+    ``"AND"`` for the strict pass and ``"OR"`` for the relaxed fallback.
+    """
+    if not tokens:
+        # Defensive: the caller validates non-empty input, but guard against
+        # a future caller skipping that check.
+        return ("SELECT NULL WHERE 0=1", [])
+    predicates = f" {combinator} ".join([f"unaccent_lower({quoted_column}) LIKE ?"] * len(tokens))
+    sql = (
+        f"SELECT DISTINCT {quoted_column} FROM {quoted_table} "
+        f"WHERE {quoted_column} IS NOT NULL AND ({predicates}) "
+        f"LIMIT {MAX_ROWS_PER_PROBE}"
+    )
+    params: list[Any] = [f"%{_unaccent_lower(tok)}%" for tok in tokens]
+    return sql, params
 
 
 def _build_run_select_tool(ctx: _LoopContext) -> Any:
@@ -209,43 +276,75 @@ def _build_run_select_tool(ctx: _LoopContext) -> Any:
 _SYSTEM = """\
 You answer questions by querying a SQLite corpus database. You have two tools:
 
-  inspect_table(table, column, op)
+  inspect_table(table, column, op, value=None)
     op = 'distinct_values' | 'count' | 'sample_rows' | 'value_range'
+       | 'find_similar'
     Use this to discover what values a column actually contains BEFORE you
     write the final SELECT. Free — call it whenever you are not sure.
+
+    'find_similar' takes an extra `value` argument and returns column
+    values that match the value case-insensitively and accent-folded,
+    tokenised by whitespace (AND across tokens). Use it for free-text
+    filters on names / entities where the user's spelling may differ
+    from what is stored (e.g. accents, middle names, abbreviations).
 
   run_select(sql)
     Use this to run your final SELECT once you are confident in the values.
     You may call it more than once if the result was empty or errored.
+    The helper SQL function `unaccent_lower(col)` is available — prefer
+    `unaccent_lower(col) LIKE '%token%'` over `col = 'literal'` when
+    filtering on person names or other free-text fields, so accents,
+    case, and partial overlaps match.
 
 Process:
   1. Read the schema below.
   2. If you are NOT sure what values exist in the columns you want to filter
-     on, call inspect_table first. Don't probe columns whose values are
-     obvious from the question.
+     on, call inspect_table first.
+     - For free-text identifiers (person names, product names, locations
+       whose stored form may differ from the user's wording) use
+       `find_similar` with the user's literal string.
+     - For closed-set columns (regions, categories, status flags) use
+       `distinct_values`.
+     - Don't probe columns whose values are obvious from the question.
   3. Call run_select with your final SELECT.
-  4. If run_select returns 'Query returned 0 rows.' or 'SQL error: ...',
-     you may inspect more and retry. Do not exceed 3 inspect calls without
-     making progress.
+  4. If run_select returns 'Query returned 0 rows.' on an equality filter
+     for a string column, do NOT stop. Probe `find_similar` on that column
+     with the original value first — there is usually a near match (different
+     accents, middle names, casing). Retry the SELECT against the candidates
+     you find. Aim for at most 3 inspect calls without making progress.
+  5. If run_select returns 'SQL error: ...', revise and retry.
 
-Worked example (illustrative; no real corpus):
+Worked example 1 (illustrative; no real corpus):
   Question: "wireless mouse sales in Europe last quarter"
   Schema: sales (period string, product_name string, region string,
                  revenue number, ...)
   Reasoning: "wireless mouse" might be a category label or a specific
-             product — I don't know which. "Europe" might be a single
-             region value or a prefix on several. I'll inspect both.
+             product. "Europe" might be a single region value or a prefix
+             on several. Inspect both.
 
-  inspect_table(sales, product_name, distinct_values)
+  inspect_table(sales, product_name, 'distinct_values')
     -> ['MX-3000 Wireless Mouse', 'MX-3000 Pro', 'K10 Keyboard', ...]
-  inspect_table(sales, region, distinct_values)
+  inspect_table(sales, region, 'distinct_values')
     -> ['EU-North', 'EU-South', 'NA', 'APAC']
-  inspect_table(sales, period, distinct_values)
-    -> ['2025-Q1', '2025-Q2', '2025-Q3', '2025-Q4']
   run_select("SELECT product_name, SUM(revenue) FROM sales "
              "WHERE period='2025-Q4' AND region LIKE 'EU-%' "
-             "AND product_name LIKE '%Wireless Mouse%' "
+             "AND unaccent_lower(product_name) LIKE '%wireless mouse%' "
              "GROUP BY product_name")
+
+Worked example 2 (ambiguous person name):
+  Question: "Who is Javier Alvarez's manager?"
+  Schema: employees (id int, name string, manager_id int, ...)
+  Reasoning: stored names may carry accents and middle names; the user's
+             string almost certainly is not the literal full name.
+
+  inspect_table(employees, name, 'find_similar', value='Javier Alvarez')
+    -> ['Francisco Javier Álvarez Fernández', 'María Álvarez', ...]
+  run_select("SELECT name, manager_id FROM employees "
+             "WHERE name = 'Francisco Javier Álvarez Fernández'")
+
+  If find_similar returns multiple candidates and the question does not
+  pick one, return rows for all candidates (WHERE name IN (...)) so the
+  caller can disambiguate. Do NOT silently pick one.
 
 Rules:
   - SELECT only. No INSERT/UPDATE/DELETE/DROP/ALTER. The run_select tool
@@ -284,11 +383,12 @@ class StructuredRetriever:
         async def inspect_table(
             table: str,
             column: str,
-            op: Literal["distinct_values", "count", "sample_rows", "value_range"],
+            op: Literal["distinct_values", "count", "sample_rows", "value_range", "find_similar"],
+            value: str | None = None,
         ) -> str:
             ctx = _CURRENT_CTX.get()
             assert ctx is not None, "inspect_table called outside retrieve()"
-            return await _build_inspect_tool(ctx)(table, column, op)
+            return await _build_inspect_tool(ctx)(table, column, op, value)
 
         async def run_select(sql: str) -> str:
             ctx = _CURRENT_CTX.get()
@@ -396,8 +496,8 @@ def _build_schema_context(schemas: list[TargetSchema]) -> str:
     return "\n".join(lines)
 
 
-def _execute(db_path: Path, sql: str) -> str | None:
-    """Execute *sql* and return a markdown table.
+def _execute(db_path: Path, sql: str, params: list[Any] | None = None) -> str | None:
+    """Execute *sql* (with optional bound *params*) and return a markdown table.
 
     Returns:
       - markdown table (possibly with a truncation footer) on success with rows
@@ -410,8 +510,8 @@ def _execute(db_path: Path, sql: str) -> str | None:
     'answered'``.
     """
     try:
-        with sqlite3.connect(db_path) as conn:
-            cur = conn.execute(sql)
+        with _connect(db_path) as conn:
+            cur = conn.execute(sql, params or [])
             rows = cur.fetchall()
             col_names = [d[0] for d in cur.description] if cur.description else []
     except sqlite3.Error as exc:
