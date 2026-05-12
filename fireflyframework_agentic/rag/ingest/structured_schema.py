@@ -38,6 +38,17 @@ class ColumnSpec(BaseModel):
     primary_key: bool = False
     foreign_key: str | None = None
     """References another table's column as ``"<table>.<column>"`` (e.g. ``"customers.id"``)."""
+    unit: str | None = None
+    """Human-readable unit for the values stored in this column
+    (e.g. ``"USD millions"``, ``"headcount"``, ``"percent"``, ``"days"``).
+
+    Optional and free-form. When set, the SQL retriever's schema context
+    surfaces the unit to the agent, and the answerer is instructed to
+    include the unit alongside any numeric quantity it cites for this
+    column. When ``None``, the answerer is instructed to either ask the
+    user or flag the ambiguity in the response rather than presenting a
+    unit-less number.
+    """
 
 
 class TableSpec(BaseModel):

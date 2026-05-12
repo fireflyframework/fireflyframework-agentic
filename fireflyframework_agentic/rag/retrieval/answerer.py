@@ -40,7 +40,14 @@ _INSTRUCTIONS = (
     "`citations` field with the unique chunk_ids you actually cited in `text`. "
     f"If a '{EMPTY_SQL_HEADING}' section is present, do NOT reply "
     "'I don't have enough information.' Instead, tell the user the closest "
-    "available values from the probe records and suggest a refined query."
+    "available values from the probe records and suggest a refined query. "
+    "Whenever you report a numeric quantity, include its unit if it is known "
+    "from the structured-data column headers or the source chunks (e.g. 'USD "
+    "1.2M', '320 headcount', '78.5 percent', '63 days'). If the unit is not "
+    "stated anywhere in the provided context, explicitly flag the ambiguity "
+    "in your answer — say which column or source the figure came from and "
+    "note that the unit is not specified — rather than presenting a "
+    "unit-less number that the user cannot verify."
 )
 
 
