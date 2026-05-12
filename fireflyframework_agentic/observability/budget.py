@@ -62,3 +62,20 @@ class ScopeContext:
             if value:
                 out[key] = value
         return out
+
+
+@dataclass(frozen=True)
+class BudgetRule:
+    name: str
+    limit_usd: float
+    mode: BudgetMode = BudgetMode.HARD
+    window: BudgetWindow = BudgetWindow.LIFETIME
+    match: Mapping[str, str] = field(default_factory=dict)
+
+
+def _rule_matches(rule: BudgetRule, ctx: ScopeContext) -> bool:
+    """Return True iff every (k, v) in rule.match is in ctx.to_match_dict()."""
+    if not rule.match:
+        return True
+    flat = ctx.to_match_dict()
+    return all(flat.get(k) == v for k, v in rule.match.items())
