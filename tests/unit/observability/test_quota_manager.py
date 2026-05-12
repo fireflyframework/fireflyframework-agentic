@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for quota management and rate limiting."""
+"""Unit tests for rate-limit management."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ import time
 
 import pytest
 
-from fireflyframework_agentic.exceptions import BudgetExceededError, RateLimitError
+from fireflyframework_agentic.exceptions import RateLimitError
 from fireflyframework_agentic.observability.quota import AdaptiveBackoff, QuotaManager, RateLimiter
 
 
@@ -200,64 +200,19 @@ class TestAdaptiveBackoff:
 class TestQuotaManager:
     """Test suite for QuotaManager."""
 
-    def test_budget_check(self):
-        """Test daily budget checking."""
-        quota = QuotaManager(daily_budget_usd=10.0)
-
-        # Should allow requests within budget
-        assert quota.check_budget_available(5.0)
-        assert quota.check_budget_available(10.0)
-
-        # Should deny requests exceeding budget
-        assert not quota.check_budget_available(10.01)
-
-    def test_budget_enforcement(self):
-        """Test that budget is enforced on check_quota_before_request."""
-        quota = QuotaManager(daily_budget_usd=10.0)
-
-        # First request should succeed
-        quota.check_quota_before_request("openai:gpt-4o", estimated_cost=5.0)
-        quota.record_request("openai:gpt-4o", cost_usd=5.0)
-
-        # Second request that would exceed budget should raise exception
-        with pytest.raises(BudgetExceededError, match="Daily budget.*would be exceeded"):
-            quota.check_quota_before_request("openai:gpt-4o", estimated_cost=6.0)
-
-    def test_budget_tracking(self):
-        """Test that actual costs are tracked correctly."""
-        quota = QuotaManager(daily_budget_usd=10.0)
-
-        # Record some requests
-        quota.record_request("openai:gpt-4o", cost_usd=3.0)
-        assert quota.get_daily_spend() == 3.0
-
-        quota.record_request("openai:gpt-4o", cost_usd=2.0)
-        assert quota.get_daily_spend() == 5.0
-
-        # Remaining budget should be correct
-        assert quota.get_budget_remaining() == 5.0
-
-    def test_no_budget_limit(self):
-        """Test that None budget allows unlimited spending."""
-        quota = QuotaManager(daily_budget_usd=None)
-
-        # Should allow any amount
-        assert quota.check_budget_available(1000000.0)
-        assert quota.get_budget_remaining() is None
-
     def test_rate_limit_check(self):
         """Test rate limit checking."""
         quota = QuotaManager(rate_limits={"openai:gpt-4o": 3})
 
         # First 3 requests should be allowed
         assert quota.check_rate_limit_available("openai:gpt-4o")
-        quota.record_request("openai:gpt-4o", cost_usd=0.0)
+        quota.record_request("openai:gpt-4o")
 
         assert quota.check_rate_limit_available("openai:gpt-4o")
-        quota.record_request("openai:gpt-4o", cost_usd=0.0)
+        quota.record_request("openai:gpt-4o")
 
         assert quota.check_rate_limit_available("openai:gpt-4o")
-        quota.record_request("openai:gpt-4o", cost_usd=0.0)
+        quota.record_request("openai:gpt-4o")
 
         # 4th request should be denied
         assert not quota.check_rate_limit_available("openai:gpt-4o")
@@ -268,7 +223,7 @@ class TestQuotaManager:
 
         # First request should succeed
         quota.check_quota_before_request("openai:gpt-4o")
-        quota.record_request("openai:gpt-4o", cost_usd=0.0)
+        quota.record_request("openai:gpt-4o")
 
         # Second request should raise exception
         with pytest.raises(RateLimitError, match="Rate limit exceeded"):
@@ -288,7 +243,7 @@ class TestQuotaManager:
 
         assert quota.get_rate_limit_remaining("openai:gpt-4o") == 5
 
-        quota.record_request("openai:gpt-4o", cost_usd=0.0)
+        quota.record_request("openai:gpt-4o")
         assert quota.get_rate_limit_remaining("openai:gpt-4o") == 4
 
         # Unconfigured model should return None
@@ -322,7 +277,7 @@ class TestQuotaManager:
         initial_delay = quota.get_backoff_delay("openai:gpt-4o")
 
         # Record successful request
-        quota.record_request("openai:gpt-4o", cost_usd=0.0, success=True)
+        quota.record_request("openai:gpt-4o", success=True)
 
         # Record new failure - should start from base delay
         quota.record_rate_limit_error("openai:gpt-4o")
@@ -339,43 +294,14 @@ class TestQuotaManager:
         # Should return 0 delay
         assert quota.get_backoff_delay("openai:gpt-4o") == 0.0
 
-    def test_reset_daily_spend(self):
-        """Test manual reset of daily spend."""
-        quota = QuotaManager(daily_budget_usd=10.0)
-
-        quota.record_request("openai:gpt-4o", cost_usd=5.0)
-        assert quota.get_daily_spend() == 5.0
-
-        quota.reset_daily_spend()
-        assert quota.get_daily_spend() == 0.0
-
     def test_reset_rate_limits(self):
         """Test manual reset of rate limits."""
         quota = QuotaManager(rate_limits={"openai:gpt-4o": 1})
 
         # Use up rate limit
-        quota.record_request("openai:gpt-4o", cost_usd=0.0)
+        quota.record_request("openai:gpt-4o")
         assert not quota.check_rate_limit_available("openai:gpt-4o")
 
         # Reset specific model
         quota.reset_rate_limits("openai:gpt-4o")
         assert quota.check_rate_limit_available("openai:gpt-4o")
-
-    def test_combined_quota_check(self):
-        """Test that check_quota_before_request validates all constraints."""
-        quota = QuotaManager(daily_budget_usd=10.0, rate_limits={"openai:gpt-4o": 1})
-
-        # First request should succeed (both budget and rate limit OK)
-        quota.check_quota_before_request("openai:gpt-4o", estimated_cost=2.0)
-        quota.record_request("openai:gpt-4o", cost_usd=2.0)
-
-        # Second request should fail rate limit
-        with pytest.raises(RateLimitError):
-            quota.check_quota_before_request("openai:gpt-4o", estimated_cost=2.0)
-
-        # Reset rate limit
-        quota.reset_rate_limits()
-
-        # Third request should fail budget
-        with pytest.raises(BudgetExceededError):
-            quota.check_quota_before_request("openai:gpt-4o", estimated_cost=9.0)
