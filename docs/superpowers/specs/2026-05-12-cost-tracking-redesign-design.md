@@ -1,7 +1,7 @@
 # Cost Tracking Redesign
 
 **Date:** 2026-05-12
-**Status:** Design — awaiting user approval
+**Status:** Design — revised after simplifier review
 **Module:** `fireflyframework_agentic.observability` (cost-tracking subset)
 
 ---
@@ -81,6 +81,8 @@ BudgetGate.precheck(estimated_cost_usd, scope_ctx) ──► raises early on HAR
 
 ### 4.1 `cost/resolvers.py` — pricing
 
+A cost resolver is **a list of callables tried in order**. No Protocol class, no Strategy wrapper — the contract is "callable returning `float | None`":
+
 ```python
 class CallTier(StrEnum):
     STANDARD = "standard"
@@ -97,18 +99,16 @@ class CostContext:
     tier: CallTier = CallTier.STANDARD
     provider_payload: Mapping[str, Any] | None = None
 
-@runtime_checkable
-class CostStrategy(Protocol):
-    def resolve(self, ctx: CostContext) -> float | None: ...
+CostFn = Callable[[CostContext], float | None]
 
-class ProviderReportedCost:
-    """Returns cost from the provider response when it carries a USD cost field.
+def provider_reported_cost(ctx: CostContext) -> float | None:
+    """Return cost from the provider response when it carries a USD cost field.
 
     Supports OpenRouter (`usage.cost`). Returns None when no recognized field is present.
     """
 
-class GenAIPricesCost:
-    """Looks up the model in genai-prices and multiplies token-by-token.
+def genai_prices_cost(ctx: CostContext) -> float | None:
+    """Look up the model in genai-prices and multiply token-by-token.
 
     Honors cache_creation_tokens, cache_read_tokens, and reasoning_tokens against the
     corresponding fields of the genai-prices model record. Applies a 0.5x multiplier
@@ -118,14 +118,19 @@ class GenAIPricesCost:
     and logs WARNING once per model (deduplicated process-wide).
     """
 
-class CostResolver:
-    def __init__(self, strategies: Sequence[CostStrategy]): ...
-    def resolve(self, ctx: CostContext) -> float:
-        """Return first non-None result; 0.0 if all strategies abstain."""
+def resolve_cost(ctx: CostContext, resolvers: Sequence[CostFn] | None = None) -> float:
+    """Return the first non-None result from the resolver chain, or 0.0 if all abstain."""
+    chain = resolvers or DEFAULT_RESOLVERS
+    for fn in chain:
+        result = fn(ctx)
+        if result is not None:
+            return result
+    return 0.0
 
-def get_cost_resolver() -> CostResolver:
-    return CostResolver([ProviderReportedCost(), GenAIPricesCost()])
+DEFAULT_RESOLVERS: tuple[CostFn, ...] = (provider_reported_cost, genai_prices_cost)
 ```
+
+Users extend the chain by passing their own list (e.g. `[my_fixed_rate, *DEFAULT_RESOLVERS]`). The `examples/cost_tracking.py` walkthrough demonstrates this for contractually-fixed-price models.
 
 **Deleted from the codebase:**
 - `observability/cost.py::_DEFAULT_PRICES`
@@ -146,10 +151,8 @@ class BudgetMode(StrEnum):
 
 class BudgetWindow(StrEnum):
     LIFETIME = "lifetime"
-    YEARLY   = "yearly"     # calendar year UTC
     MONTHLY  = "monthly"    # calendar month UTC
     DAILY    = "daily"      # calendar day UTC
-    HOURLY   = "hourly"     # calendar hour UTC
 
 @dataclass(frozen=True)
 class ScopeContext:
@@ -159,14 +162,26 @@ class ScopeContext:
     correlation_id: str = ""
     labels: Mapping[str, str] = field(default_factory=dict)
 
+    def to_match_dict(self) -> dict[str, str]:
+        """Flatten to a single string→string mapping for rule matching.
+
+        Built-in keys ('tenant', 'agent', 'model', 'correlation_id') merge with labels;
+        labels are keyed under their own names. Built-in keys win on collision.
+        """
+
 @dataclass(frozen=True)
 class BudgetRule:
     name: str
     limit_usd: float
     mode: BudgetMode = BudgetMode.HARD
     window: BudgetWindow = BudgetWindow.LIFETIME
-    scope: Callable[[ScopeContext], bool]   # predicate over the call's context
-    alert_at: float | None = None           # 0.0–1.0; WARNING once when spend ≥ alert_at * limit
+    match: Mapping[str, str] = field(default_factory=dict)
+    """AND-of-key-value match against ScopeContext.to_match_dict().
+    Empty dict means 'matches every call' (global rule). Example:
+        match={"tenant": "acme"}           # tenant-scoped
+        match={"agent": "writer"}          # agent-scoped
+        match={"tenant": "acme", "env": "prod"}  # combined; 'env' read from labels
+    """
 
 class BudgetGate:
     def __init__(self, rules: Sequence[BudgetRule]): ...
@@ -174,30 +189,54 @@ class BudgetGate:
     def commit(self, record: UsageRecord, ctx: ScopeContext) -> None: ...
     def spend(self, rule_name: str) -> float: ...
     def reset(self, rule_name: str | None = None) -> None: ...
-
-# Scope predicate helpers:
-def by_tenant(t: str) -> Callable[[ScopeContext], bool]: ...
-def by_agent(a: str)  -> Callable[[ScopeContext], bool]: ...
-def globally()        -> Callable[[ScopeContext], bool]: ...
 ```
 
-**Window semantics.** Calendar-aligned, not rolling. A single helper `_bucket_key(window, now)` returns `"lifetime"`, `"2026"`, `"2026-05"`, `"2026-05-12"`, or `"2026-05-12T14"`. The gate stores `{rule_name: (bucket_key, accumulated_usd)}`; on each `commit`, if the current bucket key differs from the stored one, the accumulator resets to zero before adding. Lazy, lock-protected, O(1).
+**No predicate helpers.** Rules are plain data: serializable to JSON/YAML, trivially testable, debuggable in logs. Custom match logic (regex, glob, callables) is not needed for v1; if added later it would be an additive `custom_matcher: Callable | None = None` field.
 
-**Error type** (extends today's exception):
+**Window semantics.** Calendar-aligned, not rolling. The bucket-key helper lives in a new shared utility `observability/_windows.py`:
 
 ```python
-class BudgetExceededError(Exception):
+# observability/_windows.py
+def bucket_key(window: str, now: datetime) -> str:
+    """Return 'lifetime', '2026-05', or '2026-05-12' depending on window."""
+```
+
+Both `BudgetGate` and `RateLimiter` (`observability/quota.py`) consume this helper so the windowing logic exists in exactly one place.
+
+The gate stores `{rule_name: (bucket_key, accumulated_usd)}`; on each `commit`, if the current bucket key differs from the stored one, the accumulator resets to zero before adding. Lazy, lock-protected, O(1).
+
+**`alert_at` removed.** No v1 use case; if needed later, additive change.
+
+**Error type — extend the existing exception in place.** Do not redefine. `exceptions.py:191` already has `BudgetExceededError(QuotaError)`; we add structured fields to it:
+
+```python
+# exceptions.py — modified in place
+class BudgetExceededError(QuotaError):
+    """Raised when a budget rule is exceeded."""
+
     rule_name: str
     spend_usd: float
     limit_usd: float
-    scope_ctx: ScopeContext
+    scope_ctx: "ScopeContext"
+
+    def __init__(
+        self,
+        msg: str,
+        *,
+        rule_name: str = "",
+        spend_usd: float = 0.0,
+        limit_usd: float = 0.0,
+        scope_ctx: "ScopeContext | None" = None,
+    ) -> None: ...
 ```
+
+Existing `raise BudgetExceededError("…")` call sites keep working unchanged.
 
 **Consolidations:**
 - `CostGuardMiddleware(budget_usd=...)` keeps its public constructor; internally it instantiates a `BudgetGate` with one `BudgetRule(name="costguard", limit_usd=budget_usd, mode=HARD, window=LIFETIME, scope=globally())` and wires `precheck` into the agent middleware chain.
 - `QuotaManager.check_budget_available` and `QuotaManager.daily_budget_usd` are deleted; the daily-budget use case is now `BudgetRule(window=DAILY, scope=globally())`. `QuotaManager` keeps **only** rate-limiting responsibilities.
 - `UsageTracker._check_budget` is deleted; the tracker calls `gate.commit(...)`.
-- Config fields `budget_limit_usd` and `budget_alert_threshold_usd` are **kept** as a convenience: when set, the default tracker auto-installs a single global HARD rule with that limit and `alert_at = budget_alert_threshold_usd / budget_limit_usd`. Existing user configs continue to work unchanged.
+- Config field `budget_limit_usd` is **kept** as a convenience: when set, the default tracker auto-installs a single global HARD `BudgetRule(name="config_global", limit_usd=budget_limit_usd, match={})`. The `budget_alert_threshold_usd` field is **deprecated and removed** (paired with the deleted `alert_at`); a `ConfigError` with a one-line migration pointer is raised if set, matching the treatment of the removed `cost_calculator` field.
 
 ### 4.3 `sinks.py` — output fan-out
 
@@ -246,6 +285,10 @@ class UsageTracker:
         max_records: int = 0,
     ) -> None: ...
 
+    # NOTE: the legacy `record(usage)` method is removed. All call sites
+    # (tests, examples) migrate to `record_call(...)`. No production code
+    # in agents/reasoning/pipeline core calls it today.
+
     def record_call(
         self,
         *,
@@ -263,10 +306,6 @@ class UsageTracker:
         scope_ctx: ScopeContext | None = None,
     ) -> UsageRecord:
         """Resolve cost → build UsageRecord → gate.commit → fan out to sinks."""
-
-    def record(self, usage: UsageRecord) -> None:
-        """Lower-level entry point: assumes cost_usd is already set.
-        Retained for back-compat with existing call sites."""
 
     def add_sink(self, sink: CostSink) -> None: ...
     def get_summary(self) -> UsageSummary: ...
@@ -294,13 +333,13 @@ This example is run by CI as a smoke test.
 
 ## 6. Configuration
 
-**Removed:**
-- `cost_calculator: Literal["auto","genai_prices","static"]` — single resolver path now. Setting this field raises `ConfigError` with a one-line pointer to the new docs (not silent ignore).
+**Removed (raise `ConfigError` with migration pointer if set):**
+- `cost_calculator: Literal["auto","genai_prices","static"]` — single resolver path now.
+- `budget_alert_threshold_usd: float | None` — paired with removed `alert_at`.
 
 **Kept:**
 - `cost_tracking_enabled: bool` — when `False`, the default tracker becomes a no-op.
 - `budget_limit_usd: float | None` — when set, auto-installs a global HARD `BudgetRule` on the default tracker.
-- `budget_alert_threshold_usd: float | None` — translated into `alert_at = budget_alert_threshold_usd / budget_limit_usd` on that rule.
 - `usage_tracker_max_records: int` — unchanged.
 
 ## 7. Error handling
@@ -312,11 +351,12 @@ This example is run by CI as a smoke test.
 
 ## 8. Testing strategy
 
-- **`tests/observability/test_cost_resolvers.py`** — provider-reported parsing, genai-prices token-breakdown math (cache, reasoning, batch tier), unknown-model behavior (counter + dedup), chain ordering.
-- **`tests/observability/test_budget.py`** — bucket-key correctness for all five windows across UTC boundary crossings (parametrized), HARD raises with populated fields, SOFT logs, overlapping rules fire independently, `alert_at` fires once, lazy reset, `precheck` with `estimated_cost=0.0`.
+- **`tests/observability/test_cost_resolvers.py`** — provider-reported parsing, genai-prices token-breakdown math (cache, reasoning, batch tier), unknown-model behavior (counter + dedup), chain ordering, custom resolver injection.
+- **`tests/observability/test_windows.py`** — `bucket_key` correctness for all three windows across UTC boundary crossings (parametrized). Shared utility, tested once.
+- **`tests/observability/test_budget.py`** — HARD raises with populated fields, SOFT logs, overlapping rules fire independently, `match={}` rule matches every call, `match={"tenant":"acme"}` filters correctly, labels merge into match dict, lazy reset across bucket boundaries, `precheck` with `estimated_cost=0.0`.
 - **`tests/observability/test_sinks.py`** — `JSONLFileSink` writes valid JSONL + rotation, `WebhookSink` batches/flushes/retries/drops + drains on close, error isolation, parity with today's metric/event emissions.
 - **`tests/observability/test_usage_tracker.py`** — `record_call` end-to-end: resolver → record → gate → sinks in order; golden-record regression test on schema parity.
-- **`tests/observability/test_backcompat.py`** — `CostGuardMiddleware` constructor unchanged; `budget_limit_usd` + `budget_alert_threshold_usd` config still installs a global rule; removed `cost_calculator` field raises `ConfigError`.
+- **`tests/observability/test_backcompat.py`** — `CostGuardMiddleware` constructor unchanged; `budget_limit_usd` config still installs a global rule; removed `cost_calculator` and `budget_alert_threshold_usd` fields each raise `ConfigError` with migration pointer.
 - **`examples/cost_tracking.py`** is run by CI as a smoke test.
 
 All tests are plain `pytest` functions (no test classes). Test files use the `test_` prefix.
@@ -325,13 +365,28 @@ All tests are plain `pytest` functions (no test classes). Test files use the `te
 
 Single PR, no deprecation cycle (module is pre-1.0):
 
-1. Add new files: `observability/cost/{__init__,resolvers,tiers}.py`, `observability/budget.py`, `observability/sinks.py`, `examples/cost_tracking.py`.
-2. Delete: `observability/cost.py` (whole file), `_DEFAULT_PRICES`, `StaticPriceCostCalculator`, old `GenAIPricesCostCalculator`, `_cross_provider_lookup`, `get_cost_calculator`, `cost_calculator` config field.
-3. Modify: `observability/usage.py` (thin orchestrator + new `record_call`), `observability/quota.py` (drop budget code; keep `RateLimiter`), `agents/builtin_middleware.py::CostGuardMiddleware` (delegate to `BudgetGate`), `exceptions.py::BudgetExceededError` (add structured fields).
-4. `pyproject.toml`: move `genai-prices` from `[costs]` extra to core dependencies; remove the `[costs]` extra.
-5. Docs: rewrite the "Cost Calculation" section of `docs/observability.md`; add new "Budgets" and "Cost Sinks" sections.
-6. `CHANGELOG.md`: **Breaking changes** entry listing the removed config field and removed classes.
+1. Add new files: `observability/cost/{__init__,resolvers,tiers}.py`, `observability/budget.py`, `observability/sinks.py`, `observability/_windows.py`, `examples/cost_tracking.py`.
+2. Delete: `observability/cost.py` (whole file), `_DEFAULT_PRICES`, `StaticPriceCostCalculator`, old `GenAIPricesCostCalculator`, `_cross_provider_lookup`, `get_cost_calculator`, config fields `cost_calculator` and `budget_alert_threshold_usd`, the legacy `UsageTracker.record(usage)` method.
+3. Modify: `observability/usage.py` (thin orchestrator + new `record_call`; legacy `record` removed), `observability/quota.py` (drop budget code; `RateLimiter` consumes `_windows.bucket_key`), `agents/builtin_middleware.py::CostGuardMiddleware` (delegate to `BudgetGate`), `exceptions.py::BudgetExceededError` (extend in place with structured fields and `__init__` accepting them as kwargs).
+4. Migrate existing call sites in tests and examples from `tracker.record(usage)` to `tracker.record_call(...)`. Affected files: `examples/observability_usage.py`, `tests/unit/observability/test_usage.py`, `tests/unit/pipeline/test_pipeline_usage.py`.
+5. `pyproject.toml`: move `genai-prices` from `[costs]` extra to core dependencies; remove the `[costs]` extra.
+6. Docs: rewrite the "Cost Calculation" section of `docs/observability.md`; add new "Budgets" and "Cost Sinks" sections.
+7. `CHANGELOG.md`: **Breaking changes** entry listing the removed config fields, removed classes, and removed `record(usage)` method.
 
 ## 10. Open questions
 
 None at design time. Implementation may surface minor questions about `genai-prices` field names for reasoning / cache tokens; the implementation plan will resolve them against the installed library version.
+
+## 11. Revision history
+
+**2026-05-12 — Simplifier review pass.** Changes from the initial design after running parallel reuse / over-engineering / deletion reviewers:
+
+- `CostResolver` collapsed from Protocol + class to `list[CostFn]` + module-level `resolve_cost()`. Two free functions (`provider_reported_cost`, `genai_prices_cost`) replace the strategy classes.
+- `BudgetRule.scope: Callable[[ScopeContext], bool]` replaced with `match: dict[str, str]` (AND-of-key-value). Helpers `by_tenant` / `by_agent` / `globally` deleted; rules are now serializable plain data.
+- `BudgetWindow` trimmed from five values to three (`LIFETIME`, `MONTHLY`, `DAILY`). YEARLY and HOURLY removed pending real demand.
+- `alert_at` removed from `BudgetRule`; config field `budget_alert_threshold_usd` removed in tandem.
+- `BudgetExceededError` extended **in place** in `exceptions.py:191` rather than redefined.
+- `bucket_key` window utility extracted to `observability/_windows.py` and shared with `RateLimiter`.
+- `WebhookSink` **kept in core** (user decision; overrides reviewer recommendation to move to example).
+- Legacy `UsageTracker.record(usage)` method removed; test/example call sites migrate to `record_call(...)`.
+- `ScopeContext` kept separate from `agents/context.py::AgentContext` (different concerns: filter shape vs. runtime carrier); the call site populates one from the other.
