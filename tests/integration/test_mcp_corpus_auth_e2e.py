@@ -31,16 +31,33 @@ class _StubStore:
 
 @pytest.fixture
 def stub_kv(monkeypatch: pytest.MonkeyPatch):
-    """Patch ``build_default_store`` so build_app does not require live KV."""
-    from fireflyframework_agentic.security import keyvault as kv_mod
+    """Point ``FIREFLY_MCP_TOKEN_STORE_FACTORY`` at an in-process stub
+    factory so ``build_app`` does not require live Azure credentials.
+    The factory itself lives on the test module so the spec
+    ``"…:_build_stub_store"`` resolves via the normal import path the
+    framework uses in production.
+    """
 
     def _factory(secrets: dict[str, str]):
-        def _stub(*, vault_url: str, prefix: str = "firefly-mcp-corpus-token-") -> _StubStore:
-            return _StubStore(secrets)
-
-        monkeypatch.setattr(kv_mod, "build_default_store", _stub)
+        # The factory callable is stateless; it closes over the secrets
+        # map via a module-level holder so the resolver can find it by
+        # name.
+        global _STUB_SECRETS
+        _STUB_SECRETS = secrets
+        monkeypatch.setenv(
+            "FIREFLY_MCP_TOKEN_STORE_FACTORY",
+            "tests.integration.test_mcp_corpus_auth_e2e:_build_stub_store",
+        )
 
     return _factory
+
+
+_STUB_SECRETS: dict[str, str] = {}
+
+
+def _build_stub_store(*, vault_url: str, prefix: str = "firefly-mcp-corpus-token-") -> _StubStore:
+    """Factory the e2e tests point ``FIREFLY_MCP_TOKEN_STORE_FACTORY`` at."""
+    return _StubStore(_STUB_SECRETS)
 
 
 def _enable_auth(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -27,9 +27,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from fireflyframework_agentic.security.keyvault import (
+from fireflyframework_agentic.security.corpus_token import (
     CorpusTokenCache,
-    KeyVaultTokenStore,
+    CorpusTokenStore,
     corpus_token_digest,
 )
 
@@ -104,7 +104,7 @@ class CorpusAuthMiddleware(BaseHTTPMiddleware):
         self,
         app: Any,
         *,
-        store: KeyVaultTokenStore,
+        store: CorpusTokenStore,
         cache: CorpusTokenCache,
         mount_path: str = "/mcp",
     ) -> None:

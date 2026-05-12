@@ -9,6 +9,24 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 
 ## [Unreleased]
 
+### Changed (BREAKING — internal layout)
+
+- **Per-corpus token store is now provider-agnostic in the framework.**
+  `fireflyframework_agentic.security.corpus_token` exports a
+  `CorpusTokenStore` Protocol plus the in-memory `CorpusTokenCache` and
+  the `corpus_token_digest` helper. The Azure-specific
+  `KeyVaultTokenStore` + `build_default_store` factory moved to
+  `examples/corpus_search/azure_security.py` alongside the existing
+  Entra/OBO code. The `firefly-mcp-http` server resolves the concrete
+  store at startup via the `FIREFLY_MCP_TOKEN_STORE_FACTORY` env var
+  (defaults to `examples.corpus_search.azure_security:build_default_store`)
+  so existing Azure deployments keep working, and operators on a
+  different back-end can swap the factory without touching the
+  framework. The `firefly-mcp-token` CLI moved to
+  `examples/corpus_search/firefly_mcp_token.py` and is no longer
+  registered as a top-level script; invoke it as
+  `python -m examples.corpus_search.firefly_mcp_token …`.
+
 ### Changed (BREAKING for clients of the auth flag)
 
 - **`firefly-mcp-http` per-corpus auth now requires the
