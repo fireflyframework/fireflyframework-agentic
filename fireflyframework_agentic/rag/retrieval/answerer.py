@@ -40,7 +40,13 @@ _INSTRUCTIONS = (
     "`citations` field with the unique chunk_ids you actually cited in `text`. "
     f"If a '{EMPTY_SQL_HEADING}' section is present, do NOT reply "
     "'I don't have enough information.' Instead, tell the user the closest "
-    "available values from the probe records and suggest a refined query."
+    "available values from the probe records and suggest a refined query. "
+    "Answer in the same language as the user's question. When that language "
+    "uses diacritical marks (Spanish, Portuguese, French, German, etc.), "
+    "preserve correct orthography — use á, é, í, ó, ú, ñ, ü, ç, à, è, ê, ô "
+    "and equivalent marks wherever the language requires them. Do not "
+    "transliterate to ASCII (write 'producción', 'aprobación', '¿Cuál?', "
+    "not 'produccion', 'aprobacion', 'Cual?')."
 )
 
 
