@@ -72,6 +72,18 @@ def _token_fingerprint(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()[:8]
 
 
+def _corpus_id_fingerprint(corpus_id: str) -> str:
+    """Stable, non-reversible 8-char prefix for log lines.
+
+    ``corpus_id`` is operator-supplied and frequently encodes
+    customer-identifying information (project codename, tenant slug,
+    department name). We never log the raw value — only this prefix —
+    so a downstream log aggregator can correlate without exposing the
+    plaintext identifier to anyone with log-read permission.
+    """
+    return hashlib.sha256(corpus_id.encode()).hexdigest()[:8]
+
+
 class CorpusAuthMiddleware(BaseHTTPMiddleware):
     """Authorise MCP tool calls against a per-corpus capability token.
 
@@ -153,9 +165,9 @@ class CorpusAuthMiddleware(BaseHTTPMiddleware):
             return _err(400, "Missing corpus_id in tool arguments")
         if body_corpus_id != header_corpus_id:
             logger.info(
-                "corpus_auth: deny (header/body mismatch) header=%s body=%s token=%s",
-                header_corpus_id,
-                body_corpus_id,
+                "corpus_auth: deny (header/body mismatch) header_corpus=%s body_corpus=%s token=%s",
+                _corpus_id_fingerprint(header_corpus_id),
+                _corpus_id_fingerprint(body_corpus_id),
                 _token_fingerprint(bearer),
             )
             return _err(403, "corpus_id in arguments does not match header")
@@ -221,27 +233,30 @@ class CorpusAuthMiddleware(BaseHTTPMiddleware):
         """Return ``"allow"``, ``"deny"``, or ``"outage"``."""
         if self._cache.is_trusted(corpus_id, digest):
             logger.debug(
-                "corpus_auth: cache hit corpus_id=%s token=%s",
-                corpus_id,
+                "corpus_auth: cache hit corpus=%s token=%s",
+                _corpus_id_fingerprint(corpus_id),
                 _token_fingerprint(token),
             )
             return "allow"
         try:
             secret = await self._store.get_corpus_token(corpus_id)
         except Exception:  # noqa: BLE001 — fail-closed; alternative is opening auth.
-            logger.exception("corpus_auth: Key Vault lookup failed corpus_id=%s", corpus_id)
+            logger.exception(
+                "corpus_auth: Key Vault lookup failed corpus=%s",
+                _corpus_id_fingerprint(corpus_id),
+            )
             return "outage"
         if secret is None:
             logger.info(
-                "corpus_auth: deny (no secret) corpus_id=%s token=%s",
-                corpus_id,
+                "corpus_auth: deny (no secret) corpus=%s token=%s",
+                _corpus_id_fingerprint(corpus_id),
                 _token_fingerprint(token),
             )
             return "deny"
         if not hmac.compare_digest(secret, token):
             logger.info(
-                "corpus_auth: deny (mismatch) corpus_id=%s token=%s",
-                corpus_id,
+                "corpus_auth: deny (mismatch) corpus=%s token=%s",
+                _corpus_id_fingerprint(corpus_id),
                 _token_fingerprint(token),
             )
             return "deny"

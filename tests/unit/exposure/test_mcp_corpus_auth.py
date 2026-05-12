@@ -219,6 +219,36 @@ def test_log_capture_does_not_contain_raw_token(caplog: pytest.LogCaptureFixture
     assert "wrong-token" not in captured
 
 
+def test_log_capture_does_not_contain_raw_corpus_id(caplog: pytest.LogCaptureFixture) -> None:
+    """corpus_id can encode customer-identifying info (project codename,
+    tenant slug). It must never appear in logs verbatim — only the
+    sha256-truncated fingerprint."""
+    import logging as _logging
+
+    caplog.set_level(_logging.DEBUG)
+    customer_specific_corpus = "acme-corp-confidential-2026"
+    store = _StubStore({customer_specific_corpus: "valid-token"})
+    client = TestClient(_make_app(store=store))
+    # Exercise: happy path (cache miss → hit), wrong-token deny,
+    # unknown-corpus deny, header/body mismatch.
+    h_ok = _h("valid-token", customer_specific_corpus)
+    client.post("/mcp", json=_body(customer_specific_corpus), headers=h_ok)
+    client.post("/mcp", json=_body(customer_specific_corpus), headers=h_ok)  # cache hit
+    client.post(
+        "/mcp",
+        json=_body(customer_specific_corpus),
+        headers=_h("nope", customer_specific_corpus),
+    )
+    client.post(
+        "/mcp",
+        json=_body("a-different-public-id"),
+        headers=_h("valid-token", customer_specific_corpus),
+    )
+
+    captured = caplog.text
+    assert customer_specific_corpus not in captured, f"raw corpus_id leaked into logs:\n{captured}"
+
+
 # ---------- pass-through paths still require valid bearer ------------------
 
 

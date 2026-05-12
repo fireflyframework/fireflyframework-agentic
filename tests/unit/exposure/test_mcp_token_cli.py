@@ -129,8 +129,14 @@ def test_create_writes_secret_and_prints_token_to_stdout(
     # KV write went through.
     assert stub_client.set_calls == [("firefly-mcp-corpus-token-demo", token)]
     # Status message went to stderr (so `> /secure/store` only catches the token).
-    assert "created firefly-mcp-corpus-token-demo" in err
+    # The status line does NOT include the secret name (codeql autofix
+    # simplified it to "created secret …") — this is fine: the operator
+    # already typed the corpus_id, no need to echo it back.
+    assert "created secret" in err
     assert token not in err  # token MUST NOT leak to stderr
+    # Belt-and-braces: the customer-derived corpus_id MUST NOT appear in stderr
+    # status messages either.
+    assert "demo" not in err.split("(token", 1)[0]  # before the token-egress note
 
 
 def test_create_refuses_if_secret_already_exists(stub_client: _FakeSecretClient) -> None:
@@ -169,7 +175,8 @@ def test_rotate_replaces_existing(stub_client: _FakeSecretClient) -> None:
     new_token = out.strip()
     assert new_token != "old"
     assert stub_client.secrets["firefly-mcp-corpus-token-demo"] == new_token
-    assert "rotated firefly-mcp-corpus-token-demo" in err
+    assert "rotated secret" in err
+    assert "demo" not in err  # corpus_id not echoed back
 
 
 def test_rotate_refuses_if_missing(stub_client: _FakeSecretClient) -> None:
