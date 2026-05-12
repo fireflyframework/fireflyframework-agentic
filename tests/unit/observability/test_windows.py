@@ -28,7 +28,7 @@ def test_bucket_key_rejects_unknown_window() -> None:
         bucket_key("weekly", datetime.now(UTC))
 
 
-def test_bucket_key_requires_utc() -> None:
+def test_bucket_key_requires_tz_aware() -> None:
     naive = datetime(2026, 5, 12, 14, 30)
     with pytest.raises(ValueError, match="timezone-aware"):
         bucket_key("daily", naive)
