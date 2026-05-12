@@ -25,6 +25,7 @@ which the MCP server's lifespan hook is expected to call on shutdown.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import os
 from datetime import UTC, datetime
@@ -51,6 +52,15 @@ _CACHE_LOCK = asyncio.Lock()
 
 def _corpus_root() -> Path:
     return Path(os.path.expandvars(os.environ.get("CORPUS_ROOT", _DEFAULT_CORPUS_ROOT)))
+
+
+# Populated by CorpusAuthMiddleware when per-corpus auth is enabled. A value
+# of ``None`` means "no auth in effect" — discovery returns every corpus on
+# disk. A tuple means "the caller is authorised for exactly these corpora";
+# discovery filters its output to that set.
+authorised_corpora_var: contextvars.ContextVar[tuple[str, ...] | None] = contextvars.ContextVar(
+    "authorised_corpora", default=None
+)
 
 
 async def _agent_for(corpus_id: str) -> CorpusAgent:
