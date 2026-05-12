@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir uv==0.5.14
 
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
-COPY src ./src
+COPY fireflyframework_agentic ./fireflyframework_agentic
 
 RUN uv sync --frozen --no-dev \
     --extra rest --extra mcp \
@@ -25,7 +25,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
 RUN groupadd --system firefly && useradd --system --gid firefly --home /app firefly
 
 COPY --from=builder /opt/venv /opt/venv
-COPY --from=builder /app/src /app/src
+COPY --from=builder /app/fireflyframework_agentic /app/fireflyframework_agentic
 
 WORKDIR /app
 USER firefly

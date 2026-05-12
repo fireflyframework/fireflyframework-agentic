@@ -1,6 +1,6 @@
 [project]
 name = "fireflyframework-agentic"
-version = "26.05.05"
+version = "26.05.11"
 description = "A GenAI metaframework built on Pydantic AI for building production-grade GenAI applications with agents, reasoning patterns, prompt engineering, observability, and more."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -149,6 +149,9 @@ dev = [
     "fireflyframework-agentic[markitdown]",
     "sqlite-vec>=0.1.6",
 ]
+
+[project.scripts]
+firefly-mcp-http = "fireflyframework_agentic.exposure.mcp.http_cli:main"
 
 [project.urls]
 Homepage = "https://fireflyframework.org/"

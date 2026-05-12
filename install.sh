@@ -19,7 +19,6 @@ set -euo pipefail
 #  fireflyframework-agentic — Interactive Installer
 # ══════════════════════════════════════════════════════════════════════════════
 
-readonly VERSION="26.01.01"
 readonly PACKAGE="fireflyframework-agentic"
 readonly PACKAGE_IMPORT="fireflyframework_agentic"
 readonly REPO_URL="https://github.com/fireflyframework/fireflyframework-agentic.git"
@@ -41,6 +40,7 @@ CLONE_DIR=""
 OS=""
 ARCH=""
 SPINNER_PID=""
+INSTALLED_VERSION=""
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  Colors — ANSI-C quoting ($'...') produces actual escape bytes so they
@@ -279,7 +279,7 @@ _/ ____\___________    _____   ______  _  _____________|  | __ \ \
 
 EOF
     printf "%s" "$RESET"
-    printf "  %s%s%s%s %sv%s%s\n" "$BOLD" "$WHITE" "$PACKAGE" "$RESET" "$DIM" "$VERSION" "$RESET"
+    printf "  %s%s%s%s\n" "$BOLD" "$WHITE" "$PACKAGE" "$RESET"
     printf "  %sThe production-grade GenAI metaframework built on Pydantic AI%s\n" "$DIM" "$RESET"
     printf "  %sCopyright 2026 Firefly Software Foundation. Apache License 2.0.%s\n" "$DIM" "$RESET"
     divider
@@ -677,10 +677,9 @@ do_verify() {
         fi
     fi
 
-    local installed_ver
-    if installed_ver="$("$verify_cmd" -c \
+    if INSTALLED_VERSION="$("$verify_cmd" -c \
         "import ${PACKAGE_IMPORT}; print(${PACKAGE_IMPORT}.__version__)" 2>/dev/null)"; then
-        spinner_stop "ok" "${PACKAGE} v${installed_ver} verified successfully"
+        spinner_stop "ok" "${PACKAGE} v${INSTALLED_VERSION} verified successfully"
     else
         spinner_stop "fail" "Package import failed"
         warn "The package was installed but could not be imported in the current shell."
@@ -697,7 +696,9 @@ do_verify() {
 
 print_summary() {
     divider
-    print_box "${PACKAGE} v${VERSION} installed successfully!"
+    local label="${PACKAGE}"
+    [[ -n "$INSTALLED_VERSION" ]] && label="${PACKAGE} v${INSTALLED_VERSION}"
+    print_box "${label} installed successfully!"
 
     printf "  %s%sGet Started:%s\n\n" "$BOLD" "$WHITE" "$RESET"
 
