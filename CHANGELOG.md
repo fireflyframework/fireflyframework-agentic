@@ -64,6 +64,16 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
   diacritic-tolerant filters in `run_select`. The system prompt now
   steers the LLM to probe `find_similar` for free-text entity columns
   and to retry rather than stop when an equality filter returns 0 rows.
+- **`numeric_summary` op on `inspect_table` in the SQL retriever.** Returns
+  total rows, non-null count, null count, sum, min, max, and *two* mean
+  variants — `mean_excluding_nulls` (SQL default `AVG`) and
+  `mean_blanks_as_zero` (treats NULL cells as 0). The two means diverge
+  whenever the column carries NULLs, so the agent can detect the
+  blank-as-zero spreadsheet convention and pick the right
+  interpretation instead of silently averaging over the smaller
+  non-null subset. The system prompt now steers the LLM to probe
+  `numeric_summary` before averaging numeric columns, and to surface
+  both interpretations when ambiguous.
 - **Per-corpus capability tokens for `firefly-mcp-http`.** When
   `FIREFLY_MCP_CORPUS_AUTH_ENABLED=true`, every MCP tool call must
   present a bearer matching the `firefly-mcp-corpus-token-<corpus_id>`

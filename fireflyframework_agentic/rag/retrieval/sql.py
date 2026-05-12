@@ -143,7 +143,7 @@ def _build_inspect_tool(ctx: _LoopContext) -> Any:
     async def inspect_table(
         table: str,
         column: str,
-        op: Literal["distinct_values", "count", "sample_rows", "value_range", "find_similar"],
+        op: Literal["distinct_values", "count", "sample_rows", "value_range", "find_similar", "numeric_summary"],
         value: str | None = None,
     ) -> str:
         """Peek at the corpus DB before composing the final SELECT.
@@ -159,6 +159,14 @@ def _build_inspect_tool(ctx: _LoopContext) -> Any:
             ``"Francisco Javier Álvarez Fernández"``). Falls back to OR-of-
             tokens if AND yields zero matches. Use this for free-text filters
             on names / entities where the user's spelling may not be exact.
+          - ``numeric_summary``: total rows, non-null count, null count, sum,
+            min, max, and *two* mean variants: ``mean_excluding_nulls`` (the
+            SQL default ``AVG``) and ``mean_blanks_as_zero`` (treats NULL
+            cells as 0). Use this before averaging any numeric column where
+            blank source cells might be the analyst's shorthand for zero —
+            the two means diverge whenever the column carries NULLs, and the
+            correct interpretation depends on what blank meant in the source
+            spreadsheet.
 
         Raises :class:`pydantic_ai.exceptions.ModelRetry` if *table* or *column*
         is not in the registered schemas — pydantic-ai surfaces the message
@@ -189,6 +197,10 @@ def _build_inspect_tool(ctx: _LoopContext) -> Any:
                 raise ModelRetry("find_similar requires a non-empty 'value' argument")
             tokens = [tok for tok in re.split(r"\s+", value.strip()) if tok]
             sql, params = _build_find_similar_sql(t, c, tokens)
+        elif op == "numeric_summary":
+            result = _numeric_summary(ctx.db_path, t, c)
+            ctx.probe_trail.append(ProbeRecord(table=table, column=column, op=op, result=result[:500]))
+            return result
         else:
             raise ValueError(f"unknown op '{op}'")
         result = _execute(ctx.db_path, sql, params) or "(no rows)"
@@ -201,6 +213,76 @@ def _build_inspect_tool(ctx: _LoopContext) -> Any:
         return result
 
     return inspect_table
+
+
+def _numeric_summary(db_path: Path, quoted_table: str, quoted_column: str) -> str:
+    """Return a single-line summary exposing both AVG interpretations.
+
+    SQLite's ``AVG`` quietly skips NULLs; when a source spreadsheet
+    encodes "zero" as a blank cell, this turns a population mean into a
+    mean over only the non-blank subset. The two values in the returned
+    string make that gap explicit so the agent can pick the
+    interpretation that matches the analyst's data convention.
+
+    Output shape (single line, key=value pairs):
+      ``rows=N non_null=K nulls=M sum=S min=mn max=mx
+        mean_excluding_nulls=… mean_blanks_as_zero=…``
+
+    ``mean_excluding_nulls`` is reported as ``undefined`` when every
+    cell is NULL (SQL ``AVG`` returns NULL in that case and there is no
+    meaningful population mean to report).
+    """
+    sql = (
+        f"SELECT COUNT(*), COUNT({quoted_column}), "
+        f"COALESCE(SUM({quoted_column}), 0), "
+        f"MIN({quoted_column}), MAX({quoted_column}), "
+        f"AVG({quoted_column}) "
+        f"FROM {quoted_table}"
+    )
+    try:
+        with _connect(db_path) as conn:
+            row = conn.execute(sql).fetchone()
+    except sqlite3.Error as exc:
+        log.warning("numeric_summary execution failed: %s", exc)
+        return f"SQL error: {exc}"
+    total, non_null, total_sum, min_v, max_v, mean_excl = row
+    nulls = total - non_null
+    # Population mean treating blanks as 0; safe because total > 0 when the
+    # table is non-empty, and we report "rows=0" plainly when it is.
+    mean_pop = (total_sum / total) if total else 0.0
+    mean_excl_str = "undefined" if mean_excl is None else _fmt_float(float(mean_excl))
+    parts = [
+        f"rows={total}",
+        f"non_null={non_null}",
+        f"nulls={nulls}",
+        f"sum={_fmt_number(total_sum)}",
+        f"min={_fmt_number(min_v) if min_v is not None else 'null'}",
+        f"max={_fmt_number(max_v) if max_v is not None else 'null'}",
+        f"mean_excluding_nulls={mean_excl_str}",
+        f"mean_blanks_as_zero={_fmt_float(mean_pop)}",
+    ]
+    return " ".join(parts)
+
+
+def _fmt_number(value: Any) -> str:
+    """Format ints as ints and floats compactly — keeps the summary readable."""
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return _fmt_float(value)
+    return str(value)
+
+
+def _fmt_float(value: float) -> str:
+    """Stable float formatting: drop trailing zeros but keep at least one decimal.
+
+    ``4.0`` stays as ``"4.0"`` (distinguishing it from int 4 in the output)
+    and ``1.333333…`` becomes ``"1.3333"`` — enough precision to make the
+    blanks-vs-zero gap visible without dumping IEEE noise.
+    """
+    if value == int(value):
+        return f"{value:.1f}"
+    return f"{value:.4f}".rstrip("0").rstrip(".") or "0.0"
 
 
 def _build_find_similar_sql(
@@ -278,7 +360,7 @@ You answer questions by querying a SQLite corpus database. You have two tools:
 
   inspect_table(table, column, op, value=None)
     op = 'distinct_values' | 'count' | 'sample_rows' | 'value_range'
-       | 'find_similar'
+       | 'find_similar' | 'numeric_summary'
     Use this to discover what values a column actually contains BEFORE you
     write the final SELECT. Free — call it whenever you are not sure.
 
@@ -287,6 +369,15 @@ You answer questions by querying a SQLite corpus database. You have two tools:
     tokenised by whitespace (AND across tokens). Use it for free-text
     filters on names / entities where the user's spelling may differ
     from what is stored (e.g. accents, middle names, abbreviations).
+
+    'numeric_summary' returns row count, non-null count, null count, sum,
+    min, max, AND two mean variants for the column:
+      - mean_excluding_nulls  (SQL default AVG; ignores NULL cells)
+      - mean_blanks_as_zero   (treats NULL cells as 0 in the average)
+    The two diverge whenever the column has NULLs. Use it BEFORE you
+    write an aggregate query that averages a numeric column, and look at
+    nulls > 0 as the signal that you need to choose between the two
+    interpretations.
 
   run_select(sql)
     Use this to run your final SELECT once you are confident in the values.
@@ -313,6 +404,14 @@ Process:
      accents, middle names, casing). Retry the SELECT against the candidates
      you find. Aim for at most 3 inspect calls without making progress.
   5. If run_select returns 'SQL error: ...', revise and retry.
+  6. Before averaging a numeric column over a population (e.g. an
+     average across all rows in a team / group), call `numeric_summary`
+     on that column. If `nulls > 0`, blank cells exist and you must
+     decide whether the analyst's convention is "blank = no data"
+     (use `mean_excluding_nulls`, i.e. plain AVG) or "blank = zero"
+     (use `mean_blanks_as_zero`, i.e. `AVG(COALESCE(col, 0))` or
+     `SUM(col)/COUNT(*)`). When in doubt, surface both interpretations
+     in your answer.
 
 Worked example 1 (illustrative; no real corpus):
   Question: "wireless mouse sales in Europe last quarter"
@@ -390,7 +489,7 @@ class StructuredRetriever:
         async def inspect_table(
             table: str,
             column: str,
-            op: Literal["distinct_values", "count", "sample_rows", "value_range", "find_similar"],
+            op: Literal["distinct_values", "count", "sample_rows", "value_range", "find_similar", "numeric_summary"],
             value: str | None = None,
         ) -> str:
             ctx = _CURRENT_CTX.get()
