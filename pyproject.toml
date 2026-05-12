@@ -153,6 +153,7 @@ dev = [
 
 [project.scripts]
 firefly-mcp-http = "fireflyframework_agentic.exposure.mcp.http_cli:main"
+firefly-mcp-token = "fireflyframework_agentic.exposure.mcp.token_cli:main"
 
 [project.urls]
 Homepage = "https://fireflyframework.org/"

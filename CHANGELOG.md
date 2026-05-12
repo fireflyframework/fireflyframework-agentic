@@ -24,6 +24,11 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 
 ### Added
 
+- **`firefly-mcp-token` CLI** for operators managing per-corpus tokens
+  in Azure Key Vault. Commands: `create`, `rotate`, `revoke`, `list`,
+  `show-name`. Uses `DefaultAzureCredential`; the minted token goes to
+  stdout (pipe-friendly), status to stderr. Registered as a
+  `[project.scripts]` entry alongside `firefly-mcp-http`.
 - **Fuzzy entity matching in the SQL retriever.** The agentic inspect-loop
   gains a `find_similar` op on `inspect_table` that tokenises the user's
   value on whitespace and matches accent-folded, case-insensitive
