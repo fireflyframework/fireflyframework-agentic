@@ -21,17 +21,27 @@ This module provides:
 """
 
 from fireflyframework_agentic.security.encryption import AESEncryptionProvider, EncryptedMemoryStore, EncryptionProvider
+from fireflyframework_agentic.security.keyvault import (
+    CorpusTokenCache,
+    KeyVaultTokenStore,
+    build_default_store,
+    corpus_token_digest,
+)
 from fireflyframework_agentic.security.output_guard import OutputGuard, default_output_guard
 from fireflyframework_agentic.security.prompt_guard import PromptGuard, default_prompt_guard
 from fireflyframework_agentic.security.rbac import RBACManager, require_permission
 
 __all__ = [
     "AESEncryptionProvider",
+    "CorpusTokenCache",
     "EncryptedMemoryStore",
     "EncryptionProvider",
+    "KeyVaultTokenStore",
     "OutputGuard",
     "PromptGuard",
     "RBACManager",
+    "build_default_store",
+    "corpus_token_digest",
     "default_output_guard",
     "default_prompt_guard",
     "require_permission",
