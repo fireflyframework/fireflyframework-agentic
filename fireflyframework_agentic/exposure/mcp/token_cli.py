@@ -73,8 +73,11 @@ def _build_client(vault_url: str) -> Any:
 
 async def _cmd_create(args: argparse.Namespace) -> int:
     name = _secret_name(args.prefix, args.corpus_id)
-    # Validate args BEFORE opening a network client so bad input fails fast.
-    token = _generate_token(args.bytes)
+    # Fail-fast on bad input BEFORE opening a network client. We deliberately
+    # do not bind ``token`` here: keeping it confined to the success branch
+    # below means CodeQL's taint analysis cannot flow it into any of the
+    # status / error ``print`` calls that go to stderr.
+    _validate_byte_length(args.bytes)
     client = _build_client(args.vault_url)
     try:
         if not args.force and await _secret_exists(client, name):
@@ -84,17 +87,18 @@ async def _cmd_create(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
+        token = secrets.token_urlsafe(args.bytes)
         await client.set_secret(name, token)
+        print(f"created {name} (token written to stdout)", file=sys.stderr)
+        _emit_token(token)
     finally:
         await client.close()
-    print(f"created {name} (token written to stdout)", file=sys.stderr)
-    print(token)
     return 0
 
 
 async def _cmd_rotate(args: argparse.Namespace) -> int:
     name = _secret_name(args.prefix, args.corpus_id)
-    token = _generate_token(args.bytes)
+    _validate_byte_length(args.bytes)
     client = _build_client(args.vault_url)
     try:
         if not await _secret_exists(client, name):
@@ -103,14 +107,15 @@ async def _cmd_rotate(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
+        token = secrets.token_urlsafe(args.bytes)
         await client.set_secret(name, token)
+        print(
+            f"rotated {name}; old tokens stop working after the server's cache TTL (default 300 s).",
+            file=sys.stderr,
+        )
+        _emit_token(token)
     finally:
         await client.close()
-    print(
-        f"rotated {name}; old tokens stop working after the server's cache TTL (default 300 s).",
-        file=sys.stderr,
-    )
-    print(token)
     return 0
 
 
@@ -157,19 +162,39 @@ async def _cmd_list(args: argparse.Namespace) -> int:
 
 
 def _cmd_show_name(args: argparse.Namespace) -> int:
-    # No network — just compose and print. Useful in shell scripts:
-    #   az keyvault secret show --name "$(firefly-mcp-token show-name $cid)"
-    print(_secret_name(args.prefix, args.corpus_id))
+    # The secret NAME is composed deterministically from the configured
+    # prefix and the user-supplied corpus_id — neither is sensitive (the
+    # name is what the operator needs in shell scripts to drive the
+    # ``az keyvault`` CLI). CodeQL flags any print() carrying a "secret"-
+    # adjacent variable; the suppression below documents that this is by
+    # design and never carries secret material.
+    print(_secret_name(args.prefix, args.corpus_id))  # codeql[py/clear-text-logging-sensitive-data]
     return 0
 
 
 # ---------- helpers --------------------------------------------------------
 
 
-def _generate_token(byte_length: int) -> str:
+def _validate_byte_length(byte_length: int) -> None:
+    """Reject token lengths below 16 bytes (~128 bits) before any token is generated."""
     if byte_length < 16:
         raise SystemExit(f"--bytes must be at least 16 (got {byte_length})")
-    return secrets.token_urlsafe(byte_length)
+
+
+def _emit_token(token: str) -> None:
+    """Write a freshly-minted token to stdout — the single, documented egress.
+
+    Every other ``print()`` in this module goes to stderr precisely so
+    that ``firefly-mcp-token create foo > /secure/store/foo.token`` only
+    captures this line. CodeQL still flags this as ``py/clear-text-
+    logging-sensitive-data``; the suppression below is the deliberate
+    acknowledgement that the CLI's whole purpose is to surface the
+    plaintext token exactly once.
+    """
+    # codeql[py/clear-text-logging-sensitive-data]: stdout is the
+    # documented output channel of this CLI.
+    sys.stdout.write(token + "\n")
+    sys.stdout.flush()
 
 
 async def _secret_exists(client: Any, name: str) -> bool:
