@@ -107,3 +107,24 @@ def test_execute_returns_none_for_empty_result(tmp_path: Path):
     db = _populated_db(tmp_path)
     result = _execute(db, "SELECT * FROM products WHERE 1=0")
     assert result is None
+
+
+def test_execute_caps_large_result_set(tmp_path: Path):
+    from fireflyframework_agentic.rag.retrieval.sql import _MAX_ROWS
+
+    db = tmp_path / "corpus.sqlite"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE ledger (id INTEGER, value TEXT)")
+    conn.executemany(
+        "INSERT INTO ledger VALUES (?, ?)",
+        [(i, f"row-{i}") for i in range(_MAX_ROWS + 50)],
+    )
+    conn.commit()
+    conn.close()
+
+    result = _execute(db, "SELECT id, value FROM ledger")
+    assert result is not None
+    data_lines = result.split("\n\n", 1)[0].splitlines()
+    body_rows = data_lines[2:]
+    assert len(body_rows) == _MAX_ROWS
+    assert "truncated" in result.lower()

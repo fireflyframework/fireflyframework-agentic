@@ -36,8 +36,15 @@ Rules:
 - Use the exact table and column names provided.
 - When filtering a text column, use LIKE with % wildcards (e.g. WHERE line_item LIKE '%Total Revenue%') \
 unless you can see the exact value in the sample rows.
+- Prefer aggregations (SUM, AVG, COUNT, GROUP BY) over returning raw rows. \
+If raw rows are required, include a LIMIT clause (e.g. LIMIT 50).
 - If the question cannot be answered from the schema, output: SELECT 1 WHERE 1=0
 """
+
+# Cap rows returned from text-to-SQL before they're inlined into the answerer
+# prompt. Without this, a SELECT against a large ledger can dump enough rows
+# to blow the answerer's context window (observed: 1.1M tokens > 1M limit).
+_MAX_ROWS = 200
 
 
 class SQLQuery(BaseModel):
@@ -115,14 +122,21 @@ def _execute(db_path: Path, sql: str) -> str | None:
     try:
         with sqlite3.connect(db_path) as conn:
             cur = conn.execute(sql)
-            rows = cur.fetchall()
+            rows = cur.fetchmany(_MAX_ROWS + 1)
             col_names = [d[0] for d in cur.description] if cur.description else []
     except sqlite3.Error as exc:
         log.warning("SQL execution failed: %s", exc)
         return None
     if not rows:
         return None
+    truncated = len(rows) > _MAX_ROWS
+    if truncated:
+        rows = rows[:_MAX_ROWS]
+        log.warning("SQL result truncated to %d rows for prompt budget", _MAX_ROWS)
     header = " | ".join(col_names)
     sep = " | ".join("---" for _ in col_names)
     body = "\n".join(" | ".join(str(v) for v in row) for row in rows)
-    return f"{header}\n{sep}\n{body}"
+    table = f"{header}\n{sep}\n{body}"
+    if truncated:
+        table += f"\n\n_Result truncated to first {_MAX_ROWS} rows._"
+    return table
