@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [Unreleased]
+
+### Changed (BREAKING — internal layout)
+
+- **Per-corpus token store is now provider-agnostic in the framework.**
+  `fireflyframework_agentic.security.corpus_token` exports a
+  `CorpusTokenStore` Protocol plus the in-memory `CorpusTokenCache` and
+  the `corpus_token_digest` helper. The Azure-specific
+  `KeyVaultTokenStore` + `build_default_store` factory moved to
+  `examples/corpus_search/azure_security.py` alongside the existing
+  Entra/OBO code. The `firefly-mcp-http` server resolves the concrete
+  store at startup via the `FIREFLY_MCP_TOKEN_STORE_FACTORY` env var
+  (defaults to `examples.corpus_search.azure_security:build_default_store`)
+  so existing Azure deployments keep working, and operators on a
+  different back-end can swap the factory without touching the
+  framework. The `firefly-mcp-token` CLI moved to
+  `examples/corpus_search/firefly_mcp_token.py` and is no longer
+  registered as a top-level script; invoke it as
+  `python -m examples.corpus_search.firefly_mcp_token …`.
+
+### Changed (BREAKING for clients of the auth flag)
+
+- **`firefly-mcp-http` per-corpus auth now requires the
+  `X-Firefly-Corpus-Id` header on every gated request** (in addition to
+  `Authorization: Bearer …`). The middleware validates the bearer against
+  Key Vault before letting any request through — including the
+  JSON-RPC handshake, `tools/list`, and `list_corpora` — closing the gap
+  where an outsider could enumerate tool schemas or corpus_ids by
+  sending only a bearer-shaped string. Body-side `arguments.corpus_id`
+  must match the header value for corpus-scoped tools. Update Claude
+  Desktop / `mcp-remote` entries to pass `--header
+  X-Firefly-Corpus-Id: <id>`.
+
+### Added
+
+- **`firefly-mcp-token` CLI** for operators managing per-corpus tokens
+  in Azure Key Vault. Commands: `create`, `rotate`, `revoke`, `list`,
+  `show-name`. Uses `DefaultAzureCredential`; the minted token goes to
+  stdout (pipe-friendly), status to stderr. Registered as a
+  `[project.scripts]` entry alongside `firefly-mcp-http`.
+- **Fuzzy entity matching in the SQL retriever.** The agentic inspect-loop
+  gains a `find_similar` op on `inspect_table` that tokenises the user's
+  value on whitespace and matches accent-folded, case-insensitive
+  substrings (AND-of-LIKEs, with OR fallback). A new `unaccent_lower(col)`
+  SQL UDF is registered on every connection so the LLM can write
+  diacritic-tolerant filters in `run_select`. The system prompt now
+  steers the LLM to probe `find_similar` for free-text entity columns
+  and to retry rather than stop when an equality filter returns 0 rows.
+- **Per-corpus capability tokens for `firefly-mcp-http`.** When
+  `FIREFLY_MCP_CORPUS_AUTH_ENABLED=true`, every MCP tool call must
+  present a bearer matching the `firefly-mcp-corpus-token-<corpus_id>`
+  secret in the Azure Key Vault at `FIREFLY_MCP_KEYVAULT_URL`. A token
+  leak now exposes one corpus, not the whole server. `list_corpora` is
+  filtered to the caller's authorised corpora. Off by default; stdio
+  transport and existing ingress-fronted HTTP deployments are
+  unaffected. See `docs/deploy/mcp-corpus-auth.md`.
+
 ## [26.05.11] - 2026-05-11
 
 ### Changed (BREAKING)
