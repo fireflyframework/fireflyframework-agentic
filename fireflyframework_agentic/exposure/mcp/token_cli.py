@@ -110,7 +110,7 @@ async def _cmd_rotate(args: argparse.Namespace) -> int:
         token = secrets.token_urlsafe(args.bytes)
         await client.set_secret(name, token)
         print(
-            f"rotated {name}; old tokens stop working after the server's cache TTL (default 300 s).",
+            "rotated secret; old tokens stop working after the server's cache TTL (default 300 s).",
             file=sys.stderr,
         )
         _emit_token(token)
