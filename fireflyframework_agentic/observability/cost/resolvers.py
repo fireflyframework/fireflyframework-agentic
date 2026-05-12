@@ -36,3 +36,21 @@ class CostContext:
 
 
 CostFn = Callable[[CostContext], float | None]
+
+
+def provider_reported_cost(ctx: CostContext) -> float | None:
+    """Return cost from a known provider-response field, else None.
+
+    Supported sources:
+      * OpenRouter — ``provider_payload["usage"]["cost"]`` (USD float).
+    """
+    payload = ctx.provider_payload
+    if not payload:
+        return None
+    usage = payload.get("usage") if isinstance(payload, Mapping) else None
+    if not isinstance(usage, Mapping):
+        return None
+    cost = usage.get("cost")
+    if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+        return float(cost)
+    return None
