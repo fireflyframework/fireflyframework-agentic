@@ -38,18 +38,25 @@ logger = logging.getLogger(__name__)
 _EXCLUDED_PATHS: frozenset[str] = frozenset({"/healthz"})
 _JSONRPC_ERR_AUTH = -32001
 
-# MCP lifecycle methods that do not operate on a corpus. They carry no
-# ``corpus_id`` argument by design, so the middleware passes them through
-# without per-corpus authorisation. The security boundary is ``tools/call``:
-# every data-fetching call must still present a matching bearer.
+# Required on every gated request. The bearer is per-corpus and the value
+# of this header binds it to a specific corpus_id so the middleware can
+# validate against KV at handshake time — without it, lifecycle methods
+# (initialize, tools/list, …) and cross-corpus tools (list_corpora) would
+# go through on bearer-presence alone, letting an outsider enumerate the
+# tool schemas or, worse, the list of corpora that exist.
+CORPUS_ID_HEADER = "X-Firefly-Corpus-Id"
+
+# MCP lifecycle methods that do not operate on a single corpus's data.
+# They still require a valid bearer/corpus-id pair (checked from the
+# header), but they don't need a body-side ``corpus_id`` argument.
 _LIFECYCLE_METHODS: frozenset[str] = frozenset(
     {"initialize", "initialized", "ping", "tools/list", "resources/list", "prompts/list"}
 )
 
 # Tools that intentionally do not take a ``corpus_id`` argument because they
-# operate above the corpus boundary (discovery / metadata). They are allowed
-# through with bearer presence only; corpus-scoping of their output (e.g.
-# ``list_corpora`` filtering) is handled by the tool itself.
+# operate above the corpus boundary (discovery / metadata). They still
+# require a valid header-bound bearer; the tool's output is scoped by
+# ``authorised_corpora_var`` to the caller's authorised corpus.
 _NO_CORPUS_TOOLS: frozenset[str] = frozenset({"list_corpora"})
 
 
@@ -101,43 +108,57 @@ class CorpusAuthMiddleware(BaseHTTPMiddleware):
         if not (path == self._mount or path.startswith(self._mount + "/")):
             return await call_next(request)
 
+        # Authn pre-flight: every gated request must carry BOTH a bearer
+        # and X-Firefly-Corpus-Id, and the bearer must match the KV secret
+        # for that corpus. This runs BEFORE we look at the body, so it
+        # closes the previous gap where lifecycle methods (initialize,
+        # tools/list) and no-corpus tools (list_corpora) only checked
+        # bearer presence — letting any attacker enumerate the universe
+        # of tools or corpus_ids on the server.
         bearer = self._read_bearer(request)
         if bearer is None:
             return _err(401, "Missing or malformed Authorization header")
+        header_corpus_id = request.headers.get(CORPUS_ID_HEADER, "").strip()
+        if not header_corpus_id:
+            return _err(401, f"Missing {CORPUS_ID_HEADER} header")
 
-        # Non-POST requests (notably the GET that opens the Streamable HTTP
-        # SSE channel) carry no JSON-RPC body. They are part of the
-        # transport and pass through once the bearer is present.
-        if request.method != "POST":
-            return await call_next(request)
-
-        body = await request.body()
-        method = self._extract_method(body)
-        if method is not None and (method in _LIFECYCLE_METHODS or method.startswith("notifications/")):
-            # Lifecycle / discovery / notification — no per-corpus check.
-            request._body = body  # type: ignore[attr-defined]
-            return await call_next(request)
-
-        tool_name = self._extract_tool_name(body)
-        if tool_name in _NO_CORPUS_TOOLS:
-            # Cross-corpus discovery tool. No corpus binding; the tool
-            # itself decides what (if anything) to expose.
-            request._body = body  # type: ignore[attr-defined]
-            return await call_next(request)
-
-        corpus_id = self._extract_corpus_id(body)
-        if corpus_id is None:
-            return _err(400, "Missing corpus_id in tool arguments")
-
-        digest = corpus_token_digest(bearer, corpus_id)
-        outcome = await self._authorise(corpus_id, bearer, digest)
+        digest = corpus_token_digest(bearer, header_corpus_id)
+        outcome = await self._authorise(header_corpus_id, bearer, digest)
         if outcome == "outage":
             return _err(503, "Key Vault unavailable")
         if outcome == "deny":
             return _err(403, "Forbidden for this corpus")
 
+        _set_authorised_corpora((header_corpus_id,))
+
+        # Non-POST (SSE GET) and lifecycle / no-corpus paths: header-bound
+        # auth is sufficient; no body-side corpus_id is expected.
+        if request.method != "POST":
+            return await call_next(request)
+        body = await request.body()
         request._body = body  # type: ignore[attr-defined]
-        _set_authorised_corpora((corpus_id,))
+        method = self._extract_method(body)
+        if method is not None and (method in _LIFECYCLE_METHODS or method.startswith("notifications/")):
+            return await call_next(request)
+        tool_name = self._extract_tool_name(body)
+        if tool_name in _NO_CORPUS_TOOLS:
+            return await call_next(request)
+
+        # tools/call against a corpus-scoped tool: body MUST carry corpus_id
+        # and it MUST match the header. Mismatch is a hard 403 so a token
+        # for corpus A can never be used to call a tool against corpus B
+        # by smuggling a different ID into the body.
+        body_corpus_id = self._extract_corpus_id(body)
+        if body_corpus_id is None:
+            return _err(400, "Missing corpus_id in tool arguments")
+        if body_corpus_id != header_corpus_id:
+            logger.info(
+                "corpus_auth: deny (header/body mismatch) header=%s body=%s token=%s",
+                header_corpus_id,
+                body_corpus_id,
+                _token_fingerprint(bearer),
+            )
+            return _err(403, "corpus_id in arguments does not match header")
         return await call_next(request)
 
     @staticmethod

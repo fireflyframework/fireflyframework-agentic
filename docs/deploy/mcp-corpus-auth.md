@@ -73,9 +73,21 @@ alone.
 
 ## Caller usage
 
+Every request must carry **two** headers:
+
+- `Authorization: Bearer <token-from-keyvault>`
+- `X-Firefly-Corpus-Id: <corpus_id>`
+
+The middleware validates the bearer against `firefly-mcp-corpus-token-<X-Firefly-Corpus-Id>`
+**before** looking at the body. This way the JSON-RPC handshake
+(`initialize`, `tools/list`) and cross-corpus tools (`list_corpora`) are
+also gated — an outsider without a valid corpus token cannot even
+enumerate the tool schemas or learn which corpora exist on the server.
+
 ```http
 POST /mcp HTTP/1.1
 Authorization: Bearer <token-from-keyvault>
+X-Firefly-Corpus-Id: demo
 Content-Type: application/json
 
 {"jsonrpc":"2.0","id":1,"method":"tools/call",
@@ -83,9 +95,36 @@ Content-Type: application/json
            "arguments":{"corpus_id":"demo","question":"hi","top_k":3}}}
 ```
 
-A token for corpus A cannot call any tool against corpus B; the
-middleware returns `403 Forbidden`. `list_corpora` returns only the
-corpora the bearer is authorised for.
+If `arguments.corpus_id` is present, it **must match** the header value;
+mismatch is a hard `403` so a token for corpus A cannot be used to
+target corpus B by smuggling a different ID into the body. For tools
+without a `corpus_id` argument (e.g. `list_corpora`), the header alone
+provides the binding and the response is filtered to that corpus.
+
+### Claude Desktop / `mcp-remote`
+
+Add the second header to the entry's `args`:
+
+```json
+{
+  "mcpServers": {
+    "firefly-real-data": {
+      "command": "npx",
+      "args": [
+        "-y", "mcp-remote",
+        "https://<host>/mcp/",
+        "--header", "Authorization: Bearer <token-for-real-data>",
+        "--header", "X-Firefly-Corpus-Id: real-data"
+      ]
+    }
+  }
+}
+```
+
+A user who needs access to two corpora gets two entries — one per
+corpus — each with its own bearer and `X-Firefly-Corpus-Id`. The pair
+is what authorises the request; there is no way to mix tokens between
+entries.
 
 ## What this layer does not do
 
@@ -105,7 +144,9 @@ corpora the bearer is authorised for.
 |---|---|
 | No `Authorization` header | `401` |
 | `Authorization` not `Bearer ...` | `401` |
-| Tool args have no `corpus_id` | `400` |
-| Bearer does not match KV secret for `corpus_id` | `403` |
-| Secret missing / disabled in KV | `403` (deliberately indistinguishable) |
+| No `X-Firefly-Corpus-Id` header | `401` |
+| Bearer does not match KV secret for the header's `corpus_id` | `403` |
+| Header `corpus_id` differs from `arguments.corpus_id` in body | `403` |
+| `tools/call` against a corpus-scoped tool, no body `corpus_id` | `400` |
+| Secret missing / disabled in KV | `403` (deliberately indistinguishable from wrong token) |
 | KV unreachable (un-cached corpus) | `503` |

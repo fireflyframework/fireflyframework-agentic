@@ -16,14 +16,11 @@ pytest.importorskip("azure.keyvault.secrets.aio", reason="middleware uses azure 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from fireflyframework_agentic.exposure.mcp.auth import CORPUS_ID_HEADER
+
 
 class _StubStore:
-    """Stand-in for KeyVaultTokenStore.
-
-    The middleware accepts ``KeyVaultTokenStore`` by typing, but only uses
-    the ``get_corpus_token`` coroutine — so this stub satisfies the contract
-    structurally.
-    """
+    """Stand-in for KeyVaultTokenStore."""
 
     def __init__(self, secrets: dict[str, str | None] | None = None) -> None:
         self._secrets = secrets or {}
@@ -49,11 +46,19 @@ def _make_app(*, store: _StubStore, ttl: float = 60.0) -> FastAPI:
     async def echo(payload: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True, "payload": payload}
 
+    @app.get("/mcp")
+    async def echo_get() -> dict[str, Any]:
+        return {"ok": True}
+
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
     return app
+
+
+def _h(token: str, corpus_id: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}", CORPUS_ID_HEADER: corpus_id}
 
 
 def _body(corpus_id: str, *, tool: str = "corpus_query") -> dict[str, Any]:
@@ -74,11 +79,7 @@ def _body(corpus_id: str, *, tool: str = "corpus_query") -> dict[str, Any]:
 def test_happy_path_forwards_request_when_bearer_matches() -> None:
     store = _StubStore({"demo": "secret-token"})
     client = TestClient(_make_app(store=store))
-    response = client.post(
-        "/mcp",
-        json=_body("demo"),
-        headers={"Authorization": "Bearer secret-token"},
-    )
+    response = client.post("/mcp", json=_body("demo"), headers=_h("secret-token", "demo"))
     assert response.status_code == 200
     assert response.json()["ok"] is True
     assert store.calls == ["demo"]
@@ -87,7 +88,7 @@ def test_happy_path_forwards_request_when_bearer_matches() -> None:
 def test_missing_bearer_returns_401() -> None:
     store = _StubStore({"demo": "secret-token"})
     client = TestClient(_make_app(store=store))
-    response = client.post("/mcp", json=_body("demo"))
+    response = client.post("/mcp", json=_body("demo"), headers={CORPUS_ID_HEADER: "demo"})
     assert response.status_code == 401
 
 
@@ -97,7 +98,19 @@ def test_malformed_bearer_returns_401() -> None:
     response = client.post(
         "/mcp",
         json=_body("demo"),
-        headers={"Authorization": "Token nope"},
+        headers={"Authorization": "Token nope", CORPUS_ID_HEADER: "demo"},
+    )
+    assert response.status_code == 401
+
+
+def test_missing_corpus_id_header_returns_401() -> None:
+    """No X-Firefly-Corpus-Id ⇒ 401 BEFORE any body / lifecycle inspection."""
+    store = _StubStore({"demo": "secret-token"})
+    client = TestClient(_make_app(store=store))
+    response = client.post(
+        "/mcp",
+        json=_body("demo"),
+        headers={"Authorization": "Bearer secret-token"},
     )
     assert response.status_code == 401
 
@@ -115,23 +128,24 @@ def test_healthz_is_not_gated() -> None:
 def test_wrong_token_returns_403() -> None:
     store = _StubStore({"demo": "secret-token"})
     client = TestClient(_make_app(store=store))
-    response = client.post(
-        "/mcp",
-        json=_body("demo"),
-        headers={"Authorization": "Bearer wrong-bearer"},
-    )
+    response = client.post("/mcp", json=_body("demo"), headers=_h("wrong-bearer", "demo"))
     assert response.status_code == 403
     assert "wrong-bearer" not in response.text
 
 
 def test_token_for_other_corpus_returns_403() -> None:
+    """Bearer for corpus-a, header claims corpus-b ⇒ deny."""
     store = _StubStore({"corpus-a": "token-a", "corpus-b": "token-b"})
     client = TestClient(_make_app(store=store))
-    response = client.post(
-        "/mcp",
-        json=_body("corpus-b"),
-        headers={"Authorization": "Bearer token-a"},
-    )
+    response = client.post("/mcp", json=_body("corpus-b"), headers=_h("token-a", "corpus-b"))
+    assert response.status_code == 403
+
+
+def test_header_body_corpus_id_mismatch_returns_403() -> None:
+    """Bearer valid for header corpus, but body asks for a different one."""
+    store = _StubStore({"corpus-a": "token-a"})
+    client = TestClient(_make_app(store=store))
+    response = client.post("/mcp", json=_body("corpus-b"), headers=_h("token-a", "corpus-a"))
     assert response.status_code == 403
 
 
@@ -139,11 +153,7 @@ def test_unknown_corpus_returns_403_not_404() -> None:
     """Avoid enumeration: missing secret looks identical to wrong token."""
     store = _StubStore({})
     client = TestClient(_make_app(store=store))
-    response = client.post(
-        "/mcp",
-        json=_body("ghost"),
-        headers={"Authorization": "Bearer anything"},
-    )
+    response = client.post("/mcp", json=_body("ghost"), headers=_h("anything", "ghost"))
     assert response.status_code == 403
 
 
@@ -156,33 +166,30 @@ def test_kv_outage_returns_503() -> None:
     store = _StubStore({"demo": "secret-token"})
     store.exc = ServiceRequestError(message="boom")
     client = TestClient(_make_app(store=store))
-    response = client.post(
-        "/mcp",
-        json=_body("demo"),
-        headers={"Authorization": "Bearer secret-token"},
-    )
+    response = client.post("/mcp", json=_body("demo"), headers=_h("secret-token", "demo"))
     assert response.status_code == 503
 
 
 def test_cache_avoids_repeat_kv_lookups() -> None:
     store = _StubStore({"demo": "secret-token"})
     client = TestClient(_make_app(store=store, ttl=60))
-    h = {"Authorization": "Bearer secret-token"}
+    h = _h("secret-token", "demo")
     for _ in range(3):
         assert client.post("/mcp", json=_body("demo"), headers=h).status_code == 200
-    assert store.calls == ["demo"]  # one lookup, two cache hits
+    assert store.calls == ["demo"]
 
 
-def test_missing_corpus_id_returns_400() -> None:
+def test_missing_body_corpus_id_returns_400() -> None:
+    """tools/call against a corpus-scoped tool with no body corpus_id ⇒ 400."""
     store = _StubStore({"demo": "secret-token"})
     client = TestClient(_make_app(store=store))
     body = {
         "jsonrpc": "2.0",
         "id": 1,
         "method": "tools/call",
-        "params": {"name": "x", "arguments": {}},
+        "params": {"name": "corpus_query", "arguments": {}},
     }
-    response = client.post("/mcp", json=body, headers={"Authorization": "Bearer secret-token"})
+    response = client.post("/mcp", json=body, headers=_h("secret-token", "demo"))
     assert response.status_code == 400
 
 
@@ -190,11 +197,7 @@ def test_body_is_forwarded_intact() -> None:
     store = _StubStore({"demo": "secret-token"})
     client = TestClient(_make_app(store=store))
     payload = _body("demo")
-    response = client.post(
-        "/mcp",
-        json=payload,
-        headers={"Authorization": "Bearer secret-token"},
-    )
+    response = client.post("/mcp", json=payload, headers=_h("secret-token", "demo"))
     assert response.status_code == 200
     assert response.json()["payload"] == payload
 
@@ -206,9 +209,9 @@ def test_log_capture_does_not_contain_raw_token(caplog: pytest.LogCaptureFixture
     store = _StubStore({"demo": "secret-token"})
     client = TestClient(_make_app(store=store))
     for h in (
-        {"Authorization": "Bearer secret-token"},
-        {"Authorization": "Bearer wrong-token"},
-        {},
+        _h("secret-token", "demo"),
+        _h("wrong-token", "demo"),
+        {CORPUS_ID_HEADER: "demo"},
     ):
         client.post("/mcp", json=_body("demo"), headers=h)
     captured = caplog.text
@@ -216,80 +219,75 @@ def test_log_capture_does_not_contain_raw_token(caplog: pytest.LogCaptureFixture
     assert "wrong-token" not in captured
 
 
-def test_list_corpora_passes_without_corpus_id_argument() -> None:
-    """`list_corpora` is a no-corpus discovery tool — middleware must let it through."""
-    store = _StubStore({"demo": "secret-token"})
-    client = TestClient(_make_app(store=store))
-    response = client.post(
-        "/mcp",
-        json={
-            "jsonrpc": "2.0",
-            "id": 7,
-            "method": "tools/call",
-            "params": {"name": "list_corpora", "arguments": {}},
-        },
-        headers={"Authorization": "Bearer secret-token"},
-    )
-    assert response.status_code == 200
+# ---------- pass-through paths still require valid bearer ------------------
 
 
-def test_get_for_sse_passes_with_bearer() -> None:
-    """The Streamable HTTP SSE channel opens via GET — must pass through."""
+def test_list_corpora_requires_valid_bearer() -> None:
     store = _StubStore({"demo": "secret-token"})
     client = TestClient(_make_app(store=store))
-    response = client.get("/mcp", headers={"Authorization": "Bearer secret-token"})
-    # Downstream may 404/405/200 depending on the handler; the middleware
-    # itself MUST not 400/401/403 a properly-bearer'd GET.
+    # No header ⇒ 401, NOT a free pass.
+    body = {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "method": "tools/call",
+        "params": {"name": "list_corpora", "arguments": {}},
+    }
+    no_corpus_hdr = client.post("/mcp", json=body, headers={"Authorization": "Bearer secret-token"})
+    assert no_corpus_hdr.status_code == 401
+
+    # Bad token ⇒ 403.
+    bad_token = client.post("/mcp", json=body, headers=_h("wrong", "demo"))
+    assert bad_token.status_code == 403
+
+    # Valid header-bound bearer ⇒ 200.
+    ok = client.post("/mcp", json=body, headers=_h("secret-token", "demo"))
+    assert ok.status_code == 200
+
+
+def test_initialize_requires_valid_bearer() -> None:
+    """The MCP handshake also needs a valid header-bound bearer now."""
+    store = _StubStore({"demo": "secret-token"})
+    client = TestClient(_make_app(store=store))
+    body = {
+        "jsonrpc": "2.0",
+        "id": 0,
+        "method": "initialize",
+        "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "x", "version": "0"}},
+    }
+    # No header → 401.
+    assert client.post("/mcp", json=body).status_code == 401
+    # Wrong bearer → 403.
+    assert client.post("/mcp", json=body, headers=_h("nope", "demo")).status_code == 403
+    # Valid → 200.
+    assert client.post("/mcp", json=body, headers=_h("secret-token", "demo")).status_code == 200
+
+
+def test_tools_list_requires_valid_bearer() -> None:
+    store = _StubStore({"demo": "secret-token"})
+    client = TestClient(_make_app(store=store))
+    body = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+    assert client.post("/mcp", json=body).status_code == 401
+    assert client.post("/mcp", json=body, headers=_h("secret-token", "demo")).status_code == 200
+
+
+def test_notifications_require_valid_bearer() -> None:
+    store = _StubStore({"demo": "secret-token"})
+    client = TestClient(_make_app(store=store))
+    body = {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}
+    assert client.post("/mcp", json=body).status_code == 401
+    assert client.post("/mcp", json=body, headers=_h("secret-token", "demo")).status_code == 200
+
+
+def test_get_for_sse_requires_valid_bearer() -> None:
+    store = _StubStore({"demo": "secret-token"})
+    client = TestClient(_make_app(store=store))
+    # No header → 401.
+    assert client.get("/mcp").status_code == 401
+    # Wrong bearer → 403.
+    assert client.get("/mcp", headers=_h("nope", "demo")).status_code == 403
+    # Valid → downstream handler runs (200/404/200 are all non-deny).
+    response = client.get("/mcp", headers=_h("secret-token", "demo"))
     assert response.status_code not in (400, 401, 403)
-
-
-def test_initialize_passes_through_without_corpus_id() -> None:
-    """The MCP handshake has no corpus_id; middleware must let it through."""
-    store = _StubStore({"demo": "secret-token"})
-    client = TestClient(_make_app(store=store))
-    response = client.post(
-        "/mcp",
-        json={
-            "jsonrpc": "2.0",
-            "id": 0,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2025-06-18",
-                "capabilities": {},
-                "clientInfo": {"name": "test", "version": "0"},
-            },
-        },
-        headers={"Authorization": "Bearer secret-token"},
-    )
-    assert response.status_code == 200
-    # Bearer is required even for lifecycle methods.
-    response = client.post(
-        "/mcp",
-        json={"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {}},
-    )
-    assert response.status_code == 401
-
-
-def test_tools_list_passes_through_without_corpus_id() -> None:
-    store = _StubStore({"demo": "secret-token"})
-    client = TestClient(_make_app(store=store))
-    response = client.post(
-        "/mcp",
-        json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
-        headers={"Authorization": "Bearer secret-token"},
-    )
-    assert response.status_code == 200
-
-
-def test_notifications_pass_through_without_corpus_id() -> None:
-    store = _StubStore({"demo": "secret-token"})
-    client = TestClient(_make_app(store=store))
-    response = client.post(
-        "/mcp",
-        json={"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
-        headers={"Authorization": "Bearer secret-token"},
-    )
-    assert response.status_code == 200
 
 
 def test_authorised_corpora_contextvar_is_set() -> None:
@@ -317,5 +315,5 @@ def test_authorised_corpora_contextvar_is_set() -> None:
         return {"ok": True}
 
     client = TestClient(app)
-    client.post("/mcp", json=_body("demo"), headers={"Authorization": "Bearer secret-token"})
+    client.post("/mcp", json=_body("demo"), headers=_h("secret-token", "demo"))
     assert captured == [("demo",)]

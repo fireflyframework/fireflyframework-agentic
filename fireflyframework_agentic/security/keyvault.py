@@ -23,7 +23,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -75,23 +75,22 @@ class CorpusTokenCache:
         self._entries.pop(corpus_id, None)
 
 
-class _SecretClientLike(Protocol):
-    async def get_secret(self, name: str) -> object:
-        pass
-
-    async def close(self) -> None:
-        pass
-
-
 class KeyVaultTokenStore:
     """Async fetcher for per-corpus tokens from Azure Key Vault.
 
     Returns ``None`` for not-found / disabled secrets so the caller can map
     those to ``403 Forbidden`` without revealing whether the secret exists.
     Other Azure errors propagate so the caller can fail closed (``503``).
+
+    ``client`` is typed as ``Any`` rather than a Protocol because the real
+    ``azure.keyvault.secrets.aio.SecretClient`` has a richer ``get_secret``
+    signature (``version``, ``**kwargs``) than the subset we use, and
+    structural matching against a slimmer Protocol upsets static checkers
+    without buying real safety — the unit tests duck-type a stub that
+    matches the same shape used here.
     """
 
-    def __init__(self, *, client: _SecretClientLike, prefix: str) -> None:
+    def __init__(self, *, client: Any, prefix: str) -> None:
         self._client = client
         self._prefix = prefix
 
