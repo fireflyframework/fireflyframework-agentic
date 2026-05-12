@@ -17,13 +17,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
 
 from fireflyframework_agentic.exceptions import BudgetExceededError
 from fireflyframework_agentic.observability._windows import bucket_key
-
-if TYPE_CHECKING:
-    from fireflyframework_agentic.observability.usage import UsageRecord
+from fireflyframework_agentic.observability.usage import UsageRecord
 
 logger = logging.getLogger(__name__)
 
@@ -94,10 +91,11 @@ class BudgetGate:
         self._state: dict[str, tuple[str, float]] = {r.name: ("", 0.0) for r in self._rules}
         self._lock = threading.Lock()
 
-    def precheck(self, estimated_cost_usd: float, ctx: ScopeContext) -> None:
+    def precheck(self, estimated_cost_usd: float, ctx: ScopeContext | None = None) -> None:
         """Raise on HARD breach if the estimated cost would push spend over the limit."""
         if estimated_cost_usd <= 0.0:
             return
+        ctx = ctx or ScopeContext()
         now = datetime.now(UTC)
         with self._lock:
             for rule in self._rules:
@@ -117,11 +115,12 @@ class BudgetGate:
                         limit_usd=rule.limit_usd,
                     )
 
-    def commit(self, record: UsageRecord, ctx: ScopeContext) -> None:
+    def commit(self, record: UsageRecord, ctx: ScopeContext | None = None) -> None:
         """Add ``record.cost_usd`` to every matching rule. Raise on HARD breach."""
         cost = record.cost_usd
         if cost <= 0.0:
             return
+        ctx = ctx or ScopeContext()
         now = datetime.now(UTC)
         to_raise: BudgetExceededError | None = None
         with self._lock:
