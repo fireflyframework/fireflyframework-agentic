@@ -233,62 +233,53 @@ into `PipelineResult.usage`.
 
 ---
 
-## Cost Calculation
+## Cost Resolution
 
-Two cost calculator implementations are provided:
-
-- **`StaticPriceCostCalculator`** — uses a built-in lookup table with prices for
-  OpenAI, Anthropic, Google, DeepSeek, Groq, Mistral, and Ollama models. Supports
-  exact match, prefix match (e.g. `openai:gpt-4o-2024-08-06` matches `openai:gpt-4o`),
-  and **cross-provider alias matching** for proxy providers.
-- **`GenAIPricesCostCalculator`** — delegates to the optional `genai-prices` package
-  for up-to-date pricing data. Install with `pip install fireflyframework-agentic[costs]`.
-
-The `get_cost_calculator()` factory selects the best available calculator based on
-the `FIREFLY_AGENTIC_COST_CALCULATOR` setting (`"auto"`, `"static"`, or `"genai_prices"`).
+Each LLM call is priced by a chain of resolver callables. The default chain tries the provider-reported cost first (e.g. OpenRouter's `usage.cost`), then falls back to `genai-prices` for token-by-token computation. Cache tokens, reasoning tokens, and the `BATCH` tier are all honored when the provider's price record exposes the relevant fields.
 
 ```python
-from fireflyframework_agentic.observability import get_cost_calculator
-
-calc = get_cost_calculator()
-cost = calc.estimate("openai:gpt-4o", input_tokens=1000, output_tokens=500)
-print(f"Estimated cost: ${cost:.6f}")
+from fireflyframework_agentic.observability.cost import resolve_cost, CostContext, CallTier
+cost = resolve_cost(CostContext(model="anthropic:claude-3-5-sonnet-latest",
+                                input_tokens=1_000, output_tokens=500,
+                                cache_read_tokens=8_000, tier=CallTier.BATCH))
 ```
 
-### Cross-Provider Price Resolution
+Custom strategies plug in by passing your own chain: `resolve_cost(ctx, [my_fixed_rate, *DEFAULT_RESOLVERS])`. See `examples/cost_tracking.py`.
 
-When a model identifier uses a proxy provider (Bedrock, Azure, Groq), the
-static calculator automatically resolves pricing through the canonical provider:
+When `genai-prices` has no entry for a model, the resolver returns `0.0`, increments the `cost_unknown` metric, and logs a WARNING once per model.
 
-| Model identifier | Resolves to | Pricing source |
-|---|---|---|
-| `azure:gpt-4o` | `openai:gpt-4o` | OpenAI pricing |
-| `bedrock:anthropic.claude-3-5-sonnet-latest` | `anthropic:claude-3-5-sonnet-latest` | Anthropic pricing |
-| `ollama:llama3.2` | `ollama:` prefix | Free (local) |
+## Budgets
 
-This ensures cost tracking works correctly regardless of which provider
-routes the request to the underlying model.
+A `BudgetGate` holds a sequence of `BudgetRule` objects. Each rule filters via a `match` dict (AND of key-value pairs against the call's `ScopeContext`), has a window (`LIFETIME`, `MONTHLY`, `DAILY`), and a mode (`HARD` raises `BudgetExceededError`; `SOFT` logs).
 
----
-
-## Budget Enforcement
-
-Configure budget thresholds via environment variables:
-
-```bash
-export FIREFLY_AGENTIC_BUDGET_ALERT_THRESHOLD_USD=5.00
-export FIREFLY_AGENTIC_BUDGET_LIMIT_USD=10.00
+```python
+from fireflyframework_agentic.observability.budget import (
+    BudgetGate, BudgetMode, BudgetRule, BudgetWindow, ScopeContext,
+)
+gate = BudgetGate([
+    BudgetRule(name="acme-daily", limit_usd=5.0, window=BudgetWindow.DAILY,
+               match={"tenant": "acme"}),
+    BudgetRule(name="writer-lifetime", limit_usd=100.0, mode=BudgetMode.SOFT,
+               match={"agent": "writer"}),
+])
 ```
 
-When cumulative cost exceeds the alert threshold, a `WARNING` is logged.
-When it exceeds the hard limit, a more urgent warning is emitted.
-Budget checking runs automatically on every `UsageTracker.record()` call.
+For the single-tenant case, the `budget_limit_usd` config field auto-installs a global HARD rule on the default tracker.
 
-To disable cost tracking entirely:
+## Cost Sinks
 
-```bash
-export FIREFLY_AGENTIC_COST_TRACKING_ENABLED=false
+`UsageTracker` fans every `UsageRecord` out to one or more `CostSink` instances. Built-ins: `OTelMetricsSink`, `EventBusSink`, `LoggingSink`, `JSONLFileSink`, `WebhookSink`. Custom sinks implement the protocol's `emit(record)` method.
+
+```python
+from fireflyframework_agentic.observability.sinks import (
+    EventBusSink, JSONLFileSink, OTelMetricsSink,
+)
+from fireflyframework_agentic.observability.usage import UsageTracker
+tracker = UsageTracker(sinks=[OTelMetricsSink(), EventBusSink(),
+                              JSONLFileSink("/var/log/firefly/cost.jsonl")])
 ```
+
+A failing sink does not break other sinks; failures increment `cost_sink_errors` labeled by sink class.
 
 ---
 
