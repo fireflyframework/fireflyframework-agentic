@@ -1,10 +1,15 @@
+import pytest
+
+from fireflyframework_agentic.exceptions import BudgetExceededError
 from fireflyframework_agentic.observability.budget import (
+    BudgetGate,
     BudgetMode,
     BudgetRule,
     BudgetWindow,
     ScopeContext,
     _rule_matches,
 )
+from fireflyframework_agentic.observability.usage import UsageRecord
 
 
 def test_budget_mode_values() -> None:
@@ -66,3 +71,53 @@ def test_budget_rule_defaults() -> None:
     assert rule.mode == BudgetMode.HARD
     assert rule.window == BudgetWindow.LIFETIME
     assert rule.match == {}
+
+
+def test_gate_commit_accumulates_and_raises_on_hard() -> None:
+    gate = BudgetGate([BudgetRule(name="global", limit_usd=1.0)])
+    ctx = ScopeContext()
+    gate.commit(UsageRecord(cost_usd=0.4), ctx)
+    gate.commit(UsageRecord(cost_usd=0.5), ctx)
+    assert gate.spend("global") == pytest.approx(0.9)
+    with pytest.raises(BudgetExceededError) as exc:
+        gate.commit(UsageRecord(cost_usd=0.2), ctx)
+    assert exc.value.rule_name == "global"
+    assert exc.value.limit_usd == 1.0
+
+
+def test_gate_commit_soft_logs_no_raise(caplog: pytest.LogCaptureFixture) -> None:
+    gate = BudgetGate([BudgetRule(name="g", limit_usd=1.0, mode=BudgetMode.SOFT)])
+    with caplog.at_level("WARNING"):
+        gate.commit(UsageRecord(cost_usd=2.0), ScopeContext())
+    assert any("budget" in r.message.lower() for r in caplog.records)
+    assert gate.spend("g") == pytest.approx(2.0)
+
+
+def test_gate_precheck_blocks_hard_overrun() -> None:
+    gate = BudgetGate([BudgetRule(name="g", limit_usd=1.0)])
+    gate.commit(UsageRecord(cost_usd=0.95), ScopeContext())
+    with pytest.raises(BudgetExceededError):
+        gate.precheck(estimated_cost_usd=0.1, ctx=ScopeContext())
+
+
+def test_gate_precheck_zero_estimate_is_noop() -> None:
+    gate = BudgetGate([BudgetRule(name="g", limit_usd=1.0)])
+    gate.commit(UsageRecord(cost_usd=0.95), ScopeContext())
+    gate.precheck(estimated_cost_usd=0.0, ctx=ScopeContext())  # no raise
+
+
+def test_gate_only_applies_matching_rules() -> None:
+    gate = BudgetGate([BudgetRule(name="acme", limit_usd=1.0, match={"tenant": "acme"})])
+    gate.commit(UsageRecord(cost_usd=2.0), ScopeContext(tenant="other"))  # not matched, no raise
+    assert gate.spend("acme") == 0.0
+
+
+def test_gate_reset_single_rule_and_all() -> None:
+    gate = BudgetGate([BudgetRule(name="a", limit_usd=10.0), BudgetRule(name="b", limit_usd=10.0)])
+    gate.commit(UsageRecord(cost_usd=1.0), ScopeContext())
+    gate.commit(UsageRecord(cost_usd=2.0), ScopeContext())
+    gate.reset("a")
+    assert gate.spend("a") == 0.0
+    assert gate.spend("b") == pytest.approx(3.0)
+    gate.reset()
+    assert gate.spend("b") == 0.0
