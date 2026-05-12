@@ -216,6 +216,33 @@ def test_log_capture_does_not_contain_raw_token(caplog: pytest.LogCaptureFixture
     assert "wrong-token" not in captured
 
 
+def test_list_corpora_passes_without_corpus_id_argument() -> None:
+    """`list_corpora` is a no-corpus discovery tool — middleware must let it through."""
+    store = _StubStore({"demo": "secret-token"})
+    client = TestClient(_make_app(store=store))
+    response = client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "tools/call",
+            "params": {"name": "list_corpora", "arguments": {}},
+        },
+        headers={"Authorization": "Bearer secret-token"},
+    )
+    assert response.status_code == 200
+
+
+def test_get_for_sse_passes_with_bearer() -> None:
+    """The Streamable HTTP SSE channel opens via GET — must pass through."""
+    store = _StubStore({"demo": "secret-token"})
+    client = TestClient(_make_app(store=store))
+    response = client.get("/mcp", headers={"Authorization": "Bearer secret-token"})
+    # Downstream may 404/405/200 depending on the handler; the middleware
+    # itself MUST not 400/401/403 a properly-bearer'd GET.
+    assert response.status_code not in (400, 401, 403)
+
+
 def test_initialize_passes_through_without_corpus_id() -> None:
     """The MCP handshake has no corpus_id; middleware must let it through."""
     store = _StubStore({"demo": "secret-token"})
