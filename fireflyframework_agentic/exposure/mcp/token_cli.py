@@ -135,7 +135,7 @@ async def _cmd_revoke(args: argparse.Namespace) -> int:
         try:
             await client.update_secret_properties(name, enabled=False)
         except ResourceNotFoundError:
-            print(f"error: secret {name!r} not found.", file=sys.stderr)
+            print("error: secret not found.", file=sys.stderr)
             return 2
     finally:
         await client.close()
