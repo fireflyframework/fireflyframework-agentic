@@ -189,7 +189,28 @@ class QuotaError(FireflyAgenticError):
 
 
 class BudgetExceededError(QuotaError):
-    """Raised when the daily budget limit is exceeded."""
+    """Raised when a budget rule is exceeded.
+
+    Carries structured fields populated by
+    :class:`~fireflyframework_agentic.observability.budget.BudgetGate`.
+    """
+
+    rule_name: str
+    spend_usd: float
+    limit_usd: float
+
+    def __init__(
+        self,
+        msg: str = "",
+        *,
+        rule_name: str = "",
+        spend_usd: float = 0.0,
+        limit_usd: float = 0.0,
+    ) -> None:
+        super().__init__(msg)
+        self.rule_name = rule_name
+        self.spend_usd = spend_usd
+        self.limit_usd = limit_usd
 
 
 class RateLimitError(QuotaError):
