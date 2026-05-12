@@ -36,7 +36,7 @@ import os
 import re
 import secrets
 import sys
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -258,7 +258,7 @@ def main(argv: list[str] | None = None) -> int:
 
     import asyncio
 
-    handlers: dict[str, Callable[[argparse.Namespace], Awaitable[int]]] = {
+    handlers: dict[str, Callable[[argparse.Namespace], Coroutine[Any, Any, int]]] = {
         "create": _cmd_create,
         "rotate": _cmd_rotate,
         "revoke": _cmd_revoke,
