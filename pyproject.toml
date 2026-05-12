@@ -153,7 +153,11 @@ dev = [
 
 [project.scripts]
 firefly-mcp-http = "fireflyframework_agentic.exposure.mcp.http_cli:main"
-firefly-mcp-token = "fireflyframework_agentic.exposure.mcp.token_cli:main"
+# firefly-mcp-token lives with the corpus_search example
+# (examples/corpus_search/firefly_mcp_token.py) — invoke it via
+# ``python -m examples.corpus_search.firefly_mcp_token …``. It is not
+# shipped as a framework script because it depends on the Azure SDK,
+# which the framework keeps as a provider-specific optional extra.
 
 [project.urls]
 Homepage = "https://fireflyframework.org/"

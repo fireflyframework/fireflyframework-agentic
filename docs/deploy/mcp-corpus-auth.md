@@ -29,6 +29,15 @@ Two equivalent paths: the framework ships a small CLI
 (`firefly-mcp-token`) for the common operations, or you can drive
 `az keyvault` directly.
 
+> **Where the Azure-specific code lives.** The token-store factory
+> (`build_default_store`) and the operator CLI (`firefly-mcp-token`)
+> ship with the corpus-search example, not the framework core, so the
+> framework stays provider-agnostic. The middleware in
+> `fireflyframework_agentic.exposure.mcp.auth` depends only on the
+> ``CorpusTokenStore`` Protocol; for a non-Azure back-end, write your
+> own factory and point `FIREFLY_MCP_TOKEN_STORE_FACTORY` at it (see
+> "Custom store backend" below).
+
 ### Option A — the `firefly-mcp-token` CLI (recommended)
 
 Authenticates via `DefaultAzureCredential` (managed identity in Azure,
@@ -38,6 +47,9 @@ manager.
 
 ```bash
 export FIREFLY_MCP_KEYVAULT_URL=https://<vault>.vault.azure.net
+
+# The CLI ships with the corpus_search example, invoke it as a module.
+alias firefly-mcp-token='python -m examples.corpus_search.firefly_mcp_token'
 
 # Create — refuses if the secret already exists (use rotate instead).
 firefly-mcp-token create real-data > /secure/store/real-data.token
@@ -88,6 +100,34 @@ az keyvault secret set-attributes \
 In both paths the plaintext value never leaves Key Vault again — store
 it immediately in your secret manager (1Password, Vault, etc.) and
 never commit it.
+
+## Custom store backend
+
+If you don't use Azure, write your own `CorpusTokenStore`:
+
+```python
+# my_org/firefly_store.py
+class _MyStore:
+    async def get_corpus_token(self, corpus_id: str) -> str | None:
+        # fetch from HashiCorp Vault, AWS Secrets Manager, your DB, …
+        return await my_backend.get(f"firefly/{corpus_id}/token")
+
+
+def build_store(*, vault_url: str, prefix: str = "firefly-mcp-corpus-token-") -> _MyStore:
+    return _MyStore()
+```
+
+Then point the runtime at it:
+
+```bash
+export FIREFLY_MCP_TOKEN_STORE_FACTORY=my_org.firefly_store:build_store
+export FIREFLY_MCP_KEYVAULT_URL=ignored-by-your-backend
+firefly-mcp-http
+```
+
+The middleware in the framework depends only on
+`fireflyframework_agentic.security.corpus_token.CorpusTokenStore` — a
+single-method Protocol — so the framework itself ships no Azure deps.
 
 ## Recovery — Key Vault unreachable
 

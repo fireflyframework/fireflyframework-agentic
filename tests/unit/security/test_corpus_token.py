@@ -18,7 +18,7 @@ def _digest(token: str, corpus_id: str) -> str:
 
 
 def test_cache_stores_and_returns_true_within_ttl() -> None:
-    from fireflyframework_agentic.security.keyvault import CorpusTokenCache
+    from fireflyframework_agentic.security.corpus_token import CorpusTokenCache
 
     cache = CorpusTokenCache(ttl_seconds=60)
     cache.remember("corpus-a", _digest("tok", "corpus-a"))
@@ -26,7 +26,7 @@ def test_cache_stores_and_returns_true_within_ttl() -> None:
 
 
 def test_cache_rejects_wrong_digest() -> None:
-    from fireflyframework_agentic.security.keyvault import CorpusTokenCache
+    from fireflyframework_agentic.security.corpus_token import CorpusTokenCache
 
     cache = CorpusTokenCache(ttl_seconds=60)
     cache.remember("corpus-a", _digest("tok", "corpus-a"))
@@ -34,8 +34,8 @@ def test_cache_rejects_wrong_digest() -> None:
 
 
 def test_cache_expires_after_ttl(monkeypatch: pytest.MonkeyPatch) -> None:
-    from fireflyframework_agentic.security import keyvault as kv_mod
-    from fireflyframework_agentic.security.keyvault import CorpusTokenCache
+    from fireflyframework_agentic.security import corpus_token as kv_mod
+    from fireflyframework_agentic.security.corpus_token import CorpusTokenCache
 
     fake_now = [1000.0]
     monkeypatch.setattr(kv_mod, "_monotonic", lambda: fake_now[0])
@@ -52,7 +52,7 @@ def test_cache_expires_after_ttl(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_cache_is_corpus_scoped() -> None:
     """A hit for corpus-a must not validate corpus-b, even with the same token."""
-    from fireflyframework_agentic.security.keyvault import CorpusTokenCache
+    from fireflyframework_agentic.security.corpus_token import CorpusTokenCache
 
     cache = CorpusTokenCache(ttl_seconds=60)
     cache.remember("corpus-a", _digest("tok", "corpus-a"))
@@ -60,14 +60,14 @@ def test_cache_is_corpus_scoped() -> None:
 
 
 def test_cache_rejects_non_positive_ttl() -> None:
-    from fireflyframework_agentic.security.keyvault import CorpusTokenCache
+    from fireflyframework_agentic.security.corpus_token import CorpusTokenCache
 
     with pytest.raises(ValueError):
         CorpusTokenCache(ttl_seconds=0)
 
 
 def test_cache_forget_clears_entry() -> None:
-    from fireflyframework_agentic.security.keyvault import CorpusTokenCache
+    from fireflyframework_agentic.security.corpus_token import CorpusTokenCache
 
     cache = CorpusTokenCache(ttl_seconds=60)
     cache.remember("corpus-a", _digest("tok", "corpus-a"))
@@ -112,7 +112,7 @@ class _FakeSecretClient:
 
 @pytest.mark.asyncio
 async def test_store_returns_secret_value() -> None:
-    from fireflyframework_agentic.security.keyvault import KeyVaultTokenStore
+    from examples.corpus_search.azure_security import KeyVaultTokenStore
 
     client = _FakeSecretClient(secrets={"firefly-mcp-corpus-token-demo": "abc"})
     store = KeyVaultTokenStore(client=client, prefix="firefly-mcp-corpus-token-")
@@ -123,7 +123,7 @@ async def test_store_returns_secret_value() -> None:
 
 @pytest.mark.asyncio
 async def test_store_returns_none_when_not_found() -> None:
-    from fireflyframework_agentic.security.keyvault import KeyVaultTokenStore
+    from examples.corpus_search.azure_security import KeyVaultTokenStore
 
     client = _FakeSecretClient(secrets={})
     store = KeyVaultTokenStore(client=client, prefix="firefly-mcp-corpus-token-")
@@ -135,7 +135,7 @@ async def test_store_returns_none_when_not_found() -> None:
 async def test_store_propagates_service_errors() -> None:
     from azure.core.exceptions import ServiceRequestError
 
-    from fireflyframework_agentic.security.keyvault import KeyVaultTokenStore
+    from examples.corpus_search.azure_security import KeyVaultTokenStore
 
     err = ServiceRequestError(message="boom")
     client = _FakeSecretClient(raise_for={"firefly-mcp-corpus-token-x": err})
@@ -148,7 +148,7 @@ async def test_store_propagates_service_errors() -> None:
 @pytest.mark.asyncio
 async def test_store_validates_corpus_id() -> None:
     """corpus_id must match the framework's [a-z0-9-]{1,63} contract."""
-    from fireflyframework_agentic.security.keyvault import KeyVaultTokenStore
+    from examples.corpus_search.azure_security import KeyVaultTokenStore
 
     client = _FakeSecretClient()
     store = KeyVaultTokenStore(client=client, prefix="firefly-mcp-corpus-token-")

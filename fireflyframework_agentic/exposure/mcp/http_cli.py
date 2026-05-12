@@ -44,23 +44,61 @@ def build_app() -> FastAPI:
 
 
 def _install_corpus_auth(app: FastAPI) -> None:
-    """Add CorpusAuthMiddleware. Imports are lazy so the azure extra stays optional."""
+    """Add CorpusAuthMiddleware. The concrete token store is resolved at
+    install time via ``FIREFLY_MCP_TOKEN_STORE_FACTORY``, which points
+    at a ``"module.path:callable"`` factory that returns a
+    ``CorpusTokenStore``. The default is the Azure Key Vault factory
+    that ships with the corpus-search example, so existing deployments
+    keep working out of the box; operators on a non-Azure back-end set
+    the env var to their own factory and the framework needs no Azure
+    deps to run.
+    """
     vault_url = os.environ.get("FIREFLY_MCP_KEYVAULT_URL")
     if not vault_url:
         raise RuntimeError("FIREFLY_MCP_CORPUS_AUTH_ENABLED=true but FIREFLY_MCP_KEYVAULT_URL is unset")
 
-    from fireflyframework_agentic.exposure.mcp.auth import CorpusAuthMiddleware
-    from fireflyframework_agentic.security.keyvault import (
-        CorpusTokenCache,
-        build_default_store,
+    factory_spec = os.environ.get(
+        "FIREFLY_MCP_TOKEN_STORE_FACTORY",
+        "examples.corpus_search.azure_security:build_default_store",
     )
+
+    from fireflyframework_agentic.exposure.mcp.auth import CorpusAuthMiddleware
+    from fireflyframework_agentic.security.corpus_token import CorpusTokenCache
 
     ttl = float(os.environ.get("FIREFLY_MCP_TOKEN_CACHE_TTL_SECONDS", "300"))
     prefix = os.environ.get("FIREFLY_MCP_TOKEN_SECRET_PREFIX", "firefly-mcp-corpus-token-")
 
-    store = build_default_store(vault_url=vault_url, prefix=prefix)
+    factory = _resolve_factory(factory_spec)
+    store = factory(vault_url=vault_url, prefix=prefix)
     cache = CorpusTokenCache(ttl_seconds=ttl)
     app.add_middleware(CorpusAuthMiddleware, store=store, cache=cache, mount_path="/mcp")
+
+
+def _resolve_factory(spec: str):
+    """Resolve ``"module.path:callable"`` to the callable itself.
+
+    Raises ``RuntimeError`` with a clear message if the module or
+    attribute cannot be imported / found — the alternative (a confusing
+    ImportError at first request) makes ops debugging much harder.
+    """
+    import importlib
+
+    module_path, _, attr = spec.partition(":")
+    if not module_path or not attr:
+        raise RuntimeError(f"FIREFLY_MCP_TOKEN_STORE_FACTORY must look like 'pkg.mod:callable', got {spec!r}")
+    try:
+        module = importlib.import_module(module_path)
+    except ImportError as exc:
+        raise RuntimeError(
+            f"Cannot import token-store factory module {module_path!r}: {exc}. "
+            "If you are using the default Azure-Key-Vault factory, install the "
+            "corpus_search example deps or point "
+            "FIREFLY_MCP_TOKEN_STORE_FACTORY at your own factory."
+        ) from exc
+    try:
+        return getattr(module, attr)
+    except AttributeError as exc:
+        raise RuntimeError(f"Factory {spec!r} resolved to a module without attribute {attr!r}") from exc
 
 
 def main() -> None:

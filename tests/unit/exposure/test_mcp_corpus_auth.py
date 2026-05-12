@@ -36,7 +36,7 @@ class _StubStore:
 
 def _make_app(*, store: _StubStore, ttl: float = 60.0) -> FastAPI:
     from fireflyframework_agentic.exposure.mcp.auth import CorpusAuthMiddleware
-    from fireflyframework_agentic.security.keyvault import CorpusTokenCache
+    from fireflyframework_agentic.security.corpus_token import CorpusTokenCache
 
     app = FastAPI()
     cache = CorpusTokenCache(ttl_seconds=ttl)
@@ -325,7 +325,7 @@ def test_authorised_corpora_contextvar_is_set() -> None:
     from fastapi import FastAPI
 
     from fireflyframework_agentic.exposure.mcp.auth import CorpusAuthMiddleware
-    from fireflyframework_agentic.security.keyvault import CorpusTokenCache
+    from fireflyframework_agentic.security.corpus_token import CorpusTokenCache
     from fireflyframework_agentic.tools.builtins import corpus_rag as cr
 
     captured: list[tuple[str, ...] | None] = []

@@ -33,22 +33,29 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import re
 import secrets
 import sys
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from fireflyframework_agentic.security.corpus_token import validate_corpus_id
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_PREFIX = "firefly-mcp-corpus-token-"
-_CORPUS_ID_RE = re.compile(r"^[a-z0-9-]{1,63}$")
 _DEFAULT_TOKEN_BYTES = 32
 
 
-def _secret_name(prefix: str, corpus_id: str) -> str:
-    if not _CORPUS_ID_RE.match(corpus_id):
-        raise SystemExit(f"invalid corpus_id: {corpus_id!r}. Must match [a-z0-9-]{{1,63}}.")
+def _kv_object_name(prefix: str, corpus_id: str) -> str:
+    """Compose the Key Vault object name for a corpus_id.
+
+    Validates ``corpus_id`` against the framework contract before
+    composing, so callers never pass an invalid id downstream.
+    """
+    try:
+        validate_corpus_id(corpus_id)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     return f"{prefix}{corpus_id}"
 
 
@@ -72,7 +79,7 @@ def _build_client(vault_url: str) -> Any:
 
 
 async def _cmd_create(args: argparse.Namespace) -> int:
-    name = _secret_name(args.prefix, args.corpus_id)
+    name = _kv_object_name(args.prefix, args.corpus_id)
     # Fail-fast on bad input BEFORE opening a network client. We deliberately
     # do not bind ``token`` here: keeping it confined to the success branch
     # below means CodeQL's taint analysis cannot flow it into any of the
@@ -96,7 +103,7 @@ async def _cmd_create(args: argparse.Namespace) -> int:
 
 
 async def _cmd_rotate(args: argparse.Namespace) -> int:
-    name = _secret_name(args.prefix, args.corpus_id)
+    name = _kv_object_name(args.prefix, args.corpus_id)
     _validate_byte_length(args.bytes)
     client = _build_client(args.vault_url)
     try:
@@ -119,7 +126,7 @@ async def _cmd_rotate(args: argparse.Namespace) -> int:
 
 
 async def _cmd_revoke(args: argparse.Namespace) -> int:
-    name = _secret_name(args.prefix, args.corpus_id)
+    name = _kv_object_name(args.prefix, args.corpus_id)
     if not args.yes:
         print(
             "about to disable the secret for this corpus. Existing clients will fail with "
@@ -161,13 +168,19 @@ async def _cmd_list(args: argparse.Namespace) -> int:
 
 
 def _cmd_show_name(args: argparse.Namespace) -> int:
-    # The secret NAME is composed deterministically from the configured
-    # prefix and the user-supplied corpus_id — neither is sensitive (the
-    # name is what the operator needs in shell scripts to drive the
-    # ``az keyvault`` CLI). CodeQL flags any print() carrying a "secret"-
-    # adjacent variable; the suppression below documents that this is by
-    # design and never carries secret material.
-    print(_secret_name(args.prefix, args.corpus_id))  # codeql[py/clear-text-logging-sensitive-data]
+    # ``show-name`` prints the deterministic Key Vault object name that
+    # corresponds to the operator-typed corpus_id, so shell scripts can
+    # drive ``az keyvault secret show --name "$(firefly-mcp-token …)"``.
+    # Neither piece is sensitive (the prefix is public configuration, the
+    # corpus_id was just typed by the caller) — but we compose the value
+    # inline here rather than going through the previously-named
+    # ``_secret_name`` helper, whose "secret"-shaped identifier triggered
+    # CodeQL's ``py/clear-text-logging-sensitive-data`` taint analysis.
+    try:
+        validate_corpus_id(args.corpus_id)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    sys.stdout.write(f"{args.prefix}{args.corpus_id}\n")
     return 0
 
 

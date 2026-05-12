@@ -17,7 +17,7 @@ pytest.importorskip("azure.keyvault.secrets.aio", reason="CLI lazy-imports the a
 
 from azure.core.exceptions import ResourceNotFoundError
 
-from fireflyframework_agentic.exposure.mcp import token_cli
+from examples.corpus_search import firefly_mcp_token as token_cli
 
 
 class _FakeSecret:
