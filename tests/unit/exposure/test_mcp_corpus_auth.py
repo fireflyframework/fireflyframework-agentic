@@ -216,6 +216,55 @@ def test_log_capture_does_not_contain_raw_token(caplog: pytest.LogCaptureFixture
     assert "wrong-token" not in captured
 
 
+def test_initialize_passes_through_without_corpus_id() -> None:
+    """The MCP handshake has no corpus_id; middleware must let it through."""
+    store = _StubStore({"demo": "secret-token"})
+    client = TestClient(_make_app(store=store))
+    response = client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "0"},
+            },
+        },
+        headers={"Authorization": "Bearer secret-token"},
+    )
+    assert response.status_code == 200
+    # Bearer is required even for lifecycle methods.
+    response = client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {}},
+    )
+    assert response.status_code == 401
+
+
+def test_tools_list_passes_through_without_corpus_id() -> None:
+    store = _StubStore({"demo": "secret-token"})
+    client = TestClient(_make_app(store=store))
+    response = client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+        headers={"Authorization": "Bearer secret-token"},
+    )
+    assert response.status_code == 200
+
+
+def test_notifications_pass_through_without_corpus_id() -> None:
+    store = _StubStore({"demo": "secret-token"})
+    client = TestClient(_make_app(store=store))
+    response = client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+        headers={"Authorization": "Bearer secret-token"},
+    )
+    assert response.status_code == 200
+
+
 def test_authorised_corpora_contextvar_is_set() -> None:
     """The middleware must populate the contextvar list_corpora reads."""
     from fastapi import FastAPI

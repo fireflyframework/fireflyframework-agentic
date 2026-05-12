@@ -38,6 +38,14 @@ logger = logging.getLogger(__name__)
 _EXCLUDED_PATHS: frozenset[str] = frozenset({"/healthz"})
 _JSONRPC_ERR_AUTH = -32001
 
+# MCP lifecycle methods that do not operate on a corpus. They carry no
+# ``corpus_id`` argument by design, so the middleware passes them through
+# without per-corpus authorisation. The security boundary is ``tools/call``:
+# every data-fetching call must still present a matching bearer.
+_LIFECYCLE_METHODS: frozenset[str] = frozenset(
+    {"initialize", "initialized", "ping", "tools/list", "resources/list", "prompts/list"}
+)
+
 
 def _err(status: int, detail: str) -> JSONResponse:
     return JSONResponse(
@@ -92,6 +100,12 @@ class CorpusAuthMiddleware(BaseHTTPMiddleware):
             return _err(401, "Missing or malformed Authorization header")
 
         body = await request.body()
+        method = self._extract_method(body)
+        if method is not None and (method in _LIFECYCLE_METHODS or method.startswith("notifications/")):
+            # Lifecycle / discovery / notification — no per-corpus check.
+            request._body = body  # type: ignore[attr-defined]
+            return await call_next(request)
+
         corpus_id = self._extract_corpus_id(body)
         if corpus_id is None:
             return _err(400, "Missing corpus_id in tool arguments")
@@ -114,6 +128,21 @@ class CorpusAuthMiddleware(BaseHTTPMiddleware):
             return None
         token = header[7:].strip()
         return token or None
+
+    @staticmethod
+    def _extract_method(body: bytes) -> str | None:
+        if not body:
+            return None
+        try:
+            doc = json.loads(body)
+        except json.JSONDecodeError:
+            return None
+        first = doc[0] if isinstance(doc, list) else doc
+        if isinstance(first, dict):
+            value = first.get("method")
+            if isinstance(value, str):
+                return value
+        return None
 
     @staticmethod
     def _extract_corpus_id(body: bytes) -> str | None:
