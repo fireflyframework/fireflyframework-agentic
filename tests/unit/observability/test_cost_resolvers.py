@@ -171,3 +171,50 @@ def test_genai_prices_no_provider_prefix_passes_none_provider() -> None:
         genai_prices_cost(CostContext(model="gpt-4o", input_tokens=1, output_tokens=1))
     assert captured["model_ref"] == "gpt-4o"
     assert captured["provider_id"] is None
+
+
+from fireflyframework_agentic.observability.cost.resolvers import (  # noqa: E402
+    DEFAULT_RESOLVERS,
+    resolve_cost,
+)
+
+
+def test_resolve_cost_uses_first_non_none() -> None:
+    def always_one(_ctx: CostContext) -> float | None:
+        return 1.23
+    def never_called(_ctx: CostContext) -> float | None:
+        raise AssertionError("should not be called")
+    ctx = CostContext(model="x", input_tokens=1, output_tokens=1)
+    assert resolve_cost(ctx, [always_one, never_called]) == 1.23
+
+
+def test_resolve_cost_falls_through_to_next() -> None:
+    def abstain(_ctx: CostContext) -> float | None:
+        return None
+    def answer(_ctx: CostContext) -> float | None:
+        return 7.0
+    ctx = CostContext(model="x", input_tokens=1, output_tokens=1)
+    assert resolve_cost(ctx, [abstain, answer]) == 7.0
+
+
+def test_resolve_cost_all_none_returns_zero() -> None:
+    def abstain(_ctx: CostContext) -> float | None:
+        return None
+    ctx = CostContext(model="x", input_tokens=1, output_tokens=1)
+    assert resolve_cost(ctx, [abstain, abstain]) == 0.0
+
+
+def test_resolve_cost_default_chain_used_when_none() -> None:
+    # Default chain = [provider_reported_cost, genai_prices_cost].
+    # With a payload carrying cost, provider_reported_cost wins; genai-prices
+    # is not consulted (no patch needed).
+    ctx = CostContext(
+        model="openrouter:x", input_tokens=1, output_tokens=1,
+        provider_payload={"usage": {"cost": 0.42}},
+    )
+    assert resolve_cost(ctx) == 0.42
+
+
+def test_default_resolvers_is_tuple() -> None:
+    assert isinstance(DEFAULT_RESOLVERS, tuple)
+    assert len(DEFAULT_RESOLVERS) == 2

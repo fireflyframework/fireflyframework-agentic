@@ -123,3 +123,16 @@ def genai_prices_cost(ctx: CostContext) -> float | None:
     if ctx.tier == CallTier.BATCH:
         total *= 0.5
     return total
+
+
+DEFAULT_RESOLVERS: tuple[CostFn, ...] = (provider_reported_cost, genai_prices_cost)
+
+
+def resolve_cost(ctx: CostContext, resolvers: Sequence[CostFn] | None = None) -> float:
+    """Return the first non-None result from the chain, else 0.0."""
+    chain = resolvers if resolvers is not None else DEFAULT_RESOLVERS
+    for fn in chain:
+        result = fn(ctx)
+        if result is not None:
+            return float(result)
+    return 0.0
