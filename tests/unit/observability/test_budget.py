@@ -1,3 +1,6 @@
+from datetime import UTC, datetime
+from unittest.mock import patch
+
 import pytest
 
 from fireflyframework_agentic.exceptions import BudgetExceededError
@@ -121,3 +124,43 @@ def test_gate_reset_single_rule_and_all() -> None:
     assert gate.spend("b") == pytest.approx(3.0)
     gate.reset()
     assert gate.spend("b") == 0.0
+
+
+def test_gate_resets_accumulator_when_daily_bucket_changes() -> None:
+    gate = BudgetGate([BudgetRule(name="d", limit_usd=10.0, window=BudgetWindow.DAILY)])
+
+    day1 = datetime(2026, 5, 12, 23, 30, tzinfo=UTC)
+    day2 = datetime(2026, 5, 13, 0, 30, tzinfo=UTC)
+
+    with patch("fireflyframework_agentic.observability.budget.datetime") as dt:
+        dt.now.return_value = day1
+        gate.commit(UsageRecord(cost_usd=8.0), ScopeContext())
+        assert gate.spend("d") == pytest.approx(8.0)
+
+        dt.now.return_value = day2
+        gate.commit(UsageRecord(cost_usd=3.0), ScopeContext())  # new bucket; no raise
+        assert gate.spend("d") == pytest.approx(3.0)
+
+
+def test_gate_resets_accumulator_when_monthly_bucket_changes() -> None:
+    gate = BudgetGate([BudgetRule(name="m", limit_usd=10.0, window=BudgetWindow.MONTHLY)])
+    mid_april = datetime(2026, 4, 15, 12, 0, tzinfo=UTC)
+    mid_may = datetime(2026, 5, 15, 12, 0, tzinfo=UTC)
+    with patch("fireflyframework_agentic.observability.budget.datetime") as dt:
+        dt.now.return_value = mid_april
+        gate.commit(UsageRecord(cost_usd=9.0), ScopeContext())
+        dt.now.return_value = mid_may
+        gate.commit(UsageRecord(cost_usd=2.0), ScopeContext())  # new month bucket
+        assert gate.spend("m") == pytest.approx(2.0)
+
+
+def test_gate_lifetime_never_resets() -> None:
+    gate = BudgetGate([BudgetRule(name="l", limit_usd=100.0, window=BudgetWindow.LIFETIME)])
+    t1 = datetime(2026, 1, 1, tzinfo=UTC)
+    t2 = datetime(2027, 6, 30, tzinfo=UTC)
+    with patch("fireflyframework_agentic.observability.budget.datetime") as dt:
+        dt.now.return_value = t1
+        gate.commit(UsageRecord(cost_usd=3.0), ScopeContext())
+        dt.now.return_value = t2
+        gate.commit(UsageRecord(cost_usd=2.0), ScopeContext())
+        assert gate.spend("l") == pytest.approx(5.0)
