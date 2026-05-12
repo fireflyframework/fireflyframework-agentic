@@ -33,7 +33,8 @@ def test_cost_context_is_frozen() -> None:
 def test_provider_reported_cost_openrouter() -> None:
     ctx = CostContext(
         model="openrouter:any/model",
-        input_tokens=1, output_tokens=1,
+        input_tokens=1,
+        output_tokens=1,
         provider_payload={"usage": {"cost": 0.0123}},
     )
     assert provider_reported_cost(ctx) == 0.0123
@@ -51,7 +52,9 @@ def test_provider_reported_cost_no_payload_returns_none() -> None:
 
 def test_provider_reported_cost_malformed_returns_none() -> None:
     ctx = CostContext(
-        model="x", input_tokens=1, output_tokens=1,
+        model="x",
+        input_tokens=1,
+        output_tokens=1,
         provider_payload={"usage": {"cost": "not-a-number"}},
     )
     assert provider_reported_cost(ctx) is None
@@ -73,11 +76,14 @@ def test_genai_prices_basic_input_output() -> None:
         captured["provider_id"] = provider_id
         return _price_calc(0.0075)
 
-    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price",
-               side_effect=fake_calc):
-        cost = genai_prices_cost(CostContext(
-            model="openai:gpt-4o", input_tokens=1000, output_tokens=500,
-        ))
+    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price", side_effect=fake_calc):
+        cost = genai_prices_cost(
+            CostContext(
+                model="openai:gpt-4o",
+                input_tokens=1000,
+                output_tokens=500,
+            )
+        )
     assert cost == pytest.approx(0.0075)
     assert captured["model_ref"] == "gpt-4o"
     assert captured["provider_id"] == "openai"
@@ -100,11 +106,12 @@ def test_genai_prices_folds_cache_tokens_into_usage_input() -> None:
 
     ctx = CostContext(
         model="anthropic:claude-3-5-sonnet-latest",
-        input_tokens=100, output_tokens=50,
-        cache_creation_tokens=1000, cache_read_tokens=5000,
+        input_tokens=100,
+        output_tokens=50,
+        cache_creation_tokens=1000,
+        cache_read_tokens=5000,
     )
-    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price",
-               side_effect=fake_calc):
+    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price", side_effect=fake_calc):
         genai_prices_cost(ctx)
     u = captured["usage"]
     assert u.input_tokens == 100 + 1000 + 5000
@@ -119,41 +126,40 @@ def test_genai_prices_folds_reasoning_into_output() -> None:
         captured["usage"] = usage
         return _price_calc(0.0)
 
-    ctx = CostContext(model="openai:o3", input_tokens=100, output_tokens=50,
-                      reasoning_tokens=200)
-    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price",
-               side_effect=fake_calc):
+    ctx = CostContext(model="openai:o3", input_tokens=100, output_tokens=50, reasoning_tokens=200)
+    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price", side_effect=fake_calc):
         genai_prices_cost(ctx)
     assert captured["usage"].output_tokens == 50 + 200
 
 
 def test_genai_prices_batch_tier_halves() -> None:
-    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price",
-               return_value=_price_calc(0.006)):
-        cost = genai_prices_cost(CostContext(
-            model="openai:gpt-4.1", input_tokens=1000, output_tokens=500,
-            tier=CallTier.BATCH,
-        ))
+    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price", return_value=_price_calc(0.006)):
+        cost = genai_prices_cost(
+            CostContext(
+                model="openai:gpt-4.1",
+                input_tokens=1000,
+                output_tokens=500,
+                tier=CallTier.BATCH,
+            )
+        )
     assert cost == pytest.approx(0.003)
 
 
 def test_genai_prices_unknown_model_returns_none(caplog: pytest.LogCaptureFixture) -> None:
     _resolvers_mod._UNKNOWN_MODEL_WARNED.clear()
-    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price",
-               side_effect=LookupError("not found")), caplog.at_level("WARNING"):
-        assert genai_prices_cost(CostContext(
-            model="unknown:foo", input_tokens=1, output_tokens=1)) is None
-        assert genai_prices_cost(CostContext(
-            model="unknown:foo", input_tokens=1, output_tokens=1)) is None
+    with (
+        patch("fireflyframework_agentic.observability.cost.resolvers.calc_price", side_effect=LookupError("not found")),
+        caplog.at_level("WARNING"),
+    ):
+        assert genai_prices_cost(CostContext(model="unknown:foo", input_tokens=1, output_tokens=1)) is None
+        assert genai_prices_cost(CostContext(model="unknown:foo", input_tokens=1, output_tokens=1)) is None
     warnings = [r for r in caplog.records if "unknown" in r.message.lower()]
     assert len(warnings) == 1  # deduplicated
 
 
 def test_genai_prices_swallows_other_exceptions() -> None:
-    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price",
-               side_effect=RuntimeError("boom")):
-        assert genai_prices_cost(CostContext(
-            model="x", input_tokens=1, output_tokens=1)) is None
+    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price", side_effect=RuntimeError("boom")):
+        assert genai_prices_cost(CostContext(model="x", input_tokens=1, output_tokens=1)) is None
 
 
 def test_genai_prices_no_provider_prefix_passes_none_provider() -> None:
@@ -164,8 +170,7 @@ def test_genai_prices_no_provider_prefix_passes_none_provider() -> None:
         captured["provider_id"] = provider_id
         return _price_calc(0.0)
 
-    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price",
-               side_effect=fake_calc):
+    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price", side_effect=fake_calc):
         genai_prices_cost(CostContext(model="gpt-4o", input_tokens=1, output_tokens=1))
     assert captured["model_ref"] == "gpt-4o"
     assert captured["provider_id"] is None
@@ -174,8 +179,10 @@ def test_genai_prices_no_provider_prefix_passes_none_provider() -> None:
 def test_resolve_cost_uses_first_non_none() -> None:
     def always_one(_ctx: CostContext) -> float | None:
         return 1.23
+
     def never_called(_ctx: CostContext) -> float | None:
         raise AssertionError("should not be called")
+
     ctx = CostContext(model="x", input_tokens=1, output_tokens=1)
     assert resolve_cost(ctx, [always_one, never_called]) == 1.23
 
@@ -183,8 +190,10 @@ def test_resolve_cost_uses_first_non_none() -> None:
 def test_resolve_cost_falls_through_to_next() -> None:
     def abstain(_ctx: CostContext) -> float | None:
         return None
+
     def answer(_ctx: CostContext) -> float | None:
         return 7.0
+
     ctx = CostContext(model="x", input_tokens=1, output_tokens=1)
     assert resolve_cost(ctx, [abstain, answer]) == 7.0
 
@@ -192,6 +201,7 @@ def test_resolve_cost_falls_through_to_next() -> None:
 def test_resolve_cost_all_none_returns_zero() -> None:
     def abstain(_ctx: CostContext) -> float | None:
         return None
+
     ctx = CostContext(model="x", input_tokens=1, output_tokens=1)
     assert resolve_cost(ctx, [abstain, abstain]) == 0.0
 
@@ -201,7 +211,9 @@ def test_resolve_cost_default_chain_used_when_none() -> None:
     # With a payload carrying cost, provider_reported_cost wins; genai-prices
     # is not consulted (no patch needed).
     ctx = CostContext(
-        model="openrouter:x", input_tokens=1, output_tokens=1,
+        model="openrouter:x",
+        input_tokens=1,
+        output_tokens=1,
         provider_payload={"usage": {"cost": 0.42}},
     )
     assert resolve_cost(ctx) == 0.42

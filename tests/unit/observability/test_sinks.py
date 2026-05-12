@@ -61,9 +61,15 @@ def test_cost_sink_protocol_is_runtime_checkable() -> None:
 
 
 def test_otel_metrics_sink_calls_record_tokens() -> None:
-    rec = UsageRecord(agent="a", model="openai:gpt-4o",
-                      input_tokens=10, output_tokens=5, total_tokens=15,
-                      cost_usd=0.001, latency_ms=200.0)
+    rec = UsageRecord(
+        agent="a",
+        model="openai:gpt-4o",
+        input_tokens=10,
+        output_tokens=5,
+        total_tokens=15,
+        cost_usd=0.001,
+        latency_ms=200.0,
+    )
     with patch("fireflyframework_agentic.observability.sinks.default_metrics") as m:
         OTelMetricsSink().emit(rec)
         m.record_tokens.assert_called_with(15, agent="a", model="openai:gpt-4o")
@@ -74,13 +80,19 @@ def test_otel_metrics_sink_calls_record_tokens() -> None:
 
 
 def test_event_bus_sink_calls_agent_completed() -> None:
-    rec = UsageRecord(agent="a", model="x", total_tokens=10,
-                      input_tokens=6, output_tokens=4, latency_ms=50.0, cost_usd=0.01)
+    rec = UsageRecord(
+        agent="a", model="x", total_tokens=10, input_tokens=6, output_tokens=4, latency_ms=50.0, cost_usd=0.01
+    )
     with patch("fireflyframework_agentic.observability.sinks.default_events") as e:
         EventBusSink().emit(rec)
         e.agent_completed.assert_called_once_with(
-            "a", tokens=10, latency_ms=50.0, model="x",
-            cost_usd=0.01, input_tokens=6, output_tokens=4,
+            "a",
+            tokens=10,
+            latency_ms=50.0,
+            model="x",
+            cost_usd=0.01,
+            input_tokens=6,
+            output_tokens=4,
         )
 
 
@@ -88,8 +100,7 @@ def test_logging_sink_emits_at_info(caplog: pytest.LogCaptureFixture) -> None:
     rec = UsageRecord(agent="a", total_tokens=5, cost_usd=0.001)
     with caplog.at_level(logging.INFO, logger="fireflyframework_agentic.observability.sinks"):
         LoggingSink().emit(rec)
-    assert any('"agent":"a"' in r.message or "'agent': 'a'" in r.message
-               or "a" in r.message for r in caplog.records)
+    assert any('"agent":"a"' in r.message or "'agent': 'a'" in r.message or "a" in r.message for r in caplog.records)
 
 
 def test_jsonl_file_sink_writes_one_line_per_record(tmp_path: Path) -> None:
@@ -123,8 +134,7 @@ def test_webhook_sink_batches_and_flushes() -> None:
         m.status_code = 200
         return m
 
-    sink = WebhookSink("https://example.test/cost", batch_size=3,
-                      flush_interval_s=10.0, _post=fake_post)
+    sink = WebhookSink("https://example.test/cost", batch_size=3, flush_interval_s=10.0, _post=fake_post)
     for i in range(5):
         sink.emit(UsageRecord(agent=f"a{i}", cost_usd=0.01))
     sink.close()  # forces drain
@@ -140,8 +150,7 @@ def test_webhook_sink_retries_5xx_then_succeeds() -> None:
         m.status_code = 500 if attempts["n"] < 2 else 200
         return m
 
-    sink = WebhookSink("https://example.test/cost", batch_size=1,
-                      flush_interval_s=10.0, max_retries=3, _post=fake_post)
+    sink = WebhookSink("https://example.test/cost", batch_size=1, flush_interval_s=10.0, max_retries=3, _post=fake_post)
     sink.emit(UsageRecord(agent="a", cost_usd=0.01))
     sink.close()
     assert attempts["n"] >= 2
@@ -153,10 +162,8 @@ def test_webhook_sink_drops_after_max_retries(caplog: pytest.LogCaptureFixture) 
         m.status_code = 500
         return m
 
-    sink = WebhookSink("https://x", batch_size=1, flush_interval_s=10.0,
-                      max_retries=2, _post=always_fail)
+    sink = WebhookSink("https://x", batch_size=1, flush_interval_s=10.0, max_retries=2, _post=always_fail)
     with caplog.at_level(logging.WARNING):
         sink.emit(UsageRecord(agent="a", cost_usd=0.01))
         sink.close()
-    assert any("drop" in r.message.lower() or "fail" in r.message.lower()
-               for r in caplog.records)
+    assert any("drop" in r.message.lower() or "fail" in r.message.lower() for r in caplog.records)

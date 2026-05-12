@@ -261,9 +261,7 @@ class CostGuardMiddleware:
         self._warn_only = warn_only
         self._per_call_limit = per_call_limit_usd
         mode = BudgetMode.SOFT if warn_only else BudgetMode.HARD
-        self._gate = BudgetGate(
-            [BudgetRule(name="costguard", limit_usd=budget_usd, mode=mode)]
-        )
+        self._gate = BudgetGate([BudgetRule(name="costguard", limit_usd=budget_usd, mode=mode)])
 
     def _get_tracker(self) -> Any:
         if self._tracker is not None:

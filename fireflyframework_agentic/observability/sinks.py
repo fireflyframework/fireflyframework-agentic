@@ -60,25 +60,15 @@ class OTelMetricsSink:
 
     def emit(self, record: UsageRecord) -> None:
         if record.total_tokens > 0:
-            default_metrics.record_tokens(
-                record.total_tokens, agent=record.agent, model=record.model
-            )
+            default_metrics.record_tokens(record.total_tokens, agent=record.agent, model=record.model)
         if record.input_tokens > 0:
-            default_metrics.record_prompt_tokens(
-                record.input_tokens, agent=record.agent, model=record.model
-            )
+            default_metrics.record_prompt_tokens(record.input_tokens, agent=record.agent, model=record.model)
         if record.output_tokens > 0:
-            default_metrics.record_completion_tokens(
-                record.output_tokens, agent=record.agent, model=record.model
-            )
+            default_metrics.record_completion_tokens(record.output_tokens, agent=record.agent, model=record.model)
         if record.cost_usd > 0:
-            default_metrics.record_cost(
-                record.cost_usd, agent=record.agent, model=record.model
-            )
+            default_metrics.record_cost(record.cost_usd, agent=record.agent, model=record.model)
         if record.latency_ms > 0:
-            default_metrics.record_latency(
-                record.latency_ms, operation="agent.run", agent=record.agent
-            )
+            default_metrics.record_latency(record.latency_ms, operation="agent.run", agent=record.agent)
 
     def flush(self) -> None: ...
     def close(self) -> None: ...
@@ -238,8 +228,7 @@ class WebhookSink:
                     time.sleep(delay)
                     delay *= 2
                     continue
-                logger.warning("WebhookSink: dropping batch after exhausted retries",
-                               exc_info=True)
+                logger.warning("WebhookSink: dropping batch after exhausted retries", exc_info=True)
                 self._record_sink_error()
                 return
 
