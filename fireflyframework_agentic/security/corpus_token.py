@@ -107,4 +107,9 @@ class CorpusTokenStore(Protocol):
     fail closed (``503``).
     """
 
-    async def get_corpus_token(self, corpus_id: str) -> str | None: ...
+    async def get_corpus_token(self, corpus_id: str) -> str | None:
+        # ``raise NotImplementedError`` keeps this method body unambiguous
+        # for static analysers that flag bare ``...`` as "statement has
+        # no effect", while staying inert at runtime — Protocol methods
+        # are never called via the Protocol class itself.
+        raise NotImplementedError
