@@ -82,7 +82,7 @@ async def _cmd_create(args: argparse.Namespace) -> int:
     try:
         if not args.force and await _secret_exists(client, name):
             print(
-                f"error: secret {name!r} already exists. Use 'rotate' to "
+                "error: secret already exists. Use 'rotate' to "
                 "replace its value, or pass --force to overwrite.",
                 file=sys.stderr,
             )
