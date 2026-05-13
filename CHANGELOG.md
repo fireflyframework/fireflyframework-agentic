@@ -42,6 +42,20 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 
 ### Fixed
 
+- **`firefly-mcp-http` logs unhandled asyncio task exceptions to stderr
+  before the loop has a chance to die silently.** Previously, an
+  exception in a task scheduled on the asyncio loop (request-cleanup
+  callbacks, fire-and-forget tool work, SSE long-poll teardown) was
+  routed by ``BaseEventLoop`` to the ``asyncio`` logger at ERROR — but
+  uvicorn's default log config doesn't surface that logger. Operators
+  saw "the server died" / "the bridge can't reconnect" with no
+  traceback. The CLI now installs a loop-level exception handler that
+  routes through ``logging.getLogger("…http_cli")`` (which
+  ``basicConfig`` wires up at startup, level overridable via
+  ``FIREFLY_MCP_LOG_LEVEL``), preserving the exception's traceback via
+  ``exc_info=``. Does NOT swallow exceptions or change loop behaviour
+  — only makes them visible.
+
 - **LocalBackend corpus state now lives under `CORPUS_ROOT`, not in
   `~/.cache/`.** `DatabaseStore` previously kept its working copy at
   `~/.cache/fireflyframework_agentic/dbstore/<store_id>/db.sqlite` for
