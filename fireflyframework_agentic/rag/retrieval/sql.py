@@ -81,8 +81,8 @@ def _unaccent_lower(value: str | None) -> str | None:
     """Strip combining diacritics and lowercase ``value``.
 
     Registered as a SQLite UDF on every connection (see :func:`_connect`).
-    Lets ``unaccent_lower(col) LIKE '%alvarez%'`` match rows that contain
-    ``Álvarez`` portably, without needing the SQLite ICU extension. The
+    Lets ``unaccent_lower(col) LIKE '%brewster%'`` match rows that contain
+    ``Bréwster`` portably, without needing the SQLite ICU extension. The
     function is pure and deterministic — safe to register with the
     ``deterministic=True`` flag.
     """
@@ -155,8 +155,8 @@ def _build_inspect_tool(ctx: _LoopContext) -> Any:
           - ``value_range``: MIN/MAX of *column*
           - ``find_similar``: case-insensitive, accent-folded substring match
             against the literal *value*. The value is tokenised on whitespace
-            and matched as AND-of-LIKEs (so ``"Javier Alvarez"`` matches
-            ``"Francisco Javier Álvarez Fernández"``). Falls back to OR-of-
+            and matched as AND-of-LIKEs (so ``"Sam Lee"`` matches
+            ``"Patrick Ulric Bréwster Fernández"``). Falls back to OR-of-
             tokens if AND yields zero matches. Use this for free-text filters
             on names / entities where the user's spelling may not be exact.
           - ``numeric_summary``: total rows, non-null count, null count, sum,
@@ -462,15 +462,15 @@ Worked example 1 (illustrative; no real corpus):
              "GROUP BY product_name")
 
 Worked example 2 (ambiguous person name):
-  Question: "Who is Javier Alvarez's manager?"
+  Question: "Who is Sam Lee's manager?"
   Schema: employees (id int, name string, manager_id int, ...)
   Reasoning: stored names may carry accents and middle names; the user's
              string almost certainly is not the literal full name.
 
-  inspect_table(employees, name, 'find_similar', value='Javier Alvarez')
-    -> ['Francisco Javier Álvarez Fernández', 'María Álvarez', ...]
+  inspect_table(employees, name, 'find_similar', value='Sam Lee')
+    -> ['Patrick Ulric Bréwster Fernández', 'Léa Bréwster', ...]
   run_select("SELECT name, manager_id FROM employees "
-             "WHERE name = 'Francisco Javier Álvarez Fernández'")
+             "WHERE name = 'Patrick Ulric Bréwster Fernández'")
 
   If find_similar returns multiple candidates and the question does not
   pick one, return rows for all candidates (WHERE name IN (...)) so the

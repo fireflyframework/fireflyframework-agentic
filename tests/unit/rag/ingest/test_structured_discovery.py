@@ -46,7 +46,7 @@ async def test_discover_schema_csv(csv_file: Path):
     mock_result = MagicMock()
     mock_result.output = expected
 
-    with patch("fireflyframework_agentic.rag.ingest.structured_registry.create_extractor_agent") as mock_factory:
+    with patch("fireflyframework_agentic.rag.ingest.structured_registry._make_discovery_agent") as mock_factory:
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_result)
         mock_factory.return_value = mock_agent
@@ -63,7 +63,7 @@ async def test_discover_schema_passes_sample_to_agent(csv_file: Path):
         tables=[TableSpec(name="sales", columns=[ColumnSpec(name="id", type=ColumnType.integer)])]
     )
 
-    with patch("fireflyframework_agentic.rag.ingest.structured_registry.create_extractor_agent") as mock_factory:
+    with patch("fireflyframework_agentic.rag.ingest.structured_registry._make_discovery_agent") as mock_factory:
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_result)
         mock_factory.return_value = mock_agent
@@ -168,7 +168,7 @@ async def test_discover_schema_for_paths_combines_samples(tmp_path: Path):
     mock_result = MagicMock()
     mock_result.output = expected
 
-    with patch("fireflyframework_agentic.rag.ingest.structured_registry.create_extractor_agent") as mock_factory:
+    with patch("fireflyframework_agentic.rag.ingest.structured_registry._make_discovery_agent") as mock_factory:
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_result)
         mock_factory.return_value = mock_agent
@@ -226,7 +226,7 @@ async def test_discover_schema_for_paths_with_corrections(tmp_path: Path):
     mock_result = MagicMock()
     mock_result.output = expected
 
-    with patch("fireflyframework_agentic.rag.ingest.structured_registry.create_extractor_agent") as mock_factory:
+    with patch("fireflyframework_agentic.rag.ingest.structured_registry._make_discovery_agent") as mock_factory:
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_result)
         mock_factory.return_value = mock_agent
@@ -339,26 +339,25 @@ def test_skill_prompt_forbids_unit_on_non_numeric_columns() -> None:
     assert "Do NOT set ``unit`` on string" in _SKILL
 
 
-@pytest.mark.asyncio
-async def test_discover_schema_passes_unit_aware_prompt(csv_file: Path) -> None:
-    """End-to-end-ish: confirm ``discover_schema`` actually hands the
-    unit-aware ``_SKILL`` to the extractor agent (not a stripped-down
-    copy by accident).
+def test_make_discovery_agent_uses_skill_as_full_instructions() -> None:
+    """Confirm the discovery agent's instructions are ``_SKILL`` itself,
+    not the generic extractor preamble + ``_SKILL``. The extractor base
+    template told the model to "return null when not found" — and on a
+    ``TargetSchema`` the only nullable shape is ``{}``, which is what
+    the model produced on messy workbooks. Drop the template; use
+    ``_SKILL`` whole.
     """
-    mock_result = MagicMock()
-    mock_result.output = TargetSchema(
-        tables=[TableSpec(name="sales", columns=[ColumnSpec(name="id", type=ColumnType.integer)])]
-    )
-    with patch("fireflyframework_agentic.rag.ingest.structured_registry.create_extractor_agent") as mock_factory:
-        mock_agent = MagicMock()
-        mock_agent.run = AsyncMock(return_value=mock_result)
-        mock_factory.return_value = mock_agent
-        await discover_schema(csv_file)
-    # The agent factory's ``extra_instructions`` kwarg must carry the
-    # unit-inference guidance.
-    kwargs = mock_factory.call_args.kwargs
-    assert "extra_instructions" in kwargs
-    assert "Unit inference" in kwargs["extra_instructions"]
+    from fireflyframework_agentic.rag.ingest.structured_registry import _SKILL, _make_discovery_agent
+
+    agent = _make_discovery_agent("anthropic:claude-sonnet-4-6")
+    # FireflyAgent stores instructions on the underlying pydantic_ai
+    # agent; surface them by re-reading the same source-of-truth.
+    assert agent.name == "schema_discovery"
+    # The unit-inference guidance must still reach the model.
+    assert "Unit inference" in _SKILL
+    # And the extractor preamble that conflicted with the output
+    # contract must NOT be silently merged back in.
+    assert "If a field cannot be found, return null" not in _SKILL
 
 
 # ---- Header-row detection for messy Excel sheets ------------------------
@@ -381,7 +380,7 @@ def test_pick_header_row_idx_skips_numeric_banner_row():
     rows = [
         (None, None, 1, 2, 3, 4, None),
         ("PRID", "EMPLOYEE_ID", "NAME", "REGION", "REVENUE", "COST", "NOTES"),
-        ("kkxf270", 4286, "Alice", "EU", 1000.0, 800.0, "-"),
+        ("test001", 4286, "Alice", "EU", 1000.0, 800.0, "-"),
     ]
     assert _pick_header_row_idx(rows) == 1
 
@@ -446,3 +445,187 @@ def test_skill_prompt_requires_non_empty_schema():
     # not the rule — otherwise the model generalises "be conservative" to
     # the whole schema and returns ``{}``.
     assert "ONLY to the" in _SKILL or "only to the" in _SKILL.lower()
+
+
+# ---- Real-world workbook regression: the source workbook ----
+#
+# After the first fix (`e9e4dc8`) the user re-ran discovery on a Mexican
+# sales-tracking workbook with eight sheets and still hit
+# ``ValidationError: tables Field required, input_value={}``. Offline
+# investigation against the actual file showed three concrete defects
+# that the first fix didn't cover:
+#
+#   * One sheet (``an archive sheet``) has the real header at row 8 —
+#     past the prior 8-row scan window, so the picker returned 0 and
+#     the sample for that sheet was six rows of mostly-None garbage.
+#   * One sheet (``pivot sheet``) has a 2-cell decorative title at row 0
+#     ``['DECORATIVE TITLE', '(en blanco)']`` that satisfies every
+#     "string-dominated, multi-cell" rule yet isn't the real header.
+#     The real header sits at row 2 with five string cells.
+#   * One sheet (``Sheet1``) is essentially blank but openpyxl still
+#     reports three rows, so it leaked a ``Headers: [None, None, None]``
+#     block into the LLM prompt, biasing the model toward empty output.
+
+
+def test_pick_header_row_idx_finds_header_past_row_eight():
+    """Hard regression for ``an archive sheet``: scan window must reach
+    far enough to find the real header at row 8. With the prior ``[:8]``
+    cap the header was literally invisible.
+    """
+    from fireflyframework_agentic.rag.ingest.structured_registry import _pick_header_row_idx
+
+    rows = [
+        (None, None, None, None, None, None, None, None, None, "LEGEND ENTRY 1", None, None),
+        (None, None, None, None, None, None, None, None, None, "LEGEND ENTRY 2", None, None),
+        (None, None, None, None, None, None, None, None, None, "LEGEND ENTRY 3", None, None),
+        (None, None, None, None, None, None, None, None, None, "LEGEND ENTRY 4", None, None),
+        (None, None, None, None, None, None, None, None, None, "LEGEND ENTRY 5", None, None),
+        (None, None, None, None, None, None, None, None, None, None, None, None),
+        (None, None, None, None, None, None, None, None, None, None, None, None),
+        (None, None, None, None, None, None, None, None, None, None, None, None),
+        (
+            None,
+            "PRID",
+            "NUMERO DE EMPLEADO",
+            "NO. WORK DAY",
+            "FECHA DE INGRESO",
+            "CENTRO DE COSTOS",
+            "RUTA",
+            "GENERO",
+            "NOMBRE EMPLEADO",
+            "POSICION",
+            "LOCALIDAD",
+            "UNIDAD DE NEGOCIO",
+        ),
+        (
+            None,
+            "test002",
+            2651,
+            8214483,
+            "2013-05-03",
+            430000,
+            100001,
+            "MASCULINO",
+            "ANON EMPLOYEE ONE",
+            "DIRECTOR",
+            "CDMX",
+            "CVRM",
+        ),
+    ]
+    assert _pick_header_row_idx(rows) == 8
+
+
+def test_pick_header_row_idx_prefers_wider_real_header_over_decorative_title():
+    """Hard regression for ``pivot sheet``: a 2-cell decorative title satisfies
+    every previous rule (multi-cell, 100% string-dominant) but isn't the
+    real header. The picker must prefer the wider 5-cell header below.
+    """
+    from fireflyframework_agentic.rag.ingest.structured_registry import _pick_header_row_idx
+
+    rows = [
+        ("DECORATIVE TITLE", "(en blanco)", None, None, None),
+        (None, None, None, None, None),
+        (
+            "Etiquetas de fila",
+            "Average Score",
+            "Cuenta de TOTAL INTERACCIONES",
+            "Promedio de AVG INTERACCIONES",
+            "Suma de Eventos",
+        ),
+        ("REPRESENTANTE", 1.04, 346, 8.71, 3822),
+        ("BREAST CANCER", 1.00, 13, 5.44, 149),
+    ]
+    assert _pick_header_row_idx(rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_discover_schema_raises_with_diagnostic_on_empty_output(csv_file: Path) -> None:
+    """When the LLM returns an empty schema, ``discover_schema`` must
+    raise ``ValueError`` with sheet/source context + a truncated sample,
+    NOT propagate pydantic-ai's terse ``Field required`` retry storm.
+    """
+    mock_result = MagicMock()
+    mock_result.output = TargetSchema()  # default empty tables list
+
+    with patch("fireflyframework_agentic.rag.ingest.structured_registry._make_discovery_agent") as mock_factory:
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value=mock_result)
+        mock_factory.return_value = mock_agent
+        with pytest.raises(ValueError) as exc_info:
+            await discover_schema(csv_file)
+
+    msg = str(exc_info.value)
+    # Source label.
+    assert "sales.csv" in msg
+    # Actionable remediation.
+    assert "corrections=" in msg
+    # Sample echoed back so the user / agent can see what the model saw.
+    assert "Sample sent to the model" in msg
+
+
+def test_target_schema_defaults_tables_to_empty_list():
+    """``TargetSchema()`` must accept ``{}`` and produce ``tables=[]``.
+    The prior ``list[TableSpec]`` required-field shape made every empty
+    LLM output trigger pydantic-ai's retry-on-validation loop, which
+    masked the real failure mode with an opaque ``UnexpectedModelBehavior``.
+    """
+    s = TargetSchema.model_validate({})
+    assert s.tables == []
+    s2 = TargetSchema()
+    assert s2.tables == []
+
+
+def test_excel_sample_skips_sheets_with_no_usable_header(tmp_path: Path) -> None:
+    """``_excel_sample`` must drop sheets whose chosen header row is
+    structurally empty (no strings or <2 non-null cells). Such sheets
+    surfaced as ``Headers: [None, None, None]`` blocks in the LLM
+    prompt and biased the model toward returning ``{}``.
+    """
+    openpyxl = pytest.importorskip("openpyxl")
+    from fireflyframework_agentic.rag.ingest.structured_registry import _excel_sample
+
+    wb = openpyxl.Workbook()
+    # Default sheet — ghost: empty + one stray note at row 3.
+    ghost = wb.active
+    ghost.title = "Ghost"
+    ghost["C3"] = "stray note"
+    # Real sheet with a clean header row.
+    real = wb.create_sheet("Real")
+    real.append(["id", "name", "amount"])
+    real.append([1, "Alice", 9.99])
+    real.append([2, "Bob", 19.99])
+    xlsx = tmp_path / "mixed.xlsx"
+    wb.save(xlsx)
+
+    sample = _excel_sample(xlsx)
+    assert "Sheet (table): real" in sample
+    assert "Sheet (table): ghost" not in sample
+    assert "[None, None, None]" not in sample
+
+
+def test_excel_sample_finds_header_deep_in_sheet(tmp_path: Path) -> None:
+    """End-to-end regression for the ``an archive sheet`` pattern: a
+    sheet whose real header sits at row 9 (past the prior 8-row scan
+    window) must still produce a sample with that header as ``Headers:``.
+    """
+    openpyxl = pytest.importorskip("openpyxl")
+    from fireflyframework_agentic.rag.ingest.structured_registry import _excel_sample
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Deep"
+    # 8 single-cell decorative title rows.
+    for i in range(8):
+        ws.cell(row=i + 1, column=10, value=f"TITLE LINE {i + 1}")
+    # Real header at row 9, with a leading-blank column (matches the
+    # workbook layout where column A is empty and B onward is data).
+    ws.append([None, "PRID", "EMPLOYEE_ID", "NAME", "REGION"])
+    ws.append([None, "test001", 4286, "ANON", "CDMX"])
+    xlsx = tmp_path / "deep.xlsx"
+    wb.save(xlsx)
+
+    sample = _excel_sample(xlsx)
+    assert "PRID" in sample
+    assert "EMPLOYEE_ID" in sample
+    # The decorative title should NOT have been mistaken for headers.
+    assert "TITLE LINE" not in sample.split("Headers:", 1)[1].split("\n", 1)[0]

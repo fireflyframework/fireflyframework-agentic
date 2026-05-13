@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ColumnType(StrEnum):
@@ -57,7 +57,13 @@ class TableSpec(BaseModel):
 
 
 class TargetSchema(BaseModel):
-    tables: list[TableSpec]
+    tables: list[TableSpec] = Field(default_factory=list)
+    """List of inferred tables. Defaults to ``[]`` so a model returning
+    ``{}`` (the common failure mode on messy / non-tabular inputs)
+    passes validation instead of triggering pydantic-ai's retry storm.
+    Callers that need a non-empty schema must check ``schema.tables``
+    explicitly and surface the emptiness to the user themselves.
+    """
 
 
 class SchemaFeedback(BaseModel):

@@ -46,9 +46,9 @@ def _employees_db(tmp_path: Path) -> Path:
     conn.executemany(
         "INSERT INTO employees VALUES (?,?,?)",
         [
-            (1, "Francisco Javier Álvarez Fernández Aragón", 99),
-            (2, "Javier Álvarez García", 99),
-            (3, "María Álvarez", 50),
+            (1, "Patrick Ulric Bréwster Häthaway Önken", 99),
+            (2, "Ulric Bréwster Wéntz", 99),
+            (3, "Léa Bréwster", 50),
             (4, "Bob Tan", 50),
             (5, "Alicia Pérez", 50),
         ],
@@ -62,8 +62,8 @@ def _employees_db(tmp_path: Path) -> Path:
 
 
 def test_unaccent_lower_strips_accents_and_lowercases():
-    assert _unaccent_lower("Álvarez") == "alvarez"
-    assert _unaccent_lower("FRANCISCO JAVIER") == "francisco javier"
+    assert _unaccent_lower("Bréwster") == "brewster"
+    assert _unaccent_lower("PATRICK ULRIC") == "patrick ulric"
     assert _unaccent_lower("Niño") == "nino"
     assert _unaccent_lower("") == ""
     assert _unaccent_lower(None) is None
@@ -73,21 +73,21 @@ def test_unaccent_lower_registered_on_connection(tmp_path: Path):
     db = _employees_db(tmp_path)
     with _connect(db) as conn:
         row = conn.execute("SELECT unaccent_lower(name) FROM employees WHERE id=1").fetchone()
-    assert row[0] == "francisco javier alvarez fernandez aragon"
+    assert row[0] == "patrick ulric brewster hathaway onken"
 
 
 def test_unaccent_lower_enables_like_match_through_diacritics(tmp_path: Path):
-    """The whole point: 'alvarez' must match 'Álvarez' under unaccent_lower."""
+    """The whole point: 'brewster' must match 'Bréwster' under unaccent_lower."""
     db = _employees_db(tmp_path)
     with _connect(db) as conn:
         rows = conn.execute(
             "SELECT name FROM employees WHERE unaccent_lower(name) LIKE ?",
-            ("%alvarez%",),
+            ("%brewster%",),
         ).fetchall()
     names = {r[0] for r in rows}
-    assert "Francisco Javier Álvarez Fernández Aragón" in names
-    assert "Javier Álvarez García" in names
-    assert "María Álvarez" in names
+    assert "Patrick Ulric Bréwster Häthaway Önken" in names
+    assert "Ulric Bréwster Wéntz" in names
+    assert "Léa Bréwster" in names
     assert "Bob Tan" not in names
 
 
@@ -100,14 +100,14 @@ async def test_find_similar_and_combinator_finds_full_name(tmp_path: Path):
     ctx = _LoopContext(db_path=db, schemas=[_employees_schema()])
     inspect = _build_inspect_tool(ctx)
 
-    result = await inspect("employees", "name", "find_similar", value="Javier Alvarez")
-    # Both rows contain BOTH 'javier' AND 'alvarez' (accent-folded):
-    #   - Francisco Javier Álvarez Fernández Aragón
-    #   - Javier Álvarez García
-    # 'María Álvarez' has only 'alvarez', so the AND-of-LIKEs drops it.
-    assert "Francisco Javier Álvarez Fernández Aragón" in result
-    assert "Javier Álvarez García" in result
-    assert "María Álvarez" not in result
+    result = await inspect("employees", "name", "find_similar", value="Sam Lee")
+    # Both rows contain BOTH 'javier' AND 'brewster' (accent-folded):
+    #   - Patrick Ulric Bréwster Häthaway Önken
+    #   - Ulric Bréwster Wéntz
+    # 'Léa Bréwster' has only 'brewster', so the AND-of-LIKEs drops it.
+    assert "Patrick Ulric Bréwster Häthaway Önken" in result
+    assert "Ulric Bréwster Wéntz" in result
+    assert "Léa Bréwster" not in result
 
     # The probe record was logged with op='find_similar'.
     assert any(p.op == "find_similar" for p in ctx.probe_trail), ctx.probe_trail
@@ -120,11 +120,11 @@ async def test_find_similar_falls_back_to_or_when_and_yields_nothing(tmp_path: P
     ctx = _LoopContext(db_path=db, schemas=[_employees_schema()])
     inspect = _build_inspect_tool(ctx)
 
-    # 'Bob Alvarez' — no employee has both tokens, but two contain 'alvarez'
+    # 'Bob Brewster' — no employee has both tokens, but two contain 'brewster'
     # and one contains 'bob'. OR fallback should return all three.
-    result = await inspect("employees", "name", "find_similar", value="Bob Alvarez")
+    result = await inspect("employees", "name", "find_similar", value="Bob Brewster")
     assert "Bob Tan" in result
-    assert "Álvarez" in result  # at least one of the Álvarez rows
+    assert "Bréwster" in result  # at least one of the Bréwster rows
 
 
 @pytest.mark.asyncio
@@ -133,8 +133,8 @@ async def test_find_similar_handles_single_token(tmp_path: Path):
     ctx = _LoopContext(db_path=db, schemas=[_employees_schema()])
     inspect = _build_inspect_tool(ctx)
 
-    result = await inspect("employees", "name", "find_similar", value="alvarez")
-    assert "Francisco Javier Álvarez Fernández Aragón" in result
+    result = await inspect("employees", "name", "find_similar", value="brewster")
+    assert "Patrick Ulric Bréwster Häthaway Önken" in result
     assert "Bob Tan" not in result
 
 
