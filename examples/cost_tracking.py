@@ -31,14 +31,12 @@ Examples:
     # Real Sonnet pricing, budgets stay green.
     uv run python examples/cost_tracking.py
 
-    # Pretend every LLM call costs $5; the $2 HARD daily limit trips on
-    # the first agent and raises BudgetExceededError. The soft $4 lifetime
+    # Inject an absurd per-token rate for the demo's model into
+    # _FIXED_PRICES, so fixed_rate_cost overrides genai-prices and bills
+    # roughly several dollars per call. The $2 HARD daily limit trips on
+    # the first agent and raises BudgetExceededError; the $4 SOFT lifetime
     # rule also fires and logs a warning.
-    uv run python examples/cost_tracking.py --inflate-cost-usd 5
-
-    # Inflate but stay under the HARD limit ($2 daily). Only the SOFT
-    # lifetime rule will eventually log.
-    uv run python examples/cost_tracking.py --inflate-cost-usd 0.5
+    uv run python examples/cost_tracking.py --inflated-prices
 """
 
 from __future__ import annotations
@@ -52,6 +50,7 @@ from dotenv import load_dotenv
 
 from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.exceptions import BudgetExceededError
+from fireflyframework_agentic.model_utils import get_model_identifier
 from fireflyframework_agentic.observability.budget import (
     BudgetGate,
     BudgetMode,
@@ -72,12 +71,18 @@ from fireflyframework_agentic.observability.usage import default_usage_tracker
 load_dotenv()
 
 MODEL = os.environ["MODEL"]
+MODEL_ID = get_model_identifier(MODEL)
 JSONL_PATH = Path("/tmp/firefly-cost.jsonl")
 
 # Per-model (input, output) USD/token overrides for contractually-priced LLMs.
 # Add entries here when you have a negotiated rate that differs from the public
 # catalog. Models not listed fall through to the next resolver in the chain.
-_FIXED_PRICES = {"acme:internal-llm": (0.5e-6, 2.0e-6)}
+_FIXED_PRICES: dict[str, tuple[float, float]] = {"acme:internal-llm": (0.5e-6, 2.0e-6)}
+
+# $5/1k input + $10/1k output is ~100× real Sonnet pricing. With a typical
+# joke/summary/translation call (~hundreds of tokens) it produces several USD
+# of cost per call, so the first agent run breaches the $2 HARD daily limit.
+_INFLATED_RATE: tuple[float, float] = (5e-3, 1e-2)
 
 
 def fixed_rate_cost(ctx: CostContext) -> float | None:
@@ -94,19 +99,6 @@ def fixed_rate_cost(ctx: CostContext) -> float | None:
         return None
     input_price, output_price = price
     return ctx.input_tokens * input_price + ctx.output_tokens * output_price
-
-
-def make_inflated_resolver(per_call_usd: float):
-    """Build a resolver that prices *every* call at a fixed USD amount.
-
-    Unlike :func:`fixed_rate_cost`, this resolver ignores ``ctx.model`` and
-    always returns a value, so prepending it to the chain short-circuits
-    every other resolver. Use it to deliberately overshoot budget rules in
-    tests/demos without burning real spend.
-    """
-    def _resolver(_ctx: CostContext) -> float:
-        return per_call_usd
-    return _resolver
 
 
 def _try_attach_app_insights() -> bool:
@@ -131,18 +123,19 @@ def _try_attach_app_insights() -> bool:
     return True
 
 
-def configure_default_tracker(*, with_otel: bool, inflate_cost_usd: float | None) -> None:
+def configure_default_tracker(*, with_otel: bool, inflated_prices: bool) -> None:
     """Install sinks, custom resolver, and budget gate on the singleton."""
     JSONL_PATH.unlink(missing_ok=True)
     default_usage_tracker.add_sink(JSONLFileSink(JSONL_PATH))
     if with_otel:
         default_usage_tracker.add_sink(OTelMetricsSink())
 
-    resolvers = [fixed_rate_cost, *DEFAULT_RESOLVERS]
-    if inflate_cost_usd is not None:
-        print(f"Cost inflation enabled: every call priced at ${inflate_cost_usd:.4f}.")
-        resolvers.insert(0, make_inflated_resolver(inflate_cost_usd))
-    default_usage_tracker._resolver = resolvers
+    if inflated_prices:
+        _FIXED_PRICES[MODEL_ID] = _INFLATED_RATE
+        pi, po = _INFLATED_RATE
+        print(f"Inflated prices enabled for '{MODEL_ID}': ${pi}/input-token, ${po}/output-token.")
+
+    default_usage_tracker._resolver = [fixed_rate_cost, *DEFAULT_RESOLVERS]
 
     default_usage_tracker._gate = BudgetGate(
         [
@@ -217,12 +210,11 @@ def _print_breakdown(title: str, group: dict, *, width: int) -> None:
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument(
-        "--inflate-cost-usd",
-        type=float,
-        default=None,
-        metavar="USD",
-        help="Override real pricing: every LLM call is billed this fixed amount. "
-             "Use to demonstrate the HARD/SOFT budget rules without burning real spend.",
+        "--inflated-prices",
+        action="store_true",
+        help="Inject an absurd per-token rate for the demo's model into _FIXED_PRICES "
+             "so fixed_rate_cost overrides genai-prices. Used to demonstrate the "
+             "HARD/SOFT budget rules without burning real spend.",
     )
     return p.parse_args()
 
@@ -230,7 +222,7 @@ def parse_args() -> argparse.Namespace:
 async def main() -> None:
     args = parse_args()
     app_insights_ready = _try_attach_app_insights()
-    configure_default_tracker(with_otel=app_insights_ready, inflate_cost_usd=args.inflate_cost_usd)
+    configure_default_tracker(with_otel=app_insights_ready, inflated_prices=args.inflated_prices)
     try:
         await run_agents()
     except BudgetExceededError as exc:
