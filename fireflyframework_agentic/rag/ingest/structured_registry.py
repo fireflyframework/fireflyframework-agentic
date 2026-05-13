@@ -219,8 +219,8 @@ def _excel_sample(path: Path) -> str:
             continue
         # Skip sheets with no usable header — feeding the LLM
         # ``Headers: [None, None, None]`` blocks is what makes it return
-        # ``{}`` on workbooks like the source workbook where one sheet
-        # is essentially blank. ≥2 non-null cells AND ≥1 string is the
+        # ``{}`` on messy multi-sheet workbooks where one sheet is
+        # essentially blank. ≥2 non-null cells AND ≥1 string is the
         # minimum bar for a header that's worth including.
         header = list(rows[0])
         non_null = [v for v in header if v is not None]

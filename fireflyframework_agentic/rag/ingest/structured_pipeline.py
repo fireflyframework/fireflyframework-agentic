@@ -44,9 +44,10 @@ class TableIngestResult(TypedDict):
       - ``"partial"`` — at least one row failed (UNIQUE/NOT NULL/type
         violation) but the rest were committed. This is the case we
         hit on real workbooks where a handful of placeholder rows
-        (e.g. ``prid = '-'`` vacancy markers) conflict with a composite
-        primary key — atomic rollback used to lose ~680 valid rows to
-        protect 13 conflicting ones, which is the wrong trade-off in
+        (e.g. an ID column with the sentinel ``'-'`` for unfilled
+        positions) conflict with a composite primary key — atomic
+        rollback used to lose hundreds of valid rows to protect a
+        dozen conflicting ones, which is the wrong trade-off in
         practice.
       - ``"failed"`` — zero rows inserted (every row errored, or the
         sheet was empty after filtering).
@@ -89,10 +90,10 @@ def _normalize_col(name: str) -> str:
 
 # How far down a sheet to look for the real header row. Real-world Excel
 # files frequently bury headers under ~10 single-cell title / legend / spacer
-# rows (e.g. an archive sheet in the the test workbook puts the header at
-# row 8). Both discovery (_excel_sample) and ingestion (_read_rows) must
-# use the same value or they drift — discovery sees the right schema while
-# ingestion silently drops every row.
+# rows (e.g. an archive sheet with a stacked legend in column J pushing the
+# header to row 8). Both discovery (_excel_sample) and ingestion (_read_rows)
+# must use the same value or they drift — discovery sees the right schema
+# while ingestion silently drops every row.
 _HEADER_SCAN_ROWS = 20
 
 
@@ -112,7 +113,7 @@ def _pick_header_row_idx(candidate_rows: list[tuple[Any, ...]]) -> int:
          are strings — real Excel headers are almost always strings, not
          integers), pick the one with the most non-null cells. Real
          headers are wide; decorative two-cell titles like
-         ``['DECORATIVE TITLE', '(en blanco)']`` lose to the
+         ``['DECORATIVE TITLE', '(blank)']`` lose to the
          5-column real header at row 2.
       3. Fall back to the first multi-cell row.
 
@@ -244,9 +245,9 @@ def _sync_ingest_table(
         # (the table-level form below would forfeit that). With ≥2 PK
         # columns the row identity is composite and we emit a
         # ``PRIMARY KEY (col_a, col_b, …)`` clause at the end of the
-        # column list. This is what unblocks tables like
-        # ``monthly_table`` where ``prid`` repeats across rows but
-        # ``(prid, ruta_num)`` is genuinely unique.
+        # column list. This is what unblocks tables where a single
+        # candidate ID column repeats across rows but the row identity
+        # is composite (e.g. one row per (employee, route)).
         composite_pk = len(pk_cols) > 1
         col_defs: list[str] = []
         fk_defs: list[str] = []
