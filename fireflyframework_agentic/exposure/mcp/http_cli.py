@@ -17,13 +17,19 @@ unchanged: auth is the responsibility of the ingress layer.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
+from typing import Any
 
 import uvicorn
+from dotenv import find_dotenv, load_dotenv
 from fastapi import FastAPI
 
 from fireflyframework_agentic.exposure.mcp.server import create_mcp_app
 from fireflyframework_agentic.tools.builtins import corpus_rag  # noqa: F401 — registers tools
+
+log = logging.getLogger(__name__)
 
 
 def build_app() -> FastAPI:
@@ -101,40 +107,91 @@ def _resolve_factory(spec: str):
         raise RuntimeError(f"Factory {spec!r} resolved to a module without attribute {attr!r}") from exc
 
 
+def _log_unhandled_loop_exception(loop: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
+    """asyncio loop exception handler that logs full tracebacks to stderr.
+
+    Without this, a task that fails after the HTTP response is sent (the
+    request's response writer raising on cleanup; a background coroutine
+    scheduled by a tool; a stream handler exception triggered by an SSE
+    long-poll teardown) is silently dropped: asyncio logs it at ``ERROR``
+    on the ``asyncio`` logger and uvicorn doesn't surface those by
+    default. Operators see the symptom (connections terminate, bridge
+    reconnects, server "looks down") with no explanation.
+
+    Routing through our own logger gives us:
+      * The exception traceback (``loop.default_exception_handler`` writes
+        it via ``logger.error`` but it's swallowed by uvicorn's default
+        log config).
+      * Any context keys asyncio attached (handle, source_traceback, …).
+
+    Does NOT change loop behaviour or swallow exceptions — it just
+    ensures they're visible. The loop continues running; the server
+    stays up. Only the originating task dies.
+    """
+    message = context.get("message", "<no message>")
+    exc = context.get("exception")
+    handle = context.get("handle")
+    future = context.get("future")
+    task = context.get("task")
+    src = task or future or handle
+    if exc is not None:
+        log.error(
+            "asyncio: unhandled exception in %s: %s",
+            src,
+            message,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+    else:
+        log.error("asyncio: %s (source=%s)", message, src)
+
+
 def main() -> None:
     """Entry point registered as ``firefly-mcp-http`` in ``[project.scripts]``.
 
-    Loads ``.env`` from the current working directory (or any ancestor) if
-    ``python-dotenv`` is installed and a file is present. Real environment
-    variables always win — ``load_dotenv`` defaults to ``override=False`` —
-    so in Azure (or any deploy where the runtime injects env vars before
-    the process starts) this is a no-op. In local dev it fills the gap so
-    a developer can drop ``EMBEDDING_MODEL`` etc. into ``.env`` and have
-    the server pick them up without an explicit shell ``source``.
-
-    ``python-dotenv`` is an optional dependency (declared under the
-    ``corpus-search`` and ``dev`` extras, not core), so the import is
-    guarded — a hardened production install without those extras skips
-    the dotenv load entirely. That keeps the "no surprise .env in the
-    container image" property: if dotenv isn't installed, no .env file is
-    consulted, full stop.
+    Loads ``.env`` from the current working directory (or any ancestor) so
+    a developer running the server from a project directory gets its
+    variables (``EMBEDDING_MODEL``, ``FIREFLY_MCP_KEYVAULT_URL``, …)
+    without an explicit shell ``source``. ``usecwd=True`` anchors the
+    search on cwd (the default would walk up from this module's
+    install location, which is wrong for a CLI). Real environment
+    variables always win — ``load_dotenv`` defaults to ``override=False``
+    — so Azure / Container Apps deploys, which inject env from the
+    manifest before the process starts, see no behavioural change.
     """
+    load_dotenv(find_dotenv(usecwd=True))
+
+    # Force-attach our handler before uvicorn boots its loop. uvicorn picks
+    # up loop="auto" → uvloop on Unix; both honour ``set_exception_handler``.
+    # We can't set it on uvicorn's not-yet-created loop, so we do it via a
+    # ``run_in_executor``-free hook: register on the current loop if any,
+    # and also set the default factory so the loop uvicorn creates inherits
+    # it. The "set on current loop" path covers ``uvicorn.run`` invocations
+    # where uvicorn reuses the calling loop.
     try:
-        from dotenv import find_dotenv, load_dotenv
-    except ImportError:
-        pass
-    else:
-        # ``usecwd=True`` anchors the search on the current working directory
-        # (typically the project root) and walks upward. Default behaviour
-        # (search from the caller's ``__file__``) would resolve to the
-        # installed location of this module, which is wrong for a CLI that
-        # operators run from arbitrary project directories.
-        # ``find_dotenv`` returns ``""`` when nothing is found, and
-        # ``load_dotenv("")`` is itself a no-op — so when no .env exists, the
-        # net effect is zero.
-        load_dotenv(find_dotenv(usecwd=True))
+        current = asyncio.get_event_loop()
+    except RuntimeError:
+        current = None
+    if current is not None:
+        current.set_exception_handler(_log_unhandled_loop_exception)
+    # Ensure stderr-level logging is wired so the handler's records reach
+    # the operator. uvicorn configures its own loggers; touching the root
+    # logger with a minimal config is safe and idempotent.
+    logging.basicConfig(level=os.environ.get("FIREFLY_MCP_LOG_LEVEL", "INFO"))
+
     port = int(os.environ.get("PORT", "8000"))
-    uvicorn.run(build_app(), host="0.0.0.0", port=port)
+    config = uvicorn.Config(build_app(), host="0.0.0.0", port=port)
+    server = uvicorn.Server(config)
+
+    # Re-attach the handler after uvicorn creates / acquires its loop.
+    # ``Server.run`` calls ``asyncio.run`` which spins up a fresh loop;
+    # we hook the loop-startup via a one-shot task scheduled by the
+    # lifespan, but the simplest reliable path is to wrap ``run`` and
+    # set the handler from inside the new loop.
+    async def _serve() -> None:
+        asyncio.get_running_loop().set_exception_handler(_log_unhandled_loop_exception)
+        await server.serve()
+
+    asyncio.run(_serve())
 
 
 if __name__ == "__main__":

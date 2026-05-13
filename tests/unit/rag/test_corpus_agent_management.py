@@ -162,6 +162,70 @@ async def test_clear_allows_reingest(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_rm_rf_root_resets_corpus_for_fresh_agent(tmp_path: Path) -> None:
+    """Regression for #170: deleting CORPUS_ROOT must reset all corpus state.
+
+    The user-visible bug was: ingest two files, ``rm -rf $CORPUS_ROOT``,
+    restart the process / use a fresh ``CorpusAgent``, re-ingest the same
+    files → the agent silently dedup-skipped them because the corpus DB
+    (and its ledger of content hashes) actually lived in ``~/.cache/``,
+    not under the configured root.
+
+    After co-locating the working copy with the LocalBackend file, the
+    SQLite — and thus the ledger — lives under ``CORPUS_ROOT``. Deleting
+    the root wipes the ledger. The fresh agent's re-ingest must therefore
+    produce a fresh ``status='success'``, not ``'skipped'``.
+    """
+    import shutil
+
+    root = tmp_path / "kg" / "real-data"
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    doc_a = docs / "a.md"
+    doc_a.write_text(_DOC)
+
+    # First agent ingests the file successfully.
+    agent_a = CorpusAgent(
+        root=root,
+        embed_model="openai:text-embedding-3-small",
+        embed_dimension=4,
+        expansion_model="anthropic:claude-haiku-4-5-20251001",
+        answer_model="anthropic:claude-haiku-4-5-20251001",
+        rerank_model="anthropic:claude-haiku-4-5-20251001",
+        _embedder=_StubEmbedder(),
+        _vector_store=_StubVectorStore(),
+    )
+    first = await agent_a.ingest_one(doc_a)
+    assert first.status == "success"
+    # Sanity: the corpus DB really does live under the root, not ~/.cache.
+    assert (root / "corpus.sqlite").exists(), list(root.iterdir())
+    await agent_a.close()
+
+    # Operator wipes the root from outside the framework (rm -rf).
+    shutil.rmtree(root)
+    assert not root.exists()
+
+    # Fresh agent against the same root. Ledger must be empty, so the
+    # SAME file re-ingests as 'success', not silently dedup-skipped.
+    agent_b = CorpusAgent(
+        root=root,
+        embed_model="openai:text-embedding-3-small",
+        embed_dimension=4,
+        expansion_model="anthropic:claude-haiku-4-5-20251001",
+        answer_model="anthropic:claude-haiku-4-5-20251001",
+        rerank_model="anthropic:claude-haiku-4-5-20251001",
+        _embedder=_StubEmbedder(),
+        _vector_store=_StubVectorStore(),
+    )
+    second = await agent_b.ingest_one(doc_a)
+    assert second.status == "success", (
+        f"Re-ingest after rm -rf must succeed, got status={second.status!r}. "
+        "If this fails, corpus state is leaking outside CORPUS_ROOT again — see #170."
+    )
+    await agent_b.close()
+
+
+@pytest.mark.asyncio
 async def test_get_chunk_returns_none_for_missing_id(tmp_path: Path) -> None:
     agent = _make_agent(tmp_path)
     chunk = await agent.get_chunk("nonexistent_id")
