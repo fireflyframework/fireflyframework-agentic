@@ -29,7 +29,7 @@ from pydantic_ai.exceptions import ModelRetry
 from pydantic_ai.usage import UsageLimits
 
 from fireflyframework_agentic.agents import FireflyAgent
-from fireflyframework_agentic.rag.ingest.structured_schema import TargetSchema
+from fireflyframework_agentic.rag.ingest.structured_schema import ColumnType, TargetSchema
 
 log = logging.getLogger(__name__)
 
@@ -387,6 +387,14 @@ You answer questions by querying a SQLite corpus database. You have two tools:
     filtering on person names or other free-text fields, so accents,
     case, and partial overlaps match.
 
+Reading the schema:
+  Each string column below is annotated with its distinct-value count,
+  e.g. `metric_line (string, 3 distinct)`. A low count (typically <50)
+  flags a categorical / discriminator axis — a column you may need to
+  filter on with WHERE before aggregating other columns in the same
+  table. A count near the row count signals a unique identifier. Use
+  these counts to decide where filters and GROUP BY clauses belong.
+
 Process:
   1. Read the schema below.
   2. If you are NOT sure what values exist in the columns you want to filter
@@ -412,6 +420,29 @@ Process:
      (use `mean_blanks_as_zero`, i.e. `AVG(COALESCE(col, 0))` or
      `SUM(col)/COUNT(*)`). When in doubt, surface both interpretations
      in your answer.
+  7. Before SUM / AVG / COUNT over a numeric column, scan the same
+     table's string columns. Any string column with a low distinct
+     count (roughly 3–50) — especially names like `*_line`, `*_type`,
+     `*_category`, `kpi`, `metric` — is almost certainly a
+     discriminator that mixes heterogeneous concepts in the value
+     column. Call `distinct_values` on it and add a WHERE filter
+     before aggregating, or your sum will combine apples with oranges.
+  8. If the question contains "by X", "for each X", "per X", or
+     "across X", use `GROUP BY X` with the aggregate over the metric
+     column — not a flat `SELECT *`. Use the distinct counts in the
+     schema annotation to confirm you're grouping at the level the
+     user asked for: a parent column has a lower distinct count than
+     a child column inside the same table.
+  9. If `run_select` returns 0 rows on a single-column lookup, or
+     returns NULL for the column you queried, do NOT immediately
+     conclude "no record." Scan the table's other columns: any
+     column whose name shares semantic tokens with the question
+     (e.g. the question asks about "structural change" and the
+     table has `role_change`, `recorded_movement`,
+     `effective_date_of_route_change`) is a candidate. Re-run
+     `run_select` selecting all the candidate columns before
+     answering. Only conclude "no record" once every semantically
+     relevant column has been probed.
 
 Worked example 1 (illustrative; no real corpus):
   Question: "wireless mouse sales in Europe last quarter"
@@ -444,6 +475,51 @@ Worked example 2 (ambiguous person name):
   If find_similar returns multiple candidates and the question does not
   pick one, return rows for all candidates (WHERE name IN (...)) so the
   caller can disambiguate. Do NOT silently pick one.
+
+Worked example 3 (discriminator filter — aggregating across categories):
+  Question: "What is the 2024 revenue for market EU?"
+  Schema: finance_fact: year (string, 5 distinct), market (string, 12 distinct),
+                        metric_line (string, 3 distinct), value (float)
+  Reasoning: metric_line has only 3 distinct values — almost certainly
+             a categorical discriminator. SUM(value) without filtering
+             on it would mix revenue, headcount, and expense into one
+             meaningless number.
+
+  inspect_table(finance_fact, metric_line, 'distinct_values')
+    -> ['Total Revenue', 'Active Headcount', 'Operating Expense']
+  run_select("SELECT SUM(value) FROM finance_fact "
+             "WHERE year='2024' AND market='EU' "
+             "AND metric_line='Total Revenue'")
+
+Worked example 4 (GROUP BY at parent level — "by X" phrasings):
+  Question: "What is the average achievement by business_unit?"
+  Schema: performance: team_id (integer), team_name (string, 4 distinct),
+                       business_unit (string, 2 distinct), achievement_pct (float)
+  Reasoning: "by business_unit" → GROUP BY business_unit. The 2:4 ratio
+             between business_unit (2 distinct) and team_name (4 distinct)
+             confirms the parent/child hierarchy — one BU has multiple
+             teams. The user wants one row per BU, not per team.
+
+  run_select("SELECT business_unit, AVG(achievement_pct) "
+             "FROM performance GROUP BY business_unit")
+
+Worked example 5 (sibling-column scan — don't stop at the first NULL):
+  Question: "Has there been any structural change for employee 42?"
+  Schema: employee_changes: employee_id (integer), name (string, 1000 distinct),
+                            recorded_movement (string, 8 distinct),
+                            effective_date_of_route_change (string, 12 distinct),
+                            role_change (string, 6 distinct)
+  Reasoning: `recorded_movement` is the most literal column, but
+             `effective_date_of_route_change` and `role_change` also
+             carry the semantic concept of "structural change."
+             Check all three before answering.
+
+  run_select("SELECT recorded_movement FROM employee_changes "
+             "WHERE employee_id=42")
+    -> recorded_movement = NULL
+  run_select("SELECT recorded_movement, effective_date_of_route_change, role_change "
+             "FROM employee_changes WHERE employee_id=42")
+    -> effective_date_of_route_change='2024-07-01', role_change='New region'
 
 Rules:
   - SELECT only. No INSERT/UPDATE/DELETE/DROP/ALTER. The run_select tool
@@ -535,7 +611,7 @@ class StructuredRetriever:
                 probe_trail=[],
             )
         ctx = _LoopContext(db_path=self._db_path, schemas=schemas)
-        prompt = f"{_build_schema_context(schemas)}\n\nQuestion: {question}"
+        prompt = f"{_build_schema_context(schemas, self._db_path)}\n\nQuestion: {question}"
         token = _CURRENT_CTX.set(ctx)
         try:
             await self._sql_agent.run(
@@ -583,7 +659,7 @@ def _build_outcome(ctx: _LoopContext) -> SqlRetrievalOutcome:
     )
 
 
-def _build_schema_context(schemas: list[TargetSchema]) -> str:
+def _build_schema_context(schemas: list[TargetSchema], db_path: Path | None = None) -> str:
     """Format the table+column listing for the agent's system prompt.
 
     No sample values: the agent inspects on demand. This avoids the
@@ -591,29 +667,92 @@ def _build_schema_context(schemas: list[TargetSchema]) -> str:
     which silently misled the LLM on schemas whose first text column was
     an opaque primary key.
 
-    When ``ColumnSpec.unit`` is set, the unit is appended to the column
-    descriptor as ``name (type, unit=…)`` so the agent can echo the
-    correct unit alongside any numeric value it returns. Columns with no
-    unit metadata render as ``name (type)`` unchanged.
+    When *db_path* is provided, each string-typed column is annotated
+    with its ``COUNT(DISTINCT)`` cardinality (e.g. ``metric_line (string,
+    3 distinct)``). The annotation gives the LLM a structural signal:
+    low counts (a handful of distinct values) flag categorical /
+    discriminator columns that should usually appear in a ``WHERE``
+    clause before aggregating other columns in the same table, while a
+    count near the row count signals a unique identifier. Cardinality
+    failures fall back to the un-annotated descriptor and log a
+    warning — schema drift must not block retrieval.
+
+    When ``ColumnSpec.unit`` is set, the unit is also appended (e.g.
+    ``value (float, unit=USD millions)``) so the agent echoes the
+    correct unit alongside any numeric value it returns. Both
+    annotations live inside the same parenthesised, comma-separated
+    list — order is ``type, [N distinct,] [unit=…]``.
     """
+    cardinalities = _string_column_cardinalities(schemas, db_path) if db_path is not None else {}
     lines: list[str] = ["Available tables:"]
     for schema in schemas:
         for table in schema.tables:
-            col_descs = ", ".join(_format_column_descriptor(c) for c in table.columns)
-            lines.append(f"- {table.name}: {col_descs}")
+            descs = [_format_column_descriptor(c, cardinalities.get((table.name, c.name))) for c in table.columns]
+            lines.append(f"- {table.name}: {', '.join(descs)}")
     return "\n".join(lines)
 
 
-def _format_column_descriptor(column: Any) -> str:
-    """Render one ``ColumnSpec`` as ``name (type)`` or ``name (type, unit=…)``.
+def _format_column_descriptor(column: Any, distinct: int | None = None) -> str:
+    """Render one ``ColumnSpec`` as ``name (type[, N distinct][, unit=…])``.
 
-    Split out so the unit-rendering policy lives in one place; the schema
-    context, future error messages, and ad-hoc debug prints can all share
-    the same shape.
+    Single render path for the agent-facing descriptor. The schema
+    context, future error messages, and ad-hoc debug prints share this
+    shape, so the worked examples in ``_SYSTEM`` (which copy the format
+    literally) stay in lockstep with what the agent actually sees.
+
+    ``distinct`` is appended only when the caller probed cardinality —
+    typically only for string columns, and only when a ``db_path`` was
+    available. Numeric / date columns always render without a count.
     """
+    parts = [column.type.value]
+    if distinct is not None:
+        parts.append(f"{distinct} distinct")
     if column.unit:
-        return f"{column.name} ({column.type.value}, unit={column.unit})"
-    return f"{column.name} ({column.type.value})"
+        parts.append(f"unit={column.unit}")
+    return f"{column.name} ({', '.join(parts)})"
+
+
+def _string_column_cardinalities(schemas: list[TargetSchema], db_path: Path) -> dict[tuple[str, str], int]:
+    """Return ``{(table, column): distinct_count}`` for every string column.
+
+    Runs one ``COUNT(DISTINCT col)`` per string column on a single
+    connection. Per-column failures are logged and silently dropped from
+    the result map — :func:`_build_schema_context` then falls back to the
+    plain descriptor for those columns. Returns ``{}`` if the connection
+    itself cannot be opened.
+    """
+    out: dict[tuple[str, str], int] = {}
+    try:
+        conn = _connect(db_path)
+    except sqlite3.Error as exc:
+        # Don't log db_path itself — CodeQL treats filesystem paths as
+        # private data, and matching the file-wide pattern of "log the
+        # exception, not the path" keeps us out of that lane.
+        log.warning("cardinality probe: could not open db: %s", exc)
+        return out
+    try:
+        for schema in schemas:
+            for table in schema.tables:
+                quoted_table = '"' + table.name.replace('"', '""') + '"'
+                for col in table.columns:
+                    if col.type != ColumnType.string:
+                        continue
+                    quoted_col = '"' + col.name.replace('"', '""') + '"'
+                    try:
+                        row = conn.execute(f"SELECT COUNT(DISTINCT {quoted_col}) FROM {quoted_table}").fetchone()
+                    except sqlite3.Error as exc:
+                        log.warning(
+                            "cardinality probe failed for %s.%s: %s",
+                            table.name,
+                            col.name,
+                            exc,
+                        )
+                        continue
+                    if row is not None and row[0] is not None:
+                        out[(table.name, col.name)] = int(row[0])
+    finally:
+        conn.close()
+    return out
 
 
 def _execute(db_path: Path, sql: str, params: list[Any] | None = None) -> str | None:

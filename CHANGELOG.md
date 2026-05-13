@@ -42,6 +42,19 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 
 ### Fixed
 
+- **SQL agent reasoning: discriminator filters, parent-level GROUP BY, and
+  sibling-column scans.** The text-to-SQL retriever now annotates each
+  string column in the schema context with its
+  `COUNT(DISTINCT)` cardinality (e.g. `metric_line (string, 3 distinct)`)
+  so the agent can spot categorical / discriminator axes and parent-vs-
+  child cardinality gaps at schema-read time. The system prompt gains
+  three rules and three worked examples covering: filtering on a
+  discriminator before aggregating heterogeneous rows (#161), using
+  `GROUP BY <parent>` when the user says "by X" / "for each X" / "per
+  X" (#162), and scanning semantically-related sibling columns before
+  concluding "no record" on a NULL result (#163). No new tools or
+  schema-model fields.
+
 - **`firefly-mcp-http` now loads `.env` on startup.** The CLI calls
   `load_dotenv(find_dotenv(usecwd=True))` at the top of `main()`, so a
   developer running the server from a project directory gets its
