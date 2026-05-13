@@ -359,3 +359,90 @@ async def test_discover_schema_passes_unit_aware_prompt(csv_file: Path) -> None:
     kwargs = mock_factory.call_args.kwargs
     assert "extra_instructions" in kwargs
     assert "Unit inference" in kwargs["extra_instructions"]
+
+
+# ---- Header-row detection for messy Excel sheets ------------------------
+#
+# Real-world Excel files often have a "section numbers" or "decorative
+# title" row above the actual column headers. The first ``_excel_sample``
+# heuristic ("first row with ≥2 non-null cells") picked those banner rows
+# as headers, leaving the LLM to interpret integers/Nones as field names
+# and the real headers as a sample row. That confused the model enough
+# that it returned an empty schema and pydantic-ai retried 3× then gave
+# up — the user-reported #170 follow-up bug.
+
+
+def test_pick_header_row_idx_skips_numeric_banner_row():
+    """Row 0 holds section numbers (1, 2, 3, …); row 1 holds the real
+    string headers. The picker must select row 1.
+    """
+    from fireflyframework_agentic.rag.ingest.structured_registry import _pick_header_row_idx
+
+    rows = [
+        (None, None, 1, 2, 3, 4, None),
+        ("PRID", "EMPLOYEE_ID", "NAME", "REGION", "REVENUE", "COST", "NOTES"),
+        ("kkxf270", 4286, "Alice", "EU", 1000.0, 800.0, "-"),
+    ]
+    assert _pick_header_row_idx(rows) == 1
+
+
+def test_pick_header_row_idx_skips_single_cell_title_row():
+    """Decorative title rows have only one non-null cell. Skip them
+    even when the row immediately after looks header-shaped.
+    """
+    from fireflyframework_agentic.rag.ingest.structured_registry import _pick_header_row_idx
+
+    rows = [
+        ("Sales report — Q3 2024", None, None, None),
+        ("region", "amount", "currency", "notes"),
+        ("EU", 1000, "EUR", "ok"),
+    ]
+    assert _pick_header_row_idx(rows) == 1
+
+
+def test_pick_header_row_idx_returns_zero_on_well_formed_sheet():
+    """Existing well-formed sheets keep working: row 0 is already a
+    string-dominant header row, no skip needed.
+    """
+    from fireflyframework_agentic.rag.ingest.structured_registry import _pick_header_row_idx
+
+    rows = [
+        ("region", "amount", "currency"),
+        ("EU", 1000, "EUR"),
+        ("NA", 1500, "USD"),
+    ]
+    assert _pick_header_row_idx(rows) == 0
+
+
+def test_pick_header_row_idx_returns_zero_when_no_string_header_visible():
+    """All-numeric sheets (e.g. a pure metrics dump) have no string
+    header at all; the picker falls back to the first multi-cell row
+    rather than refusing to choose. The LLM can still attempt naming
+    from sample-row context.
+    """
+    from fireflyframework_agentic.rag.ingest.structured_registry import _pick_header_row_idx
+
+    rows = [
+        (1, 2, 3, 4),
+        (10, 20, 30, 40),
+        (100, 200, 300, 400),
+    ]
+    assert _pick_header_row_idx(rows) == 0
+
+
+def test_skill_prompt_requires_non_empty_schema():
+    """Output-contract guard added to ``_SKILL`` after a user-reported
+    failure where the discovery LLM returned ``{}`` on messy data and
+    pydantic-ai's retry budget ran out before producing anything
+    usable. The prompt must explicitly forbid the empty-schema escape.
+    """
+    from fireflyframework_agentic.rag.ingest.structured_registry import _SKILL
+
+    assert "Output contract" in _SKILL, "must lead with the output-contract clause"
+    # Imperative voice that the model can't dismiss.
+    assert "ALWAYS return" in _SKILL
+    assert "never the right answer" in _SKILL.lower() or "is never the right" in _SKILL.lower()
+    # Specifically marks the unit-related conservatism as the *exception*,
+    # not the rule — otherwise the model generalises "be conservative" to
+    # the whole schema and returns ``{}``.
+    assert "ONLY to the" in _SKILL or "only to the" in _SKILL.lower()

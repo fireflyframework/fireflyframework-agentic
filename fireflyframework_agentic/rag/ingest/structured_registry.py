@@ -27,6 +27,7 @@ import csv
 import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any
 
 from fireflyframework_agentic.agents.templates import create_extractor_agent
 from fireflyframework_agentic.rag.corpus import SqliteCorpus
@@ -60,6 +61,18 @@ def is_tabular_file(path: Path) -> bool:
 _SKILL = (
     "You are a data schema analyst. Given tabular data (headers + sample rows), "
     "infer the best relational schema.\n\n"
+    "**Output contract — read this first:** ALWAYS return a TargetSchema with "
+    "at least one TableSpec for every sheet / file in the input. Even when "
+    "the data is messy (banner rows, merged cells, ambiguous column names, "
+    "non-obvious types), produce your best structural interpretation — the "
+    "user will review and correct it via the discover→review→ingest loop. "
+    'An empty schema (``{}`` or ``{"tables": []}``) is never the right '
+    "answer: it makes the tool fail with a validation error and the user "
+    "cannot iterate from there. If a sheet looks truly empty after skipping "
+    "banner rows, still emit a TableSpec for it with whatever columns you "
+    "see and an inline comment in the column descriptions noting the "
+    "ambiguity. The conservatism guidance below applies ONLY to the "
+    "``unit`` field — every other field should reflect your best guess.\n\n"
     "**Naming:** Use snake_case for table and column names. "
     "For CSV files: table name = filename stem in snake_case. "
     "For Excel: each sheet becomes one table; table name = sheet name in snake_case.\n\n"
@@ -171,17 +184,17 @@ def _excel_sample(path: Path) -> str:
         raise RuntimeError("openpyxl is required for Excel files: pip install openpyxl")
     wb = _openpyxl.load_workbook(path, read_only=True, data_only=True)  # type: ignore[union-attr]
     parts: list[str] = []
+    # Pull a few extra rows so banner-row detection (below) has room to
+    # look past the title / spacer / column-number rows real-world Excel
+    # files often have before the actual headers.
+    scan_budget = _SAMPLE_ROWS + 6
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
-        all_rows = list(ws.iter_rows(values_only=True))[: _SAMPLE_ROWS + 2]
+        all_rows = list(ws.iter_rows(values_only=True))[:scan_budget]
         if not all_rows:
             continue
-        # Skip title rows (rows with only one non-null cell) to show real headers.
-        header_idx = next(
-            (i for i, r in enumerate(all_rows[:5]) if sum(1 for v in r if v is not None) >= 2),
-            0,
-        )
-        rows = all_rows[header_idx:]
+        header_idx = _pick_header_row_idx(all_rows[:8])
+        rows = all_rows[header_idx : header_idx + _SAMPLE_ROWS + 1]
         if not rows:
             continue
         name = _normalize_sheet_name(sheet_name)
@@ -189,6 +202,37 @@ def _excel_sample(path: Path) -> str:
         lines += [f"  {list(r)}" for r in rows[1:]]
         parts.append("\n".join(lines))
     return "\n\n".join(parts)
+
+
+def _pick_header_row_idx(candidate_rows: list[tuple[Any, ...]]) -> int:
+    """Choose the row in *candidate_rows* most likely to be the real header.
+
+    Heuristic, in order:
+      1. Skip empty / one-cell title rows.
+      2. Prefer the first row dominated by *string* cells (real headers
+         in Excel are almost always strings, not integers). This catches
+         the common "section numbers banner above text headers" pattern
+         where row 0 reads ``[None, None, 1, 2, 3, ...]`` and row 1 reads
+         ``['PRID', 'EMPLOYEE_ID', 'NAME', ...]``.
+      3. Fall back to the first row with ≥2 non-null cells.
+
+    Returns 0 when no row passes any test (so the existing behaviour for
+    well-formed sheets is preserved).
+    """
+    # 1. First non-trivial row.
+    multi_cell = [(i, r) for i, r in enumerate(candidate_rows) if sum(1 for v in r if v is not None) >= 2]
+    if not multi_cell:
+        return 0
+    # 2. String-dominated row (more than half of non-null cells are strings).
+    for i, r in multi_cell:
+        non_null = [v for v in r if v is not None]
+        if not non_null:
+            continue
+        string_count = sum(1 for v in non_null if isinstance(v, str))
+        if string_count * 2 > len(non_null):
+            return i
+    # 3. Fallback: first multi-cell row.
+    return multi_cell[0][0]
 
 
 def _sample_for(path: Path) -> str:
