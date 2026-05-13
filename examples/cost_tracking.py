@@ -18,24 +18,21 @@ On top of that it shows:
   local sinks only.
 * A :class:`BudgetGate` with HARD/SOFT rules installed on the default
   tracker so it applies to real agent traffic.
-* A model-specific :class:`CostFn` (``fixed_rate_cost``) for
-  contractually-priced models. This resolver only fires when
-  ``ctx.model == "acme:internal-llm"``; for any other model (including
-  the Sonnet model used by the agents below) it returns ``None`` and
-  the chain falls through to ``DEFAULT_RESOLVERS`` — i.e. the
-  ``genai-prices`` catalog. It is included to show the *shape* of a
-  contractual override; swap in your own model id and rates to use it.
+* A model-specific :class:`CostFn` (``fixed_rate_cost``) backed by
+  :data:`_FIXED_PRICES`, which is keyed by the demo's ``MODEL_ID`` with
+  absurd per-token rates. The resolver is only wired into the chain when
+  ``--inflated-prices`` is passed; otherwise the chain runs the default
+  ``genai-prices`` catalog and budgets stay green.
 
 Examples:
 
-    # Real Sonnet pricing, budgets stay green.
+    # Real Sonnet pricing — fixed_rate_cost is NOT in the chain.
     uv run python examples/cost_tracking.py
 
-    # Inject an absurd per-token rate for the demo's model into
-    # _FIXED_PRICES, so fixed_rate_cost overrides genai-prices and bills
-    # roughly several dollars per call. The $2 HARD daily limit trips on
-    # the first agent and raises BudgetExceededError; the $4 SOFT lifetime
-    # rule also fires and logs a warning.
+    # fixed_rate_cost is prepended to the chain, looks up MODEL_ID in
+    # _FIXED_PRICES, and bills several dollars per call. The $2 HARD
+    # daily limit trips on the first agent and raises BudgetExceededError;
+    # the $4 SOFT lifetime rule also fires and logs a warning.
     uv run python examples/cost_tracking.py --inflated-prices
 """
 
@@ -74,26 +71,28 @@ MODEL = os.environ["MODEL"]
 MODEL_ID = get_model_identifier(MODEL)
 JSONL_PATH = Path("/tmp/firefly-cost.jsonl")
 
-# Per-model (input, output) USD/token overrides for contractually-priced LLMs.
-# Add entries here when you have a negotiated rate that differs from the public
-# catalog. Models not listed fall through to the next resolver in the chain.
-_FIXED_PRICES: dict[str, tuple[float, float]] = {"acme:internal-llm": (0.5e-6, 2.0e-6)}
+# Per-model (input, output) USD/token overrides. The entry for MODEL_ID uses
+# absurd per-token rates (~100× real Sonnet pricing): with a typical
+# joke/summary/translation call (~hundreds of tokens) each call costs several
+# USD, so the very first agent run breaches the $2 HARD daily budget rule.
+# Only consulted when --inflated-prices wires fixed_rate_cost into the chain.
+_FIXED_PRICES: dict[str, tuple[float, float]] = {MODEL_ID: (5e-3, 1e-2)}
 
-# $5/1k input + $10/1k output is ~100× real Sonnet pricing. With a typical
-# joke/summary/translation call (~hundreds of tokens) it produces several USD
-# of cost per call, so the first agent run breaches the $2 HARD daily limit.
-_INFLATED_RATE: tuple[float, float] = (5e-3, 1e-2)
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument(
+        "--inflated-prices",
+        action="store_true",
+        help="Wire fixed_rate_cost (with the absurd rates in _FIXED_PRICES) into the "
+             "resolver chain so it overrides genai-prices. Used to demonstrate the "
+             "HARD/SOFT budget rules without burning real spend.",
+    )
+    return p.parse_args()
 
 
 def fixed_rate_cost(ctx: CostContext) -> float | None:
-    """Price a call at the negotiated rate for contractually-priced models.
-
-    Returns ``None`` for any model not present in :data:`_FIXED_PRICES`, which
-    lets the next resolver in the chain handle it (typically genai-prices for
-    public catalog pricing). The demo agents below run on Sonnet, so in a
-    default run this resolver always returns ``None``; it is wired up to
-    illustrate the *pattern* for swapping in your own model id and rates.
-    """
+    """Price a call at the rate in :data:`_FIXED_PRICES`, or fall through."""
     price = _FIXED_PRICES.get(ctx.model)
     if price is None:
         return None
@@ -124,18 +123,18 @@ def _try_attach_app_insights() -> bool:
 
 
 def configure_default_tracker(*, with_otel: bool, inflated_prices: bool) -> None:
-    """Install sinks, custom resolver, and budget gate on the singleton."""
+    """Install sinks, optional fixed-rate resolver, and budget gate on the singleton."""
     JSONL_PATH.unlink(missing_ok=True)
     default_usage_tracker.add_sink(JSONLFileSink(JSONL_PATH))
     if with_otel:
         default_usage_tracker.add_sink(OTelMetricsSink())
 
+    resolvers = list(DEFAULT_RESOLVERS)
     if inflated_prices:
-        _FIXED_PRICES[MODEL_ID] = _INFLATED_RATE
-        pi, po = _INFLATED_RATE
+        pi, po = _FIXED_PRICES[MODEL_ID]
         print(f"Inflated prices enabled for '{MODEL_ID}': ${pi}/input-token, ${po}/output-token.")
-
-    default_usage_tracker._resolver = [fixed_rate_cost, *DEFAULT_RESOLVERS]
+        resolvers.insert(0, fixed_rate_cost)
+    default_usage_tracker._resolver = resolvers
 
     default_usage_tracker._gate = BudgetGate(
         [
@@ -205,18 +204,6 @@ def _print_breakdown(title: str, group: dict, *, width: int) -> None:
     print(f"\n{title}:")
     for key, m in group.items():
         print(f"  {key:<{width}} cost=${m['cost_usd']:.6f}  tokens={m['total_tokens']}")
-
-
-def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument(
-        "--inflated-prices",
-        action="store_true",
-        help="Inject an absurd per-token rate for the demo's model into _FIXED_PRICES "
-             "so fixed_rate_cost overrides genai-prices. Used to demonstrate the "
-             "HARD/SOFT budget rules without burning real spend.",
-    )
-    return p.parse_args()
 
 
 async def main() -> None:
