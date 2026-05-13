@@ -100,8 +100,8 @@ async def test_find_similar_and_combinator_finds_full_name(tmp_path: Path):
     ctx = _LoopContext(db_path=db, schemas=[_employees_schema()])
     inspect = _build_inspect_tool(ctx)
 
-    result = await inspect("employees", "name", "find_similar", value="Sam Lee")
-    # Both rows contain BOTH 'javier' AND 'brewster' (accent-folded):
+    result = await inspect("employees", "name", "find_similar", value="Ulric Brewster")
+    # Both rows contain BOTH 'ulric' AND 'brewster' (accent-folded):
     #   - Patrick Ulric Bréwster Häthaway Önken
     #   - Ulric Bréwster Wéntz
     # 'Léa Bréwster' has only 'brewster', so the AND-of-LIKEs drops it.
@@ -120,8 +120,8 @@ async def test_find_similar_falls_back_to_or_when_and_yields_nothing(tmp_path: P
     ctx = _LoopContext(db_path=db, schemas=[_employees_schema()])
     inspect = _build_inspect_tool(ctx)
 
-    # 'Bob Brewster' — no employee has both tokens, but two contain 'brewster'
-    # and one contains 'bob'. OR fallback should return all three.
+    # 'Bob Brewster' — no employee has both tokens, but three contain 'brewster'
+    # and one contains 'bob'. OR fallback should return all matching rows.
     result = await inspect("employees", "name", "find_similar", value="Bob Brewster")
     assert "Bob Tan" in result
     assert "Bréwster" in result  # at least one of the Bréwster rows

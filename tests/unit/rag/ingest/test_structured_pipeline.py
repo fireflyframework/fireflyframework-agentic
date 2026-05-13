@@ -346,14 +346,13 @@ async def test_ingest_structured_acquires_storage_write_lock(tmp_path: Path) -> 
 
 # ---- Composite primary keys -------------------------------------------------
 #
-# Real-world tables (e.g. ``monthly_table`` in the the test workbook)
-# have a candidate ID column like ``prid`` that *looks* unique in a 5-row
-# sample but is genuinely non-unique in full data — the row identity is
-# composite (``prid`` + ``ruta_num``). Without composite-PK support the
-# only options are "drop the PK and lose uniqueness" or "fail ingestion
-# on duplicates". The composite-PK path lets the user mark both columns
-# primary_key=True and the SQL generator emits a table-level
-# ``PRIMARY KEY (col_a, col_b)`` clause.
+# Real-world tables routinely have a candidate ID column that *looks*
+# unique in a 5-row sample but is genuinely non-unique in full data —
+# the row identity is composite (e.g. one row per (employee, route)).
+# Without composite-PK support the only options are "drop the PK and
+# lose uniqueness" or "fail ingestion on duplicates". The composite-PK
+# path lets the user mark both columns primary_key=True and the SQL
+# generator emits a table-level ``PRIMARY KEY (col_a, col_b)`` clause.
 
 
 def test_ingest_composite_pk_emits_table_level_clause(tmp_path: Path) -> None:
@@ -419,9 +418,10 @@ def test_pipeline_and_registry_share_header_picker() -> None:
     """Discovery (_excel_sample in structured_registry) and ingestion
     (_read_rows in structured_pipeline) must use the *same* function
     to pick the header row in an Excel sheet. Two copies drifted apart
-    in the past (5-row vs 20-row scan window) and ``archive_dated_table``
-    ingested 0 rows because discovery found the real header at row 8
-    but ingestion couldn't reach past row 5 — silent data loss.
+    in the past (5-row vs 20-row scan window) and a real sheet whose
+    header sat at row 8 ingested 0 rows because discovery found the
+    right header but ingestion couldn't reach past row 5 — silent
+    data loss.
     """
     from fireflyframework_agentic.rag.ingest import structured_pipeline, structured_registry
 
@@ -433,8 +433,8 @@ def test_pipeline_and_registry_share_header_picker() -> None:
 
 def test_read_rows_finds_header_past_row_five(tmp_path: Path) -> None:
     """End-to-end: ingestion-side ``_read_rows`` must reach the real
-    header even when it sits past row 5 (the prior cap). Hard
-    regression for archive_dated_table.
+    header even when it sits past row 5 (the prior cap). Regression
+    for the buried-header pattern.
     """
     openpyxl = pytest.importorskip("openpyxl")
     from fireflyframework_agentic.rag.ingest.structured_pipeline import _read_rows

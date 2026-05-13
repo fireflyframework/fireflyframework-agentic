@@ -393,7 +393,7 @@ def test_pick_header_row_idx_skips_numeric_banner_row():
     rows = [
         (None, None, 1, 2, 3, 4, None),
         ("PRID", "EMPLOYEE_ID", "NAME", "REGION", "REVENUE", "COST", "NOTES"),
-        ("test001", 4286, "Alice", "EU", 1000.0, 800.0, "-"),
+        ("test001", 1001, "Alice", "EU", 1000.0, 800.0, "-"),
     ]
     assert _pick_header_row_idx(rows) == 1
 
@@ -460,30 +460,31 @@ def test_skill_prompt_requires_non_empty_schema():
     assert "ONLY to the" in _SKILL or "only to the" in _SKILL.lower()
 
 
-# ---- Real-world workbook regression: the source workbook ----
+# ---- Real-world workbook regression suite -------------------------------
 #
-# After the first fix (`e9e4dc8`) the user re-ran discovery on a Mexican
-# sales-tracking workbook with eight sheets and still hit
+# After the first fix, a follow-up re-run of discovery on a messy
+# eight-sheet workbook still hit
 # ``ValidationError: tables Field required, input_value={}``. Offline
 # investigation against the actual file showed three concrete defects
 # that the first fix didn't cover:
 #
-#   * One sheet (``an archive sheet``) has the real header at row 8 —
-#     past the prior 8-row scan window, so the picker returned 0 and
-#     the sample for that sheet was six rows of mostly-None garbage.
-#   * One sheet (``pivot sheet``) has a 2-cell decorative title at row 0
-#     ``['DECORATIVE TITLE', '(en blanco)']`` that satisfies every
-#     "string-dominated, multi-cell" rule yet isn't the real header.
-#     The real header sits at row 2 with five string cells.
-#   * One sheet (``Sheet1``) is essentially blank but openpyxl still
-#     reports three rows, so it leaked a ``Headers: [None, None, None]``
-#     block into the LLM prompt, biasing the model toward empty output.
+#   * One sheet had the real header at row 8 — past the prior 8-row
+#     scan window, so the picker returned 0 and the sample for that
+#     sheet was six rows of mostly-None garbage.
+#   * Another sheet had a 2-cell decorative title at row 0
+#     ``['DECORATIVE TITLE', '(blank)']`` that satisfied every
+#     "string-dominated, multi-cell" rule yet wasn't the real header.
+#     The real header sat at row 2 with five string cells.
+#   * A third sheet was essentially blank but openpyxl still reported
+#     three rows, so it leaked a ``Headers: [None, None, None]`` block
+#     into the LLM prompt, biasing the model toward empty output.
 
 
 def test_pick_header_row_idx_finds_header_past_row_eight():
-    """Hard regression for ``an archive sheet``: scan window must reach
-    far enough to find the real header at row 8. With the prior ``[:8]``
-    cap the header was literally invisible.
+    """Scan window must reach far enough to find the real header at row 8.
+    With the prior ``[:8]`` cap the header was literally invisible when a
+    sheet stacked a five-line legend in column J followed by three blank
+    rows before the actual header.
     """
     from fireflyframework_agentic.rag.ingest.structured_registry import _pick_header_row_idx
 
@@ -498,17 +499,17 @@ def test_pick_header_row_idx_finds_header_past_row_eight():
         (None, None, None, None, None, None, None, None, None, None, None, None),
         (
             None,
-            "PRID",
-            "NUMERO DE EMPLEADO",
-            "NO. WORK DAY",
-            "FECHA DE INGRESO",
-            "CENTRO DE COSTOS",
-            "RUTA",
-            "GENERO",
-            "NOMBRE EMPLEADO",
-            "POSICION",
-            "LOCALIDAD",
-            "UNIDAD DE NEGOCIO",
+            "EMP_ID",
+            "STAFF_NO",
+            "WORK_DAY_ID",
+            "JOIN_DATE",
+            "COST_CENTER",
+            "ROUTE",
+            "GENDER",
+            "FULL_NAME",
+            "POSITION",
+            "LOCATION",
+            "BUSINESS_UNIT",
         ),
         (
             None,
@@ -529,24 +530,24 @@ def test_pick_header_row_idx_finds_header_past_row_eight():
 
 
 def test_pick_header_row_idx_prefers_wider_real_header_over_decorative_title():
-    """Hard regression for ``pivot sheet``: a 2-cell decorative title satisfies
-    every previous rule (multi-cell, 100% string-dominant) but isn't the
-    real header. The picker must prefer the wider 5-cell header below.
+    """A 2-cell decorative title satisfies every previous rule (multi-cell,
+    100% string-dominant) but isn't the real header. The picker must
+    prefer the wider 5-cell header below.
     """
     from fireflyframework_agentic.rag.ingest.structured_registry import _pick_header_row_idx
 
     rows = [
-        ("DECORATIVE TITLE", "(en blanco)", None, None, None),
+        ("DECORATIVE TITLE", "(blank)", None, None, None),
         (None, None, None, None, None),
         (
-            "Etiquetas de fila",
+            "Row Label",
             "Average Score",
-            "Cuenta de TOTAL INTERACCIONES",
-            "Promedio de AVG INTERACCIONES",
-            "Suma de Eventos",
+            "Total Interactions",
+            "Mean Interactions",
+            "Event Count",
         ),
-        ("REPRESENTANTE", 1.04, 346, 8.71, 3822),
-        ("BREAST CANCER", 1.00, 13, 5.44, 149),
+        ("Group A", 1.04, 346, 8.71, 3822),
+        ("Group B", 1.00, 13, 5.44, 149),
     ]
     assert _pick_header_row_idx(rows) == 2
 
@@ -727,9 +728,9 @@ def test_excel_sample_skips_sheets_with_no_usable_header(tmp_path: Path) -> None
 
 
 def test_excel_sample_finds_header_deep_in_sheet(tmp_path: Path) -> None:
-    """End-to-end regression for the ``an archive sheet`` pattern: a
-    sheet whose real header sits at row 9 (past the prior 8-row scan
-    window) must still produce a sample with that header as ``Headers:``.
+    """End-to-end regression for the buried-header pattern: a sheet
+    whose real header sits at row 9 (past the prior 8-row scan window)
+    must still produce a sample with that header as ``Headers:``.
     """
     openpyxl = pytest.importorskip("openpyxl")
     from fireflyframework_agentic.rag.ingest.structured_registry import _excel_sample

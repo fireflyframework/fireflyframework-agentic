@@ -156,9 +156,9 @@ def _build_inspect_tool(ctx: _LoopContext) -> Any:
           - ``find_similar``: case-insensitive, accent-folded substring match
             against the literal *value*. The value is tokenised on whitespace
             and matched as AND-of-LIKEs (so ``"Sam Lee"`` matches
-            ``"Patrick Ulric Bréwster Fernández"``). Falls back to OR-of-
-            tokens if AND yields zero matches. Use this for free-text filters
-            on names / entities where the user's spelling may not be exact.
+            ``"Samuel Andrew Léé Thompson"``). Falls back to OR-of-tokens
+            if AND yields zero matches. Use this for free-text filters on
+            names / entities where the user's spelling may not be exact.
           - ``numeric_summary``: total rows, non-null count, null count, sum,
             min, max, and *two* mean variants: ``mean_excluding_nulls`` (the
             SQL default ``AVG``) and ``mean_blanks_as_zero`` (treats NULL
@@ -468,9 +468,9 @@ Worked example 2 (ambiguous person name):
              string almost certainly is not the literal full name.
 
   inspect_table(employees, name, 'find_similar', value='Sam Lee')
-    -> ['Patrick Ulric Bréwster Fernández', 'Léa Bréwster', ...]
+    -> ['Samuel Andrew Léé Thompson', 'Sam Léé', ...]
   run_select("SELECT name, manager_id FROM employees "
-             "WHERE name = 'Patrick Ulric Bréwster Fernández'")
+             "WHERE name = 'Samuel Andrew Léé Thompson'")
 
   If find_similar returns multiple candidates and the question does not
   pick one, return rows for all candidates (WHERE name IN (...)) so the
