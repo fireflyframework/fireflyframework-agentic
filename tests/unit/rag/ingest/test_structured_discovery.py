@@ -143,42 +143,55 @@ async def test_interactive_refines_on_rejection(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_discover_schema_for_paths_combines_samples(tmp_path: Path):
-    """Multi-file discovery sends one prompt mentioning every file."""
+async def test_discover_schema_for_paths_runs_per_file_and_merges(tmp_path: Path):
+    """Multi-file discovery is now per-file: one LLM call per CSV/XLSX,
+    merged into a single TargetSchema. The previous design (one combined
+    LLM call across every sheet of every file) was fragile — a single
+    messy sheet anywhere in the combined sample made the model return
+    ``{}`` for the entire output. Per-file isolates the failure mode.
+
+    Cross-file foreign keys are no longer auto-proposed on initial
+    discovery (the per-file calls can't see each other); the user adds
+    them through a refinement round.
+    """
     a = tmp_path / "customers.csv"
     a.write_text("id,name\n1,Alice\n")
     b = tmp_path / "orders.csv"
     b.write_text("id,customer_id,total\n1,1,9.99\n")
 
-    expected = TargetSchema(
+    customers_schema = TargetSchema(
         tables=[
             TableSpec(
                 name="customers",
                 columns=[ColumnSpec(name="id", type=ColumnType.integer, primary_key=True)],
-            ),
+            )
+        ]
+    )
+    orders_schema = TargetSchema(
+        tables=[
             TableSpec(
                 name="orders",
                 columns=[
                     ColumnSpec(name="id", type=ColumnType.integer, primary_key=True),
-                    ColumnSpec(name="customer_id", type=ColumnType.integer, foreign_key="customers.id"),
+                    ColumnSpec(name="customer_id", type=ColumnType.integer),
                 ],
-            ),
+            )
         ]
     )
-    mock_result = MagicMock()
-    mock_result.output = expected
+    per_file = {"customers.csv": customers_schema, "orders.csv": orders_schema}
 
-    with patch("fireflyframework_agentic.rag.ingest.structured_registry._make_discovery_agent") as mock_factory:
-        mock_agent = MagicMock()
-        mock_agent.run = AsyncMock(return_value=mock_result)
-        mock_factory.return_value = mock_agent
+    async def fake_discover(path: Path, **kwargs: object) -> TargetSchema:
+        return per_file[path.name]
+
+    with patch(
+        "fireflyframework_agentic.rag.ingest.structured_registry.discover_schema",
+        new=AsyncMock(side_effect=fake_discover),
+    ) as mock_single:
         result = await discover_schema_for_paths([a, b])
 
-    prompt = mock_agent.run.call_args[0][0]
-    assert "customers.csv" in prompt
-    assert "orders.csv" in prompt
-    assert "foreign_key" in prompt
-    assert len(result.tables) == 2
+    assert mock_single.await_count == 2
+    table_names = {t.name for t in result.tables}
+    assert table_names == {"customers", "orders"}
 
 
 @pytest.mark.asyncio
@@ -573,6 +586,116 @@ def test_target_schema_defaults_tables_to_empty_list():
     assert s.tables == []
     s2 = TargetSchema()
     assert s2.tables == []
+
+
+@pytest.mark.asyncio
+async def test_discover_schema_refinement_empty_calls_out_discarded_baseline(
+    csv_file: Path,
+) -> None:
+    """When the LLM returns ``{}`` during a *refinement* call (a
+    ``previous_schema`` was supplied), the error must frame it as the
+    model discarding a validated baseline — not as "couldn't find any
+    tables." This is the failure we saw on the real ingestion test:
+    refinement returned empty despite having 8 prior tables to carry
+    forward. Without this differentiated diagnostic the user can't
+    tell whether to clean up the file or retry with simpler edits.
+    """
+    prior = TargetSchema(
+        tables=[
+            TableSpec(name="x", columns=[ColumnSpec(name="id", type=ColumnType.integer)]),
+            TableSpec(name="y", columns=[ColumnSpec(name="id", type=ColumnType.integer)]),
+        ]
+    )
+    mock_result = MagicMock()
+    mock_result.output = TargetSchema()  # empty
+
+    with patch("fireflyframework_agentic.rag.ingest.structured_registry._make_discovery_agent") as mock_factory:
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value=mock_result)
+        mock_factory.return_value = mock_agent
+        with pytest.raises(ValueError) as exc_info:
+            await discover_schema(csv_file, corrections="drop table y", previous_schema=prior)
+
+    msg = str(exc_info.value)
+    # Specifically frames the failure as refinement, not initial discovery.
+    assert "refinement" in msg.lower()
+    # Surfaces the baseline that was thrown away.
+    assert "x" in msg and "y" in msg
+    # Echoes back what the user said so they can adjust.
+    assert "drop table y" in msg
+
+
+def test_skill_prompt_allows_composite_primary_keys():
+    """``_SKILL`` must teach the model that multiple primary_key=True
+    columns form a composite key. Otherwise the prior "At most one
+    primary key per table" wording leaves the model unable to express
+    real-world identity like (employee_id, route).
+    """
+    from fireflyframework_agentic.rag.ingest.structured_registry import _SKILL
+
+    assert "composite primary key" in _SKILL.lower()
+    # The previous restrictive line must be gone, otherwise the model
+    # gets contradictory guidance and falls back to single-PK.
+    assert "At most one primary key" not in _SKILL
+
+
+@pytest.mark.asyncio
+async def test_discover_schema_retries_once_on_empty_output(csv_file: Path) -> None:
+    """The LLM is non-deterministic on borderline-messy inputs — same
+    sample produces non-empty most runs and ``{}`` on a minority. One
+    Python-side retry turns the flaky pass rate into a reliable one.
+    The retry must include the original prompt plus a short nudge so
+    the model knows what changed.
+    """
+    expected = TargetSchema(tables=[TableSpec(name="sales", columns=[ColumnSpec(name="id", type=ColumnType.integer)])])
+    empty_result = MagicMock(output=TargetSchema())
+    good_result = MagicMock(output=expected)
+
+    with patch("fireflyframework_agentic.rag.ingest.structured_registry._make_discovery_agent") as mock_factory:
+        mock_agent = MagicMock()
+        # First call returns empty; second returns the good schema.
+        mock_agent.run = AsyncMock(side_effect=[empty_result, good_result])
+        mock_factory.return_value = mock_agent
+        result = await discover_schema(csv_file)
+
+    assert result.tables[0].name == "sales"
+    assert mock_agent.run.await_count == 2
+    # Second call must have the nudge appended.
+    second_prompt = mock_agent.run.call_args_list[1][0][0]
+    assert "previous response contained no tables" in second_prompt
+
+
+@pytest.mark.asyncio
+async def test_discover_schema_does_not_retry_when_first_attempt_succeeds(
+    csv_file: Path,
+) -> None:
+    """The retry is only there for empty-output recovery — don't waste
+    an API call when the first attempt already produced tables.
+    """
+    expected = TargetSchema(tables=[TableSpec(name="sales", columns=[ColumnSpec(name="id", type=ColumnType.integer)])])
+    with patch("fireflyframework_agentic.rag.ingest.structured_registry._make_discovery_agent") as mock_factory:
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value=MagicMock(output=expected))
+        mock_factory.return_value = mock_agent
+        await discover_schema(csv_file)
+
+    assert mock_agent.run.await_count == 1
+
+
+def test_discover_schema_refinement_prompt_documents_contract():
+    """The discovery prompt for refinement must teach the model to
+    carry unchanged tables forward and only omit on explicit drop/remove
+    corrections. Without this we kept hitting empty-on-refinement on
+    real ingest runs.
+    """
+    import inspect
+
+    from fireflyframework_agentic.rag.ingest import structured_registry
+
+    src = inspect.getsource(structured_registry)
+    assert "Refinement contract" in src
+    # Single-path and multi-path discovery both need it.
+    assert src.count("Refinement contract") >= 2
 
 
 def test_excel_sample_skips_sheets_with_no_usable_header(tmp_path: Path) -> None:

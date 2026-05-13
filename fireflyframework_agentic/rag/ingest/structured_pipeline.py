@@ -39,13 +39,23 @@ log = logging.getLogger(__name__)
 class TableIngestResult(TypedDict):
     """Per-table outcome returned by :func:`ingest_structured`.
 
-    ``status`` is ``"success"`` when every row inserted, or ``"failed"``
-    when at least one row raised a ``sqlite3.Error`` (the whole table is
-    rolled back and ``inserted`` is 0). ``errors`` carries one entry per
-    failing row in ``f"row {row_num}: {sqlite_message}"`` form.
+    ``status``:
+      - ``"success"`` — every row inserted, no errors.
+      - ``"partial"`` — at least one row failed (UNIQUE/NOT NULL/type
+        violation) but the rest were committed. This is the case we
+        hit on real workbooks where a handful of placeholder rows
+        (e.g. ``prid = '-'`` vacancy markers) conflict with a composite
+        primary key — atomic rollback used to lose ~680 valid rows to
+        protect 13 conflicting ones, which is the wrong trade-off in
+        practice.
+      - ``"failed"`` — zero rows inserted (every row errored, or the
+        sheet was empty after filtering).
+
+    ``errors`` carries one entry per failing row in
+    ``f"row {row_num}: {sqlite_message}"`` form, regardless of status.
     """
 
-    status: Literal["success", "failed"]
+    status: Literal["success", "partial", "failed"]
     inserted: int
     errors: list[str]
 
@@ -190,11 +200,21 @@ def _sync_ingest_table(
     conn = sqlite3.connect(db_path, timeout=30.0, isolation_level=None)
     conn.execute("PRAGMA busy_timeout = 30000")
     try:
+        pk_cols = [c for c in table_spec.columns if c.primary_key]
+        # Single-col PK keeps the inline ``PRIMARY KEY`` form so an
+        # ``INTEGER PRIMARY KEY`` column remains the SQLite rowid alias
+        # (the table-level form below would forfeit that). With ≥2 PK
+        # columns the row identity is composite and we emit a
+        # ``PRIMARY KEY (col_a, col_b, …)`` clause at the end of the
+        # column list. This is what unblocks tables like
+        # ``monthly_table`` where ``prid`` repeats across rows but
+        # ``(prid, ruta_num)`` is genuinely unique.
+        composite_pk = len(pk_cols) > 1
         col_defs: list[str] = []
         fk_defs: list[str] = []
         for col in table_spec.columns:
             parts = [_quote(col.name), _SQL_TYPES[col.type]]
-            if col.primary_key:
+            if col.primary_key and not composite_pk:
                 parts.append("PRIMARY KEY")
             elif not col.nullable:
                 parts.append("NOT NULL")
@@ -205,7 +225,8 @@ def _sync_ingest_table(
                     fk_defs.append(
                         f"FOREIGN KEY ({_quote(col.name)}) REFERENCES {_quote(ref_table)} ({_quote(ref_column)})"
                     )
-        all_defs = col_defs + fk_defs
+        pk_def = [f"PRIMARY KEY ({', '.join(_quote(c.name) for c in pk_cols)})"] if composite_pk else []
+        all_defs = col_defs + pk_def + fk_defs
         conn.execute(f"CREATE TABLE IF NOT EXISTS {_quote(table_spec.name)} ({', '.join(all_defs)})")
         col_names = [c.name for c in table_spec.columns]
         placeholders = ", ".join("?" for _ in col_names)
@@ -227,10 +248,16 @@ def _sync_ingest_table(
                     inserted += 1
                 except sqlite3.Error as exc:
                     errors.append(f"row {row_num}: {exc}")
-            if errors:
-                conn.execute("ROLLBACK")
-                return {"status": "failed", "inserted": 0, "errors": errors}
+            # Commit whatever inserted successfully; per-row errors are
+            # reported but don't roll back valid rows. ``failed`` is
+            # reserved for "every row that was attempted errored" — an
+            # empty CSV (header only, no data rows) is still a success
+            # with inserted=0 because there was nothing to fail on.
             conn.execute("COMMIT")
+            if errors and inserted == 0:
+                return {"status": "failed", "inserted": 0, "errors": errors}
+            if errors:
+                return {"status": "partial", "inserted": inserted, "errors": errors}
             return {"status": "success", "inserted": inserted, "errors": []}
         except BaseException:
             try:
