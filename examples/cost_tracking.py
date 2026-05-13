@@ -135,7 +135,7 @@ async def run_agents() -> None:
         instructions="Translate the user's text to Spanish. Return only the translation.",
     )
 
-    reflexion = ReflexionPattern(max_steps=3, model=MODEL)
+    reflexion = ReflexionPattern(max_steps=6, model=MODEL)
     jokes = await comedian.run_with_reasoning(
         reflexion,
         "Tell me three short jokes from The Hitchhiker's Guide to the Galaxy.",
