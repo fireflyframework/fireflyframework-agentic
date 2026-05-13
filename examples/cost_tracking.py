@@ -16,9 +16,15 @@ On top of that it shows:
   ``APPLICATIONINSIGHTS_CONNECTION_STRING`` is in the environment, OTel
   metrics flow to Application Insights; otherwise the demo falls back to
   local sinks only.
-* A custom :class:`CostFn` for contractually-priced models and a
-  :class:`BudgetGate` with HARD/SOFT rules, both installed on the default
-  tracker so they apply to real agent traffic.
+* A :class:`BudgetGate` with HARD/SOFT rules installed on the default
+  tracker so it applies to real agent traffic.
+* A model-specific :class:`CostFn` (``fixed_rate_cost``) for
+  contractually-priced models. This resolver only fires when
+  ``ctx.model == "acme:internal-llm"``; for any other model (including
+  the Sonnet model used by the agents below) it returns ``None`` and
+  the chain falls through to ``DEFAULT_RESOLVERS`` — i.e. the
+  ``genai-prices`` catalog. It is included to show the *shape* of a
+  contractual override; swap in your own model id and rates to use it.
 
 Examples:
 
@@ -68,11 +74,21 @@ load_dotenv()
 MODEL = os.environ["MODEL"]
 JSONL_PATH = Path("/tmp/firefly-cost.jsonl")
 
+# Per-model (input, output) USD/token overrides for contractually-priced LLMs.
+# Add entries here when you have a negotiated rate that differs from the public
+# catalog. Models not listed fall through to the next resolver in the chain.
 _FIXED_PRICES = {"acme:internal-llm": (0.5e-6, 2.0e-6)}
 
 
 def fixed_rate_cost(ctx: CostContext) -> float | None:
-    """Return the negotiated USD cost for contractually-priced models."""
+    """Price a call at the negotiated rate for contractually-priced models.
+
+    Returns ``None`` for any model not present in :data:`_FIXED_PRICES`, which
+    lets the next resolver in the chain handle it (typically genai-prices for
+    public catalog pricing). The demo agents below run on Sonnet, so in a
+    default run this resolver always returns ``None``; it is wired up to
+    illustrate the *pattern* for swapping in your own model id and rates.
+    """
     price = _FIXED_PRICES.get(ctx.model)
     if price is None:
         return None
@@ -81,7 +97,13 @@ def fixed_rate_cost(ctx: CostContext) -> float | None:
 
 
 def make_inflated_resolver(per_call_usd: float):
-    """Build a resolver that prices every call at a fixed USD amount."""
+    """Build a resolver that prices *every* call at a fixed USD amount.
+
+    Unlike :func:`fixed_rate_cost`, this resolver ignores ``ctx.model`` and
+    always returns a value, so prepending it to the chain short-circuits
+    every other resolver. Use it to deliberately overshoot budget rules in
+    tests/demos without burning real spend.
+    """
     def _resolver(_ctx: CostContext) -> float:
         return per_call_usd
     return _resolver
