@@ -415,6 +415,48 @@ def test_ingest_composite_pk_rejects_duplicate_composite(tmp_path: Path) -> None
     assert any("activity.prid" in e and "activity.ruta_num" in e for e in res["errors"])
 
 
+def test_pipeline_and_registry_share_header_picker() -> None:
+    """Discovery (_excel_sample in structured_registry) and ingestion
+    (_read_rows in structured_pipeline) must use the *same* function
+    to pick the header row in an Excel sheet. Two copies drifted apart
+    in the past (5-row vs 20-row scan window) and ``archive_dated_table``
+    ingested 0 rows because discovery found the real header at row 8
+    but ingestion couldn't reach past row 5 — silent data loss.
+    """
+    from fireflyframework_agentic.rag.ingest import structured_pipeline, structured_registry
+
+    assert structured_registry._pick_header_row_idx is structured_pipeline._pick_header_row_idx, (
+        "header detection has forked again — discovery and ingestion will silently drop rows"
+    )
+    assert structured_registry._HEADER_SCAN_ROWS == structured_pipeline._HEADER_SCAN_ROWS
+
+
+def test_read_rows_finds_header_past_row_five(tmp_path: Path) -> None:
+    """End-to-end: ingestion-side ``_read_rows`` must reach the real
+    header even when it sits past row 5 (the prior cap). Hard
+    regression for archive_dated_table.
+    """
+    openpyxl = pytest.importorskip("openpyxl")
+    from fireflyframework_agentic.rag.ingest.structured_pipeline import _read_rows
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "deep"
+    for i in range(8):
+        ws.cell(row=i + 1, column=10, value=f"LEGEND {i + 1}")
+    ws.append([None, "PRID", "EMPLOYEE_ID", "NAME"])
+    ws.append([None, "k1", 1, "Alice"])
+    ws.append([None, "k2", 2, "Bob"])
+    p = tmp_path / "deep.xlsx"
+    wb.save(p)
+
+    headers, data = _read_rows(p, "deep")
+    assert "PRID" in headers
+    assert "EMPLOYEE_ID" in headers
+    assert len(data) == 2
+    assert data[0][1] == "k1"
+
+
 def test_ingest_single_pk_still_uses_inline_form(tmp_path: Path) -> None:
     """Single-col PK keeps the inline form so ``INTEGER PRIMARY KEY``
     columns remain the SQLite rowid alias (an inline-vs-table-level

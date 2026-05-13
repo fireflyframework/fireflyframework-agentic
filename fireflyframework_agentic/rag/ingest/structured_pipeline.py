@@ -87,16 +87,54 @@ def _normalize_col(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", str(name).lower().replace("&", "and")).strip("_")
 
 
-def _find_header_row(rows: list[tuple[Any, ...]]) -> int:
-    """Return the index of the first row that looks like real headers.
+# How far down a sheet to look for the real header row. Real-world Excel
+# files frequently bury headers under ~10 single-cell title / legend / spacer
+# rows (e.g. an archive sheet in the the test workbook puts the header at
+# row 8). Both discovery (_excel_sample) and ingestion (_read_rows) must
+# use the same value or they drift — discovery sees the right schema while
+# ingestion silently drops every row.
+_HEADER_SCAN_ROWS = 20
 
-    A title row typically has exactly one non-null cell; the actual header
-    row has two or more non-null cells.
+
+def _pick_header_row_idx(candidate_rows: list[tuple[Any, ...]]) -> int:
+    """Choose the row in *candidate_rows* most likely to be the real header.
+
+    Single source of truth for header detection — used by ``_excel_sample``
+    during schema discovery AND by ``_read_rows`` during ingestion. Keeping
+    these two code paths in sync is load-bearing: when they pick different
+    rows, discovery infers a correct schema but ingestion can't find the
+    columns to populate it, and every data row gets silently filtered out
+    by the NOT NULL pre-filter in ``_load_rows``.
+
+    Heuristic, in order:
+      1. Skip empty / one-cell title rows (a real header has ≥2 cells).
+      2. Among multi-cell *string-dominated* rows (>50% of non-null cells
+         are strings — real Excel headers are almost always strings, not
+         integers), pick the one with the most non-null cells. Real
+         headers are wide; decorative two-cell titles like
+         ``['DECORATIVE TITLE', '(en blanco)']`` lose to the
+         5-column real header at row 2.
+      3. Fall back to the first multi-cell row.
+
+    Returns 0 when no row passes any test (so the existing behaviour for
+    well-formed sheets is preserved).
+
+    The caller is expected to pass at most ``_HEADER_SCAN_ROWS`` rows;
+    that bound governs how far the picker will look.
     """
-    for i, row in enumerate(rows[:5]):
-        if sum(1 for v in row if v is not None) >= 2:
-            return i
-    return 0
+    multi_cell = [(i, r) for i, r in enumerate(candidate_rows) if sum(1 for v in r if v is not None) >= 2]
+    if not multi_cell:
+        return 0
+    string_dominated: list[tuple[int, int]] = []  # (row_idx, non_null_count)
+    for i, r in multi_cell:
+        non_null = [v for v in r if v is not None]
+        string_count = sum(1 for v in non_null if isinstance(v, str))
+        if string_count * 2 > len(non_null):
+            string_dominated.append((i, len(non_null)))
+    if string_dominated:
+        # Widest row wins, earliest row breaks ties.
+        return min(string_dominated, key=lambda t: (-t[1], t[0]))[0]
+    return multi_cell[0][0]
 
 
 def _read_rows(path: Path, table_name: str) -> tuple[list[str], list[list[Any]]]:
@@ -112,7 +150,7 @@ def _read_rows(path: Path, table_name: str) -> tuple[list[str], list[list[Any]]]
         if sheet_name is None:
             raise KeyError(f"No sheet matching table {table_name!r} in {path.name} (sheets: {wb.sheetnames})")
         all_rows = list(wb[sheet_name].iter_rows(values_only=True))
-        header_idx = _find_header_row(all_rows)
+        header_idx = _pick_header_row_idx(all_rows[:_HEADER_SCAN_ROWS])
         return [str(h) if h is not None else "" for h in all_rows[header_idx]], [
             list(r) for r in all_rows[header_idx + 1 :]
         ]
