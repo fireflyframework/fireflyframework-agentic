@@ -37,7 +37,7 @@ from pydantic import BaseModel, ValidationError
 from pydantic_ai import Agent as PydanticAgent
 from pydantic_ai.models import Model
 
-from fireflyframework_agentic.exceptions import ReasoningError, ReasoningStepLimitError
+from fireflyframework_agentic.exceptions import BudgetExceededError, ReasoningError, ReasoningStepLimitError
 from fireflyframework_agentic.observability.budget import ScopeContext
 from fireflyframework_agentic.observability.usage import default_usage_tracker
 from fireflyframework_agentic.prompts.template import Prompt, PromptTemplate
@@ -507,6 +507,8 @@ class AbstractReasoningPattern(ABC):
                     correlation_id=correlation_id,
                 ),
             )
+        except BudgetExceededError:
+            raise
         except Exception:  # noqa: BLE001
             logger.debug("Failed to record reasoning usage for '%s'", self._name, exc_info=True)
 
