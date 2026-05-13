@@ -77,3 +77,19 @@ class StorageBackend(ABC):
         backends with bounded leases (Azure) to extend before
         expiry."""
         raise NotImplementedError
+
+    @property
+    def local_path(self) -> Path | None:
+        """Path to the on-disk file this backend stores its bytes in, if any.
+
+        Returns ``None`` for remote backends (Azure Blob, S3, etc.) where
+        the storage isn't a single local file. Returns the file path for
+        local-filesystem backends. ``DatabaseStore`` reads this at
+        construction time: when it's not ``None``, the store's local
+        working copy is co-located with the backend file (same inode,
+        no duplicate, no ``~/.cache/`` divergence). When it's ``None``,
+        the store falls back to its independent cache directory — the
+        right behaviour for backends where the working copy MUST be a
+        local file separate from the remote source of truth.
+        """
+        return None

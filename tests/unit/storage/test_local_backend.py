@@ -138,3 +138,44 @@ async def test_stale_sentinel_reclaim(db_path: Path) -> None:
     backend = LocalBackend(db_path, stale_lock_seconds=1)
     token = await backend.acquire_lock(timeout=2.0)
     await backend.release_lock(token)
+
+
+# ---- Co-location: backend file is also the working copy -----------------
+#
+# LocalBackend.local_path is the hint DatabaseStore reads to decide whether
+# to keep its working copy inside the backend's directory rather than under
+# ~/.cache/. The same-inode short-circuits on download / upload are what
+# make this safe — they're what these tests pin.
+
+
+async def test_local_backend_exposes_path(db_path: Path) -> None:
+    """``path`` and ``local_path`` both return the on-disk backing file.
+
+    ``DatabaseStore`` reads ``local_path``; the public ``path`` lets
+    callers and tests assert "corpus state lives here" without poking
+    at ``_path``.
+    """
+    backend = LocalBackend(db_path)
+    assert backend.path == db_path
+    assert backend.local_path == db_path
+
+
+async def test_upload_short_circuits_when_src_is_backing_file(db_path: Path) -> None:
+    """Co-location case: ``upload(src=self._path)`` is a no-op copy.
+
+    The bytes already live at ``self._path`` — the working copy is the
+    backend file. ``shutil.copyfile`` is not invoked, no temp file is
+    created, and the conditional checks (``if_match`` / ``if_none_match``)
+    are vacuous because there's no separate remote that could race.
+    """
+    db_path.write_bytes(b"v1")
+    backend = LocalBackend(db_path)
+    # The conditional below would otherwise raise StorageLeaseError
+    # ("if_none_match=* but file exists"). With the same-inode short-
+    # circuit it just reports current metadata.
+    meta = await backend.upload(db_path, if_none_match="*")
+    assert meta.exists is True
+    assert db_path.read_bytes() == b"v1"
+    # Confirm no .up.<uuid> temp file leaked into the directory.
+    leftovers = [p.name for p in db_path.parent.iterdir() if ".up." in p.name]
+    assert leftovers == []

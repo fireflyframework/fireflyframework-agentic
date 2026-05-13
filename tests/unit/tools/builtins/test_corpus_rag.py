@@ -382,3 +382,99 @@ async def test_list_corpora_returns_only_dirs_with_sqlite(configured_env: Path, 
     for entry in result["corpora"]:
         assert entry["size_bytes"] > 0
         assert "T" in entry["modified"]  # ISO 8601 marker
+
+
+# ---- Tool-description workflow guidance (prompt-contract tests) ---------
+#
+# These pin the directive language an MCP host's LLM reads when deciding
+# which corpus tool to call. The original descriptions buried the
+# discover→review→ingest workflow in the middle of a paragraph and Claude
+# Desktop's LLM consistently skipped discovery. The descriptions below
+# put the workflow up front with imperative voice. These tests fail if
+# a future edit strips the directives.
+
+
+def test_ingest_corpus_filesystem_description_excludes_tabular_files() -> None:
+    """The filesystem ingest tool's description must spell out that
+    tabular files are not handled here — otherwise an LLM thinks
+    "Ingest every file under root_path" covers Excel too, never calls
+    ingest_corpus_structured, and the user's spreadsheets silently
+    don't get loaded.
+    """
+    from fireflyframework_agentic.tools.builtins.corpus_rag import ingest_corpus_filesystem
+
+    desc = ingest_corpus_filesystem.description.lower()
+    assert "tabular files" in desc, "must spell out which file types are excluded"
+    assert "excluded" in desc or "exclude" in desc
+    # Must reciprocally point at the right tool so the LLM knows where to go.
+    assert "ingest_corpus_structured" in desc
+
+
+def test_ingest_corpus_filesystem_description_covers_mixed_folders() -> None:
+    """When a folder mixes documents and spreadsheets, the LLM must
+    call BOTH tools. The description has to say this explicitly.
+    """
+    from fireflyframework_agentic.tools.builtins.corpus_rag import ingest_corpus_filesystem
+
+    desc = ingest_corpus_filesystem.description.lower()
+    assert "both" in desc, "must tell the LLM to call BOTH tools on mixed folders"
+    assert "neither alone" in desc or "alone" in desc
+
+
+def test_discover_corpus_schema_description_requires_user_review() -> None:
+    """Discovery must direct the LLM to surface the proposed schema for
+    user review before passing it to ingest_corpus_structured. Without
+    this, unreviewed schemas reach ingest, units / FKs / types are wrong,
+    and the user can't tell until corpus_query gives a confidently-wrong
+    answer.
+    """
+    from fireflyframework_agentic.tools.builtins.corpus_rag import discover_corpus_schema
+
+    desc = discover_corpus_schema.description
+    assert "STEP 1" in desc, "must position itself as the first step of a workflow"
+    # Imperative voice — softer phrasings ("the caller can review") didn't
+    # land for the model.
+    assert "MUST present" in desc or "must present" in desc
+    assert "review" in desc.lower()
+    # Must explicitly call out unit because PR #165 added it and discovery
+    # is the only point in the workflow where the user can correct it.
+    assert "unit" in desc.lower()
+
+
+def test_discover_corpus_schema_description_explains_refinement_loop() -> None:
+    """The previous_schema / corrections refinement loop is the only way
+    a user can iterate on a wrong schema. The description must spell it
+    out so the LLM knows to call this tool again on user feedback.
+    """
+    from fireflyframework_agentic.tools.builtins.corpus_rag import discover_corpus_schema
+
+    desc = discover_corpus_schema.description
+    assert "previous_schema" in desc
+    assert "corrections" in desc
+
+
+def test_ingest_corpus_structured_description_requires_schema_arg() -> None:
+    """The structured-ingest tool must direct interactive callers to pass
+    a user-reviewed schema. Auto-inference still works for scripts, but
+    the recommendation in chat / MCP must be discover → review → ingest.
+    """
+    from fireflyframework_agentic.tools.builtins.corpus_rag import ingest_corpus_structured
+
+    desc = ingest_corpus_structured.description
+    assert "STEP 2" in desc, "must position itself as the second step of a workflow"
+    assert "ALWAYS" in desc, "should use strong directive language"
+    assert "discover_corpus_schema" in desc, "must reciprocally name the step-1 tool"
+    # Numbered steps make the flow scannable for the LLM.
+    assert "1." in desc and "2." in desc and "3." in desc and "4." in desc
+
+
+def test_ingest_corpus_structured_description_warns_about_no_schema_fallback() -> None:
+    """Auto-inference is the foot-gun. The description must mark it
+    clearly as the wrong choice for interactive contexts so the LLM
+    doesn't accidentally take that branch.
+    """
+    from fireflyframework_agentic.tools.builtins.corpus_rag import ingest_corpus_structured
+
+    desc = ingest_corpus_structured.description.lower()
+    assert "without a schema" in desc or "without schema" in desc or "without an explicit schema" in desc.lower()
+    assert "unreviewed" in desc or "non-interactive" in desc
