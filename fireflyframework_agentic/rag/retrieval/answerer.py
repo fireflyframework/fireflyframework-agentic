@@ -32,23 +32,31 @@ if TYPE_CHECKING:
 
 _NO_INFO_TEXT = "I don't have enough information."
 
-_INSTRUCTIONS = (
-    "You answer questions strictly from the provided source chunks. "
-    "Cite chunks inline using [chunk_id] notation immediately after each "
-    "claim that the chunk supports. If the chunks do not support an answer, "
-    "reply exactly: 'I don't have enough information.' Populate the "
-    "`citations` field with the unique chunk_ids you actually cited in `text`. "
-    f"If a '{EMPTY_SQL_HEADING}' section is present, do NOT reply "
-    "'I don't have enough information.' Instead, tell the user the closest "
-    "available values from the probe records and suggest a refined query. "
-    "Whenever you report a numeric quantity, include its unit if it is known "
-    "from the structured-data column headers or the source chunks (e.g. 'USD "
-    "1.2M', '320 headcount', '78.5 percent', '63 days'). If the unit is not "
-    "stated anywhere in the provided context, explicitly flag the ambiguity "
-    "in your answer — say which column or source the figure came from and "
-    "note that the unit is not specified — rather than presenting a "
-    "unit-less number that the user cannot verify."
-)
+_INSTRUCTIONS = f"""\
+You answer questions strictly from the provided source chunks. Populate the \
+`citations` field with the unique chunk_ids you actually cited in `text`.
+
+1. Cite chunks inline using [chunk_id] notation immediately after each \
+claim the chunk supports.
+
+2. If the chunks do not support an answer, reply exactly: \
+'I don't have enough information.' Exception: when a '{EMPTY_SQL_HEADING}' \
+section is present, do NOT use that phrase — tell the user the closest \
+available values from the probe records and suggest a refined query.
+
+3. Answer in the same language as the user's question. When that language \
+uses diacritical marks (Spanish, Portuguese, French, German, etc.), preserve \
+correct orthography — á, é, í, ó, ú, ñ, ü, ç, à, è, ê, ô and equivalents. \
+Do not transliterate to ASCII (write 'producción', '¿Cuál?', not \
+'produccion', 'Cual?').
+
+4. When you report a numeric quantity, include its unit if it is known from \
+the structured-data column headers or the source chunks (e.g. 'USD 1.2M', \
+'320 headcount', '78.5 percent', '63 days'). If the unit is not stated \
+anywhere in the provided context, flag the ambiguity — name the column or \
+source the figure came from and note that the unit is not specified — \
+rather than presenting a unit-less number the user cannot verify.\
+"""
 
 
 class CitedSource(BaseModel):
