@@ -527,6 +527,10 @@ Rules:
   - Use the exact table and column names from the schema below.
   - If the question cannot be answered from this schema at all, call
     run_select('SELECT 1 WHERE 1=0') and stop.
+  - When the schema lists a column with `unit=…`, preserve that unit
+    in your SELECT result — alias the column to embed it (e.g.
+    `SUM(value) AS "total_value_usd_millions"`) or co-select the unit
+    literal. Do not silently strip the unit.
 """
 
 
@@ -672,19 +676,40 @@ def _build_schema_context(schemas: list[TargetSchema], db_path: Path | None = No
     count near the row count signals a unique identifier. Cardinality
     failures fall back to the un-annotated descriptor and log a
     warning — schema drift must not block retrieval.
+
+    When ``ColumnSpec.unit`` is set, the unit is also appended (e.g.
+    ``value (float, unit=USD millions)``) so the agent echoes the
+    correct unit alongside any numeric value it returns. Both
+    annotations live inside the same parenthesised, comma-separated
+    list — order is ``type, [N distinct,] [unit=…]``.
     """
     cardinalities = _string_column_cardinalities(schemas, db_path) if db_path is not None else {}
     lines: list[str] = ["Available tables:"]
     for schema in schemas:
         for table in schema.tables:
-            descs: list[str] = []
-            for col in table.columns:
-                if col.type == ColumnType.string and (table.name, col.name) in cardinalities:
-                    descs.append(f"{col.name} ({col.type.value}, {cardinalities[(table.name, col.name)]} distinct)")
-                else:
-                    descs.append(f"{col.name} ({col.type.value})")
+            descs = [_format_column_descriptor(c, cardinalities.get((table.name, c.name))) for c in table.columns]
             lines.append(f"- {table.name}: {', '.join(descs)}")
     return "\n".join(lines)
+
+
+def _format_column_descriptor(column: Any, distinct: int | None = None) -> str:
+    """Render one ``ColumnSpec`` as ``name (type[, N distinct][, unit=…])``.
+
+    Single render path for the agent-facing descriptor. The schema
+    context, future error messages, and ad-hoc debug prints share this
+    shape, so the worked examples in ``_SYSTEM`` (which copy the format
+    literally) stay in lockstep with what the agent actually sees.
+
+    ``distinct`` is appended only when the caller probed cardinality —
+    typically only for string columns, and only when a ``db_path`` was
+    available. Numeric / date columns always render without a count.
+    """
+    parts = [column.type.value]
+    if distinct is not None:
+        parts.append(f"{distinct} distinct")
+    if column.unit:
+        parts.append(f"unit={column.unit}")
+    return f"{column.name} ({', '.join(parts)})"
 
 
 def _string_column_cardinalities(schemas: list[TargetSchema], db_path: Path) -> dict[tuple[str, str], int]:
