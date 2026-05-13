@@ -115,10 +115,13 @@ def configure_default_tracker(*, with_otel: bool) -> None:
 
 
 async def run_agents() -> None:
-    poet = FireflyAgent(
-        name="poet",
+    comedian = FireflyAgent(
+        name="comedian",
         model=MODEL,
-        instructions="You are a creative poet. Write short, evocative poems.",
+        instructions=(
+            "You are a fan of Douglas Adams. Tell short jokes in the style of "
+            "The Hitchhiker's Guide to the Galaxy."
+        ),
     )
     summarizer = FireflyAgent(
         name="summarizer",
@@ -131,10 +134,10 @@ async def run_agents() -> None:
         instructions="Translate the user's text to Spanish. Return only the translation.",
     )
 
-    poem = await poet.run("Write a four-line poem about the ocean at dawn.")
-    print(f"\n[poet]\n{poem.output}")
+    jokes = await comedian.run("Tell me three short jokes from The Hitchhiker's Guide to the Galaxy.")
+    print(f"\n[comedian]\n{jokes.output}")
 
-    summary = await summarizer.run(poem.output)
+    summary = await summarizer.run(jokes.output)
     print(f"\n[summarizer]\n{summary.output}")
 
     translation = await translator.run(summary.output)
