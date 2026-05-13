@@ -30,6 +30,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.exceptions import ReasoningStepLimitError
 from fireflyframework_agentic.reasoning import ReflexionPattern
 from fireflyframework_agentic.observability.budget import (
     BudgetGate,
@@ -135,14 +136,17 @@ async def run_agents() -> None:
         instructions="Translate the user's text to Spanish. Return only the translation.",
     )
 
-    reflexion = ReflexionPattern(max_steps=6, model=MODEL)
-    jokes = await comedian.run_with_reasoning(
-        reflexion,
-        "Tell me three short jokes from The Hitchhiker's Guide to the Galaxy.",
-    )
-    print(f"\n[comedian, reflexion x{jokes.steps_taken}]\n{jokes.output}")
+    prompt = "Tell me three short jokes from The Hitchhiker's Guide to the Galaxy."
+    reflexion = ReflexionPattern(max_steps=2, model=MODEL)
+    try:
+        jokes_out = (await comedian.run_with_reasoning(reflexion, prompt)).output
+        header = "comedian, reflexion converged"
+    except ReasoningStepLimitError:
+        jokes_out = (await comedian.run(prompt)).output
+        header = "comedian, reflexion budget exhausted — using direct answer"
+    print(f"\n[{header}]\n{jokes_out}")
 
-    summary = await summarizer.run(jokes.output)
+    summary = await summarizer.run(jokes_out)
     print(f"\n[summarizer]\n{summary.output}")
 
     translation = await translator.run(summary.output)
