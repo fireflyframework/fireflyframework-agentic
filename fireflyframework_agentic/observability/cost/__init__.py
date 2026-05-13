@@ -11,10 +11,8 @@ from fireflyframework_agentic.observability.cost.resolvers import (
     provider_reported_cost,
     resolve_cost,
 )
-from fireflyframework_agentic.observability.cost.tiers import CallTier
 
 __all__ = [
-    "CallTier",
     "CostContext",
     "CostFn",
     "DEFAULT_RESOLVERS",

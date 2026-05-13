@@ -31,7 +31,6 @@ from fireflyframework_agentic.observability.cost.resolvers import (
     CostFn,
     resolve_cost,
 )
-from fireflyframework_agentic.observability.cost.tiers import CallTier
 from fireflyframework_agentic.observability.sinks import (
     CostSink,
     EventBusSink,
@@ -147,7 +146,6 @@ class UsageTracker:
         cache_creation_tokens: int = 0,
         cache_read_tokens: int = 0,
         reasoning_tokens: int = 0,
-        tier: CallTier = CallTier.STANDARD,
         provider_payload: Mapping[str, Any] | None = None,
         agent: str = "",
         correlation_id: str = "",
@@ -162,7 +160,6 @@ class UsageTracker:
             cache_creation_tokens=cache_creation_tokens,
             cache_read_tokens=cache_read_tokens,
             reasoning_tokens=reasoning_tokens,
-            tier=tier,
             provider_payload=provider_payload,
         )
         cost = self._resolve(ctx)
