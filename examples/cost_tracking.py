@@ -3,48 +3,56 @@
 
 """End-to-end cost tracking example.
 
-Demonstrates:
+Demonstrates the *real* shape of cost tracking: every :class:`FireflyAgent`
+you run automatically writes into ``default_usage_tracker``. This script
+spins up three agents with different roles, runs them, and then prints the
+aggregated per-agent / per-model breakdown — no manual ``record_call`` needed.
 
-* A custom :class:`CostFn` (``fixed_rate_cost``) inserted in front of the
-  default resolver chain — useful for contractually-fixed-price models.
-* A :class:`BudgetGate` with two rules: a tenant-scoped HARD daily limit
-  and an agent-scoped SOFT lifetime limit.
-* A custom JSONL sink running alongside the default :class:`OTelMetricsSink`
-  and :class:`EventBusSink`.
-* One synthetic record that exercises cache tokens and ``CallTier.BATCH``
-  so every axis lights up.
+On top of that it shows:
+
+* Attaching custom sinks (``JSONLFileSink``) to the *existing* tracker so
+  every agent's cost lands on disk for offline inspection.
+* Optional Azure Monitor export — when
+  ``APPLICATIONINSIGHTS_CONNECTION_STRING`` is in the environment, OTel
+  metrics flow to Application Insights; otherwise the demo falls back to
+  local sinks only.
+* A custom :class:`CostFn` for contractually-priced models and a
+  :class:`BudgetGate` with HARD/SOFT rules, both installed on the default
+  tracker so they apply to real agent traffic.
 """
 
 from __future__ import annotations
 
-import json
+import asyncio
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
+from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.observability.budget import (
     BudgetGate,
     BudgetMode,
     BudgetRule,
     BudgetWindow,
-    ScopeContext,
 )
 from fireflyframework_agentic.observability.cost import (
     DEFAULT_RESOLVERS,
-    CallTier,
     CostContext,
 )
 from fireflyframework_agentic.observability.exporters import configure_exporters
 from fireflyframework_agentic.observability.sinks import (
-    EventBusSink,
     JSONLFileSink,
     OTelMetricsSink,
 )
-from fireflyframework_agentic.observability.usage import UsageTracker
+from fireflyframework_agentic.observability.usage import default_usage_tracker
 
 load_dotenv()
 
-_FIXED_PRICES = {"acme:internal-llm": (0.5e-6, 2.0e-6)}  # (input, output) per token.
+MODEL = os.environ["MODEL"]
+JSONL_PATH = Path("/tmp/firefly-cost.jsonl")
+
+_FIXED_PRICES = {"acme:internal-llm": (0.5e-6, 2.0e-6)}
 
 
 def fixed_rate_cost(ctx: CostContext) -> float | None:
@@ -57,13 +65,7 @@ def fixed_rate_cost(ctx: CostContext) -> float | None:
 
 
 def _try_attach_app_insights() -> bool:
-    """Attempt to wire Azure Monitor exporters; return ``True`` on success.
-
-    Reads ``APPLICATIONINSIGHTS_CONNECTION_STRING`` from the environment (or a
-    ``.env`` loaded by the caller). Returns ``False`` when the variable is
-    unset, the ``[azure]`` extra is missing, or the connection string is
-    rejected — callers should fall back to the non-OTel sinks in that case.
-    """
+    """Wire Azure Monitor exporters if a connection string is present."""
     cs = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING")
     if not cs:
         print("APPLICATIONINSIGHTS_CONNECTION_STRING not set; skipping App Insights.")
@@ -84,15 +86,22 @@ def _try_attach_app_insights() -> bool:
     return True
 
 
-def build_tracker(jsonl_path: Path, *, with_otel: bool) -> UsageTracker:
-    gate = BudgetGate(
+def configure_default_tracker(*, with_otel: bool) -> None:
+    """Install sinks, custom resolver, and budget gate on the singleton."""
+    JSONL_PATH.unlink(missing_ok=True)
+    default_usage_tracker.add_sink(JSONLFileSink(JSONL_PATH))
+    if with_otel:
+        default_usage_tracker.add_sink(OTelMetricsSink())
+
+    default_usage_tracker._resolver = [fixed_rate_cost, *DEFAULT_RESOLVERS]
+    default_usage_tracker._gate = BudgetGate(
         [
             BudgetRule(
-                name="acme-daily",
+                name="demo-daily",
                 limit_usd=5.0,
                 mode=BudgetMode.HARD,
                 window=BudgetWindow.DAILY,
-                match={"tenant": "acme"},
+                match={"tenant": "demo"},
             ),
             BudgetRule(
                 name="writer-lifetime",
@@ -103,42 +112,63 @@ def build_tracker(jsonl_path: Path, *, with_otel: bool) -> UsageTracker:
             ),
         ]
     )
-    sinks: list = [EventBusSink(), JSONLFileSink(jsonl_path)]
-    if with_otel:
-        sinks.insert(0, OTelMetricsSink())
-    resolvers = [fixed_rate_cost, *DEFAULT_RESOLVERS]
-    return UsageTracker(sinks=sinks, gate=gate, resolver=resolvers)
 
 
-def main() -> None:
-    app_insights_ready = _try_attach_app_insights()
-
-    out = Path("/tmp/firefly-cost.jsonl")
-    out.unlink(missing_ok=True)
-    tracker = build_tracker(out, with_otel=app_insights_ready)
-
-    tracker.record_call(
-        model="anthropic:claude-3-5-sonnet-latest",
-        input_tokens=1_000,
-        output_tokens=500,
-        cache_creation_tokens=2_000,
-        cache_read_tokens=8_000,
-        tier=CallTier.BATCH,
-        agent="writer",
-        correlation_id="demo-run-1",
-        scope_ctx=ScopeContext(
-            tenant="acme",
-            agent="writer",
-            correlation_id="demo-run-1",
-            labels={"env": "prod"},
-        ),
+async def run_agents() -> None:
+    poet = FireflyAgent(
+        name="poet",
+        model=MODEL,
+        instructions="You are a creative poet. Write short, evocative poems.",
+    )
+    summarizer = FireflyAgent(
+        name="summarizer",
+        model=MODEL,
+        instructions="Summarize the user's text in one sentence.",
+    )
+    translator = FireflyAgent(
+        name="translator",
+        model=MODEL,
+        instructions="Translate the user's text to Spanish. Return only the translation.",
     )
 
-    line = out.read_text(encoding="utf-8").splitlines()[0]
-    rec = json.loads(line)
-    print(json.dumps(rec, indent=2, sort_keys=True))
-    print(f"\ncost_usd=${rec['cost_usd']:.6f}")
+    poem = await poet.run("Write a four-line poem about the ocean at dawn.")
+    print(f"\n[poet]\n{poem.output}")
+
+    summary = await summarizer.run(poem.output)
+    print(f"\n[summarizer]\n{summary.output}")
+
+    translation = await translator.run(summary.output)
+    print(f"\n[translator]\n{translation.output}")
+
+
+def print_summary() -> None:
+    summary = default_usage_tracker.get_summary()
+    print("\n=== aggregated usage ===")
+    print(f"total cost  : ${summary.total_cost_usd:.6f}")
+    print(f"total tokens: {summary.total_tokens} "
+          f"(in={summary.total_input_tokens}, out={summary.total_output_tokens})")
+    print(f"requests    : {summary.total_requests}")
+    print(f"records     : {summary.record_count}")
+
+    _print_breakdown("by agent", summary.by_agent, width=12)
+    _print_breakdown("by model", summary.by_model, width=40)
+
+    print(f"\nper-call JSONL trail at {JSONL_PATH}:")
+    print(JSONL_PATH.read_text(encoding="utf-8"), end="")
+
+
+def _print_breakdown(title: str, group: dict, *, width: int) -> None:
+    print(f"\n{title}:")
+    for key, m in group.items():
+        print(f"  {key:<{width}} cost=${m['cost_usd']:.6f}  tokens={m['total_tokens']}")
+
+
+async def main() -> None:
+    app_insights_ready = _try_attach_app_insights()
+    configure_default_tracker(with_otel=app_insights_ready)
+    await run_agents()
+    print_summary()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
