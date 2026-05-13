@@ -55,6 +55,41 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
   concluding "no record" on a NULL result (#163). No new tools or
   schema-model fields.
 
+- **`firefly-mcp-http` logs unhandled asyncio task exceptions to stderr
+  before the loop has a chance to die silently.** Previously, an
+  exception in a task scheduled on the asyncio loop (request-cleanup
+  callbacks, fire-and-forget tool work, SSE long-poll teardown) was
+  routed by ``BaseEventLoop`` to the ``asyncio`` logger at ERROR — but
+  uvicorn's default log config doesn't surface that logger. Operators
+  saw "the server died" / "the bridge can't reconnect" with no
+  traceback. The CLI now installs a loop-level exception handler that
+  routes through ``logging.getLogger("…http_cli")`` (which
+  ``basicConfig`` wires up at startup, level overridable via
+  ``FIREFLY_MCP_LOG_LEVEL``), preserving the exception's traceback via
+  ``exc_info=``. Does NOT swallow exceptions or change loop behaviour
+  — only makes them visible.
+
+- **LocalBackend corpus state now lives under `CORPUS_ROOT`, not in
+  `~/.cache/`.** `DatabaseStore` previously kept its working copy at
+  `~/.cache/fireflyframework_agentic/dbstore/<store_id>/db.sqlite` for
+  every backend, and `LocalBackend.upload`/`download` `shutil.copyfile`'d
+  between that cache and the file under `CORPUS_ROOT`. The two copies
+  could drift, and a `rm -rf $CORPUS_ROOT` did **not** reset corpus state
+  (the dedup ledger and embeddings stayed alive in the cache,
+  re-ingestion silently skipped every file). The store now reads
+  `StorageBackend.local_path` at construction; for `LocalBackend` it
+  co-locates the working copy with the backend file (same inode, no
+  duplicate), and every file used by a corpus — SQLite, WAL/SHM, the
+  metadata sidecar, the lock sentinel — lives under the configured
+  root. `LocalBackend.upload` / `download` short-circuit when source
+  and destination are the same inode, so the existing call sites
+  needed no changes. Remote backends (`AzureBlobBackend`) keep the
+  legacy cache-dir layout because their working copy MUST be a separate
+  local file. Operators upgrading should
+  `rm -rf ~/.cache/fireflyframework_agentic/dbstore/corpus_search:` to
+  reclaim disk; the new layout takes effect automatically on next
+  startup (#170).
+
 - **Answerer preserves diacritical marks in non-English responses.** The
   RAG answerer's instructions now tell the model to answer in the same
   language as the question and to keep correct orthography
