@@ -29,7 +29,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
-from fireflyframework_agentic.agents.templates import create_extractor_agent
+from fireflyframework_agentic.agents.base import FireflyAgent
 from fireflyframework_agentic.rag.corpus import SqliteCorpus
 
 from .structured_pipeline import _normalize_sheet_name
@@ -46,6 +46,12 @@ except ImportError:
 log = logging.getLogger(__name__)
 
 _SAMPLE_ROWS = 5
+# How far down a sheet to look for the real header row. Real-world Excel
+# files frequently bury headers under ~10 single-cell title / legend /
+# spacer rows (e.g. ``an archive sheet`` in the the test workbook puts the
+# header at row 8). Keeping this generous guarantees the picker never
+# misses a header that visually exists on the page.
+_HEADER_SCAN_ROWS = 20
 
 # File extensions the structured pipeline knows how to sample. Callers walking
 # folders should filter to this set so non-tabular files (PPTX, PDF, DOCX, …)
@@ -184,21 +190,38 @@ def _excel_sample(path: Path) -> str:
         raise RuntimeError("openpyxl is required for Excel files: pip install openpyxl")
     wb = _openpyxl.load_workbook(path, read_only=True, data_only=True)  # type: ignore[union-attr]
     parts: list[str] = []
-    # Pull a few extra rows so banner-row detection (below) has room to
-    # look past the title / spacer / column-number rows real-world Excel
-    # files often have before the actual headers.
-    scan_budget = _SAMPLE_ROWS + 6
+    # Pull enough rows for both header detection (first _HEADER_SCAN_ROWS)
+    # and the sample window (_SAMPLE_ROWS + 1 after the picked header).
+    scan_budget = _HEADER_SCAN_ROWS + _SAMPLE_ROWS + 1
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
         all_rows = list(ws.iter_rows(values_only=True))[:scan_budget]
         if not all_rows:
             continue
-        header_idx = _pick_header_row_idx(all_rows[:8])
+        header_idx = _pick_header_row_idx(all_rows[:_HEADER_SCAN_ROWS])
         rows = all_rows[header_idx : header_idx + _SAMPLE_ROWS + 1]
         if not rows:
             continue
+        # Skip sheets with no usable header — feeding the LLM
+        # ``Headers: [None, None, None]`` blocks is what makes it return
+        # ``{}`` on workbooks like the source workbook where one sheet
+        # is essentially blank. ≥2 non-null cells AND ≥1 string is the
+        # minimum bar for a header that's worth including.
+        header = list(rows[0])
+        non_null = [v for v in header if v is not None]
+        string_count = sum(1 for v in non_null if isinstance(v, str))
+        if len(non_null) < 2 or string_count == 0:
+            log.warning(
+                "schema discovery: skipping sheet %r in %s — no usable header row "
+                "found within the first %d rows (header preview: %r)",
+                sheet_name,
+                path.name,
+                _HEADER_SCAN_ROWS,
+                header[:8],
+            )
+            continue
         name = _normalize_sheet_name(sheet_name)
-        lines = [f"Sheet (table): {name}", f"Headers: {list(rows[0])}"]
+        lines = [f"Sheet (table): {name}", f"Headers: {header}"]
         lines += [f"  {list(r)}" for r in rows[1:]]
         parts.append("\n".join(lines))
     return "\n\n".join(parts)
@@ -208,29 +231,38 @@ def _pick_header_row_idx(candidate_rows: list[tuple[Any, ...]]) -> int:
     """Choose the row in *candidate_rows* most likely to be the real header.
 
     Heuristic, in order:
-      1. Skip empty / one-cell title rows.
-      2. Prefer the first row dominated by *string* cells (real headers
-         in Excel are almost always strings, not integers). This catches
-         the common "section numbers banner above text headers" pattern
-         where row 0 reads ``[None, None, 1, 2, 3, ...]`` and row 1 reads
-         ``['PRID', 'EMPLOYEE_ID', 'NAME', ...]``.
-      3. Fall back to the first row with ≥2 non-null cells.
+      1. Skip empty / one-cell title rows (a real header has ≥2 cells).
+      2. Among multi-cell *string-dominated* rows (>50% of non-null cells
+         are strings — real Excel headers are almost always strings, not
+         integers), pick the one with the most non-null cells. Real
+         headers are wide; decorative two-cell titles like
+         ``['DECORATIVE TITLE', '(en blanco)']`` lose to the
+         5-column real header at row 2.
+      3. Fall back to the first multi-cell row.
 
     Returns 0 when no row passes any test (so the existing behaviour for
     well-formed sheets is preserved).
+
+    The caller is expected to pass at most ``_HEADER_SCAN_ROWS`` rows;
+    that bound governs how far the picker will look.
     """
     # 1. First non-trivial row.
     multi_cell = [(i, r) for i, r in enumerate(candidate_rows) if sum(1 for v in r if v is not None) >= 2]
     if not multi_cell:
         return 0
-    # 2. String-dominated row (more than half of non-null cells are strings).
+    # 2. Widest string-dominated row wins (ties broken by row order).
+    string_dominated: list[tuple[int, int]] = []  # (row_idx, non_null_count)
     for i, r in multi_cell:
         non_null = [v for v in r if v is not None]
-        if not non_null:
-            continue
         string_count = sum(1 for v in non_null if isinstance(v, str))
         if string_count * 2 > len(non_null):
-            return i
+            string_dominated.append((i, len(non_null)))
+    if string_dominated:
+        # Sort by (-width, row_idx) so the widest row wins and the
+        # earliest row breaks ties. Avoids "first plausible row wins"
+        # which fails on pivot sheet-style sheets where row 0 is a 2-cell
+        # decorative title.
+        return min(string_dominated, key=lambda t: (-t[1], t[0]))[0]
     # 3. Fallback: first multi-cell row.
     return multi_cell[0][0]
 
@@ -255,6 +287,50 @@ def _multi_file_sample(paths: list[Path]) -> str:
     return "\n\n".join(parts)
 
 
+def _make_discovery_agent(model: str | Any) -> FireflyAgent[Any, TargetSchema]:
+    """Build the schema-discovery agent.
+
+    Uses ``FireflyAgent`` directly with ``_SKILL`` as the *full*
+    instructions rather than going through ``create_extractor_agent``.
+    The extractor template's preamble ("If a field cannot be found,
+    return null. Do not infer or hallucinate values.") conflicts with
+    schema discovery, where ``tables`` cannot be null and the model
+    must produce *some* best-effort interpretation of every sheet —
+    that conflict was the proximate cause of empty-``{}`` outputs on
+    messy real-world workbooks.
+    """
+    return FireflyAgent(
+        "schema_discovery",
+        model=model,
+        instructions=_SKILL,
+        output_type=TargetSchema,
+        description="Infers a relational TargetSchema from tabular samples.",
+        tags=("rag", "ingest", "structured", "schema"),
+        auto_register=False,
+    )
+
+
+def _empty_schema_diagnostic(label: str, sample: str) -> str:
+    """Build a human-friendly error for ``schema.tables == []`` cases.
+
+    Includes a truncated sample so the user can see what the model saw
+    without flooding the error stream (real samples are ~10 KB).
+    """
+    preview = sample[:1800] + ("…" if len(sample) > 1800 else "")
+    return (
+        f"schema discovery produced an empty schema for {label}. "
+        "The model could not infer any tables from the sampled rows — "
+        "this usually means the sheets are non-tabular (pivot reports, "
+        "dashboards, merged-cell layouts) or the real headers sit past "
+        "the scan window. "
+        "Fix options: (1) re-save each sheet as a flat CSV with headers "
+        "in row 1 and retry; (2) call discover_corpus_schema again with "
+        "`corrections=<free-text description of the table structure>` so "
+        "the model gets explicit guidance.\n\n"
+        f"Sample sent to the model (truncated to 1800 chars):\n{preview}"
+    )
+
+
 async def discover_schema(
     path: Path,
     *,
@@ -266,14 +342,12 @@ async def discover_schema(
 
     When *corrections* and *previous_schema* are provided the agent is asked to
     refine *previous_schema* according to the supplied corrections.
+
+    Raises ``ValueError`` (wrapped to ``ToolError`` upstream) when the
+    LLM returns an empty schema — pydantic-ai no longer retries this
+    case because ``TargetSchema.tables`` defaults to ``[]``.
     """
-    agent = create_extractor_agent(
-        TargetSchema,
-        name="schema_discovery",
-        model=model,
-        extra_instructions=_SKILL,
-        auto_register=False,
-    )
+    agent = _make_discovery_agent(model)
     sample = _sample_for(path)
     if corrections and previous_schema is not None:
         prompt = (
@@ -285,7 +359,10 @@ async def discover_schema(
     else:
         prompt = f"File: {path.name}\n\n{sample}"
     result = await agent.run(prompt)
-    return result.output
+    schema: TargetSchema = result.output
+    if not schema.tables:
+        raise ValueError(_empty_schema_diagnostic(path.name, sample))
+    return schema
 
 
 async def discover_schema_for_paths(
@@ -304,18 +381,15 @@ async def discover_schema_for_paths(
 
     When *corrections* and *previous_schema* are provided the agent is asked
     to refine *previous_schema* according to the supplied free-text feedback.
+
+    Raises ``ValueError`` when the LLM returns an empty schema. See
+    :func:`discover_schema` for the rationale.
     """
     if not paths:
         return TargetSchema(tables=[])
     if len(paths) == 1:
         return await discover_schema(paths[0], model=model, corrections=corrections, previous_schema=previous_schema)
-    agent = create_extractor_agent(
-        TargetSchema,
-        name="schema_discovery",
-        model=model,
-        extra_instructions=_SKILL,
-        auto_register=False,
-    )
+    agent = _make_discovery_agent(model)
     sample = _multi_file_sample(paths)
     if corrections and previous_schema is not None:
         prompt = (
@@ -332,7 +406,11 @@ async def discover_schema_for_paths(
             f"clearly supports them.\n\n{sample}"
         )
     result = await agent.run(prompt)
-    return result.output
+    schema: TargetSchema = result.output
+    if not schema.tables:
+        label = f"{len(paths)} tabular sources ({', '.join(p.name for p in paths[:5])}{'…' if len(paths) > 5 else ''})"
+        raise ValueError(_empty_schema_diagnostic(label, sample))
+    return schema
 
 
 async def discover_schema_interactive(
