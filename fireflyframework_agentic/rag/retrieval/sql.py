@@ -700,7 +700,10 @@ def _string_column_cardinalities(schemas: list[TargetSchema], db_path: Path) -> 
     try:
         conn = _connect(db_path)
     except sqlite3.Error as exc:
-        log.warning("cardinality probe: could not open %s: %s", db_path, exc)
+        # Don't log db_path itself — CodeQL treats filesystem paths as
+        # private data, and matching the file-wide pattern of "log the
+        # exception, not the path" keeps us out of that lane.
+        log.warning("cardinality probe: could not open db: %s", exc)
         return out
     try:
         for schema in schemas:
