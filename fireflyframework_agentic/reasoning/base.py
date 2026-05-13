@@ -490,7 +490,7 @@ class AbstractReasoningPattern(ABC):
 
             input_tokens = getattr(usage, "input_tokens", 0) or 0
             output_tokens = getattr(usage, "output_tokens", 0) or 0
-            request_count = getattr(usage, "request_count", 0) or 0
+            request_count = getattr(usage, "requests", 0) or 0
 
             agent_label = f"reasoning:{self._name}"
             default_usage_tracker.record_call(
