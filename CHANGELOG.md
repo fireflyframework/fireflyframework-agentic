@@ -52,6 +52,15 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 
 ### Added
 
+- **Optional `unit` field on `ColumnSpec`.** Schemas can now declare the
+  human-readable unit a numeric column stores (`"USD millions"`,
+  `"headcount"`, `"percent"`, `"days"`, …). The SQL retriever's schema
+  context surfaces it to the agent as `name (type, unit=…)`, the
+  retriever's system prompt requires the agent to preserve the unit in
+  SELECT results (via alias or co-selection), and the answerer is
+  instructed to quote the unit alongside any numeric quantity it cites
+  — or to flag the ambiguity explicitly when no unit is known, rather
+  than presenting a unit-less number the user cannot verify (#158).
 - **`firefly-mcp-token` CLI** for operators managing per-corpus tokens
   in Azure Key Vault. Commands: `create`, `rotate`, `revoke`, `list`,
   `show-name`. Uses `DefaultAzureCredential`; the minted token goes to

@@ -451,6 +451,10 @@ Rules:
   - Use the exact table and column names from the schema below.
   - If the question cannot be answered from this schema at all, call
     run_select('SELECT 1 WHERE 1=0') and stop.
+  - When the schema lists a column with `unit=…`, preserve that unit
+    in your SELECT result — alias the column to embed it (e.g.
+    `SUM(value) AS "total_value_usd_millions"`) or co-select the unit
+    literal. Do not silently strip the unit.
 """
 
 
@@ -586,13 +590,30 @@ def _build_schema_context(schemas: list[TargetSchema]) -> str:
     heuristic that previously sampled only the first string column —
     which silently misled the LLM on schemas whose first text column was
     an opaque primary key.
+
+    When ``ColumnSpec.unit`` is set, the unit is appended to the column
+    descriptor as ``name (type, unit=…)`` so the agent can echo the
+    correct unit alongside any numeric value it returns. Columns with no
+    unit metadata render as ``name (type)`` unchanged.
     """
     lines: list[str] = ["Available tables:"]
     for schema in schemas:
         for table in schema.tables:
-            col_descs = ", ".join(f"{c.name} ({c.type.value})" for c in table.columns)
+            col_descs = ", ".join(_format_column_descriptor(c) for c in table.columns)
             lines.append(f"- {table.name}: {col_descs}")
     return "\n".join(lines)
+
+
+def _format_column_descriptor(column: Any) -> str:
+    """Render one ``ColumnSpec`` as ``name (type)`` or ``name (type, unit=…)``.
+
+    Split out so the unit-rendering policy lives in one place; the schema
+    context, future error messages, and ad-hoc debug prints can all share
+    the same shape.
+    """
+    if column.unit:
+        return f"{column.name} ({column.type.value}, unit={column.unit})"
+    return f"{column.name} ({column.type.value})"
 
 
 def _execute(db_path: Path, sql: str, params: list[Any] | None = None) -> str | None:
