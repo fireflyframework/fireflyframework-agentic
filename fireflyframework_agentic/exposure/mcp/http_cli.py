@@ -23,6 +23,7 @@ import os
 from typing import Any
 
 import uvicorn
+from dotenv import find_dotenv, load_dotenv
 from fastapi import FastAPI
 
 from fireflyframework_agentic.exposure.mcp.server import create_mcp_app
@@ -145,7 +146,20 @@ def _log_unhandled_loop_exception(loop: asyncio.AbstractEventLoop, context: dict
 
 
 def main() -> None:
-    """Entry point registered as ``firefly-mcp-http`` in ``[project.scripts]``."""
+    """Entry point registered as ``firefly-mcp-http`` in ``[project.scripts]``.
+
+    Loads ``.env`` from the current working directory (or any ancestor) so
+    a developer running the server from a project directory gets its
+    variables (``EMBEDDING_MODEL``, ``FIREFLY_MCP_KEYVAULT_URL``, …)
+    without an explicit shell ``source``. ``usecwd=True`` anchors the
+    search on cwd (the default would walk up from this module's
+    install location, which is wrong for a CLI). Real environment
+    variables always win — ``load_dotenv`` defaults to ``override=False``
+    — so Azure / Container Apps deploys, which inject env from the
+    manifest before the process starts, see no behavioural change.
+    """
+    load_dotenv(find_dotenv(usecwd=True))
+
     # Force-attach our handler before uvicorn boots its loop. uvicorn picks
     # up loop="auto" → uvloop on Unix; both honour ``set_exception_handler``.
     # We can't set it on uvicorn's not-yet-created loop, so we do it via a
