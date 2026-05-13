@@ -102,7 +102,37 @@ def _resolve_factory(spec: str):
 
 
 def main() -> None:
-    """Entry point registered as ``firefly-mcp-http`` in ``[project.scripts]``."""
+    """Entry point registered as ``firefly-mcp-http`` in ``[project.scripts]``.
+
+    Loads ``.env`` from the current working directory (or any ancestor) if
+    ``python-dotenv`` is installed and a file is present. Real environment
+    variables always win — ``load_dotenv`` defaults to ``override=False`` —
+    so in Azure (or any deploy where the runtime injects env vars before
+    the process starts) this is a no-op. In local dev it fills the gap so
+    a developer can drop ``EMBEDDING_MODEL`` etc. into ``.env`` and have
+    the server pick them up without an explicit shell ``source``.
+
+    ``python-dotenv`` is an optional dependency (declared under the
+    ``corpus-search`` and ``dev`` extras, not core), so the import is
+    guarded — a hardened production install without those extras skips
+    the dotenv load entirely. That keeps the "no surprise .env in the
+    container image" property: if dotenv isn't installed, no .env file is
+    consulted, full stop.
+    """
+    try:
+        from dotenv import find_dotenv, load_dotenv
+    except ImportError:
+        pass
+    else:
+        # ``usecwd=True`` anchors the search on the current working directory
+        # (typically the project root) and walks upward. Default behaviour
+        # (search from the caller's ``__file__``) would resolve to the
+        # installed location of this module, which is wrong for a CLI that
+        # operators run from arbitrary project directories.
+        # ``find_dotenv`` returns ``""`` when nothing is found, and
+        # ``load_dotenv("")`` is itself a no-op — so when no .env exists, the
+        # net effect is zero.
+        load_dotenv(find_dotenv(usecwd=True))
     port = int(os.environ.get("PORT", "8000"))
     uvicorn.run(build_app(), host="0.0.0.0", port=port)
 

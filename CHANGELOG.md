@@ -42,6 +42,21 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 
 ### Fixed
 
+- **`firefly-mcp-http` now loads `.env` on startup.** The CLI calls
+  `dotenv.load_dotenv(find_dotenv(usecwd=True))` at the top of `main()`,
+  so a developer running the server from a project directory with a
+  `.env` file gets its variables (e.g. `EMBEDDING_MODEL`,
+  `FIREFLY_MCP_KEYVAULT_URL`) without an explicit shell `source`. Real
+  process env vars always win — `load_dotenv` defaults to
+  `override=False` — so Azure / Container Apps deployments (which
+  inject env from the manifest before the process starts) see no
+  behavioural change. `python-dotenv` is an optional dependency
+  (declared under the `corpus-search` and `dev` extras); the import is
+  guarded so a hardened install without those extras still starts
+  cleanly without consulting `.env`. Resolves the `KeyError:
+  'EMBEDDING_MODEL'` operators hit when running `firefly-mcp-http`
+  locally with a `.env` present.
+
 - **Answerer preserves diacritical marks in non-English responses.** The
   RAG answerer's instructions now tell the model to answer in the same
   language as the question and to keep correct orthography
