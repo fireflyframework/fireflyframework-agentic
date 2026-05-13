@@ -35,6 +35,7 @@ from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
 
 from fireflyframework_agentic.config import get_config
+from fireflyframework_agentic.exceptions import BudgetExceededError
 from fireflyframework_agentic.observability.budget import ScopeContext
 from fireflyframework_agentic.observability.usage import default_usage_tracker
 from fireflyframework_agentic.types import AgentDepsT, Metadata, OutputT, UserContent
@@ -455,6 +456,8 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
                     correlation_id=correlation_id,
                 ),
             )
+        except BudgetExceededError:
+            raise
         except Exception:  # noqa: BLE001
             logger.debug("Failed to record usage for agent '%s'", self._name, exc_info=True)
 

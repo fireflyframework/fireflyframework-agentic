@@ -26,7 +26,7 @@ On top of that it shows:
 
 Examples:
 
-    # Real Sonnet pricing — fixed_rate_cost is NOT in the chain.
+    # Real model pricing
     uv run python examples/cost_tracking.py
 
     # fixed_rate_cost is prepended to the chain, looks up MODEL_ID in
@@ -77,6 +77,7 @@ JSONL_PATH = Path("/tmp/firefly-cost.jsonl")
 # USD, so the very first agent run breaches the $2 HARD daily budget rule.
 # Only consulted when --inflated-prices wires fixed_rate_cost into the chain.
 _FIXED_PRICES: dict[str, tuple[float, float]] = {MODEL_ID: (5e-3, 1e-2)}
+# _FIXED_PRICES = {"acme:internal-llm": (0.5e-6, 2.0e-6)}
 
 
 def parse_args() -> argparse.Namespace:
@@ -196,8 +197,14 @@ def print_summary() -> None:
     _print_breakdown("by agent", summary.by_agent, width=12)
     _print_breakdown("by model", summary.by_model, width=40)
 
-    print(f"\nper-call JSONL trail at {JSONL_PATH}:")
-    print(JSONL_PATH.read_text(encoding="utf-8"), end="")
+    # The sink writes per record AFTER the BudgetGate commits. If the gate
+    # raised mid-call (HARD breach), no sink ever fired and the file may
+    # not exist yet — surface that explicitly instead of crashing.
+    if JSONL_PATH.exists():
+        print(f"\nper-call JSONL trail at {JSONL_PATH}:")
+        print(JSONL_PATH.read_text(encoding="utf-8"), end="")
+    else:
+        print(f"\nno JSONL trail at {JSONL_PATH} (budget gate aborted before any sink fired).")
 
 
 def _print_breakdown(title: str, group: dict, *, width: int) -> None:
