@@ -33,6 +33,12 @@ dependencies = [
     "opentelemetry-api>=1.29.0",
     "opentelemetry-sdk>=1.29.0",
     "genai-prices>=0.0.1",
+    # Promoted from `corpus-search` / `dev` extras: firefly-mcp-http's main()
+    # imports python-dotenv at module top to load a project-local .env when
+    # run by a developer. Real env vars always win (load_dotenv defaults to
+    # override=False), so Azure / Container Apps deploys see no change. The
+    # alternative — guarding the import — adds noise the reviewer flagged.
+    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -115,7 +121,6 @@ rag = [
 ]
 corpus-search = [
     "fireflyframework-agentic[rag,vectorstores-sqlite-vec]",
-    "python-dotenv>=1.0.0",
 ]
 vectorstores-chroma = [
     "chromadb>=0.5.0",
@@ -144,7 +149,6 @@ dev = [
     "httpx>=0.28.0",
     "pdfplumber>=0.11.0",
     "pre-commit>=3.8.0",
-    "python-dotenv>=1.0.0",
     "fireflyframework-agentic[markitdown]",
     "sqlite-vec>=0.1.6",
 ]

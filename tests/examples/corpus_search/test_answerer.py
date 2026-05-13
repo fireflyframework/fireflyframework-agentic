@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fireflyframework_agentic.rag.corpus import ChunkHit
 from fireflyframework_agentic.rag.retrieval.answerer import (
+    _INSTRUCTIONS,
     Answer,
     AnswerAgent,
     format_chunks_for_prompt,
@@ -198,3 +199,53 @@ async def test_empty_hits_returns_no_info_with_empty_cited_sources(mock_agent_cl
     answerer._agent.run = AsyncMock()  # would error if called
     result = await answerer.answer("Q", [])
     assert result.cited_sources == []
+
+
+# --- diacritic preservation guidance --------------------------------------
+#
+# Issue #157: the answerer was emitting Spanish prose without diacritical
+# marks ('produccion' instead of 'producción'). The fix lives in the
+# instruction string passed to the LLM; the tests below lock in that the
+# guidance is present in the constant AND reaches the underlying agent at
+# construction time, so a future refactor cannot silently drop it.
+
+
+def test_instructions_pin_answer_in_question_language_rule():
+    """Cheap structural assertion against accidental deletion.
+
+    Pinning the literal phrase 'same language as the user' would be
+    over-rigid, but the *rule* must remain — search for an unambiguous
+    fragment that wouldn't survive a rewrite that removed the policy.
+    """
+    assert "same language as the user" in _INSTRUCTIONS
+
+
+def test_instructions_pin_diacritic_preservation_rule():
+    """The instructions must tell the model to preserve diacritics.
+
+    We check for the explicit ASCII-vs-accent contrast example
+    (``'producción'``/``'produccion'``) — that example is the load-bearing
+    illustration of the rule. If it disappears, the rule has been weakened
+    or removed.
+    """
+    assert "producción" in _INSTRUCTIONS
+    assert "produccion" in _INSTRUCTIONS
+    # And the high-level intent phrase is still there.
+    assert "diacritical" in _INSTRUCTIONS.lower()
+
+
+@patch("fireflyframework_agentic.rag.retrieval.answerer.FireflyAgent")
+def test_answer_agent_wires_diacritic_instructions_to_underlying_agent(mock_agent_cls):
+    """Construction-time wiring check.
+
+    Loading the constant is one thing; reaching the LLM is another. Verify
+    that ``AnswerAgent.__init__`` forwards the instructions verbatim, so a
+    future refactor that swaps the instruction source can't silently lose
+    the rule between the module-level constant and the runtime prompt.
+    """
+    AnswerAgent(model="anthropic:dummy")
+    assert mock_agent_cls.called
+    _, kwargs = mock_agent_cls.call_args
+    assert kwargs["instructions"] == _INSTRUCTIONS
+    # Belt-and-braces: the wired-in string itself contains the rule.
+    assert "diacritical" in kwargs["instructions"].lower()
