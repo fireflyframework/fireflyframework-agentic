@@ -30,6 +30,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.reasoning import ReflexionPattern
 from fireflyframework_agentic.observability.budget import (
     BudgetGate,
     BudgetMode,
@@ -134,8 +135,12 @@ async def run_agents() -> None:
         instructions="Translate the user's text to Spanish. Return only the translation.",
     )
 
-    jokes = await comedian.run("Tell me three short jokes from The Hitchhiker's Guide to the Galaxy.")
-    print(f"\n[comedian]\n{jokes.output}")
+    reflexion = ReflexionPattern(max_steps=3, model=MODEL)
+    jokes = await comedian.run_with_reasoning(
+        reflexion,
+        "Tell me three short jokes from The Hitchhiker's Guide to the Galaxy.",
+    )
+    print(f"\n[comedian, reflexion x{jokes.steps_taken}]\n{jokes.output}")
 
     summary = await summarizer.run(jokes.output)
     print(f"\n[summarizer]\n{summary.output}")
