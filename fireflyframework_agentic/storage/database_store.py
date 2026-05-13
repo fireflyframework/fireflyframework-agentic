@@ -82,15 +82,38 @@ class DatabaseStore:
         *,
         store_id: str,
         cache_root: Path | None = None,
+        cache_path: Path | None = None,
         retry_policy: RetryPolicy | None = None,
         read_freshness_seconds: float = 5.0,
     ) -> None:
         self._backend = backend
         self._store_id = store_id
-        self._cache_dir = _resolve_cache_root(cache_root) / store_id
+        # Cache-location resolution (precedence: explicit > backend hint > legacy):
+        #   1. Caller passed ``cache_path``: use it verbatim. Caller knows best.
+        #   2. Backend exposes ``local_path``: co-locate the working copy with
+        #      the backend file (same inode, no duplicate). For LocalBackend
+        #      this puts every corpus file under the configured root and makes
+        #      ``rm -rf <root>`` actually reset state — the alternative left
+        #      ~/.cache/ holding orphan ledger entries that silently survived.
+        #   3. Neither: fall back to ~/.cache/<store_id>/db.sqlite. Used by
+        #      remote backends (AzureBlobBackend) where the working copy MUST
+        #      be a local file separate from the remote source of truth.
+        if cache_path is None:
+            backend_local = backend.local_path
+            if backend_local is not None:
+                cache_path = backend_local
+        if cache_path is not None:
+            self._cache_path = Path(cache_path)
+            self._cache_dir = self._cache_path.parent
+            # Sidecar shares the SQLite file's basename so multiple databases
+            # in the same directory don't fight over a single ``metadata.json``.
+            sidecar_path = self._cache_path.with_suffix(self._cache_path.suffix + ".metadata.json")
+        else:
+            self._cache_dir = _resolve_cache_root(cache_root) / store_id
+            self._cache_path = self._cache_dir / "db.sqlite"
+            sidecar_path = self._cache_dir / "metadata.json"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
-        self._cache_path = self._cache_dir / "db.sqlite"
-        self._sidecar = _Sidecar(self._cache_dir / "metadata.json")
+        self._sidecar = _Sidecar(sidecar_path)
         self._sidecar.load()
         self._retry_policy = retry_policy or RetryPolicy()
         self._read_freshness_seconds = read_freshness_seconds

@@ -49,6 +49,24 @@ class LocalBackend(StorageBackend):
         self._sentinel = self._path.with_suffix(self._path.suffix + ".lock")
         self._asyncio_lock = asyncio.Lock()
 
+    @property
+    def path(self) -> Path:
+        """The on-disk SQLite file this backend manages.
+
+        Public read-only view of the backend's location. Exposed so
+        ``DatabaseStore`` (via :attr:`StorageBackend.local_path`) can
+        co-locate its working copy with the backend file, and so
+        operators / tests can assert "all corpus state lives under
+        CORPUS_ROOT" without reaching into the private ``_path``.
+        """
+        return self._path
+
+    @property
+    def local_path(self) -> Path:
+        """The backend's bytes live in this local file. See
+        :attr:`StorageBackend.local_path` for the contract."""
+        return self._path
+
     async def metadata(self) -> StorageMetadata:
         return await asyncio.to_thread(self._metadata_sync)
 
@@ -93,6 +111,16 @@ class LocalBackend(StorageBackend):
         if_none_match: str | None,
     ) -> StorageMetadata:
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        if src.resolve() == self._path.resolve():
+            # ``src`` IS the backing file. Conditional checks
+            # (``if_match`` / ``if_none_match``) are vacuous — they
+            # protect against a *separate* remote racing against us,
+            # but co-located cache/backend share an inode and a writer
+            # cannot race with itself. There's also nothing to copy.
+            # Just report the current metadata. This is what makes
+            # co-location safe under ``DatabaseStore.for_write``'s
+            # first-write touch-then-upload sequence.
+            return self._metadata_sync()
         # Conditional checks are evaluated under the on-disk sentinel
         # which the caller is expected to hold via acquire_lock.
         if if_none_match == "*" and self._path.exists():
@@ -108,11 +136,9 @@ class LocalBackend(StorageBackend):
                     expected=if_match,
                     actual=current,
                 )
-        if src.resolve() != self._path.resolve():
-            tmp = self._path.with_suffix(self._path.suffix + f".up.{uuid.uuid4().hex}")
-            shutil.copyfile(src, tmp)
-            os.replace(tmp, self._path)
-        # Re-stat after replace.
+        tmp = self._path.with_suffix(self._path.suffix + f".up.{uuid.uuid4().hex}")
+        shutil.copyfile(src, tmp)
+        os.replace(tmp, self._path)
         return self._metadata_sync()
 
     async def acquire_lock(self, *, timeout: float) -> LockToken:
