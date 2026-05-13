@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -24,6 +27,7 @@ from fastapi.testclient import TestClient
 from fireflyframework_agentic.exposure.mcp.http_cli import (
     _log_unhandled_loop_exception,
     build_app,
+    main,
 )
 
 
@@ -90,3 +94,46 @@ def test_log_unhandled_loop_exception_handles_no_exception_in_context(caplog: py
     with caplog.at_level(logging.ERROR, logger="fireflyframework_agentic.exposure.mcp.http_cli"):
         _log_unhandled_loop_exception(asyncio.new_event_loop(), context)
     assert any("socket.send" in r.message for r in caplog.records)
+
+
+# ---- .env loading -------------------------------------------------------
+#
+# firefly-mcp-http calls load_dotenv() at the top of main() so a developer
+# running the server from a project directory picks up EMBEDDING_MODEL etc.
+# from a local .env without an explicit shell ``source``. Locks the
+# precedence story: real env vars always win (load_dotenv defaults to
+# override=False), so Azure / Container Apps deployments — which inject
+# env from the manifest before the process starts — see no behavioural
+# change.
+
+
+def _stub_uvicorn_run(*args, **kwargs):
+    """No-op replacement for the uvicorn.asyncio.run path — keeps main()
+    from binding a port during tests."""
+    return None
+
+
+def test_main_loads_dotenv_when_var_absent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Local-dev path: a key absent from the process env is populated from .env."""
+    monkeypatch.delenv("FIREFLY_TEST_DOTENV_KEY", raising=False)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("FIREFLY_TEST_DOTENV_KEY=from_dotenv\n")
+    with patch("fireflyframework_agentic.exposure.mcp.http_cli.asyncio.run", new=_stub_uvicorn_run):
+        main()
+    assert os.environ.get("FIREFLY_TEST_DOTENV_KEY") == "from_dotenv"
+
+
+def test_main_does_not_override_existing_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Azure / production path: a key already in the env wins over .env.
+
+    Load-bearing assertion. In Azure Container Apps every env var comes
+    from the manifest / Key Vault binding before the Python process
+    starts, so each lookup finds an existing value and ``.env`` must
+    not silently rewrite it.
+    """
+    monkeypatch.setenv("FIREFLY_TEST_DOTENV_KEY", "from_real_env")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("FIREFLY_TEST_DOTENV_KEY=from_dotenv\n")
+    with patch("fireflyframework_agentic.exposure.mcp.http_cli.asyncio.run", new=_stub_uvicorn_run):
+        main()
+    assert os.environ.get("FIREFLY_TEST_DOTENV_KEY") == "from_real_env"

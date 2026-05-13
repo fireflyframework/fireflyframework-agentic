@@ -1107,6 +1107,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-ai" },
     { name = "pydantic-settings" },
+    { name = "python-dotenv" },
 ]
 
 [package.optional-dependencies]
@@ -1135,7 +1136,6 @@ all = [
     { name = "pinecone" },
     { name = "pyjwt", extra = ["crypto"] },
     { name = "pymongo" },
-    { name = "python-dotenv" },
     { name = "qdrant-client" },
     { name = "redis" },
     { name = "sqlalchemy" },
@@ -1165,7 +1165,6 @@ corpus-search = [
     { name = "markdown-it-py" },
     { name = "markitdown", extra = ["docx", "pdf", "pptx", "xlsx"] },
     { name = "openai" },
-    { name = "python-dotenv" },
     { name = "sqlite-vec" },
     { name = "watchfiles" },
 ]
@@ -1183,7 +1182,6 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-benchmark" },
     { name = "pytest-cov" },
-    { name = "python-dotenv" },
     { name = "ruff" },
     { name = "sqlite-vec" },
     { name = "testcontainers" },
@@ -1315,8 +1313,7 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
     { name = "pytest-benchmark", marker = "extra == 'dev'", specifier = ">=5.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
-    { name = "python-dotenv", marker = "extra == 'corpus-search'", specifier = ">=1.0.0" },
-    { name = "python-dotenv", marker = "extra == 'dev'", specifier = ">=1.0.0" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "qdrant-client", marker = "extra == 'vectorstores-qdrant'", specifier = ">=1.12.0" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=5.2.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9.0" },
