@@ -86,8 +86,8 @@ def parse_args() -> argparse.Namespace:
         "--inflated-prices",
         action="store_true",
         help="Wire fixed_rate_cost (with the absurd rates in _FIXED_PRICES) into the "
-             "resolver chain so it overrides genai-prices. Used to demonstrate the "
-             "HARD/SOFT budget rules without burning real spend.",
+        "resolver chain so it overrides genai-prices. Used to demonstrate the "
+        "HARD/SOFT budget rules without burning real spend.",
     )
     return p.parse_args()
 
@@ -114,10 +114,7 @@ def _try_attach_app_insights() -> bool:
             metric_export_interval_ms=5_000,
         )
     except Exception as exc:  # noqa: BLE001
-        print(
-            f"App Insights export not enabled ({type(exc).__name__}: {exc}); "
-            "falling back to local sinks."
-        )
+        print(f"App Insights export not enabled ({type(exc).__name__}: {exc}); falling back to local sinks.")
         return False
     print("App Insights exporters attached.")
     return True
@@ -160,8 +157,7 @@ async def run_agents() -> None:
         name="comedian",
         model=MODEL,
         instructions=(
-            "You are a fan of Douglas Adams. Tell short jokes in the style of "
-            "The Hitchhiker's Guide to the Galaxy."
+            "You are a fan of Douglas Adams. Tell short jokes in the style of The Hitchhiker's Guide to the Galaxy."
         ),
     )
     summarizer = FireflyAgent(
@@ -189,8 +185,7 @@ def print_summary() -> None:
     summary = default_usage_tracker.get_summary()
     print("\n=== aggregated usage ===")
     print(f"total cost  : ${summary.total_cost_usd:.6f}")
-    print(f"total tokens: {summary.total_tokens} "
-          f"(in={summary.total_input_tokens}, out={summary.total_output_tokens})")
+    print(f"total tokens: {summary.total_tokens} (in={summary.total_input_tokens}, out={summary.total_output_tokens})")
     print(f"requests    : {summary.total_requests}")
     print(f"records     : {summary.record_count}")
 
