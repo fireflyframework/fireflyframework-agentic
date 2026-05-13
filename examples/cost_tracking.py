@@ -18,7 +18,9 @@ Demonstrates:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 from fireflyframework_agentic.observability.budget import (
     BudgetGate,
@@ -32,12 +34,15 @@ from fireflyframework_agentic.observability.cost import (
     CallTier,
     CostContext,
 )
+from fireflyframework_agentic.observability.exporters import configure_exporters
 from fireflyframework_agentic.observability.sinks import (
     EventBusSink,
     JSONLFileSink,
     OTelMetricsSink,
 )
 from fireflyframework_agentic.observability.usage import UsageTracker
+
+load_dotenv()
 
 _FIXED_PRICES = {"acme:internal-llm": (0.5e-6, 2.0e-6)}  # (input, output) per token.
 
@@ -51,7 +56,35 @@ def fixed_rate_cost(ctx: CostContext) -> float | None:
     return ctx.input_tokens * input_price + ctx.output_tokens * output_price
 
 
-def build_tracker(jsonl_path: Path) -> UsageTracker:
+def _try_attach_app_insights() -> bool:
+    """Attempt to wire Azure Monitor exporters; return ``True`` on success.
+
+    Reads ``APPLICATIONINSIGHTS_CONNECTION_STRING`` from the environment (or a
+    ``.env`` loaded by the caller). Returns ``False`` when the variable is
+    unset, the ``[azure]`` extra is missing, or the connection string is
+    rejected — callers should fall back to the non-OTel sinks in that case.
+    """
+    cs = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING")
+    if not cs:
+        print("APPLICATIONINSIGHTS_CONNECTION_STRING not set; skipping App Insights.")
+        return False
+    try:
+        configure_exporters(
+            service_name="firefly-cost-demo",
+            azure_monitor_connection_string=cs,
+            metric_export_interval_ms=5_000,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"App Insights export not enabled ({type(exc).__name__}: {exc}); "
+            "falling back to local sinks."
+        )
+        return False
+    print("App Insights exporters attached.")
+    return True
+
+
+def build_tracker(jsonl_path: Path, *, with_otel: bool) -> UsageTracker:
     gate = BudgetGate(
         [
             BudgetRule(
@@ -70,15 +103,19 @@ def build_tracker(jsonl_path: Path) -> UsageTracker:
             ),
         ]
     )
-    sinks = [OTelMetricsSink(), EventBusSink(), JSONLFileSink(jsonl_path)]
+    sinks: list = [EventBusSink(), JSONLFileSink(jsonl_path)]
+    if with_otel:
+        sinks.insert(0, OTelMetricsSink())
     resolvers = [fixed_rate_cost, *DEFAULT_RESOLVERS]
     return UsageTracker(sinks=sinks, gate=gate, resolver=resolvers)
 
 
 def main() -> None:
+    app_insights_ready = _try_attach_app_insights()
+
     out = Path("/tmp/firefly-cost.jsonl")
     out.unlink(missing_ok=True)
-    tracker = build_tracker(out)
+    tracker = build_tracker(out, with_otel=app_insights_ready)
 
     tracker.record_call(
         model="anthropic:claude-3-5-sonnet-latest",
@@ -99,7 +136,8 @@ def main() -> None:
 
     line = out.read_text(encoding="utf-8").splitlines()[0]
     rec = json.loads(line)
-    print(f"emitted record cost_usd=${rec['cost_usd']:.6f}")
+    print(json.dumps(rec, indent=2, sort_keys=True))
+    print(f"\ncost_usd=${rec['cost_usd']:.6f}")
 
 
 if __name__ == "__main__":
