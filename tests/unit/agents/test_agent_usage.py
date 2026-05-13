@@ -26,11 +26,11 @@ from fireflyframework_agentic.observability.usage import UsageTracker
 class _FakeUsage:
     """Simulates pydantic_ai RunUsage."""
 
-    def __init__(self, *, input_tokens=10, output_tokens=5, total_tokens=15, request_count=1):
+    def __init__(self, *, input_tokens=10, output_tokens=5, total_tokens=15, requests=1):
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
         self.total_tokens = total_tokens
-        self.request_count = request_count
+        self.requests = requests
         self.cache_creation_tokens = 0
         self.cache_read_tokens = 0
 

@@ -435,7 +435,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
 
             input_tokens = getattr(usage, "input_tokens", 0) or 0
             output_tokens = getattr(usage, "output_tokens", 0) or 0
-            request_count = getattr(usage, "request_count", 0) or 0
+            request_count = getattr(usage, "requests", 0) or 0
             cache_creation = getattr(usage, "cache_creation_tokens", 0) or 0
             cache_read = getattr(usage, "cache_read_tokens", 0) or 0
 
