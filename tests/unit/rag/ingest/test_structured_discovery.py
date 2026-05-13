@@ -512,17 +512,17 @@ def test_pick_header_row_idx_finds_header_past_row_eight():
         ),
         (
             None,
-            "test002",
-            2651,
-            8214483,
-            "2013-05-03",
-            430000,
-            100001,
-            "MASCULINO",
+            "test001",
+            1001,
+            9000001,
+            "2020-01-15",
+            100000,
+            200001,
+            "M",
             "ANON EMPLOYEE ONE",
             "DIRECTOR",
-            "CDMX",
-            "CVRM",
+            "REGION-A",
+            "UNIT-X",
         ),
     ]
     assert _pick_header_row_idx(rows) == 8
@@ -743,7 +743,7 @@ def test_excel_sample_finds_header_deep_in_sheet(tmp_path: Path) -> None:
     # Real header at row 9, with a leading-blank column (matches the
     # workbook layout where column A is empty and B onward is data).
     ws.append([None, "PRID", "EMPLOYEE_ID", "NAME", "REGION"])
-    ws.append([None, "test001", 4286, "ANON", "CDMX"])
+    ws.append([None, "test001", 1001, "ANON_PERSON", "REGION-A"])
     xlsx = tmp_path / "deep.xlsx"
     wb.save(xlsx)
 
