@@ -19,10 +19,25 @@ On top of that it shows:
 * A custom :class:`CostFn` for contractually-priced models and a
   :class:`BudgetGate` with HARD/SOFT rules, both installed on the default
   tracker so they apply to real agent traffic.
+
+Examples:
+
+    # Real Sonnet pricing, budgets stay green.
+    uv run python examples/cost_tracking.py
+
+    # Pretend every LLM call costs $5; the $2 HARD daily limit trips on
+    # the first agent and raises BudgetExceededError. The soft $4 lifetime
+    # rule also fires and logs a warning.
+    uv run python examples/cost_tracking.py --inflate-cost-usd 5
+
+    # Inflate but stay under the HARD limit ($2 daily). Only the SOFT
+    # lifetime rule will eventually log.
+    uv run python examples/cost_tracking.py --inflate-cost-usd 0.5
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import os
 from pathlib import Path
@@ -30,6 +45,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.exceptions import BudgetExceededError
 from fireflyframework_agentic.observability.budget import (
     BudgetGate,
     BudgetMode,
@@ -64,6 +80,13 @@ def fixed_rate_cost(ctx: CostContext) -> float | None:
     return ctx.input_tokens * input_price + ctx.output_tokens * output_price
 
 
+def make_inflated_resolver(per_call_usd: float):
+    """Build a resolver that prices every call at a fixed USD amount."""
+    def _resolver(_ctx: CostContext) -> float:
+        return per_call_usd
+    return _resolver
+
+
 def _try_attach_app_insights() -> bool:
     """Wire Azure Monitor exporters if a connection string is present."""
     cs = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING")
@@ -86,29 +109,32 @@ def _try_attach_app_insights() -> bool:
     return True
 
 
-def configure_default_tracker(*, with_otel: bool) -> None:
+def configure_default_tracker(*, with_otel: bool, inflate_cost_usd: float | None) -> None:
     """Install sinks, custom resolver, and budget gate on the singleton."""
     JSONL_PATH.unlink(missing_ok=True)
     default_usage_tracker.add_sink(JSONLFileSink(JSONL_PATH))
     if with_otel:
         default_usage_tracker.add_sink(OTelMetricsSink())
 
-    default_usage_tracker._resolver = [fixed_rate_cost, *DEFAULT_RESOLVERS]
+    resolvers = [fixed_rate_cost, *DEFAULT_RESOLVERS]
+    if inflate_cost_usd is not None:
+        print(f"Cost inflation enabled: every call priced at ${inflate_cost_usd:.4f}.")
+        resolvers.insert(0, make_inflated_resolver(inflate_cost_usd))
+    default_usage_tracker._resolver = resolvers
+
     default_usage_tracker._gate = BudgetGate(
         [
             BudgetRule(
                 name="demo-daily",
-                limit_usd=5.0,
+                limit_usd=2.0,
                 mode=BudgetMode.HARD,
                 window=BudgetWindow.DAILY,
-                match={"tenant": "demo"},
             ),
             BudgetRule(
-                name="writer-lifetime",
-                limit_usd=100.0,
+                name="demo-lifetime",
+                limit_usd=4.0,
                 mode=BudgetMode.SOFT,
                 window=BudgetWindow.LIFETIME,
-                match={"agent": "writer"},
             ),
         ]
     )
@@ -166,10 +192,30 @@ def _print_breakdown(title: str, group: dict, *, width: int) -> None:
         print(f"  {key:<{width}} cost=${m['cost_usd']:.6f}  tokens={m['total_tokens']}")
 
 
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument(
+        "--inflate-cost-usd",
+        type=float,
+        default=None,
+        metavar="USD",
+        help="Override real pricing: every LLM call is billed this fixed amount. "
+             "Use to demonstrate the HARD/SOFT budget rules without burning real spend.",
+    )
+    return p.parse_args()
+
+
 async def main() -> None:
+    args = parse_args()
     app_insights_ready = _try_attach_app_insights()
-    configure_default_tracker(with_otel=app_insights_ready)
-    await run_agents()
+    configure_default_tracker(with_otel=app_insights_ready, inflate_cost_usd=args.inflate_cost_usd)
+    try:
+        await run_agents()
+    except BudgetExceededError as exc:
+        print(
+            f"\n!! BudgetExceededError: rule '{exc.rule_name}' tripped at "
+            f"${exc.spend_usd:.4f} > ${exc.limit_usd:.4f}. Aborting agent chain."
+        )
     print_summary()
 
 
