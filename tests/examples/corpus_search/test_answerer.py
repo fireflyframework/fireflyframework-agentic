@@ -253,14 +253,14 @@ def test_answer_agent_wires_diacritic_instructions_to_underlying_agent(mock_agen
 
 # --- canonical-name resolution + stale-source warning ---------------------
 #
-# Real workbook test (the test): the user asked "Who are the direct reports
-# of Sam Lee?" — but the string "Sam Lee" doesn't exist in the
-# corpus; the SQL agent fuzzy-matched it to "PATRICK ULRIC BREWSTER
-# CERECEDO" living in a historical ``archive_dated_table`` sheet. The answer
-# silently used that match and returned a list of reports without ever
-# telling the user (a) which canonical name was matched, or (b) that the
-# match came from a 2020 snapshot. Two new tests pin both halves of the
-# fix so a future instruction rewrite can't lose them silently.
+# A real-corpus query ("who reports to <short name>?") returned a list of
+# direct reports without indicating which canonical name was matched —
+# the user's short input had no exact match in the data, and the SQL agent
+# fuzzy-matched it to a longer formal name in a historical snapshot
+# sheet. The answer silently used that match without (a) naming the
+# canonical entity it picked or (b) flagging that the match came from
+# a date-stamped (historical) source. Two pin tests below guard both
+# halves of the fix against accidental deletion.
 
 
 def test_instructions_pin_canonical_name_resolution_rule():
@@ -271,8 +271,8 @@ def test_instructions_pin_canonical_name_resolution_rule():
     """
     # The high-level intent.
     assert "canonical value" in _INSTRUCTIONS
-    # The load-bearing worked example. If this disappears, the model
-    # loses its template for how to actually phrase the disambiguation.
+    # The load-bearing worked example (synthetic). If this disappears,
+    # the model loses its template for how to phrase the disambiguation.
     assert "Sam Lee" in _INSTRUCTIONS
     assert "SAMUEL ANDREW LEE THOMPSON" in _INSTRUCTIONS
     # Must specify "which source table" so the user can audit the match.
@@ -282,9 +282,9 @@ def test_instructions_pin_canonical_name_resolution_rule():
 def test_instructions_pin_stale_source_warning_rule():
     """The instructions must tell the model to flag when the matched
     canonical value comes from a historical-looking source (date-shaped
-    sheet name like ``archive_dated_table``, ``_2020``, ``_q1_2024``). A
-    silent match against a 2020 snapshot is data-correctness failure,
-    not just a UX nit — yesterday's manager may not be today's.
+    sheet name like ``_2020``, ``_q1_2024``, ``snapshot_jan_2023``).
+    A silent match against an old snapshot is data-correctness
+    failure, not just a UX nit — yesterday's manager may not be today's.
     """
     lowered = _INSTRUCTIONS.lower()
     assert "historical" in lowered

@@ -60,17 +60,17 @@ rather than presenting a unit-less number the user cannot verify.
 5. When the user filters by a named entity (person, organisation, brand, \
 product, etc.) and the canonical value in the data is a different spelling, \
 format, length, or word order than the user's input (e.g. user said \
-'Sam Lee', the matched row has 'SAMUEL ANDREW LEE THOMPSON'; \
-user said 'Acme', the data has 'Acme Corp Ltd'), state explicitly which \
-canonical value(s) you matched against AND which source table they came \
-from, BEFORE answering the question. Phrase it so the user can confirm the \
-right entity was matched, e.g. 'Interpreting 'Sam Lee' as \
-'SAMUEL ANDREW LEE THOMPSON' from the archive_dated_table sheet.' If the \
-matched source table name contains a date-shaped token suggesting \
-historical data (e.g. ``_2020``, ``_q1_2024``, ``monthly_table``, \
-``_old``), warn the user that the answer reflects that snapshot and may \
-not represent current state — a name that is a manager today may be \
-elsewhere or gone in a 2020 sheet.\
+'Sam Lee', the matched row has 'SAMUEL ANDREW LEE THOMPSON'; user said \
+'Acme', the data has 'Acme Corp Ltd'), state explicitly which canonical \
+value(s) you matched against AND which source table they came from, \
+BEFORE answering the question. Phrase it so the user can confirm the \
+right entity was matched, e.g. 'Interpreting 'Sam Lee' as 'SAMUEL ANDREW \
+LEE THOMPSON' from the q3_employees sheet.' If the matched source table \
+name contains a date-shaped token suggesting historical data (e.g. \
+``_2020``, ``_q1_2024``, ``snapshot_jan_2023``, ``_old``), warn the user \
+that the answer reflects that snapshot and may not represent current \
+state — a name that is a manager today may be elsewhere or gone in a \
+2020 sheet.\
 """
 
 
