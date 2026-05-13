@@ -451,13 +451,10 @@ Rules:
   - Use the exact table and column names from the schema below.
   - If the question cannot be answered from this schema at all, call
     run_select('SELECT 1 WHERE 1=0') and stop.
-  - When the schema lists a column with `unit=…`, that unit applies to
-    every value stored in the column. If your SELECT returns rows from
-    such a column (raw or aggregated), preserve the unit in the result
-    — alias the column to embed it (e.g.
-    `SELECT SUM(value) AS "total_value_usd_millions" …`) or select the
-    unit alongside the value so the downstream answerer can quote it.
-    Do not silently strip the unit.
+  - When the schema lists a column with `unit=…`, preserve that unit
+    in your SELECT result — alias the column to embed it (e.g.
+    `SUM(value) AS "total_value_usd_millions"`) or co-select the unit
+    literal. Do not silently strip the unit.
 """
 
 

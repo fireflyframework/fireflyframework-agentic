@@ -40,6 +40,16 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
   Desktop / `mcp-remote` entries to pass `--header
   X-Firefly-Corpus-Id: <id>`.
 
+### Fixed
+
+- **Answerer preserves diacritical marks in non-English responses.** The
+  RAG answerer's instructions now tell the model to answer in the same
+  language as the question and to keep correct orthography
+  (`á`/`é`/`í`/`ó`/`ú`/`ñ`/`ü`/`ç`/`à`/`è`/`ê`/`ô` and equivalents)
+  rather than transliterating to ASCII. Resolves the regression where
+  Spanish answers came back as `produccion`/`aprobacion`/`Cual?` instead
+  of `producción`/`aprobación`/`¿Cuál?` (#157).
+
 ### Added
 
 - **Optional `unit` field on `ColumnSpec`.** Schemas can now declare the
