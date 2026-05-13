@@ -32,8 +32,17 @@ from typing import Any
 from fireflyframework_agentic.agents.base import FireflyAgent
 from fireflyframework_agentic.rag.corpus import SqliteCorpus
 
-from .structured_pipeline import _normalize_sheet_name
+from .structured_pipeline import (
+    _HEADER_SCAN_ROWS,
+    _normalize_sheet_name,
+    _pick_header_row_idx,
+)
 from .structured_schema import SchemaFeedback, TableSpec, TargetSchema
+
+# Re-exported for tests that import them from this module — moved to
+# structured_pipeline.py so discovery and ingestion share one
+# definition of "which row is the header in an Excel sheet."
+__all__ = ["_HEADER_SCAN_ROWS", "_pick_header_row_idx"]
 
 try:
     import openpyxl as _openpyxl
@@ -46,12 +55,6 @@ except ImportError:
 log = logging.getLogger(__name__)
 
 _SAMPLE_ROWS = 5
-# How far down a sheet to look for the real header row. Real-world Excel
-# files frequently bury headers under ~10 single-cell title / legend /
-# spacer rows (e.g. ``an archive sheet`` in the the test workbook puts the
-# header at row 8). Keeping this generous guarantees the picker never
-# misses a header that visually exists on the page.
-_HEADER_SCAN_ROWS = 20
 
 # File extensions the structured pipeline knows how to sample. Callers walking
 # folders should filter to this set so non-tabular files (PPTX, PDF, DOCX, …)
@@ -237,46 +240,6 @@ def _excel_sample(path: Path) -> str:
         lines += [f"  {list(r)}" for r in rows[1:]]
         parts.append("\n".join(lines))
     return "\n\n".join(parts)
-
-
-def _pick_header_row_idx(candidate_rows: list[tuple[Any, ...]]) -> int:
-    """Choose the row in *candidate_rows* most likely to be the real header.
-
-    Heuristic, in order:
-      1. Skip empty / one-cell title rows (a real header has ≥2 cells).
-      2. Among multi-cell *string-dominated* rows (>50% of non-null cells
-         are strings — real Excel headers are almost always strings, not
-         integers), pick the one with the most non-null cells. Real
-         headers are wide; decorative two-cell titles like
-         ``['DECORATIVE TITLE', '(en blanco)']`` lose to the
-         5-column real header at row 2.
-      3. Fall back to the first multi-cell row.
-
-    Returns 0 when no row passes any test (so the existing behaviour for
-    well-formed sheets is preserved).
-
-    The caller is expected to pass at most ``_HEADER_SCAN_ROWS`` rows;
-    that bound governs how far the picker will look.
-    """
-    # 1. First non-trivial row.
-    multi_cell = [(i, r) for i, r in enumerate(candidate_rows) if sum(1 for v in r if v is not None) >= 2]
-    if not multi_cell:
-        return 0
-    # 2. Widest string-dominated row wins (ties broken by row order).
-    string_dominated: list[tuple[int, int]] = []  # (row_idx, non_null_count)
-    for i, r in multi_cell:
-        non_null = [v for v in r if v is not None]
-        string_count = sum(1 for v in non_null if isinstance(v, str))
-        if string_count * 2 > len(non_null):
-            string_dominated.append((i, len(non_null)))
-    if string_dominated:
-        # Sort by (-width, row_idx) so the widest row wins and the
-        # earliest row breaks ties. Avoids "first plausible row wins"
-        # which fails on pivot sheet-style sheets where row 0 is a 2-cell
-        # decorative title.
-        return min(string_dominated, key=lambda t: (-t[1], t[0]))[0]
-    # 3. Fallback: first multi-cell row.
-    return multi_cell[0][0]
 
 
 def _sample_for(path: Path) -> str:
