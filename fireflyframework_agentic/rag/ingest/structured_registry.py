@@ -71,6 +71,36 @@ _SKILL = (
     "- Datetimes with time component → datetime\n"
     "- Structured text (JSON-like) → json\n"
     "- Everything else → string\n\n"
+    "**Unit inference (numeric columns):** When the column is integer or "
+    "float AND there is a clear signal of what the values measure, set "
+    "``unit`` to a short human-readable string. Leave ``unit`` null when "
+    "there is no signal — guessing a unit is worse than admitting you "
+    "don't know, because downstream answers will be confidently wrong.\n"
+    "  Signals to use:\n"
+    "  - Parenthesised hint in the header (case-insensitive):\n"
+    '    ``Sales (USD)`` → unit="USD"; ``Revenue (USD millions)`` → '
+    'unit="USD millions"; ``Achievement (%)`` → unit="percent"; '
+    '``Duration (days)`` → unit="days".\n'
+    "  - Currency suffix/prefix in the column name: ``amount_usd``, "
+    '``price_eur``, ``revenue_gbp`` → unit="USD" / "EUR" / "GBP".\n'
+    "  - Percent signals: header contains ``%``, ``pct``, ``percent``, "
+    "``rate`` AND sample values look like percentages (0–100 or 0–1) "
+    '→ unit="percent".\n'
+    "  - Headcount-style integers: header is ``headcount``, ``fte``, "
+    '``ftes``, ``employees``, ``staff`` → unit="headcount".\n'
+    "  - Time/duration columns: header is ``days``, ``hours``, ``minutes``, "
+    "``years`` → that word as the unit.\n"
+    "  - Adjacent currency-code column (e.g. ``amount`` next to a ``currency`` "
+    "column with one distinct value across the sample) → unit = that distinct "
+    "value.\n"
+    "  - Sheet-level / file-level header text in the sample mentioning units "
+    "(e.g. a banner row ``Figures in EUR millions``) → apply to every "
+    "money-shaped numeric column in that source.\n"
+    "  Do NOT set ``unit`` on string / boolean / date / datetime / json "
+    "columns, on primary keys, or on foreign keys — those aren't quantities. "
+    "Do NOT invent a currency you cannot see; if the data is clearly a money "
+    "amount but the currency is genuinely ambiguous, leave ``unit`` null. "
+    "The answerer is instructed to flag that ambiguity rather than guess.\n\n"
     "**Nullability & primary keys:**\n"
     "- nullable: false only if every sample row has a non-empty value.\n"
     "- primary_key: true if the column looks like a unique identifier "
