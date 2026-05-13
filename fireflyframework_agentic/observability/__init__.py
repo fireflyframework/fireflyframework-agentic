@@ -23,7 +23,6 @@ from fireflyframework_agentic.observability.budget import (
 )
 from fireflyframework_agentic.observability.cost import (
     DEFAULT_RESOLVERS,
-    CallTier,
     CostContext,
     genai_prices_cost,
     provider_reported_cost,
@@ -60,7 +59,6 @@ __all__ = [
     "BudgetMode",
     "BudgetRule",
     "BudgetWindow",
-    "CallTier",
     "CostContext",
     "CostSink",
     "DEFAULT_RESOLVERS",

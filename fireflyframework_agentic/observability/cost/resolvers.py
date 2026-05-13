@@ -16,8 +16,6 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from fireflyframework_agentic.observability.cost.tiers import CallTier
-
 logger = logging.getLogger(__name__)
 
 
@@ -31,7 +29,6 @@ class CostContext:
     cache_creation_tokens: int = 0
     cache_read_tokens: int = 0
     reasoning_tokens: int = 0
-    tier: CallTier = CallTier.STANDARD
     provider_payload: Mapping[str, Any] | None = None
 
 
@@ -91,9 +88,6 @@ def genai_prices_cost(ctx: CostContext) -> float | None:
       * ``Usage.output_tokens`` = ctx.output_tokens + ctx.reasoning_tokens
         (reasoning tokens bill at the output rate).
 
-    The ``CallTier.BATCH`` modifier is applied as a 0.5x post-multiplier
-    since the library does not natively price batch tiers.
-
     On unknown model (LookupError): emits ``cost_unknown`` metric +
     WARNING once per model, returns None.
     """
@@ -119,10 +113,7 @@ def genai_prices_cost(ctx: CostContext) -> float | None:
         logger.debug("genai-prices lookup raised for '%s'", ctx.model, exc_info=True)
         return None
 
-    total = float(result.total_price)
-    if ctx.tier == CallTier.BATCH:
-        total *= 0.5
-    return total
+    return float(result.total_price)
 
 
 DEFAULT_RESOLVERS: tuple[CostFn, ...] = (provider_reported_cost, genai_prices_cost)

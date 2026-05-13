@@ -12,7 +12,6 @@ from fireflyframework_agentic.observability.cost.resolvers import (
     provider_reported_cost,
     resolve_cost,
 )
-from fireflyframework_agentic.observability.cost.tiers import CallTier
 
 
 def test_cost_context_defaults() -> None:
@@ -20,7 +19,6 @@ def test_cost_context_defaults() -> None:
     assert ctx.cache_creation_tokens == 0
     assert ctx.cache_read_tokens == 0
     assert ctx.reasoning_tokens == 0
-    assert ctx.tier == CallTier.STANDARD
     assert ctx.provider_payload is None
 
 
@@ -130,19 +128,6 @@ def test_genai_prices_folds_reasoning_into_output() -> None:
     with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price", side_effect=fake_calc):
         genai_prices_cost(ctx)
     assert captured["usage"].output_tokens == 50 + 200
-
-
-def test_genai_prices_batch_tier_halves() -> None:
-    with patch("fireflyframework_agentic.observability.cost.resolvers.calc_price", return_value=_price_calc(0.006)):
-        cost = genai_prices_cost(
-            CostContext(
-                model="openai:gpt-4.1",
-                input_tokens=1000,
-                output_tokens=500,
-                tier=CallTier.BATCH,
-            )
-        )
-    assert cost == pytest.approx(0.003)
 
 
 def test_genai_prices_unknown_model_returns_none(caplog: pytest.LogCaptureFixture) -> None:
