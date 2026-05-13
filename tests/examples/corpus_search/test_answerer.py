@@ -249,3 +249,46 @@ def test_answer_agent_wires_diacritic_instructions_to_underlying_agent(mock_agen
     assert kwargs["instructions"] == _INSTRUCTIONS
     # Belt-and-braces: the wired-in string itself contains the rule.
     assert "diacritical" in kwargs["instructions"].lower()
+
+
+# --- canonical-name resolution + stale-source warning ---------------------
+#
+# Real workbook test (the test): the user asked "Who are the direct reports
+# of Sam Lee?" — but the string "Sam Lee" doesn't exist in the
+# corpus; the SQL agent fuzzy-matched it to "PATRICK ULRIC BREWSTER
+# CERECEDO" living in a historical ``archive_dated_table`` sheet. The answer
+# silently used that match and returned a list of reports without ever
+# telling the user (a) which canonical name was matched, or (b) that the
+# match came from a 2020 snapshot. Two new tests pin both halves of the
+# fix so a future instruction rewrite can't lose them silently.
+
+
+def test_instructions_pin_canonical_name_resolution_rule():
+    """The instructions must tell the model to surface which canonical
+    value it matched when the user's filter string and the data don't
+    match verbatim. Without this, name-based filters silently bridge
+    through fuzzy matches the user can't verify.
+    """
+    # The high-level intent.
+    assert "canonical value" in _INSTRUCTIONS
+    # The load-bearing worked example. If this disappears, the model
+    # loses its template for how to actually phrase the disambiguation.
+    assert "Sam Lee" in _INSTRUCTIONS
+    assert "SAMUEL ANDREW LEE THOMPSON" in _INSTRUCTIONS
+    # Must specify "which source table" so the user can audit the match.
+    assert "source table" in _INSTRUCTIONS.lower()
+
+
+def test_instructions_pin_stale_source_warning_rule():
+    """The instructions must tell the model to flag when the matched
+    canonical value comes from a historical-looking source (date-shaped
+    sheet name like ``archive_dated_table``, ``_2020``, ``_q1_2024``). A
+    silent match against a 2020 snapshot is data-correctness failure,
+    not just a UX nit — yesterday's manager may not be today's.
+    """
+    lowered = _INSTRUCTIONS.lower()
+    assert "historical" in lowered
+    # The concrete sheet-naming patterns the model should look for.
+    assert "_2020" in _INSTRUCTIONS
+    # And the imperative.
+    assert "warn" in lowered or "flag" in lowered
