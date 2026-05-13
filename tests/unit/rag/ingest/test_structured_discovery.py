@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from fireflyframework_agentic.rag.ingest.structured_registry import (
+    _SKILL,
     TABULAR_SUFFIXES,
     _csv_sample,
     _sample_for,
@@ -294,3 +295,154 @@ async def test_interactive_returns_last_schema_after_max_rounds(tmp_path: Path):
 
     assert result == _stub_schema()
     assert on_review.await_count == 2
+
+
+# ---- Unit inference in the discovery prompt -----------------------------
+#
+# PR #165 added the ``unit`` field on ``ColumnSpec`` and wired the SQL
+# retriever / answerer to surface and quote it. The schema-discovery
+# prompt was NOT updated in that PR, so the discovery LLM never
+# populated ``unit`` — every column came back with ``unit=None``,
+# defeating the feature for any user who relies on auto-discovery.
+# These tests pin the prompt contract so the unit-inference block
+# can't get silently removed.
+
+
+def test_skill_prompt_teaches_unit_inference() -> None:
+    """The discovery prompt must instruct the LLM when and how to set
+    ``unit`` on numeric columns. Without this, ``ColumnSpec.unit``
+    stays ``None`` forever and the answerer's currency / unit
+    handling has nothing to surface.
+    """
+    assert "Unit inference" in _SKILL, (
+        "schema-discovery prompt is missing unit-inference guidance — see #170 / PR #171 for context"
+    )
+    # Spot-check the load-bearing signals so a future edit can't strip
+    # them down to a vague one-liner without the test catching it.
+    expected_signals = [
+        "Parenthesised hint",
+        "Currency",
+        "percent",
+        "headcount",
+        "Leave ``unit`` null",
+    ]
+    missing = [s for s in expected_signals if s not in _SKILL]
+    assert not missing, f"unit-inference prompt lost signals: {missing}"
+
+
+def test_skill_prompt_forbids_unit_on_non_numeric_columns() -> None:
+    """The prompt must explicitly tell the LLM NOT to set ``unit`` on
+    columns that aren't quantities (strings, dates, primary keys, …).
+    The framework otherwise has no way to validate this — pydantic
+    happily accepts ``unit="USD"`` on a string column.
+    """
+    assert "Do NOT set ``unit`` on string" in _SKILL
+
+
+@pytest.mark.asyncio
+async def test_discover_schema_passes_unit_aware_prompt(csv_file: Path) -> None:
+    """End-to-end-ish: confirm ``discover_schema`` actually hands the
+    unit-aware ``_SKILL`` to the extractor agent (not a stripped-down
+    copy by accident).
+    """
+    mock_result = MagicMock()
+    mock_result.output = TargetSchema(
+        tables=[TableSpec(name="sales", columns=[ColumnSpec(name="id", type=ColumnType.integer)])]
+    )
+    with patch("fireflyframework_agentic.rag.ingest.structured_registry.create_extractor_agent") as mock_factory:
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value=mock_result)
+        mock_factory.return_value = mock_agent
+        await discover_schema(csv_file)
+    # The agent factory's ``extra_instructions`` kwarg must carry the
+    # unit-inference guidance.
+    kwargs = mock_factory.call_args.kwargs
+    assert "extra_instructions" in kwargs
+    assert "Unit inference" in kwargs["extra_instructions"]
+
+
+# ---- Header-row detection for messy Excel sheets ------------------------
+#
+# Real-world Excel files often have a "section numbers" or "decorative
+# title" row above the actual column headers. The first ``_excel_sample``
+# heuristic ("first row with ≥2 non-null cells") picked those banner rows
+# as headers, leaving the LLM to interpret integers/Nones as field names
+# and the real headers as a sample row. That confused the model enough
+# that it returned an empty schema and pydantic-ai retried 3× then gave
+# up — the user-reported #170 follow-up bug.
+
+
+def test_pick_header_row_idx_skips_numeric_banner_row():
+    """Row 0 holds section numbers (1, 2, 3, …); row 1 holds the real
+    string headers. The picker must select row 1.
+    """
+    from fireflyframework_agentic.rag.ingest.structured_registry import _pick_header_row_idx
+
+    rows = [
+        (None, None, 1, 2, 3, 4, None),
+        ("PRID", "EMPLOYEE_ID", "NAME", "REGION", "REVENUE", "COST", "NOTES"),
+        ("kkxf270", 4286, "Alice", "EU", 1000.0, 800.0, "-"),
+    ]
+    assert _pick_header_row_idx(rows) == 1
+
+
+def test_pick_header_row_idx_skips_single_cell_title_row():
+    """Decorative title rows have only one non-null cell. Skip them
+    even when the row immediately after looks header-shaped.
+    """
+    from fireflyframework_agentic.rag.ingest.structured_registry import _pick_header_row_idx
+
+    rows = [
+        ("Sales report — Q3 2024", None, None, None),
+        ("region", "amount", "currency", "notes"),
+        ("EU", 1000, "EUR", "ok"),
+    ]
+    assert _pick_header_row_idx(rows) == 1
+
+
+def test_pick_header_row_idx_returns_zero_on_well_formed_sheet():
+    """Existing well-formed sheets keep working: row 0 is already a
+    string-dominant header row, no skip needed.
+    """
+    from fireflyframework_agentic.rag.ingest.structured_registry import _pick_header_row_idx
+
+    rows = [
+        ("region", "amount", "currency"),
+        ("EU", 1000, "EUR"),
+        ("NA", 1500, "USD"),
+    ]
+    assert _pick_header_row_idx(rows) == 0
+
+
+def test_pick_header_row_idx_returns_zero_when_no_string_header_visible():
+    """All-numeric sheets (e.g. a pure metrics dump) have no string
+    header at all; the picker falls back to the first multi-cell row
+    rather than refusing to choose. The LLM can still attempt naming
+    from sample-row context.
+    """
+    from fireflyframework_agentic.rag.ingest.structured_registry import _pick_header_row_idx
+
+    rows = [
+        (1, 2, 3, 4),
+        (10, 20, 30, 40),
+        (100, 200, 300, 400),
+    ]
+    assert _pick_header_row_idx(rows) == 0
+
+
+def test_skill_prompt_requires_non_empty_schema():
+    """Output-contract guard added to ``_SKILL`` after a user-reported
+    failure where the discovery LLM returned ``{}`` on messy data and
+    pydantic-ai's retry budget ran out before producing anything
+    usable. The prompt must explicitly forbid the empty-schema escape.
+    """
+    from fireflyframework_agentic.rag.ingest.structured_registry import _SKILL
+
+    assert "Output contract" in _SKILL, "must lead with the output-contract clause"
+    # Imperative voice that the model can't dismiss.
+    assert "ALWAYS return" in _SKILL
+    assert "never the right answer" in _SKILL.lower() or "is never the right" in _SKILL.lower()
+    # Specifically marks the unit-related conservatism as the *exception*,
+    # not the rule — otherwise the model generalises "be conservative" to
+    # the whole schema and returns ``{}``.
+    assert "ONLY to the" in _SKILL or "only to the" in _SKILL.lower()
