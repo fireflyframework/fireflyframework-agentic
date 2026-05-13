@@ -134,8 +134,15 @@ async def test_ingest_structured_excel(tmp_path: Path, db_store: DatabaseStore):
 
 
 @pytest.mark.asyncio
-async def test_ingest_structured_bad_row_rollback(tmp_path: Path, db_store: DatabaseStore):
-    """Duplicate primary key should cause status==failed and errors non-empty."""
+async def test_ingest_structured_partial_on_duplicate_pk(tmp_path: Path, db_store: DatabaseStore):
+    """Duplicate PK rows fail individually but valid rows still commit.
+
+    The prior behaviour was atomic rollback of the entire table on any
+    per-row error, which wiped ~680 valid rows in real workbooks just
+    to protect ~13 placeholder rows. The new contract: ``"partial"``
+    status, ``inserted`` reflects what actually landed, ``errors`` lists
+    the rows that didn't.
+    """
     p = tmp_path / "dup.csv"
     with open(p, "w", newline="") as f:
         writer = csv.writer(f)
@@ -144,9 +151,10 @@ async def test_ingest_structured_bad_row_rollback(tmp_path: Path, db_store: Data
         writer.writerow(["1", "Duplicate", "5.00"])  # duplicate PK
     schema = _schema()
     result = await ingest_structured(p, db_store, schema)
-    assert result["products"]["status"] == "failed"
-    assert len(result["products"]["errors"]) > 0
-    assert result["products"]["inserted"] == 0
+    assert result["products"]["status"] == "partial"
+    assert result["products"]["inserted"] == 1
+    assert len(result["products"]["errors"]) == 1
+    assert "UNIQUE constraint failed" in result["products"]["errors"][0]
 
 
 @pytest.mark.asyncio
@@ -334,3 +342,99 @@ async def test_ingest_structured_acquires_storage_write_lock(tmp_path: Path) -> 
     assert call_count == 1, f"expected exactly one for_write() acquisition, got {call_count}"
     assert result["rows"]["status"] == "success"
     assert result["rows"]["inserted"] == 2
+
+
+# ---- Composite primary keys -------------------------------------------------
+#
+# Real-world tables (e.g. ``monthly_table`` in the the test workbook)
+# have a candidate ID column like ``prid`` that *looks* unique in a 5-row
+# sample but is genuinely non-unique in full data — the row identity is
+# composite (``prid`` + ``ruta_num``). Without composite-PK support the
+# only options are "drop the PK and lose uniqueness" or "fail ingestion
+# on duplicates". The composite-PK path lets the user mark both columns
+# primary_key=True and the SQL generator emits a table-level
+# ``PRIMARY KEY (col_a, col_b)`` clause.
+
+
+def test_ingest_composite_pk_emits_table_level_clause(tmp_path: Path) -> None:
+    """With ≥2 columns flagged primary_key=True, the SQL must use a
+    table-level ``PRIMARY KEY (a, b)`` rather than per-column inline
+    ``PRIMARY KEY`` (which SQLite would only accept on a single column).
+    """
+    table = TableSpec(
+        name="activity",
+        columns=[
+            ColumnSpec(name="prid", type=ColumnType.string, primary_key=True),
+            ColumnSpec(name="ruta_num", type=ColumnType.integer, primary_key=True),
+            ColumnSpec(name="amount", type=ColumnType.float_),
+        ],
+    )
+    rows = [
+        {"prid": "k1", "ruta_num": 100, "amount": 1.5},
+        {"prid": "k1", "ruta_num": 200, "amount": 2.5},  # same prid, different ruta
+        {"prid": "k2", "ruta_num": 100, "amount": 3.5},
+    ]
+    db = tmp_path / "compkey.sqlite"
+    res = _sync_ingest_table(db, table, rows)
+    assert res["status"] == "success"
+    assert res["inserted"] == 3
+    conn = sqlite3.connect(db)
+    try:
+        ddl = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='activity'").fetchone()[0]
+        assert "PRIMARY KEY" in ddl
+        # Composite form, not inline-on-one-column.
+        assert 'PRIMARY KEY ("prid", "ruta_num")' in ddl
+    finally:
+        conn.close()
+
+
+def test_ingest_composite_pk_rejects_duplicate_composite(tmp_path: Path) -> None:
+    """Composite PK still enforces uniqueness — on the full composite tuple."""
+    table = TableSpec(
+        name="activity",
+        columns=[
+            ColumnSpec(name="prid", type=ColumnType.string, primary_key=True),
+            ColumnSpec(name="ruta_num", type=ColumnType.integer, primary_key=True),
+            ColumnSpec(name="amount", type=ColumnType.float_),
+        ],
+    )
+    rows = [
+        {"prid": "k1", "ruta_num": 100, "amount": 1.5},
+        {"prid": "k1", "ruta_num": 100, "amount": 9.9},  # exact composite dup
+    ]
+    db = tmp_path / "compkey2.sqlite"
+    res = _sync_ingest_table(db, table, rows)
+    # The non-duplicate row commits, the duplicate row errors. Under the
+    # partial-ingest contract this is a ``partial`` outcome — the goal
+    # being that real workbooks with a handful of placeholder duplicate
+    # rows don't lose all their valid rows to atomic rollback.
+    assert res["status"] == "partial"
+    assert res["inserted"] == 1
+    assert any("UNIQUE constraint failed" in e for e in res["errors"])
+    # UNIQUE error must name BOTH composite columns (not just one).
+    assert any("activity.prid" in e and "activity.ruta_num" in e for e in res["errors"])
+
+
+def test_ingest_single_pk_still_uses_inline_form(tmp_path: Path) -> None:
+    """Single-col PK keeps the inline form so ``INTEGER PRIMARY KEY``
+    columns remain the SQLite rowid alias (an inline-vs-table-level
+    behavioural difference that the codebase has always relied on).
+    """
+    table = TableSpec(
+        name="single",
+        columns=[
+            ColumnSpec(name="id", type=ColumnType.integer, primary_key=True),
+            ColumnSpec(name="amount", type=ColumnType.float_),
+        ],
+    )
+    rows = [{"id": 1, "amount": 1.0}]
+    db = tmp_path / "singlepk.sqlite"
+    _sync_ingest_table(db, table, rows)
+    conn = sqlite3.connect(db)
+    try:
+        ddl = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='single'").fetchone()[0]
+        # Inline PK, not a trailing table-level clause.
+        assert '"id" INTEGER PRIMARY KEY' in ddl
+        assert 'PRIMARY KEY ("id")' not in ddl
+    finally:
+        conn.close()
