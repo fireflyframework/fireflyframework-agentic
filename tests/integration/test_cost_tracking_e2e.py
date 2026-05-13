@@ -83,10 +83,7 @@ async def test_multi_agent_cost_tracking_e2e():
     assert summary.total_tokens == summary.total_input_tokens + summary.total_output_tokens
     assert summary.total_requests == 3
 
-    expected_cost = sum(
-        r.input_tokens * _INPUT_PRICE + r.output_tokens * _OUTPUT_PRICE
-        for r in tracker.records
-    )
+    expected_cost = sum(r.input_tokens * _INPUT_PRICE + r.output_tokens * _OUTPUT_PRICE for r in tracker.records)
     assert summary.total_cost_usd == pytest.approx(expected_cost, rel=1e-9)
     assert summary.total_cost_usd > 0
 
