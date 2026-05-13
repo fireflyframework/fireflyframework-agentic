@@ -478,8 +478,8 @@ Worked example 2 (ambiguous person name):
 
 Worked example 3 (discriminator filter — aggregating across categories):
   Question: "What is the 2024 revenue for market EU?"
-  Schema: finance_fact (year string, 5 distinct; market string, 12 distinct;
-                        metric_line string, 3 distinct; value float)
+  Schema: finance_fact: year (string, 5 distinct), market (string, 12 distinct),
+                        metric_line (string, 3 distinct), value (float)
   Reasoning: metric_line has only 3 distinct values — almost certainly
              a categorical discriminator. SUM(value) without filtering
              on it would mix revenue, headcount, and expense into one
@@ -493,8 +493,8 @@ Worked example 3 (discriminator filter — aggregating across categories):
 
 Worked example 4 (GROUP BY at parent level — "by X" phrasings):
   Question: "What is the average achievement by business_unit?"
-  Schema: performance (team_id int, team_name string, 4 distinct;
-                       business_unit string, 2 distinct; achievement_pct float)
+  Schema: performance: team_id (integer), team_name (string, 4 distinct),
+                       business_unit (string, 2 distinct), achievement_pct (float)
   Reasoning: "by business_unit" → GROUP BY business_unit. The 2:4 ratio
              between business_unit (2 distinct) and team_name (4 distinct)
              confirms the parent/child hierarchy — one BU has multiple
@@ -505,10 +505,10 @@ Worked example 4 (GROUP BY at parent level — "by X" phrasings):
 
 Worked example 5 (sibling-column scan — don't stop at the first NULL):
   Question: "Has there been any structural change for employee 42?"
-  Schema: employee_changes (employee_id int, name string, ~unique;
-                            recorded_movement string, 8 distinct;
-                            effective_date_of_route_change string, 12 distinct;
-                            role_change string, 6 distinct)
+  Schema: employee_changes: employee_id (integer), name (string, 1000 distinct),
+                            recorded_movement (string, 8 distinct),
+                            effective_date_of_route_change (string, 12 distinct),
+                            role_change (string, 6 distinct)
   Reasoning: `recorded_movement` is the most literal column, but
              `effective_date_of_route_change` and `role_change` also
              carry the semantic concept of "structural change."

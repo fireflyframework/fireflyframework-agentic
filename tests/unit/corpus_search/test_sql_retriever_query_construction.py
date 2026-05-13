@@ -294,3 +294,178 @@ async def test_sibling_column_scan_recovers_after_null(tmp_path: Path):
     # The agent's last SQL is the multi-column one.
     assert "effective_date_of_route_change" in (outcome.attempted_sql or "")
     assert "role_change" in (outcome.attempted_sql or "")
+
+
+# ---- Golden-file rendered schema-context per failure mode --------------
+#
+# The cardinality annotation IS the structural fix. The worked examples in
+# `_SYSTEM` reference the rendered format literally — these tests lock the
+# exact format so a future refactor cannot drift it (e.g. switching to
+# ``~ 3 distinct`` or ``[3]`` would silently desync the prompt and these
+# tests catch it).
+
+
+def test_finance_fact_schema_context_matches_golden(tmp_path: Path):
+    db = _finance_fact_db(tmp_path)
+    expected = (
+        "Available tables:\n"
+        "- finance_fact: year (string, 1 distinct), market (string, 1 distinct), "
+        "metric_line (string, 3 distinct), value (float)"
+    )
+    assert _build_schema_context([_finance_fact_schema()], db) == expected
+
+
+def test_performance_schema_context_matches_golden(tmp_path: Path):
+    db = _performance_db(tmp_path)
+    expected = (
+        "Available tables:\n"
+        "- performance: team_id (integer), team_name (string, 4 distinct), "
+        "business_unit (string, 2 distinct), achievement_pct (float)"
+    )
+    assert _build_schema_context([_performance_schema()], db) == expected
+
+
+def test_employee_changes_schema_context_matches_golden(tmp_path: Path):
+    db = _employee_changes_db(tmp_path)
+    expected = (
+        "Available tables:\n"
+        "- employee_changes: employee_id (integer), name (string, 2 distinct), "
+        "recorded_movement (string, 1 distinct), "
+        "effective_date_of_route_change (string, 1 distinct), "
+        "role_change (string, 1 distinct)"
+    )
+    assert _build_schema_context([_employee_changes_schema()], db) == expected
+
+
+# ---- Negative path: anchor *why* the discriminator filter matters ------
+
+
+@pytest.mark.asyncio
+async def test_unfiltered_aggregate_yields_meaningless_sum(tmp_path: Path):
+    """Documents the bug: without the discriminator filter, SUM(value) mixes
+    revenue (1000+200=1200), headcount (320), and expense (800) into 2320 — a
+    nonsense number. The corrected-path test pins 1200; this peer pins what
+    the WRONG path would produce, so the fix's value is visible in the suite.
+    """
+    db = _finance_fact_db(tmp_path)
+    retriever = StructuredRetriever(db)
+
+    async def bad_run(prompt, **kwargs):
+        # Aggregate without the metric_line filter — the bug #161 describes.
+        await retriever._test_tools["run_select"](
+            "SELECT SUM(value) FROM finance_fact WHERE year='2024' AND market='EU'"
+        )
+        return MagicMock(output="done")
+
+    with patch.object(retriever._sql_agent, "run", new=AsyncMock(side_effect=bad_run)):
+        outcome = await retriever.retrieve(
+            "What is the 2024 revenue for market EU?",
+            schemas=[_finance_fact_schema()],
+        )
+    # 1000 + 320 + 800 + 200 = 2320 — meaningless, mixed across metric_line categories.
+    assert outcome.outcome == "answered"
+    assert "2320" in (outcome.result_markdown or "")
+
+
+# ---- Prompt-capture: the annotation reaches the agent ------------------
+
+
+@pytest.mark.asyncio
+async def test_prompt_passed_to_agent_carries_cardinality_annotation(tmp_path: Path):
+    """The structural fix only works if the cardinality annotation is in the
+    prompt the LLM actually sees. A refactor that drops ``self._db_path`` from
+    the ``_build_schema_context`` call would leave ``_build_schema_context``
+    unit tests passing while silently regressing real retrieval — this guard
+    closes that gap.
+    """
+    db = _finance_fact_db(tmp_path)
+    retriever = StructuredRetriever(db)
+    captured: dict[str, str] = {}
+
+    async def capture_run(prompt, **kwargs):
+        captured["prompt"] = prompt
+        return MagicMock(output="done")
+
+    with patch.object(retriever._sql_agent, "run", new=AsyncMock(side_effect=capture_run)):
+        await retriever.retrieve(
+            "What is the 2024 revenue for market EU?",
+            schemas=[_finance_fact_schema()],
+        )
+
+    prompt = captured["prompt"]
+    # The annotation lands in the user-facing prompt, not just the system prompt.
+    assert "metric_line (string, 3 distinct)" in prompt
+    # And the question is appended so the agent has both context and ask.
+    assert "Question: What is the 2024 revenue for market EU?" in prompt
+
+
+# ---- Edge cases in cardinality probing ---------------------------------
+
+
+def test_schema_context_handles_empty_table(tmp_path: Path):
+    """An empty table renders as ``(string, 0 distinct)`` — itself a useful
+    structural signal (don't bother calling ``distinct_values`` on it).
+    """
+    db = tmp_path / "corpus.sqlite"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE finance_fact (year TEXT, market TEXT, metric_line TEXT, value REAL)")
+    # No rows inserted.
+    conn.commit()
+    conn.close()
+    ctx = _build_schema_context([_finance_fact_schema()], db)
+    assert "metric_line (string, 0 distinct)" in ctx
+    assert "year (string, 0 distinct)" in ctx
+
+
+def test_schema_context_handles_all_null_column(tmp_path: Path):
+    """A column whose every row is NULL: ``COUNT(DISTINCT)`` returns 0 (per
+    SQLite spec, NULL doesn't count toward DISTINCT). The annotation reads
+    the same as an empty table, which is the right signal — there's no
+    value for the agent to filter or group on.
+    """
+    db = tmp_path / "corpus.sqlite"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE finance_fact (year TEXT, market TEXT, metric_line TEXT, value REAL)")
+    conn.executemany(
+        "INSERT INTO finance_fact (year, value) VALUES (?, ?)",
+        [("2024", 100.0), ("2024", 200.0), ("2024", 300.0)],
+    )
+    conn.commit()
+    conn.close()
+    ctx = _build_schema_context([_finance_fact_schema()], db)
+    # metric_line and market are entirely NULL — distinct count is 0.
+    assert "metric_line (string, 0 distinct)" in ctx
+    assert "market (string, 0 distinct)" in ctx
+    # year is populated; cardinality is 1.
+    assert "year (string, 1 distinct)" in ctx
+
+
+def test_schema_context_handles_reserved_word_column_name(tmp_path: Path):
+    """A column named after a reserved SQL keyword (``order``, ``select``,
+    ``group``) must round-trip through the cardinality probe without
+    breaking — identifier quoting handles this, and the test pins it so a
+    refactor of the quoting can't silently regress.
+    """
+    db = tmp_path / "corpus.sqlite"
+    conn = sqlite3.connect(db)
+    conn.execute('CREATE TABLE t ("order" TEXT, "select" TEXT)')
+    conn.executemany(
+        'INSERT INTO t ("order", "select") VALUES (?, ?)',
+        [("a", "x"), ("b", "x"), ("b", "y")],
+    )
+    conn.commit()
+    conn.close()
+    schema = TargetSchema(
+        tables=[
+            TableSpec(
+                name="t",
+                columns=[
+                    ColumnSpec(name="order", type=ColumnType.string),
+                    ColumnSpec(name="select", type=ColumnType.string),
+                ],
+            )
+        ]
+    )
+    ctx = _build_schema_context([schema], db)
+    assert "order (string, 2 distinct)" in ctx
+    assert "select (string, 2 distinct)" in ctx
