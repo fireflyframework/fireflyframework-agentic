@@ -55,6 +55,20 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
   concluding "no record" on a NULL result (#163). No new tools or
   schema-model fields.
 
+- **`firefly-mcp-http` now loads `.env` on startup.** The CLI calls
+  `load_dotenv(find_dotenv(usecwd=True))` at the top of `main()`, so a
+  developer running the server from a project directory gets its
+  variables (e.g. `EMBEDDING_MODEL`, `FIREFLY_MCP_KEYVAULT_URL`)
+  without an explicit shell `source`. Real process env vars always win
+  — `load_dotenv` defaults to `override=False` — so Azure /
+  Container Apps deployments (which inject env from the manifest
+  before the process starts) see no behavioural change. `python-dotenv`
+  is now a core dependency (previously declared only under the
+  `corpus-search` / `dev` extras); promoted so the import in `main()`
+  can be unconditional rather than guarded. Resolves the `KeyError:
+  'EMBEDDING_MODEL'` operators hit when running `firefly-mcp-http`
+  locally with a `.env` present.
+
 - **`firefly-mcp-http` logs unhandled asyncio task exceptions to stderr
   before the loop has a chance to die silently.** Previously, an
   exception in a task scheduled on the asyncio loop (request-cleanup
