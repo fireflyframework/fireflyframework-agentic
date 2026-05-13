@@ -369,6 +369,61 @@ def test_build_schema_context_has_no_sample_values_section():
     assert "sample" not in ctx.lower()
 
 
+def test_build_schema_context_annotates_string_cardinality(tmp_path: Path):
+    """String columns are annotated with COUNT(DISTINCT) when db_path is given.
+
+    The annotation gives the LLM a structural signal for spotting
+    discriminator columns (#161) and parent/child cardinality (#162)
+    without it having to call ``distinct_values`` to find out.
+    """
+    db = _seeded_db(tmp_path)
+    ctx = _build_schema_context([_sales_schema()], db)
+    # 2 distinct periods, 3 regions, 2 products in _seeded_db
+    assert "period (string, 2 distinct)" in ctx
+    assert "region (string, 3 distinct)" in ctx
+    assert "product_name (string, 2 distinct)" in ctx
+
+
+def test_build_schema_context_skips_cardinality_for_numeric_columns(tmp_path: Path):
+    """Non-string columns are not annotated — their type already signals 'measure axis'."""
+    db = _seeded_db(tmp_path)
+    ctx = _build_schema_context([_sales_schema()], db)
+    # revenue is a float; it should appear as "revenue (float)" with no count.
+    assert "revenue (float)" in ctx
+    assert "revenue (float," not in ctx
+
+
+def test_build_schema_context_falls_back_silently_when_table_missing(tmp_path: Path, caplog):
+    """A schema column whose underlying table is missing degrades to the plain descriptor.
+
+    Schema drift (e.g. an in-flight migration) must not break retrieval. The
+    failure is logged and the un-annotated descriptor is used instead.
+    """
+    import logging
+
+    db = tmp_path / "corpus.sqlite"
+    conn = sqlite3.connect(db)
+    # Deliberately do NOT create the 'sales' table — the schema references it
+    # but the DB has nothing in it yet.
+    conn.execute("CREATE TABLE other (x INTEGER)")
+    conn.commit()
+    conn.close()
+    with caplog.at_level(logging.WARNING, logger="fireflyframework_agentic.rag.retrieval.sql"):
+        ctx = _build_schema_context([_sales_schema()], db)
+    # No annotation; the un-annotated descriptor is used.
+    assert "region (string)" in ctx
+    assert "(string, " not in ctx
+    # And the failure was logged.
+    assert any("cardinality probe" in rec.message for rec in caplog.records)
+
+
+def test_build_schema_context_omits_cardinality_without_db_path():
+    """Back-compat: callers that don't pass db_path get the original descriptor."""
+    ctx = _build_schema_context([_sales_schema()])
+    assert "region (string)" in ctx
+    assert "(string, " not in ctx
+
+
 # ---- Reviewer fixes: concurrency, exception-recovery, ModelRetry --------
 
 
