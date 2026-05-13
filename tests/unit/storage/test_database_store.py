@@ -247,3 +247,75 @@ def test_checkpoint_wal_logs_error_on_non_sqlite_file(tmp_path: Path, caplog) ->
     with caplog.at_level("ERROR"):
         _checkpoint_wal(bogus)  # must not raise
     assert any("WAL checkpoint failed" in rec.message and rec.levelname == "ERROR" for rec in caplog.records)
+
+
+# ---- Co-location with LocalBackend --------------------------------------
+#
+# When the backend exposes a ``local_path``, ``DatabaseStore``'s working
+# copy MUST live at that same path. The whole point is that operations on
+# the backend file (``rm``, ``cp``, ``tar``) reach the state the running
+# Python process actually reads and writes. The user-visible bug this
+# guards: "I deleted my CORPUS_ROOT but the dedup ledger still skipped
+# every file."
+
+
+async def test_database_store_co_locates_with_local_backend(tmp_path: Path) -> None:
+    """No ``cache_path`` and no ``cache_root`` → cache lives at
+    backend.local_path, not in ``~/.cache/``.
+    """
+    from fireflyframework_agentic.storage import LocalBackend
+
+    backing = tmp_path / "kg" / "corpus.sqlite"
+    backing.parent.mkdir(parents=True)
+    backend = LocalBackend(backing)
+    store = DatabaseStore(backend, store_id="t")
+    assert store.cache_path == backing
+    # Sidecar pairs with the SQLite by basename so multiple stores in the
+    # same dir don't fight over metadata.json.
+    expected_sidecar = backing.parent / "corpus.sqlite.metadata.json"
+    assert store._sidecar._path == expected_sidecar  # type: ignore[attr-defined]
+
+
+async def test_database_store_explicit_cache_path_wins(tmp_path: Path) -> None:
+    """Explicit ``cache_path`` overrides the backend's hint."""
+    from fireflyframework_agentic.storage import LocalBackend
+
+    backing = tmp_path / "backend.sqlite"
+    override = tmp_path / "override.sqlite"
+    backend = LocalBackend(backing)
+    store = DatabaseStore(backend, store_id="t", cache_path=override)
+    assert store.cache_path == override
+
+
+async def test_database_store_falls_back_to_cache_root_for_remote_backend(tmp_path: Path) -> None:
+    """Remote backends (no ``local_path``) keep the legacy cache-dir layout.
+
+    This is load-bearing for AzureBlobBackend: its remote storage isn't a
+    local file, so the working copy MUST be a separate local cache.
+    """
+    backend = InMemoryBackend()
+    assert backend.local_path is None  # default from StorageBackend
+    store = DatabaseStore(backend, store_id="t", cache_root=tmp_path)
+    assert store.cache_path == tmp_path / "t" / "db.sqlite"
+    assert store._sidecar._path == tmp_path / "t" / "metadata.json"  # type: ignore[attr-defined]
+
+
+async def test_co_located_first_write_succeeds(tmp_path: Path) -> None:
+    """First-write path doesn't trip the ``if_none_match=*`` check.
+
+    With co-location, ``for_write``'s ``first_write`` branch touches the
+    cache file, which IS the backend file. The subsequent
+    ``upload(if_none_match='*')`` would historically fail because the
+    file now exists. The same-inode short-circuit in
+    ``LocalBackend._upload_sync`` makes the conditional vacuous and the
+    write succeeds.
+    """
+    from fireflyframework_agentic.storage import LocalBackend
+
+    backing = tmp_path / "corpus.sqlite"
+    backend = LocalBackend(backing)
+    store = DatabaseStore(backend, store_id="t")
+    async with store.for_write() as session:
+        _write_sample(session.path, b"hello")
+    assert backing.exists()
+    assert session.path == backing

@@ -11,8 +11,13 @@ from enum import StrEnum
 class CallTier(StrEnum):
     """Pricing tier for an LLM call.
 
-    ``BATCH`` is honored by :func:`resolve_cost` as a 0.5x multiplier when
-    the resolver does not natively price the tier.
+    ``STANDARD`` is the normal synchronous API tier.
+
+    ``BATCH`` represents the asynchronous batch-API tier offered by major
+    providers (OpenAI, Anthropic, Google), which is typically billed at
+    ~50% of the standard rate. When the underlying pricing source does not
+    expose a separate batch rate for the model, :func:`resolve_cost`
+    applies a 0.5x post-multiplier as the industry-standard fallback.
     """
 
     STANDARD = "standard"

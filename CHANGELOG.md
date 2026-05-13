@@ -40,8 +40,89 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
   Desktop / `mcp-remote` entries to pass `--header
   X-Firefly-Corpus-Id: <id>`.
 
+### Fixed
+
+- **SQL agent reasoning: discriminator filters, parent-level GROUP BY, and
+  sibling-column scans.** The text-to-SQL retriever now annotates each
+  string column in the schema context with its
+  `COUNT(DISTINCT)` cardinality (e.g. `metric_line (string, 3 distinct)`)
+  so the agent can spot categorical / discriminator axes and parent-vs-
+  child cardinality gaps at schema-read time. The system prompt gains
+  three rules and three worked examples covering: filtering on a
+  discriminator before aggregating heterogeneous rows (#161), using
+  `GROUP BY <parent>` when the user says "by X" / "for each X" / "per
+  X" (#162), and scanning semantically-related sibling columns before
+  concluding "no record" on a NULL result (#163). No new tools or
+  schema-model fields.
+
+- **`firefly-mcp-http` now loads `.env` on startup.** The CLI calls
+  `load_dotenv(find_dotenv(usecwd=True))` at the top of `main()`, so a
+  developer running the server from a project directory gets its
+  variables (e.g. `EMBEDDING_MODEL`, `FIREFLY_MCP_KEYVAULT_URL`)
+  without an explicit shell `source`. Real process env vars always win
+  — `load_dotenv` defaults to `override=False` — so Azure /
+  Container Apps deployments (which inject env from the manifest
+  before the process starts) see no behavioural change. `python-dotenv`
+  is now a core dependency (previously declared only under the
+  `corpus-search` / `dev` extras); promoted so the import in `main()`
+  can be unconditional rather than guarded. Resolves the `KeyError:
+  'EMBEDDING_MODEL'` operators hit when running `firefly-mcp-http`
+  locally with a `.env` present.
+
+- **`firefly-mcp-http` logs unhandled asyncio task exceptions to stderr
+  before the loop has a chance to die silently.** Previously, an
+  exception in a task scheduled on the asyncio loop (request-cleanup
+  callbacks, fire-and-forget tool work, SSE long-poll teardown) was
+  routed by ``BaseEventLoop`` to the ``asyncio`` logger at ERROR — but
+  uvicorn's default log config doesn't surface that logger. Operators
+  saw "the server died" / "the bridge can't reconnect" with no
+  traceback. The CLI now installs a loop-level exception handler that
+  routes through ``logging.getLogger("…http_cli")`` (which
+  ``basicConfig`` wires up at startup, level overridable via
+  ``FIREFLY_MCP_LOG_LEVEL``), preserving the exception's traceback via
+  ``exc_info=``. Does NOT swallow exceptions or change loop behaviour
+  — only makes them visible.
+
+- **LocalBackend corpus state now lives under `CORPUS_ROOT`, not in
+  `~/.cache/`.** `DatabaseStore` previously kept its working copy at
+  `~/.cache/fireflyframework_agentic/dbstore/<store_id>/db.sqlite` for
+  every backend, and `LocalBackend.upload`/`download` `shutil.copyfile`'d
+  between that cache and the file under `CORPUS_ROOT`. The two copies
+  could drift, and a `rm -rf $CORPUS_ROOT` did **not** reset corpus state
+  (the dedup ledger and embeddings stayed alive in the cache,
+  re-ingestion silently skipped every file). The store now reads
+  `StorageBackend.local_path` at construction; for `LocalBackend` it
+  co-locates the working copy with the backend file (same inode, no
+  duplicate), and every file used by a corpus — SQLite, WAL/SHM, the
+  metadata sidecar, the lock sentinel — lives under the configured
+  root. `LocalBackend.upload` / `download` short-circuit when source
+  and destination are the same inode, so the existing call sites
+  needed no changes. Remote backends (`AzureBlobBackend`) keep the
+  legacy cache-dir layout because their working copy MUST be a separate
+  local file. Operators upgrading should
+  `rm -rf ~/.cache/fireflyframework_agentic/dbstore/corpus_search:` to
+  reclaim disk; the new layout takes effect automatically on next
+  startup (#170).
+
+- **Answerer preserves diacritical marks in non-English responses.** The
+  RAG answerer's instructions now tell the model to answer in the same
+  language as the question and to keep correct orthography
+  (`á`/`é`/`í`/`ó`/`ú`/`ñ`/`ü`/`ç`/`à`/`è`/`ê`/`ô` and equivalents)
+  rather than transliterating to ASCII. Resolves the regression where
+  Spanish answers came back as `produccion`/`aprobacion`/`Cual?` instead
+  of `producción`/`aprobación`/`¿Cuál?` (#157).
+
 ### Added
 
+- **Optional `unit` field on `ColumnSpec`.** Schemas can now declare the
+  human-readable unit a numeric column stores (`"USD millions"`,
+  `"headcount"`, `"percent"`, `"days"`, …). The SQL retriever's schema
+  context surfaces it to the agent as `name (type, unit=…)`, the
+  retriever's system prompt requires the agent to preserve the unit in
+  SELECT results (via alias or co-selection), and the answerer is
+  instructed to quote the unit alongside any numeric quantity it cites
+  — or to flag the ambiguity explicitly when no unit is known, rather
+  than presenting a unit-less number the user cannot verify (#158).
 - **`firefly-mcp-token` CLI** for operators managing per-corpus tokens
   in Azure Key Vault. Commands: `create`, `rotate`, `revoke`, `list`,
   `show-name`. Uses `DefaultAzureCredential`; the minted token goes to
@@ -55,6 +136,16 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
   diacritic-tolerant filters in `run_select`. The system prompt now
   steers the LLM to probe `find_similar` for free-text entity columns
   and to retry rather than stop when an equality filter returns 0 rows.
+- **`numeric_summary` op on `inspect_table` in the SQL retriever.** Returns
+  total rows, non-null count, null count, sum, min, max, and *two* mean
+  variants — `mean_excluding_nulls` (SQL default `AVG`) and
+  `mean_blanks_as_zero` (treats NULL cells as 0). The two means diverge
+  whenever the column carries NULLs, so the agent can detect the
+  blank-as-zero spreadsheet convention and pick the right
+  interpretation instead of silently averaging over the smaller
+  non-null subset. The system prompt now steers the LLM to probe
+  `numeric_summary` before averaging numeric columns, and to surface
+  both interpretations when ambiguous.
 - **Per-corpus capability tokens for `firefly-mcp-http`.** When
   `FIREFLY_MCP_CORPUS_AUTH_ENABLED=true`, every MCP tool call must
   present a bearer matching the `firefly-mcp-corpus-token-<corpus_id>`
