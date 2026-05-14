@@ -71,6 +71,10 @@ class TestArithStep:
 
 
 class TestComputePlanDiscriminator:
+    def test_rejects_unknown_kind(self):
+        with pytest.raises(ValidationError):
+            ComputePlan.model_validate({"goal": "x", "steps": [{"kind": "explode", "id": "s1"}]})
+
     def test_plan_round_trip_through_dict(self):
         plan = ComputePlan(
             goal="count reports",
@@ -101,6 +105,10 @@ class TestComputeObservation:
     def test_failure(self):
         obs = ComputeObservation(step_id="s1", success=False, output=None, citations=[], error="boom")
         assert not obs.success and obs.error == "boom"
+
+    def test_success_with_error_is_rejected(self):
+        with pytest.raises(ValidationError):
+            ComputeObservation(step_id="s1", success=True, output={}, error="cannot be set")
 
 
 class TestComputedFacts:

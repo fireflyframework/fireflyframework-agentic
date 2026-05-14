@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class StepRef(BaseModel):
@@ -113,6 +113,12 @@ class ComputeObservation(BaseModel):
     output: Any = None
     citations: list[str] = Field(default_factory=list)
     error: str | None = None
+
+    @model_validator(mode="after")
+    def _check_consistency(self) -> ComputeObservation:
+        if self.success and self.error is not None:
+            raise ValueError("error must be None when success is True")
+        return self
 
 
 class ComputedFacts(BaseModel):
