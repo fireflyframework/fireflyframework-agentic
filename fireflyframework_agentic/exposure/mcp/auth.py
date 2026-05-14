@@ -104,9 +104,40 @@ def add_oauth_metadata_routes(app: FastAPI, metadata: OAuthMetadata) -> None:
             "authorization_endpoint": metadata.authorization_endpoint,
             "token_endpoint": metadata.token_endpoint,
             "jwks_uri": metadata.jwks_uri,
+            "registration_endpoint": f"{metadata.issuer}/register",
             "response_types_supported": ["code"],
+            "response_modes_supported": ["query"],
             "grant_types_supported": ["authorization_code", "refresh_token"],
+            "token_endpoint_auth_methods_supported": ["none"],
             "code_challenge_methods_supported": ["S256"],
+        }
+
+    @app.post("/register")
+    def register(body: dict[str, Any]) -> dict[str, Any]:
+        """RFC 7591 Dynamic Client Registration shim.
+
+        Entra ID does not support DCR, but MCP clients implementing the
+        spec (Claude Code, etc.) require it as part of the discovery
+        chain. We "register" by handing back the pre-configured Entra
+        client_id (from ``FIREFLY_MCP_ENTRA_PUBLIC_CLIENT_ID`` if set,
+        falling back to the API's own client_id). The redirect URIs the
+        client sent must be allowed on that App Registration's platform
+        config — otherwise Entra rejects at the authorize step.
+        """
+        import os
+        import time
+
+        public_client = os.environ.get(
+            "FIREFLY_MCP_ENTRA_PUBLIC_CLIENT_ID",
+            os.environ.get("AZURE_CLIENT_ID", ""),
+        )
+        return {
+            "client_id": public_client,
+            "client_id_issued_at": int(time.time()),
+            "redirect_uris": body.get("redirect_uris", []),
+            "grant_types": body.get("grant_types", ["authorization_code"]),
+            "response_types": body.get("response_types", ["code"]),
+            "token_endpoint_auth_method": "none",
         }
 
 
