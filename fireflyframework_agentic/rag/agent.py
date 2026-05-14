@@ -350,18 +350,24 @@ class CorpusAgent:
                 else:
                     schema = await discover_schema(path, model=self._schema_model)
             ingest_result = await ingest_structured(path, self._db_store, schema)
-            failed_tables = {name: meta for name, meta in ingest_result.items() if meta.get("status") != "success"}
-            if failed_tables:
-                # Per-table rollback inside ingest_structured leaves nothing
-                # behind for the failed tables; reporting "success" here would
-                # silently lose data and block retries via the ledger.
-                for name, meta in failed_tables.items():
+            # ``partial`` is a load-some-rows outcome (e.g. composite-PK
+            # placeholder rows like ``('-', '-')`` violated UNIQUE, but
+            # 680 valid rows committed). Treat it as success for ledger
+            # purposes — the data IS in the corpus — but surface every
+            # per-row error as a warning so the user can decide whether
+            # to clean up the source. Only ``failed`` (zero rows
+            # inserted) blocks the ledger.
+            for name, meta in ingest_result.items():
+                if meta.get("status") in ("partial", "failed"):
                     log.warning(
-                        "structured ingest table %s failed for %s: %s",
+                        "structured ingest table %s %s for %s: %s",
                         name,
+                        meta.get("status"),
                         path,
                         "; ".join(meta.get("errors", [])) or meta.get("status"),
                     )
+            hard_failures = {name: meta for name, meta in ingest_result.items() if meta.get("status") == "failed"}
+            if hard_failures:
                 await self._ledger.upsert(doc_id, source_path, file_hash, status="load_failed")
                 return IngestionResult(doc_id=doc_id, source_path=source_path, status="load_failed", n_chunks=0)
             await self._schema_registry.save(schema)
