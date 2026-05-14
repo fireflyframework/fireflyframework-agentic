@@ -26,6 +26,7 @@ from fireflyframework_agentic.rag.retrieval.compute_toolkit import (
     RetrievalContext,
 )
 from fireflyframework_agentic.reasoning.compute_steps import (
+    ArithStep,
     ComputeObservation,
     SqlRunStep,
     StepRef,
@@ -149,3 +150,42 @@ class TestSqlRunExecutor:
         # Error must mention the step_id AND the path so the planner LLM can fix it.
         assert "s1" in obs.error
         assert "does_not_exist" in obs.error
+
+
+class TestArithExecutor:
+    async def test_count_resolves_step_ref(self, toolkit):
+        prior = {
+            "s1": ComputeObservation(
+                step_id="s1",
+                success=True,
+                output={"rows": [{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}], "columns": ["id"]},
+            )
+        }
+        step = ArithStep(id="a1", op="count", inputs=[StepRef(step_id="s1", path="$.rows")], rationale="x")
+        obs = await toolkit.dispatch(step, previous=prior)
+        assert obs.success
+        assert obs.output == {"op": "count", "result": 4}
+
+    async def test_sum_inline_values(self, toolkit):
+        step = ArithStep(id="a1", op="sum", inputs=[1, 2, 3.5], rationale="x")
+        obs = await toolkit.dispatch(step, previous={})
+        assert obs.success
+        assert obs.output["result"] == 6.5
+
+    async def test_percent_two_args(self, toolkit):
+        step = ArithStep(id="a1", op="percent", inputs=[50, 200], rationale="x")
+        obs = await toolkit.dispatch(step, previous={})
+        assert obs.success
+        assert obs.output["result"] == 25.0
+
+    async def test_ratio_div_by_zero(self, toolkit):
+        step = ArithStep(id="a1", op="ratio", inputs=[1, 0], rationale="x")
+        obs = await toolkit.dispatch(step, previous={})
+        assert not obs.success
+        assert "zero" in obs.error.lower()
+
+    async def test_sum_rejects_strings(self, toolkit):
+        step = ArithStep(id="a1", op="sum", inputs=["a", "b"], rationale="x")
+        obs = await toolkit.dispatch(step, previous={})
+        assert not obs.success
+        assert "numeric" in obs.error.lower()

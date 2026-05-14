@@ -37,6 +37,7 @@ from fireflyframework_agentic.rag.retrieval.sql import (
     _connect,
 )
 from fireflyframework_agentic.reasoning.compute_steps import (
+    ArithStep,
     ComputeObservation,
     ComputeStep,
     SqlRunStep,
@@ -84,6 +85,8 @@ class ComputeToolkit:
         try:
             if isinstance(step, SqlRunStep):
                 return await self._run_sql(step, previous)
+            if isinstance(step, ArithStep):
+                return await self._run_arith(step, previous)
             return ComputeObservation(
                 step_id=step.id,
                 success=False,
@@ -124,6 +127,59 @@ class ComputeToolkit:
             output={"columns": columns, "rows": rows, "sql": step.sql},
         )
 
+    async def _run_arith(
+        self,
+        step: ArithStep,
+        previous: dict[str, ComputeObservation],
+    ) -> ComputeObservation:
+        values = _flatten_inputs(step.inputs, previous)
+        if isinstance(values, str):
+            return ComputeObservation(step_id=step.id, success=False, error=values)
+
+        if step.op == "count":
+            return ComputeObservation(step_id=step.id, success=True, output={"op": "count", "result": len(values)})
+
+        try:
+            nums = [float(v) for v in values]
+        except (TypeError, ValueError) as exc:
+            return ComputeObservation(step_id=step.id, success=False, error=f"arith requires numeric inputs: {exc}")
+
+        op = step.op
+        try:
+            if op == "sum":
+                result: float = sum(nums)
+            elif op == "avg":
+                if not nums:
+                    raise ZeroDivisionError("avg over empty list")
+                result = sum(nums) / len(nums)
+            elif op == "min":
+                result = min(nums)
+            elif op == "max":
+                result = max(nums)
+            elif op == "diff":
+                if len(nums) != 2:
+                    return ComputeObservation(step_id=step.id, success=False, error="diff requires exactly 2 inputs")
+                result = nums[0] - nums[1]
+            elif op == "ratio":
+                if len(nums) != 2:
+                    return ComputeObservation(step_id=step.id, success=False, error="ratio requires exactly 2 inputs")
+                if nums[1] == 0:
+                    return ComputeObservation(step_id=step.id, success=False, error="division by zero")
+                result = nums[0] / nums[1]
+            elif op == "percent":
+                if len(nums) != 2:
+                    return ComputeObservation(
+                        step_id=step.id, success=False, error="percent requires exactly 2 inputs (part, whole)"
+                    )
+                if nums[1] == 0:
+                    return ComputeObservation(step_id=step.id, success=False, error="division by zero")
+                result = nums[0] / nums[1] * 100.0
+            else:
+                return ComputeObservation(step_id=step.id, success=False, error=f"unknown op: {op}")
+        except ZeroDivisionError as exc:
+            return ComputeObservation(step_id=step.id, success=False, error=str(exc))
+        return ComputeObservation(step_id=step.id, success=True, output={"op": op, "result": result})
+
 
 def _resolve_params(
     raw: dict[str, Any],
@@ -152,6 +208,38 @@ def _resolve_params(
             out[key] = resolved
         else:
             out[key] = value
+    return out
+
+
+def _flatten_inputs(
+    raw: list[Any],
+    previous: dict[str, ComputeObservation],
+) -> list[Any] | str:
+    """Resolve StepRef inputs into a flat list of leaf values.
+
+    A reference whose resolved value is a list is flattened one level so
+    arithmetic ops see a flat sequence regardless of whether the value
+    came from inline data or a SQL rowset.  Returns an error string on
+    unresolvable references.
+    """
+    out: list[Any] = []
+    for item in raw:
+        if isinstance(item, StepRef):
+            if item.step_id not in previous:
+                return f"step '{item.step_id}' not found in prior observations"
+            obs = previous[item.step_id]
+            if not obs.success:
+                return f"step '{item.step_id}' did not succeed; cannot reference it"
+            try:
+                resolved = _apply_path(obs.output, item.path) if item.path else obs.output
+            except (KeyError, IndexError, AttributeError, ValueError, TypeError) as exc:
+                return f"path '{item.path}' on step '{item.step_id}' failed: {type(exc).__name__}: {exc}"
+            if isinstance(resolved, list):
+                out.extend(resolved)
+            else:
+                out.append(resolved)
+        else:
+            out.append(item)
     return out
 
 
