@@ -176,7 +176,12 @@ def test_anonymous_request_returns_401_with_www_authenticate() -> None:
     assert r.status_code == 401
     auth = r.headers["www-authenticate"]
     assert auth.startswith("Bearer")
-    assert _METADATA_URL in auth
+    assert 'realm="OAuth"' in auth
+    assert f'resource_metadata="{_METADATA_URL}"' in auth
+    assert 'error="invalid_token"' in auth
+    body = r.json()
+    assert body["error"] == "invalid_token"
+    assert "error_description" in body
 
 
 def test_missing_bearer_returns_401() -> None:
