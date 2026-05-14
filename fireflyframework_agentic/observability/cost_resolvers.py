@@ -7,6 +7,42 @@ Each resolver is a plain callable that returns ``float | None``. The
 default chain (:data:`DEFAULT_RESOLVERS`) tries provider-reported cost
 first and falls back to ``genai-prices``. Users extend the chain by
 passing their own list to :func:`resolve_cost`.
+
+Why genai-prices
+================
+We compute per-call cost from token counts and a per-model price table.
+The provider response never carries a dollar amount (except OpenRouter,
+which is why :func:`provider_reported_cost` runs first), so a local price
+table is unavoidable.
+
+We picked `pydantic/genai-prices <https://github.com/pydantic/genai-prices>`_
+because it is Pydantic-maintained (fits our stack), exposes a typed
+``Usage`` model with explicit fields for cache and reasoning tokens, and
+ships pricing for the 16+ providers we care about. The trade-off — shared
+by every option in this space — is that the data is community-curated
+YAML, not a machine-readable provider feed, so it lags new model variants
+by days to weeks.
+
+Alternatives considered:
+
+* `AgentOps tokencost <https://github.com/agentops-ai/tokencost>`_ —
+  similar coverage, similar curation lag, also bundles tiktoken. Viable as
+  a secondary source if cross-checking becomes worthwhile.
+* `LiteLLM model_prices_and_context_window.json <https://github.com/BerriAI/litellm>`_
+  — broadest coverage and fastest update cadence in the ecosystem, but
+  consuming it standalone (without the LiteLLM proxy) means tracking a
+  schema we do not control. Worth revisiting as a fallback resolver.
+* LiteLLM proxy / Helicone / Portkey — gateway products that compute cost
+  server-side. The right answer if we also need multi-provider routing,
+  per-key budget caps, or hosted spend dashboards; today we don't.
+* Provider billing APIs (Anthropic Admin, OpenAI Usage, Azure Cost Mgmt)
+  — the only authoritative numbers, but lag from minutes (Anthropic
+  usage) to ~24h (cost). Use them to reconcile, not to gate live calls.
+
+When you hit a model genai-prices doesn't know, the chain currently
+falls through to ``0.0`` after a one-shot warning + ``cost_unknown``
+metric. That silent-zero is tracked in
+`issue #174 <https://github.com/fireflyframework/fireflyframework-agentic/issues/174>`_.
 """
 
 from __future__ import annotations
@@ -15,6 +51,11 @@ import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+
+from genai_prices import Usage as _GenAIUsage  # type: ignore[import-untyped]
+from genai_prices import calc_price  # type: ignore[import-untyped]
+
+from fireflyframework_agentic.observability.metrics import default_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -53,14 +94,6 @@ def provider_reported_cost(ctx: CostContext) -> float | None:
     return None
 
 
-try:
-    from genai_prices import Usage as _GenAIUsage  # type: ignore[import-untyped]
-    from genai_prices import calc_price  # type: ignore[import-untyped]
-except ImportError as exc:  # pragma: no cover
-    raise RuntimeError(
-        "genai-prices is a required dependency; install with `pip install fireflyframework-agentic`"
-    ) from exc
-
 _UNKNOWN_MODEL_WARNED: set[str] = set()
 
 
@@ -70,8 +103,6 @@ def _warn_unknown_model_once(model: str) -> None:
     _UNKNOWN_MODEL_WARNED.add(model)
     logger.warning("genai-prices has no entry for model '%s'; cost recorded as 0.0", model)
     try:
-        from fireflyframework_agentic.observability.metrics import default_metrics
-
         default_metrics.record_error(operation="cost_unknown")
     except Exception:  # noqa: BLE001
         logger.debug("Failed to emit cost_unknown metric", exc_info=True)
@@ -105,7 +136,6 @@ def genai_prices_cost(ctx: CostContext) -> float | None:
     )
     try:
         result = calc_price(usage, model_ref, provider_id=provider)
-    # genai-prices raises LookupError specifically when the model cannot be matched.
     except LookupError:
         _warn_unknown_model_once(ctx.model)
         return None

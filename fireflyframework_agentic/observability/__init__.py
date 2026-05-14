@@ -21,7 +21,7 @@ from fireflyframework_agentic.observability.budget import (
     BudgetWindow,
     ScopeContext,
 )
-from fireflyframework_agentic.observability.cost import (
+from fireflyframework_agentic.observability.cost_resolvers import (
     DEFAULT_RESOLVERS,
     CostContext,
     genai_prices_cost,
