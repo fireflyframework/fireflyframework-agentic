@@ -1,219 +1,171 @@
-# Per-corpus auth tokens for `firefly-mcp-http`
+# OAuth 2.0 authentication for `firefly-mcp-http`
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
-The MCP HTTP server can require a per-corpus capability token on every
-tool call. Tokens live in Azure Key Vault; the running container's
-managed identity reads them with `get` permission only. A leaked token
-exposes one corpus, not the whole server.
+The MCP HTTP server can require an OAuth 2.0 bearer token on every tool
+call, validated against any OIDC-compliant identity provider. App-Roles
+embedded in the token control per-corpus read/write access. The framework
+ships with default factories for Microsoft Entra ID; other IdPs (Okta,
+Auth0, Cognito, Keycloak) plug in by swapping two factory env vars.
 
 ## Enable
 
-Set on the Container App:
+Three env vars are required at minimum:
 
-| Env var | Required | Value |
+```bash
+FIREFLY_MCP_AUTH_ENABLED=true
+
+# Defaults shown — override to use a non-Entra IdP.
+FIREFLY_MCP_VERIFIER_FACTORY=examples.corpus_search.azure_security:build_entra_verifier
+FIREFLY_MCP_METADATA_FACTORY=examples.corpus_search.azure_security:build_entra_metadata
+
+# Canonical public URL of this MCP server (no trailing slash).
+FIREFLY_MCP_PUBLIC_URL=https://mcp.example.com
+```
+
+Optional:
+
+| Var | Default | Notes |
 |---|---|---|
-| `FIREFLY_MCP_CORPUS_AUTH_ENABLED` | yes | `true` |
-| `FIREFLY_MCP_KEYVAULT_URL` | yes | `https://<vault>.vault.azure.net` |
-| `FIREFLY_MCP_TOKEN_CACHE_TTL_SECONDS` | no | `300` (default) |
-| `FIREFLY_MCP_TOKEN_SECRET_PREFIX` | no | `firefly-mcp-corpus-token-` (default) |
+| `FIREFLY_MCP_ROLES_CLAIM` | `roles` | JWT claim that holds App Roles. Entra: `roles`. Okta: `groups`. Auth0: `permissions`. |
 
-Grant the Container App's managed identity **Key Vault Secrets User**
-on the vault. No `set` / `list` / `delete` is required: the running
-server only reads. Granting more would make a compromised replica able
-to mint or destroy tokens — keep it least-privilege.
+## How it works
 
-## Provision / rotate / revoke tokens
+Anonymous request to `/mcp/*` returns `401 Unauthorized` with
+`WWW-Authenticate: Bearer resource_metadata="<url>"`, which is the
+contract MCP clients use to bootstrap OAuth login. The two public
+endpoints mounted alongside the middleware:
 
-Two equivalent paths: the framework ships a small CLI
-(`firefly-mcp-token`) for the common operations, or you can drive
-`az keyvault` directly.
+* `GET /.well-known/oauth-protected-resource` (RFC 9728) — tells the
+  client which authorization server protects this resource.
+* `GET /.well-known/oauth-authorization-server` (RFC 8414) — minimal
+  authorization-server metadata, pre-baked from the IdP's values so
+  clients only need to fetch one well-known URL.
 
-> **Where the Azure-specific code lives.** The token-store factory
-> (`build_default_store`) and the operator CLI (`firefly-mcp-token`)
-> ship with the corpus-search example, not the framework core, so the
-> framework stays provider-agnostic. The middleware in
-> `fireflyframework_agentic.exposure.mcp.auth` depends only on the
-> ``CorpusTokenStore`` Protocol; for a non-Azure back-end, write your
-> own factory and point `FIREFLY_MCP_TOKEN_STORE_FACTORY` at it (see
-> "Custom store backend" below).
+On a valid bearer the middleware verifies signature (JWKS), `aud`,
+`iss`, `exp`, extracts the roles claim, and checks
+`Corpus.<corpus_id>.Read|Write` against the called tool.
 
-### Option A — the `firefly-mcp-token` CLI (recommended)
+## App Roles convention
 
-Authenticates via `DefaultAzureCredential` (managed identity in Azure,
-`az login` locally). The minted token is printed to **stdout**; status /
-errors go to **stderr**, so you can pipe it straight into a password
-manager.
+The default `required_role_fn` enforces:
 
-```bash
-export FIREFLY_MCP_KEYVAULT_URL=https://<vault>.vault.azure.net
-
-# The CLI ships with the corpus_search example, invoke it as a module.
-alias firefly-mcp-token='python -m examples.corpus_search.firefly_mcp_token'
-
-# Create — refuses if the secret already exists (use rotate instead).
-firefly-mcp-token create real-data > /secure/store/real-data.token
-
-# Rotate — old tokens stop working after the cache TTL (default 300 s).
-firefly-mcp-token rotate real-data > /secure/store/real-data.token
-
-# Revoke — disable the current version. Re-run with --yes to confirm.
-firefly-mcp-token revoke real-data --yes
-
-# List — show every corpus_id that has a token in the vault.
-firefly-mcp-token list
-
-# Compose a secret name without any network call (handy in shell scripts).
-firefly-mcp-token show-name real-data
-# → firefly-mcp-corpus-token-real-data
-```
-
-Flags:
-
-- `--vault-url`: overrides `$FIREFLY_MCP_KEYVAULT_URL`.
-- `--prefix`: must match `FIREFLY_MCP_TOKEN_SECRET_PREFIX` on the server.
-- `create --bytes N`: token entropy in bytes (default 32 → ~256 bits;
-  minimum 16).
-- `create --force`: overwrite an existing secret value.
-
-The CLI never prints the token to stderr, never logs it, and refuses
-short entropy.
-
-### Option B — raw `az keyvault`
-
-```bash
-TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
-az keyvault secret set \
-    --vault-name "$KV" \
-    --name "firefly-mcp-corpus-token-$CORPUS_ID" \
-    --value "$TOKEN"
-echo "Token for $CORPUS_ID: $TOKEN"
-
-# Rotate: same command, new value.
-# Revoke:
-az keyvault secret set-attributes \
-    --vault-name "$KV" \
-    --name "firefly-mcp-corpus-token-$CORPUS_ID" \
-    --enabled false
-```
-
-In both paths the plaintext value never leaves Key Vault again — store
-it immediately in your secret manager (1Password, Vault, etc.) and
-never commit it.
-
-## Custom store backend
-
-If you don't use Azure, write your own `CorpusTokenStore`:
-
-```python
-# my_org/firefly_store.py
-class _MyStore:
-    async def get_corpus_token(self, corpus_id: str) -> str | None:
-        # fetch from HashiCorp Vault, AWS Secrets Manager, your DB, …
-        return await my_backend.get(f"firefly/{corpus_id}/token")
-
-
-def build_store(*, vault_url: str, prefix: str = "firefly-mcp-corpus-token-") -> _MyStore:
-    return _MyStore()
-```
-
-Then point the runtime at it:
-
-```bash
-export FIREFLY_MCP_TOKEN_STORE_FACTORY=my_org.firefly_store:build_store
-export FIREFLY_MCP_KEYVAULT_URL=ignored-by-your-backend
-firefly-mcp-http
-```
-
-The middleware in the framework depends only on
-`fireflyframework_agentic.security.corpus_token.CorpusTokenStore` — a
-single-method Protocol — so the framework itself ships no Azure deps.
-
-## Recovery — Key Vault unreachable
-
-If Key Vault is unreachable, the server returns `503` for **un-cached**
-corpora. Already-cached corpora keep working until their TTL expires.
-There is no local fallback: this is intentional (fail closed). If you
-must operate without Key Vault, set
-`FIREFLY_MCP_CORPUS_AUTH_ENABLED=false` and rely on the ingress auth
-alone.
-
-## Caller usage
-
-Every request must carry **two** headers:
-
-- `Authorization: Bearer <token-from-keyvault>`
-- `X-Firefly-Corpus-Id: <corpus_id>`
-
-The middleware validates the bearer against `firefly-mcp-corpus-token-<X-Firefly-Corpus-Id>`
-**before** looking at the body. This way the JSON-RPC handshake
-(`initialize`, `tools/list`) and cross-corpus tools (`list_corpora`) are
-also gated — an outsider without a valid corpus token cannot even
-enumerate the tool schemas or learn which corpora exist on the server.
-
-```http
-POST /mcp HTTP/1.1
-Authorization: Bearer <token-from-keyvault>
-X-Firefly-Corpus-Id: demo
-Content-Type: application/json
-
-{"jsonrpc":"2.0","id":1,"method":"tools/call",
- "params":{"name":"corpus_query",
-           "arguments":{"corpus_id":"demo","question":"hi","top_k":3}}}
-```
-
-If `arguments.corpus_id` is present, it **must match** the header value;
-mismatch is a hard `403` so a token for corpus A cannot be used to
-target corpus B by smuggling a different ID into the body. For tools
-without a `corpus_id` argument (e.g. `list_corpora`), the header alone
-provides the binding and the response is filtered to that corpus.
-
-### Claude Desktop / `mcp-remote`
-
-Add the second header to the entry's `args`:
-
-```json
-{
-  "mcpServers": {
-    "firefly-real-data": {
-      "command": "npx",
-      "args": [
-        "-y", "mcp-remote",
-        "https://<host>/mcp/",
-        "--header", "Authorization: Bearer <token-for-real-data>",
-        "--header", "X-Firefly-Corpus-Id: real-data"
-      ]
-    }
-  }
-}
-```
-
-A user who needs access to two corpora gets two entries — one per
-corpus — each with its own bearer and `X-Firefly-Corpus-Id`. The pair
-is what authorises the request; there is no way to mix tokens between
-entries.
-
-## What this layer does not do
-
-- It does not replace ingress auth. The ingress JWT (when present)
-  identifies the *caller*; this token authorises the *resource*. Run
-  both for defence in depth.
-- It does not distinguish read from write. A corpus token grants every
-  MCP tool call against that corpus. A read-only / write split would
-  need two tokens per corpus; flagged as future work.
-- It does not gate the stdio transport. Local Claude Desktop / Claude
-  Code clients spawn the MCP server as a subprocess and rely on the
-  user's own credentials.
-
-## Failure-mode reference
-
-| Condition | HTTP status |
+| Tool | Required role |
 |---|---|
-| No `Authorization` header | `401` |
-| `Authorization` not `Bearer ...` | `401` |
-| No `X-Firefly-Corpus-Id` header | `401` |
-| Bearer does not match KV secret for the header's `corpus_id` | `403` |
-| Header `corpus_id` differs from `arguments.corpus_id` in body | `403` |
-| `tools/call` against a corpus-scoped tool, no body `corpus_id` | `400` |
-| Secret missing / disabled in KV | `403` (deliberately indistinguishable from wrong token) |
-| KV unreachable (un-cached corpus) | `503` |
+| `corpus_query`, `knowledge_search` | `Corpus.<corpus_id>.Read` |
+| `ingest_corpus_filesystem`, `ingest_corpus_structured`, `discover_corpus_schema` | `Corpus.<corpus_id>.Write` |
+| `list_corpora`, `initialize`, `tools/list`, … | (none — token only) |
+
+`.Write` implies `.Read` for the same corpus, enforced server-side; assign
+the higher-privilege role only.
+
+App Role `value` strings in Entra are constrained to `[A-Za-z0-9._-]` —
+`corpus_id` values must conform.
+
+## Microsoft Entra ID quickstart
+
+### One-time setup
+
+```bash
+# 1. Create the App Registration
+az ad app create --display-name firefly-mcp --sign-in-audience AzureADMyOrg
+
+APPID=$(az ad app list --display-name firefly-mcp --query "[0].appId" -o tsv)
+
+# 2. Create the Service Principal
+az ad sp create --id $APPID
+
+# 3. Set the identifier URI
+az ad app update --id $APPID --identifier-uris "api://$APPID"
+
+# 4. Define the user_impersonation scope (via Azure Portal, or `az rest`
+#    against MS Graph PATCH /v1.0/applications/<objectId>).
+
+# 5. Pre-authorize Azure CLI (well-known appId 04b07795-8ddb-461a-bbee-02f9e1bf7b46)
+#    so consultants can run `az account get-access-token` without consent prompts.
+```
+
+### Define App Roles
+
+In **App registrations → firefly-mcp → App roles**, add one role per
+`(corpus_id, access level)` pair. Examples:
+
+| Display name | Value | Allowed member types |
+|---|---|---|
+| Corpus acme — Read | `Corpus.acme.Read` | Users, Groups |
+| Corpus acme — Write | `Corpus.acme.Write` | Users, Groups |
+
+### Assign users / groups
+
+In **Enterprise applications → firefly-mcp → Users and groups**, assign
+each consultant (or a group) to the App Roles they need. To require
+explicit assignment for *any* access, set
+**Properties → Assignment required = Yes**.
+
+### Container App env vars
+
+```bash
+az containerapp update -n firefly-mcp -g rg-firefly --set-env-vars \
+  FIREFLY_MCP_AUTH_ENABLED=true \
+  FIREFLY_MCP_PUBLIC_URL=https://mcp.example.com \
+  AZURE_TENANT_ID=<tenant-guid> \
+  AZURE_CLIENT_ID=<app-id>
+```
+
+### Disable Easy Auth
+
+If the Container App had Easy Auth enabled (legacy), turn it off — the
+in-process middleware now owns authentication and Easy Auth strips the
+`Authorization` header that the middleware needs to see.
+
+```bash
+az containerapp auth update -n firefly-mcp -g rg-firefly --enabled false
+```
+
+## Connecting a client
+
+### Claude Code / Claude Desktop
+
+```bash
+claude mcp add firefly --transport http https://mcp.example.com/mcp/
+```
+
+The client follows the `WWW-Authenticate` breadcrumb, reads
+`/.well-known/oauth-protected-resource`, opens a browser to Entra,
+completes login, and persists a refresh token. Subsequent calls renew
+silently for the lifetime of the refresh token (~90 days of inactivity).
+
+### Manual curl probe
+
+```bash
+TOKEN=$(az account get-access-token --resource api://<app-id> --query accessToken -o tsv)
+
+curl -sS -X POST https://mcp.example.com/mcp/ \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize",
+       "params":{"protocolVersion":"2024-11-05","capabilities":{},
+                 "clientInfo":{"name":"probe","version":"1"}}}'
+```
+
+## Rollback
+
+**Soft rollback (disable in-process auth, re-enable Easy Auth):**
+
+```bash
+az containerapp update -n firefly-mcp -g rg-firefly --set-env-vars FIREFLY_MCP_AUTH_ENABLED=false
+az containerapp auth update -n firefly-mcp -g rg-firefly --enabled true
+```
+
+**Hard rollback (downgrade image):** deploy the previous tag. The
+legacy per-corpus capability-token model is no longer in the codebase —
+operators who still need it must stay on the previous release.
+
+## Non-Entra IdPs
+
+Implement a `TokenVerifier` subclass (or any object with
+`validate_token(token: str) -> dict[str, Any]`) and a factory that
+returns it, plus a metadata factory returning an `OAuthMetadata`. Point
+the two `FIREFLY_MCP_*_FACTORY` env vars at your `"module.path:callable"`
+specs. The framework imports and calls them at startup.
