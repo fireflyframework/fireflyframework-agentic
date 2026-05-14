@@ -107,6 +107,11 @@ class FireflyAgenticConfig(BaseSettings):
     budget_limit_usd: float | None = None
     """Hard budget limit in USD.  When exceeded, a warning is logged."""
 
+    cost_strict: bool = False
+    """When true, :func:`resolve_cost` raises :class:`UnknownModelCostError`
+    instead of returning ``None`` when no resolver can price the model.
+    Equivalent env var: ``FIREFLY_AGENTIC_COST_STRICT``."""
+
     # -- Memory -------------------------------------------------------------
     memory_backend: str = "in_memory"
     """Default memory backend: ``"in_memory"``, ``"file"``, ``"postgres"``, or ``"mongodb"``."""
