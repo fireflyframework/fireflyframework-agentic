@@ -122,6 +122,60 @@ in-process middleware now owns authentication and Easy Auth strips the
 az containerapp auth update -n firefly-mcp -g rg-firefly --enabled false
 ```
 
+## Local development
+
+Two modes, pick whichever fits the task.
+
+### Mode A — auth disabled (default, fastest)
+
+`FIREFLY_MCP_AUTH_ENABLED` is `false` by default, so the local server runs
+with no authentication and accepts any request. Use this for almost all
+day-to-day work on tools, retrieval, and agent code.
+
+```bash
+firefly-mcp-http
+# in another shell:
+curl -X POST http://localhost:8000/mcp/ \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+### Mode B — full OAuth against your real tenant
+
+Use this only to validate the auth path itself (middleware, role checks,
+discovery metadata) end-to-end before deploying.
+
+```bash
+export FIREFLY_MCP_AUTH_ENABLED=true
+export AZURE_TENANT_ID=<tenant-guid>
+export AZURE_CLIENT_ID=<app-id>
+export FIREFLY_MCP_PUBLIC_URL=http://localhost:8000
+firefly-mcp-http
+```
+
+Then drive it as a real client would:
+
+```bash
+TOKEN=$(az account get-access-token --resource api://<app-id> --query accessToken -o tsv)
+
+curl -X POST http://localhost:8000/mcp/ \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+Assign yourself the App Roles you want to exercise (in
+**Enterprise applications → Users and groups**) before running the
+request — your token's `roles` claim is what the middleware checks. A
+new role assignment is reflected in the next token you mint with
+`az account get-access-token`.
+
+The previous capability-token operator CLI (`firefly-mcp-token`) is no
+longer shipped — Entra emits all tokens now, so there is nothing to
+mint locally.
+
 ## Connecting a client
 
 ### Claude Code / Claude Desktop
