@@ -253,6 +253,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             method="run",
             deps=deps,
             kwargs=kwargs,
+            model=self._model_identifier,
             context=context,
         )
         await self._middleware.run_before(mw_ctx)
@@ -298,6 +299,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             method="run_sync",
             deps=deps,
             kwargs=kwargs,
+            model=self._model_identifier,
             context=context,
         )
         if len(self._middleware) > 0:
@@ -357,6 +359,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             method="run_stream",
             deps=deps,
             kwargs=kwargs,
+            model=self._model_identifier,
             context=context,
         )
         await self._middleware.run_before(mw_ctx)
@@ -505,6 +508,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             method="run_with_reasoning",
             deps=None,
             kwargs=kwargs,
+            model=self._model_identifier,
             context=context,
         )
         await self._middleware.run_before(mw_ctx)
