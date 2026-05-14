@@ -81,8 +81,8 @@ def _install_oauth_auth(app: FastAPI) -> None:
     different IdP set the vars to their own factories and the framework
     needs no Azure / Entra deps to run.
     """
-    from fireflyframework_agentic.exposure.mcp.auth import OAuthJWTMiddleware
-    from fireflyframework_agentic.exposure.mcp.oauth_metadata import (
+    from fireflyframework_agentic.exposure.mcp.auth import (
+        OAuthJWTMiddleware,
         add_oauth_metadata_routes,
     )
 
