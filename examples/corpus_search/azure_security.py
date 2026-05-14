@@ -235,7 +235,7 @@ def build_entra_verifier() -> EntraTokenVerifier:
     return EntraTokenVerifier(tenant_id=tenant, audience=f"api://{client}")
 
 
-def build_entra_metadata() -> "OAuthMetadata":
+def build_entra_metadata() -> OAuthMetadata:
     """Default metadata factory for ``FIREFLY_MCP_METADATA_FACTORY``.
 
     Reads ``AZURE_TENANT_ID``, ``AZURE_CLIENT_ID``, and
