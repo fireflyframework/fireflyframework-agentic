@@ -238,3 +238,9 @@ class TestArithExecutor:
         obs = await toolkit.dispatch(step, previous={})
         assert not obs.success
         assert "minuend" in obs.error  # confirms the new informative error message
+
+    async def test_ratio_rejects_wrong_arity(self, toolkit):
+        step = ArithStep(id="a1", op="ratio", inputs=[1, 2, 3], rationale="x")
+        obs = await toolkit.dispatch(step, previous={})
+        assert not obs.success
+        assert "numerator" in obs.error  # confirms the new informative error message
