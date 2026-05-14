@@ -478,3 +478,279 @@ def test_ingest_corpus_structured_description_warns_about_no_schema_fallback() -
     desc = ingest_corpus_structured.description.lower()
     assert "without a schema" in desc or "without schema" in desc or "without an explicit schema" in desc.lower()
     assert "unreviewed" in desc or "non-interactive" in desc
+
+
+# ---- list_corpus_schemas / corpus_sql ----------------------------------
+#
+# These tests cover the read-only structured introspection tools. To exercise
+# them without going through the LLM-driven ingest pipeline, the helper seeds
+# a real SQLite table on disk and registers a matching TargetSchema via the
+# agent's SchemaRegistry. Both tools then run end-to-end against that state.
+
+
+async def _seed_structured_corpus(
+    corpus_id: str,
+    *,
+    table_name: str,
+    columns_sql: str,
+    rows: list[tuple[Any, ...]],
+    column_specs: list[Any],
+) -> Path:
+    """Materialise a corpus with one structured table + a registered schema.
+
+    Calls into ``_agent_for`` so the same cached agent the tools use sees the
+    table via its own connection. Returns the path to the corpus sqlite file.
+    """
+    import sqlite3 as _sqlite3
+
+    from fireflyframework_agentic.rag.ingest.structured_schema import TableSpec, TargetSchema
+    from fireflyframework_agentic.tools.builtins.corpus_rag import _agent_for, _corpus_root
+
+    agent = await _agent_for(corpus_id)
+    await agent._ensure_corpus_ready()
+    sqlite_path = _corpus_root() / corpus_id / "corpus.sqlite"
+    # Use a separate connection in WAL mode (the agent already opened in WAL)
+    # so the writes are visible across connections without a checkpoint.
+    conn = _sqlite3.connect(sqlite_path)
+    try:
+        conn.execute(f"CREATE TABLE IF NOT EXISTS {table_name} ({columns_sql})")
+        placeholders = ", ".join(["?"] * len(rows[0])) if rows else ""
+        if rows:
+            conn.executemany(f"INSERT INTO {table_name} VALUES ({placeholders})", rows)
+        conn.commit()
+    finally:
+        conn.close()
+    schema = TargetSchema(tables=[TableSpec(name=table_name, columns=column_specs)])
+    assert agent._schema_registry is not None
+    await agent._schema_registry.save(schema)
+    return sqlite_path
+
+
+@pytest.mark.asyncio
+async def test_list_corpus_schemas_raises_for_unknown_corpus(configured_env: Path, stub_backends: None) -> None:
+    from fireflyframework_agentic.tools.builtins.corpus_rag import list_corpus_schemas
+
+    with pytest.raises(ToolError) as exc_info:
+        await list_corpus_schemas.execute(corpus_id="missing")
+    assert isinstance(exc_info.value.__cause__, CorpusNotFoundError)
+
+
+@pytest.mark.asyncio
+async def test_list_corpus_schemas_empty_when_no_structured_ingest(configured_env: Path, stub_backends: None) -> None:
+    """A corpus with only unstructured documents reports an empty tables list."""
+    from fireflyframework_agentic.tools.builtins.corpus_rag import (
+        ingest_corpus_filesystem,
+        list_corpus_schemas,
+    )
+
+    docs = configured_env / "docs"
+    docs.mkdir()
+    (docs / "a.md").write_text("alpha", encoding="utf-8")
+    await ingest_corpus_filesystem.execute(corpus_id="empty-struct", root_path=str(docs))
+
+    result = await list_corpus_schemas.execute(corpus_id="empty-struct")
+    assert result == {"corpus_id": "empty-struct", "tables": []}
+
+
+@pytest.mark.asyncio
+async def test_list_corpus_schemas_returns_registered_tables(configured_env: Path, stub_backends: None) -> None:
+    from fireflyframework_agentic.rag.ingest.structured_schema import ColumnSpec, ColumnType
+    from fireflyframework_agentic.tools.builtins.corpus_rag import list_corpus_schemas
+
+    await _seed_structured_corpus(
+        "seeded",
+        table_name="sales",
+        columns_sql="id INTEGER PRIMARY KEY, amount REAL",
+        rows=[(1, 10.5), (2, 20.0)],
+        column_specs=[
+            ColumnSpec(name="id", type=ColumnType.integer, primary_key=True, nullable=False),
+            ColumnSpec(name="amount", type=ColumnType.float_, unit="USD"),
+        ],
+    )
+
+    result = await list_corpus_schemas.execute(corpus_id="seeded")
+    assert result["corpus_id"] == "seeded"
+    assert len(result["tables"]) == 1
+    table = result["tables"][0]
+    assert table["name"] == "sales"
+    assert {c["name"] for c in table["columns"]} == {"id", "amount"}
+    amount_col = next(c for c in table["columns"] if c["name"] == "amount")
+    assert amount_col["unit"] == "USD"
+
+
+@pytest.mark.asyncio
+async def test_corpus_sql_raises_for_unknown_corpus(configured_env: Path, stub_backends: None) -> None:
+    from fireflyframework_agentic.tools.builtins.corpus_rag import corpus_sql
+
+    with pytest.raises(ToolError) as exc_info:
+        await corpus_sql.execute(corpus_id="missing", sql="SELECT 1")
+    assert isinstance(exc_info.value.__cause__, CorpusNotFoundError)
+
+
+@pytest.mark.asyncio
+async def test_corpus_sql_returns_rows_against_registered_table(configured_env: Path, stub_backends: None) -> None:
+    from fireflyframework_agentic.rag.ingest.structured_schema import ColumnSpec, ColumnType
+    from fireflyframework_agentic.tools.builtins.corpus_rag import corpus_sql
+
+    await _seed_structured_corpus(
+        "sql-happy",
+        table_name="sales",
+        columns_sql="id INTEGER PRIMARY KEY, amount REAL",
+        rows=[(1, 10.5), (2, 20.0), (3, 30.0)],
+        column_specs=[
+            ColumnSpec(name="id", type=ColumnType.integer, primary_key=True),
+            ColumnSpec(name="amount", type=ColumnType.float_),
+        ],
+    )
+
+    result = await corpus_sql.execute(
+        corpus_id="sql-happy",
+        sql="SELECT id, amount FROM sales ORDER BY id",
+    )
+    assert result["corpus_id"] == "sql-happy"
+    assert result["columns"] == ["id", "amount"]
+    assert result["rows"] == [
+        {"id": 1, "amount": 10.5},
+        {"id": 2, "amount": 20.0},
+        {"id": 3, "amount": 30.0},
+    ]
+    assert result["truncated"] is False
+    assert result["tables"] == ["sales"]
+
+
+@pytest.mark.asyncio
+async def test_corpus_sql_supports_named_params(configured_env: Path, stub_backends: None) -> None:
+    from fireflyframework_agentic.rag.ingest.structured_schema import ColumnSpec, ColumnType
+    from fireflyframework_agentic.tools.builtins.corpus_rag import corpus_sql
+
+    await _seed_structured_corpus(
+        "sql-params",
+        table_name="sales",
+        columns_sql="id INTEGER, amount REAL",
+        rows=[(1, 10.0), (2, 20.0), (3, 30.0)],
+        column_specs=[
+            ColumnSpec(name="id", type=ColumnType.integer),
+            ColumnSpec(name="amount", type=ColumnType.float_),
+        ],
+    )
+
+    result = await corpus_sql.execute(
+        corpus_id="sql-params",
+        sql="SELECT id FROM sales WHERE amount >= :threshold ORDER BY id",
+        params={"threshold": 20.0},
+    )
+    assert [r["id"] for r in result["rows"]] == [2, 3]
+
+
+@pytest.mark.asyncio
+async def test_corpus_sql_truncates_at_limit(configured_env: Path, stub_backends: None) -> None:
+    from fireflyframework_agentic.rag.ingest.structured_schema import ColumnSpec, ColumnType
+    from fireflyframework_agentic.tools.builtins.corpus_rag import corpus_sql
+
+    await _seed_structured_corpus(
+        "sql-trunc",
+        table_name="items",
+        columns_sql="id INTEGER",
+        rows=[(i,) for i in range(10)],
+        column_specs=[ColumnSpec(name="id", type=ColumnType.integer)],
+    )
+
+    result = await corpus_sql.execute(
+        corpus_id="sql-trunc",
+        sql="SELECT id FROM items ORDER BY id",
+        limit=3,
+    )
+    assert len(result["rows"]) == 3
+    assert result["truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_corpus_sql_rejects_non_select(configured_env: Path, stub_backends: None) -> None:
+    """UPDATE / DELETE / DDL must be rejected at the parser before sqlite sees them."""
+    from fireflyframework_agentic.rag.ingest.structured_schema import ColumnSpec, ColumnType
+    from fireflyframework_agentic.tools.builtins.corpus_rag import corpus_sql
+
+    await _seed_structured_corpus(
+        "sql-write",
+        table_name="sales",
+        columns_sql="id INTEGER",
+        rows=[(1,)],
+        column_specs=[ColumnSpec(name="id", type=ColumnType.integer)],
+    )
+
+    for bad_sql in (
+        "UPDATE sales SET id = 99",
+        "DELETE FROM sales",
+        "DROP TABLE sales",
+        "INSERT INTO sales VALUES (5)",
+    ):
+        with pytest.raises(ToolError) as exc_info:
+            await corpus_sql.execute(corpus_id="sql-write", sql=bad_sql)
+        assert isinstance(exc_info.value.__cause__, ValueError)
+        assert "SELECT" in str(exc_info.value.__cause__)
+
+
+@pytest.mark.asyncio
+async def test_corpus_sql_rejects_internal_tables(configured_env: Path, stub_backends: None) -> None:
+    """Even read-only, querying internal tables (chunks, _schemas) is rejected."""
+    from fireflyframework_agentic.rag.ingest.structured_schema import ColumnSpec, ColumnType
+    from fireflyframework_agentic.tools.builtins.corpus_rag import corpus_sql
+
+    await _seed_structured_corpus(
+        "sql-internal",
+        table_name="sales",
+        columns_sql="id INTEGER",
+        rows=[(1,)],
+        column_specs=[ColumnSpec(name="id", type=ColumnType.integer)],
+    )
+
+    for bad_sql in (
+        "SELECT * FROM chunks",
+        "SELECT * FROM _schemas",
+        "SELECT s.id FROM sales s JOIN chunks c ON c.doc_id = s.id",
+    ):
+        with pytest.raises(ToolError) as exc_info:
+            await corpus_sql.execute(corpus_id="sql-internal", sql=bad_sql)
+        assert isinstance(exc_info.value.__cause__, ValueError)
+
+
+@pytest.mark.asyncio
+async def test_corpus_sql_rejects_unknown_table(configured_env: Path, stub_backends: None) -> None:
+    from fireflyframework_agentic.rag.ingest.structured_schema import ColumnSpec, ColumnType
+    from fireflyframework_agentic.tools.builtins.corpus_rag import corpus_sql
+
+    await _seed_structured_corpus(
+        "sql-unknown",
+        table_name="sales",
+        columns_sql="id INTEGER",
+        rows=[(1,)],
+        column_specs=[ColumnSpec(name="id", type=ColumnType.integer)],
+    )
+
+    with pytest.raises(ToolError) as exc_info:
+        await corpus_sql.execute(corpus_id="sql-unknown", sql="SELECT * FROM customers")
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert "customers" in str(exc_info.value.__cause__)
+
+
+@pytest.mark.asyncio
+async def test_corpus_sql_read_only_connection_blocks_writes(configured_env: Path, stub_backends: None) -> None:
+    """Belt-and-braces: even if the parser were bypassed, the read-only conn
+    refuses writes. We construct a parser-passing-but-mutating statement
+    via a CTE that the parser sees as a SELECT (impossible in stock sqlite,
+    so this test instead asserts that the connection uri carries mode=ro).
+    """
+    import sqlite3 as _sqlite3
+
+    from fireflyframework_agentic.tools.builtins.corpus_rag import _execute_select_readonly
+
+    sqlite_path = configured_env / "corpora" / "ro-test" / "corpus.sqlite"
+    sqlite_path.parent.mkdir(parents=True)
+    conn = _sqlite3.connect(sqlite_path)
+    conn.execute("CREATE TABLE t (id INTEGER)")
+    conn.execute("INSERT INTO t VALUES (1)")
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(_sqlite3.OperationalError, match="readonly"):
+        _execute_select_readonly(sqlite_path, "DELETE FROM t", params=None, limit=10)
