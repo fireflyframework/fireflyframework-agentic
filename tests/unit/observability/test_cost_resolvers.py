@@ -4,10 +4,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from fireflyframework_agentic.observability import cost_resolvers as _resolvers_mod
 from fireflyframework_agentic.observability.cost_resolvers import (
     DEFAULT_RESOLVERS,
     CostContext,
+    UnknownModelCostError,
     genai_prices_cost,
     provider_reported_cost,
     resolve_cost,
@@ -130,16 +130,16 @@ def test_genai_prices_folds_reasoning_into_output() -> None:
     assert captured["usage"].output_tokens == 50 + 200
 
 
-def test_genai_prices_unknown_model_returns_none(caplog: pytest.LogCaptureFixture) -> None:
-    _resolvers_mod._UNKNOWN_MODEL_WARNED.clear()
+def test_genai_prices_unknown_model_warns_every_call(caplog: pytest.LogCaptureFixture) -> None:
+    """Per issue #174 every unresolved call must surface; no module-level dedup."""
     with (
         patch("fireflyframework_agentic.observability.cost_resolvers.calc_price", side_effect=LookupError("not found")),
         caplog.at_level("WARNING"),
     ):
         assert genai_prices_cost(CostContext(model="unknown:foo", input_tokens=1, output_tokens=1)) is None
         assert genai_prices_cost(CostContext(model="unknown:foo", input_tokens=1, output_tokens=1)) is None
-    warnings = [r for r in caplog.records if "unknown" in r.message.lower()]
-    assert len(warnings) == 1  # deduplicated
+    warnings = [r for r in caplog.records if "unknown" in r.message.lower() or "no entry" in r.message.lower()]
+    assert len(warnings) == 2
 
 
 def test_genai_prices_swallows_other_exceptions() -> None:
@@ -183,12 +183,45 @@ def test_resolve_cost_falls_through_to_next() -> None:
     assert resolve_cost(ctx, [abstain, answer]) == 7.0
 
 
-def test_resolve_cost_all_none_returns_zero() -> None:
+def test_resolve_cost_all_none_returns_none() -> None:
     def abstain(_ctx: CostContext) -> float | None:
         return None
 
     ctx = CostContext(model="x", input_tokens=1, output_tokens=1)
-    assert resolve_cost(ctx, [abstain, abstain]) == 0.0
+    assert resolve_cost(ctx, [abstain, abstain]) is None
+
+
+def test_resolve_cost_strict_raises_on_full_miss() -> None:
+    def abstain(_ctx: CostContext) -> float | None:
+        return None
+
+    ctx = CostContext(model="unknown:foo", input_tokens=1, output_tokens=1)
+    with pytest.raises(UnknownModelCostError) as excinfo:
+        resolve_cost(ctx, [abstain], strict=True)
+    assert excinfo.value.model == "unknown:foo"
+
+
+def test_resolve_cost_strict_does_not_raise_when_resolved() -> None:
+    def answer(_ctx: CostContext) -> float | None:
+        return 4.2
+
+    ctx = CostContext(model="x", input_tokens=1, output_tokens=1)
+    assert resolve_cost(ctx, [answer], strict=True) == 4.2
+
+
+def test_resolve_cost_strict_reads_config_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    def abstain(_ctx: CostContext) -> float | None:
+        return None
+
+    fake_cfg = MagicMock()
+    fake_cfg.cost_strict = True
+    monkeypatch.setattr(
+        "fireflyframework_agentic.observability.cost_resolvers.get_config",
+        lambda: fake_cfg,
+    )
+    ctx = CostContext(model="unknown:foo", input_tokens=1, output_tokens=1)
+    with pytest.raises(UnknownModelCostError):
+        resolve_cost(ctx, [abstain])
 
 
 def test_resolve_cost_default_chain_used_when_none() -> None:

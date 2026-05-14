@@ -180,12 +180,16 @@ class UsageTracker:
         return record
 
     def _resolve(self, ctx: CostContext) -> float:
+        # resolve_cost returns float | None (strict mode raises instead);
+        # UsageRecord.cost_usd is a float, so coerce None to 0.0 here.
+        # The cost_unknown metric and WARNING have already fired upstream.
         if self._resolver is None:
-            return resolve_cost(ctx)
-        if callable(self._resolver):
+            result = resolve_cost(ctx)
+        elif callable(self._resolver):
             result = self._resolver(ctx)
-            return 0.0 if result is None else float(result)
-        return resolve_cost(ctx, self._resolver)
+        else:
+            result = resolve_cost(ctx, self._resolver)
+        return 0.0 if result is None else float(result)
 
     # -- Low-level entry -------------------------------------------------
     def record(self, usage: UsageRecord, scope_ctx=None) -> None:
