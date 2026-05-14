@@ -61,21 +61,24 @@ class TestPromptCacheMiddleware:
         await middleware.before_run(context)
 
     async def test_before_hook_anthropic_caching(self):
-        """Test Anthropic-specific caching configuration."""
+        """Anthropic caching writes the right model_settings into kwargs."""
         middleware = PromptCacheMiddleware(
             cache_system_prompt=True,
+            cache_last_message=True,
             cache_min_tokens=2048,
         )
 
         context = Mock()
         context.model = "anthropic:claude-3-5-sonnet-20241022"
-        context.metadata = {}
+        context.kwargs = {}
 
         await middleware.before_run(context)
 
-        # Should configure caching metadata
-        assert context.metadata["_prompt_cache_enabled"] is True
-        assert context.metadata["_cache_min_tokens"] == 2048
+        # Should inject pydantic-ai's anthropic_cache_* settings
+        settings = context.kwargs["model_settings"]
+        assert settings["anthropic_cache_instructions"] == "5m"
+        assert settings["anthropic_cache_messages"] == "5m"
+        assert "anthropic_cache_tool_definitions" not in settings
 
     async def test_before_hook_openai_caching(self):
         """Test OpenAI-specific caching configuration."""
@@ -105,17 +108,19 @@ class TestPromptCacheMiddleware:
         """Bedrock-hosted Claude should route to Anthropic caching."""
         middleware = PromptCacheMiddleware(
             cache_system_prompt=True,
+            cache_last_message=False,
             cache_min_tokens=2048,
         )
 
         context = Mock()
         context.model = "bedrock:anthropic.claude-3-5-sonnet-latest"
-        context.metadata = {}
+        context.kwargs = {}
 
         await middleware.before_run(context)
 
-        assert context.metadata["_prompt_cache_enabled"] is True
-        assert context.metadata["_cache_min_tokens"] == 2048
+        settings = context.kwargs["model_settings"]
+        assert settings["anthropic_cache_instructions"] == "5m"
+        assert "anthropic_cache_messages" not in settings
 
     async def test_before_hook_azure_openai_routes_to_openai_caching(self):
         """Azure-hosted GPT should route to OpenAI caching."""
@@ -205,15 +210,60 @@ class TestPromptCacheMiddleware:
         # Should return result unchanged
         assert returned_result == result
 
-    async def test_cache_system_prompt_disabled(self):
-        """Test middleware with system prompt caching disabled."""
-        middleware = PromptCacheMiddleware(cache_system_prompt=False)
+    async def test_all_cache_targets_disabled_is_a_noop(self):
+        """When system/messages/tools are all off, kwargs stay untouched."""
+        middleware = PromptCacheMiddleware(
+            cache_system_prompt=False,
+            cache_last_message=False,
+            cache_tool_definitions=False,
+        )
 
         context = Mock()
         context.model = "anthropic:claude-3-5-sonnet-20241022"
+        context.kwargs = {}
 
-        # Should not configure caching
         await middleware.before_run(context)
+
+        assert context.kwargs == {}
+
+    async def test_existing_model_settings_preserved(self):
+        """Cache settings must not overwrite caller-provided model_settings."""
+        middleware = PromptCacheMiddleware(
+            cache_system_prompt=True,
+            cache_last_message=True,
+        )
+
+        context = Mock()
+        context.model = "anthropic:claude-sonnet-4-6"
+        context.kwargs = {
+            "model_settings": {
+                "anthropic_cache_instructions": "1h",  # caller already set 1h
+                "temperature": 0.2,
+            }
+        }
+
+        await middleware.before_run(context)
+
+        settings = context.kwargs["model_settings"]
+        # Caller's 1h preserved, middleware does NOT overwrite to 5m default.
+        assert settings["anthropic_cache_instructions"] == "1h"
+        assert settings["temperature"] == 0.2
+        # New setting added.
+        assert settings["anthropic_cache_messages"] == "5m"
+
+    async def test_ttl_one_hour_maps_to_1h_literal(self):
+        middleware = PromptCacheMiddleware(
+            cache_system_prompt=True,
+            cache_ttl_seconds=3600,
+        )
+
+        context = Mock()
+        context.model = "anthropic:claude-opus-4-7"
+        context.kwargs = {}
+
+        await middleware.before_run(context)
+
+        assert context.kwargs["model_settings"]["anthropic_cache_instructions"] == "1h"
 
 
 class TestCacheStatistics:
