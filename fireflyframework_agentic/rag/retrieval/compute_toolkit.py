@@ -153,16 +153,24 @@ class ComputeToolkit:
                     raise ZeroDivisionError("avg over empty list")
                 result = sum(nums) / len(nums)
             elif op == "min":
+                if not nums:
+                    return ComputeObservation(step_id=step.id, success=False, error="min requires at least 1 input")
                 result = min(nums)
             elif op == "max":
+                if not nums:
+                    return ComputeObservation(step_id=step.id, success=False, error="max requires at least 1 input")
                 result = max(nums)
             elif op == "diff":
                 if len(nums) != 2:
-                    return ComputeObservation(step_id=step.id, success=False, error="diff requires exactly 2 inputs")
+                    return ComputeObservation(
+                        step_id=step.id, success=False, error="diff requires exactly 2 inputs (minuend, subtrahend)"
+                    )
                 result = nums[0] - nums[1]
             elif op == "ratio":
                 if len(nums) != 2:
-                    return ComputeObservation(step_id=step.id, success=False, error="ratio requires exactly 2 inputs")
+                    return ComputeObservation(
+                        step_id=step.id, success=False, error="ratio requires exactly 2 inputs (numerator, denominator)"
+                    )
                 if nums[1] == 0:
                     return ComputeObservation(step_id=step.id, success=False, error="division by zero")
                 result = nums[0] / nums[1]

@@ -189,3 +189,52 @@ class TestArithExecutor:
         obs = await toolkit.dispatch(step, previous={})
         assert not obs.success
         assert "numeric" in obs.error.lower()
+
+    async def test_avg_basic(self, toolkit):
+        step = ArithStep(id="a1", op="avg", inputs=[2, 4, 6], rationale="x")
+        obs = await toolkit.dispatch(step, previous={})
+        assert obs.success
+        assert obs.output["result"] == 4.0
+
+    async def test_avg_empty_list_round_trip(self, toolkit):
+        """ZeroDivisionError raised inside _run_arith is caught and returned as a failed obs."""
+        step = ArithStep(id="a1", op="avg", inputs=[], rationale="x")
+        obs = await toolkit.dispatch(step, previous={})
+        assert not obs.success
+        assert "avg over empty" in obs.error
+
+    async def test_min_basic(self, toolkit):
+        step = ArithStep(id="a1", op="min", inputs=[3, 1, 2], rationale="x")
+        obs = await toolkit.dispatch(step, previous={})
+        assert obs.success
+        assert obs.output["result"] == 1.0
+
+    async def test_max_basic(self, toolkit):
+        step = ArithStep(id="a1", op="max", inputs=[3, 1, 2], rationale="x")
+        obs = await toolkit.dispatch(step, previous={})
+        assert obs.success
+        assert obs.output["result"] == 3.0
+
+    async def test_min_rejects_empty_list(self, toolkit):
+        step = ArithStep(id="a1", op="min", inputs=[], rationale="x")
+        obs = await toolkit.dispatch(step, previous={})
+        assert not obs.success
+        assert "min requires at least 1" in obs.error
+
+    async def test_max_rejects_empty_list(self, toolkit):
+        step = ArithStep(id="a1", op="max", inputs=[], rationale="x")
+        obs = await toolkit.dispatch(step, previous={})
+        assert not obs.success
+        assert "max requires at least 1" in obs.error
+
+    async def test_diff_two_inputs(self, toolkit):
+        step = ArithStep(id="a1", op="diff", inputs=[10, 3], rationale="x")
+        obs = await toolkit.dispatch(step, previous={})
+        assert obs.success
+        assert obs.output["result"] == 7.0
+
+    async def test_diff_rejects_wrong_arity(self, toolkit):
+        step = ArithStep(id="a1", op="diff", inputs=[1, 2, 3], rationale="x")
+        obs = await toolkit.dispatch(step, previous={})
+        assert not obs.success
+        assert "minuend" in obs.error  # confirms the new informative error message
