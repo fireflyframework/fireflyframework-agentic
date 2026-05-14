@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 
 from fireflyframework_agentic.config import get_config
 from fireflyframework_agentic.observability.budget import BudgetGate, BudgetRule
-from fireflyframework_agentic.observability.cost.resolvers import (
+from fireflyframework_agentic.observability.cost_resolvers import (
     CostContext,
     CostFn,
     resolve_cost,
