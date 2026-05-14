@@ -38,7 +38,10 @@ def test_metadata_factory_returns_populated_metadata(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("FIREFLY_MCP_PUBLIC_URL", "https://mcp.example.com")
     md = build_entra_metadata()
     assert isinstance(md, OAuthMetadata)
-    assert md.issuer == "https://login.microsoftonline.com/tenant-guid/v2.0"
+    # issuer is our own host (matches RFC 8414 self-discovery); JWT iss
+    # validation is independent and uses Entra's URL internally.
+    assert md.issuer == "https://mcp.example.com"
+    assert md.authorization_endpoint == "https://login.microsoftonline.com/tenant-guid/oauth2/v2.0/authorize"
     assert md.jwks_uri.endswith("/discovery/v2.0/keys")
     assert md.resource == "https://mcp.example.com/mcp/"
     assert md.scopes_supported == ("api://client-guid/user_impersonation",)

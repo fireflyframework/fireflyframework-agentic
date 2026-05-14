@@ -253,8 +253,16 @@ def build_entra_metadata() -> OAuthMetadata:
     if not tenant or not client or not host:
         raise RuntimeError("build_entra_metadata requires AZURE_TENANT_ID, AZURE_CLIENT_ID, and FIREFLY_MCP_PUBLIC_URL")
     base = f"https://login.microsoftonline.com/{tenant}"
+    # ``issuer`` is the URL the MCP client uses to discover the auth server
+    # (RFC 8414): it MUST match the URL where the metadata is served, i.e.
+    # our own host. Entra's actual issuer URL is hardcoded inside
+    # ``EntraTokenVerifier`` and used only for JWT ``iss`` validation, so
+    # advertising our own URL here does not affect token verification.
+    # We point ``authorization_endpoint`` / ``token_endpoint`` / ``jwks_uri``
+    # at Entra so the client runs the OAuth flow against the real IdP —
+    # we are not acting as an authorization-server proxy.
     return OAuthMetadata(
-        issuer=f"{base}/v2.0",
+        issuer=host,
         authorization_endpoint=f"{base}/oauth2/v2.0/authorize",
         token_endpoint=f"{base}/oauth2/v2.0/token",
         jwks_uri=f"{base}/discovery/v2.0/keys",
