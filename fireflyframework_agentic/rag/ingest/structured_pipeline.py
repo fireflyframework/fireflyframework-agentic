@@ -39,13 +39,24 @@ log = logging.getLogger(__name__)
 class TableIngestResult(TypedDict):
     """Per-table outcome returned by :func:`ingest_structured`.
 
-    ``status`` is ``"success"`` when every row inserted, or ``"failed"``
-    when at least one row raised a ``sqlite3.Error`` (the whole table is
-    rolled back and ``inserted`` is 0). ``errors`` carries one entry per
-    failing row in ``f"row {row_num}: {sqlite_message}"`` form.
+    ``status``:
+      - ``"success"`` — every row inserted, no errors.
+      - ``"partial"`` — at least one row failed (UNIQUE/NOT NULL/type
+        violation) but the rest were committed. This is the case we
+        hit on real workbooks where a handful of placeholder rows
+        (e.g. an ID column with the sentinel ``'-'`` for unfilled
+        positions) conflict with a composite primary key — atomic
+        rollback used to lose hundreds of valid rows to protect a
+        dozen conflicting ones, which is the wrong trade-off in
+        practice.
+      - ``"failed"`` — zero rows inserted (every row errored, or the
+        sheet was empty after filtering).
+
+    ``errors`` carries one entry per failing row in
+    ``f"row {row_num}: {sqlite_message}"`` form, regardless of status.
     """
 
-    status: Literal["success", "failed"]
+    status: Literal["success", "partial", "failed"]
     inserted: int
     errors: list[str]
 
@@ -77,16 +88,54 @@ def _normalize_col(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", str(name).lower().replace("&", "and")).strip("_")
 
 
-def _find_header_row(rows: list[tuple[Any, ...]]) -> int:
-    """Return the index of the first row that looks like real headers.
+# How far down a sheet to look for the real header row. Real-world Excel
+# files frequently bury headers under ~10 single-cell title / legend / spacer
+# rows (e.g. an archive sheet with a stacked legend in column J pushing the
+# header to row 8). Both discovery (_excel_sample) and ingestion (_read_rows)
+# must use the same value or they drift — discovery sees the right schema
+# while ingestion silently drops every row.
+_HEADER_SCAN_ROWS = 20
 
-    A title row typically has exactly one non-null cell; the actual header
-    row has two or more non-null cells.
+
+def _pick_header_row_idx(candidate_rows: list[tuple[Any, ...]]) -> int:
+    """Choose the row in *candidate_rows* most likely to be the real header.
+
+    Single source of truth for header detection — used by ``_excel_sample``
+    during schema discovery AND by ``_read_rows`` during ingestion. Keeping
+    these two code paths in sync is load-bearing: when they pick different
+    rows, discovery infers a correct schema but ingestion can't find the
+    columns to populate it, and every data row gets silently filtered out
+    by the NOT NULL pre-filter in ``_load_rows``.
+
+    Heuristic, in order:
+      1. Skip empty / one-cell title rows (a real header has ≥2 cells).
+      2. Among multi-cell *string-dominated* rows (>50% of non-null cells
+         are strings — real Excel headers are almost always strings, not
+         integers), pick the one with the most non-null cells. Real
+         headers are wide; decorative two-cell titles like
+         ``['DECORATIVE TITLE', '(blank)']`` lose to the
+         5-column real header at row 2.
+      3. Fall back to the first multi-cell row.
+
+    Returns 0 when no row passes any test (so the existing behaviour for
+    well-formed sheets is preserved).
+
+    The caller is expected to pass at most ``_HEADER_SCAN_ROWS`` rows;
+    that bound governs how far the picker will look.
     """
-    for i, row in enumerate(rows[:5]):
-        if sum(1 for v in row if v is not None) >= 2:
-            return i
-    return 0
+    multi_cell = [(i, r) for i, r in enumerate(candidate_rows) if sum(1 for v in r if v is not None) >= 2]
+    if not multi_cell:
+        return 0
+    string_dominated: list[tuple[int, int]] = []  # (row_idx, non_null_count)
+    for i, r in multi_cell:
+        non_null = [v for v in r if v is not None]
+        string_count = sum(1 for v in non_null if isinstance(v, str))
+        if string_count * 2 > len(non_null):
+            string_dominated.append((i, len(non_null)))
+    if string_dominated:
+        # Widest row wins, earliest row breaks ties.
+        return min(string_dominated, key=lambda t: (-t[1], t[0]))[0]
+    return multi_cell[0][0]
 
 
 def _read_rows(path: Path, table_name: str) -> tuple[list[str], list[list[Any]]]:
@@ -102,7 +151,7 @@ def _read_rows(path: Path, table_name: str) -> tuple[list[str], list[list[Any]]]
         if sheet_name is None:
             raise KeyError(f"No sheet matching table {table_name!r} in {path.name} (sheets: {wb.sheetnames})")
         all_rows = list(wb[sheet_name].iter_rows(values_only=True))
-        header_idx = _find_header_row(all_rows)
+        header_idx = _pick_header_row_idx(all_rows[:_HEADER_SCAN_ROWS])
         return [str(h) if h is not None else "" for h in all_rows[header_idx]], [
             list(r) for r in all_rows[header_idx + 1 :]
         ]
@@ -190,11 +239,21 @@ def _sync_ingest_table(
     conn = sqlite3.connect(db_path, timeout=30.0, isolation_level=None)
     conn.execute("PRAGMA busy_timeout = 30000")
     try:
+        pk_cols = [c for c in table_spec.columns if c.primary_key]
+        # Single-col PK keeps the inline ``PRIMARY KEY`` form so an
+        # ``INTEGER PRIMARY KEY`` column remains the SQLite rowid alias
+        # (the table-level form below would forfeit that). With ≥2 PK
+        # columns the row identity is composite and we emit a
+        # ``PRIMARY KEY (col_a, col_b, …)`` clause at the end of the
+        # column list. This is what unblocks tables where a single
+        # candidate ID column repeats across rows but the row identity
+        # is composite (e.g. one row per (employee, route)).
+        composite_pk = len(pk_cols) > 1
         col_defs: list[str] = []
         fk_defs: list[str] = []
         for col in table_spec.columns:
             parts = [_quote(col.name), _SQL_TYPES[col.type]]
-            if col.primary_key:
+            if col.primary_key and not composite_pk:
                 parts.append("PRIMARY KEY")
             elif not col.nullable:
                 parts.append("NOT NULL")
@@ -205,7 +264,8 @@ def _sync_ingest_table(
                     fk_defs.append(
                         f"FOREIGN KEY ({_quote(col.name)}) REFERENCES {_quote(ref_table)} ({_quote(ref_column)})"
                     )
-        all_defs = col_defs + fk_defs
+        pk_def = [f"PRIMARY KEY ({', '.join(_quote(c.name) for c in pk_cols)})"] if composite_pk else []
+        all_defs = col_defs + pk_def + fk_defs
         conn.execute(f"CREATE TABLE IF NOT EXISTS {_quote(table_spec.name)} ({', '.join(all_defs)})")
         col_names = [c.name for c in table_spec.columns]
         placeholders = ", ".join("?" for _ in col_names)
@@ -227,10 +287,16 @@ def _sync_ingest_table(
                     inserted += 1
                 except sqlite3.Error as exc:
                     errors.append(f"row {row_num}: {exc}")
-            if errors:
-                conn.execute("ROLLBACK")
-                return {"status": "failed", "inserted": 0, "errors": errors}
+            # Commit whatever inserted successfully; per-row errors are
+            # reported but don't roll back valid rows. ``failed`` is
+            # reserved for "every row that was attempted errored" — an
+            # empty CSV (header only, no data rows) is still a success
+            # with inserted=0 because there was nothing to fail on.
             conn.execute("COMMIT")
+            if errors and inserted == 0:
+                return {"status": "failed", "inserted": 0, "errors": errors}
+            if errors:
+                return {"status": "partial", "inserted": inserted, "errors": errors}
             return {"status": "success", "inserted": inserted, "errors": []}
         except BaseException:
             try:

@@ -134,8 +134,15 @@ async def test_ingest_structured_excel(tmp_path: Path, db_store: DatabaseStore):
 
 
 @pytest.mark.asyncio
-async def test_ingest_structured_bad_row_rollback(tmp_path: Path, db_store: DatabaseStore):
-    """Duplicate primary key should cause status==failed and errors non-empty."""
+async def test_ingest_structured_partial_on_duplicate_pk(tmp_path: Path, db_store: DatabaseStore):
+    """Duplicate PK rows fail individually but valid rows still commit.
+
+    The prior behaviour was atomic rollback of the entire table on any
+    per-row error, which wiped ~680 valid rows in real workbooks just
+    to protect ~13 placeholder rows. The new contract: ``"partial"``
+    status, ``inserted`` reflects what actually landed, ``errors`` lists
+    the rows that didn't.
+    """
     p = tmp_path / "dup.csv"
     with open(p, "w", newline="") as f:
         writer = csv.writer(f)
@@ -144,9 +151,10 @@ async def test_ingest_structured_bad_row_rollback(tmp_path: Path, db_store: Data
         writer.writerow(["1", "Duplicate", "5.00"])  # duplicate PK
     schema = _schema()
     result = await ingest_structured(p, db_store, schema)
-    assert result["products"]["status"] == "failed"
-    assert len(result["products"]["errors"]) > 0
-    assert result["products"]["inserted"] == 0
+    assert result["products"]["status"] == "partial"
+    assert result["products"]["inserted"] == 1
+    assert len(result["products"]["errors"]) == 1
+    assert "UNIQUE constraint failed" in result["products"]["errors"][0]
 
 
 @pytest.mark.asyncio
@@ -334,3 +342,141 @@ async def test_ingest_structured_acquires_storage_write_lock(tmp_path: Path) -> 
     assert call_count == 1, f"expected exactly one for_write() acquisition, got {call_count}"
     assert result["rows"]["status"] == "success"
     assert result["rows"]["inserted"] == 2
+
+
+# ---- Composite primary keys -------------------------------------------------
+#
+# Real-world tables routinely have a candidate ID column that *looks*
+# unique in a 5-row sample but is genuinely non-unique in full data —
+# the row identity is composite (e.g. one row per (employee, route)).
+# Without composite-PK support the only options are "drop the PK and
+# lose uniqueness" or "fail ingestion on duplicates". The composite-PK
+# path lets the user mark both columns primary_key=True and the SQL
+# generator emits a table-level ``PRIMARY KEY (col_a, col_b)`` clause.
+
+
+def test_ingest_composite_pk_emits_table_level_clause(tmp_path: Path) -> None:
+    """With ≥2 columns flagged primary_key=True, the SQL must use a
+    table-level ``PRIMARY KEY (a, b)`` rather than per-column inline
+    ``PRIMARY KEY`` (which SQLite would only accept on a single column).
+    """
+    table = TableSpec(
+        name="activity",
+        columns=[
+            ColumnSpec(name="prid", type=ColumnType.string, primary_key=True),
+            ColumnSpec(name="ruta_num", type=ColumnType.integer, primary_key=True),
+            ColumnSpec(name="amount", type=ColumnType.float_),
+        ],
+    )
+    rows = [
+        {"prid": "k1", "ruta_num": 100, "amount": 1.5},
+        {"prid": "k1", "ruta_num": 200, "amount": 2.5},  # same prid, different ruta
+        {"prid": "k2", "ruta_num": 100, "amount": 3.5},
+    ]
+    db = tmp_path / "compkey.sqlite"
+    res = _sync_ingest_table(db, table, rows)
+    assert res["status"] == "success"
+    assert res["inserted"] == 3
+    conn = sqlite3.connect(db)
+    try:
+        ddl = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='activity'").fetchone()[0]
+        assert "PRIMARY KEY" in ddl
+        # Composite form, not inline-on-one-column.
+        assert 'PRIMARY KEY ("prid", "ruta_num")' in ddl
+    finally:
+        conn.close()
+
+
+def test_ingest_composite_pk_rejects_duplicate_composite(tmp_path: Path) -> None:
+    """Composite PK still enforces uniqueness — on the full composite tuple."""
+    table = TableSpec(
+        name="activity",
+        columns=[
+            ColumnSpec(name="prid", type=ColumnType.string, primary_key=True),
+            ColumnSpec(name="ruta_num", type=ColumnType.integer, primary_key=True),
+            ColumnSpec(name="amount", type=ColumnType.float_),
+        ],
+    )
+    rows = [
+        {"prid": "k1", "ruta_num": 100, "amount": 1.5},
+        {"prid": "k1", "ruta_num": 100, "amount": 9.9},  # exact composite dup
+    ]
+    db = tmp_path / "compkey2.sqlite"
+    res = _sync_ingest_table(db, table, rows)
+    # The non-duplicate row commits, the duplicate row errors. Under the
+    # partial-ingest contract this is a ``partial`` outcome — the goal
+    # being that real workbooks with a handful of placeholder duplicate
+    # rows don't lose all their valid rows to atomic rollback.
+    assert res["status"] == "partial"
+    assert res["inserted"] == 1
+    assert any("UNIQUE constraint failed" in e for e in res["errors"])
+    # UNIQUE error must name BOTH composite columns (not just one).
+    assert any("activity.prid" in e and "activity.ruta_num" in e for e in res["errors"])
+
+
+def test_pipeline_and_registry_share_header_picker() -> None:
+    """Discovery (_excel_sample in structured_registry) and ingestion
+    (_read_rows in structured_pipeline) must use the *same* function
+    to pick the header row in an Excel sheet. Two copies drifted apart
+    in the past (5-row vs 20-row scan window) and a real sheet whose
+    header sat at row 8 ingested 0 rows because discovery found the
+    right header but ingestion couldn't reach past row 5 — silent
+    data loss.
+    """
+    from fireflyframework_agentic.rag.ingest import structured_pipeline, structured_registry
+
+    assert structured_registry._pick_header_row_idx is structured_pipeline._pick_header_row_idx, (
+        "header detection has forked again — discovery and ingestion will silently drop rows"
+    )
+    assert structured_registry._HEADER_SCAN_ROWS == structured_pipeline._HEADER_SCAN_ROWS
+
+
+def test_read_rows_finds_header_past_row_five(tmp_path: Path) -> None:
+    """End-to-end: ingestion-side ``_read_rows`` must reach the real
+    header even when it sits past row 5 (the prior cap). Regression
+    for the buried-header pattern.
+    """
+    openpyxl = pytest.importorskip("openpyxl")
+    from fireflyframework_agentic.rag.ingest.structured_pipeline import _read_rows
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "deep"
+    for i in range(8):
+        ws.cell(row=i + 1, column=10, value=f"LEGEND {i + 1}")
+    ws.append([None, "PRID", "EMPLOYEE_ID", "NAME"])
+    ws.append([None, "k1", 1, "Alice"])
+    ws.append([None, "k2", 2, "Bob"])
+    p = tmp_path / "deep.xlsx"
+    wb.save(p)
+
+    headers, data = _read_rows(p, "deep")
+    assert "PRID" in headers
+    assert "EMPLOYEE_ID" in headers
+    assert len(data) == 2
+    assert data[0][1] == "k1"
+
+
+def test_ingest_single_pk_still_uses_inline_form(tmp_path: Path) -> None:
+    """Single-col PK keeps the inline form so ``INTEGER PRIMARY KEY``
+    columns remain the SQLite rowid alias (an inline-vs-table-level
+    behavioural difference that the codebase has always relied on).
+    """
+    table = TableSpec(
+        name="single",
+        columns=[
+            ColumnSpec(name="id", type=ColumnType.integer, primary_key=True),
+            ColumnSpec(name="amount", type=ColumnType.float_),
+        ],
+    )
+    rows = [{"id": 1, "amount": 1.0}]
+    db = tmp_path / "singlepk.sqlite"
+    _sync_ingest_table(db, table, rows)
+    conn = sqlite3.connect(db)
+    try:
+        ddl = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='single'").fetchone()[0]
+        # Inline PK, not a trailing table-level clause.
+        assert '"id" INTEGER PRIMARY KEY' in ddl
+        assert 'PRIMARY KEY ("id")' not in ddl
+    finally:
+        conn.close()
