@@ -8,7 +8,7 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 | Date | 2026-05-05 |
 | Branch | to be created off `main` (`javi/corpus-agent-content-source`) |
 | Replaces | `tools/builtins/sharepoint_rag.py` introduced in [PR #103](https://github.com/fireflyframework/fireflyframework-agentic/pull/103) |
-| Author | Javier Alvarez-Valle |
+| Author | Sam Lee-Valle |
 
 ---
 

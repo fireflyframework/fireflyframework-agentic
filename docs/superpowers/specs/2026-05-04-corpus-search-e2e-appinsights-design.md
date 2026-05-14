@@ -8,7 +8,7 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 | Date | 2026-05-04 |
 | Branch | `javi/corpus-search-e2e-appinsights` |
 | Pull request | [#102](https://github.com/fireflyframework/fireflyframework-agentic/pull/102) |
-| Author | Javier Alvarez-Valle |
+| Author | Sam Lee-Valle |
 
 ---
 

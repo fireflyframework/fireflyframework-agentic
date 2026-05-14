@@ -238,7 +238,7 @@ into `PipelineResult.usage`.
 Each LLM call is priced by a chain of resolver callables. The default chain tries the provider-reported cost first (e.g. OpenRouter's `usage.cost`), then falls back to `genai-prices` for token-by-token computation. Cache tokens, reasoning tokens, and the `BATCH` tier are all honored when the provider's price record exposes the relevant fields.
 
 ```python
-from fireflyframework_agentic.observability.cost import resolve_cost, CostContext, CallTier
+from fireflyframework_agentic.observability.cost_resolvers import resolve_cost, CostContext, CallTier
 cost = resolve_cost(CostContext(model="anthropic:claude-3-5-sonnet-latest",
                                 input_tokens=1_000, output_tokens=500,
                                 cache_read_tokens=8_000, tier=CallTier.BATCH))
