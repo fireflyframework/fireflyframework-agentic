@@ -24,6 +24,7 @@ from fireflyframework_agentic.observability.budget import (
 from fireflyframework_agentic.observability.cost_resolvers import (
     DEFAULT_RESOLVERS,
     CostContext,
+    UnknownModelCostError,
     genai_prices_cost,
     provider_reported_cost,
     resolve_cost,
@@ -72,6 +73,7 @@ __all__ = [
     "OTelMetricsSink",
     "ProviderBundle",
     "ScopeContext",
+    "UnknownModelCostError",
     "UsageRecord",
     "UsageSummary",
     "UsageTracker",
