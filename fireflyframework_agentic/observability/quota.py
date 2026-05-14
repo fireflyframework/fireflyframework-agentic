@@ -12,37 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""API quota and rate limit management.
+"""API rate limit management.
 
-This module provides production-grade quota enforcement, rate limiting,
-and adaptive backoff for LLM API calls. It integrates with the existing
-:class:`~fireflyframework_agentic.observability.usage.UsageTracker` to enforce:
-
-- **Daily budget limits** in USD
-- **Per-model rate limits** (requests per minute)
-- **Adaptive backoff** for 429 (rate limit) responses
-- **Token quota** tracking across agents
+This module provides production-grade rate limiting and adaptive backoff
+for LLM API calls. Budget enforcement now lives in
+:class:`fireflyframework_agentic.observability.budget.BudgetGate`; this module
+only handles request-rate concerns.
 
 Example:
-    Basic quota management::
+    Basic rate-limit management::
 
         from fireflyframework_agentic.observability.quota import QuotaManager
 
-        quota = QuotaManager(
-            daily_budget_usd=10.0,
-            rate_limits={"openai:gpt-4o": 60}  # 60 req/min
-        )
-
-        # Check before making request
-        if not quota.check_budget_available(cost_usd=0.05):
-            raise QuotaError("Daily budget exceeded")
+        quota = QuotaManager(rate_limits={"openai:gpt-4o": 60})  # 60 req/min
 
         if not quota.check_rate_limit_available("openai:gpt-4o"):
-            # Apply adaptive backoff
             await asyncio.sleep(quota.get_backoff_delay("openai:gpt-4o"))
 
-        # Record usage after request
-        quota.record_request("openai:gpt-4o", cost_usd=0.05)
+        quota.record_request("openai:gpt-4o")
 """
 
 from __future__ import annotations
@@ -52,9 +39,9 @@ import random
 import threading
 import time
 from collections import defaultdict
-from datetime import UTC, date, datetime
 
-from fireflyframework_agentic.exceptions import BudgetExceededError, RateLimitError
+from fireflyframework_agentic.config import get_config
+from fireflyframework_agentic.exceptions import RateLimitError
 
 logger = logging.getLogger(__name__)
 
@@ -246,14 +233,14 @@ class AdaptiveBackoff:
 
 
 class QuotaManager:
-    """Comprehensive quota and rate limit manager.
+    """Per-model rate-limit and adaptive-backoff manager.
 
-    Manages daily budget limits, per-model rate limits, and adaptive backoff
-    for production LLM deployments. Integrates with UsageTracker for cost
-    tracking and enforces hard limits.
+    Wraps :class:`RateLimiter` and :class:`AdaptiveBackoff` for production LLM
+    deployments. Budget enforcement has moved to
+    :class:`fireflyframework_agentic.observability.budget.BudgetGate`; this
+    manager covers only request-rate concerns.
 
     Parameters:
-        daily_budget_usd: Maximum daily spending in USD. None = no limit.
         rate_limits: Per-model rate limits as ``{model: requests_per_minute}``.
         rate_limit_window: Time window for rate limiting in seconds.
         enable_adaptive_backoff: Whether to use adaptive backoff for 429s.
@@ -263,7 +250,6 @@ class QuotaManager:
     Example::
 
         quota = QuotaManager(
-            daily_budget_usd=100.0,
             rate_limits={
                 "openai:gpt-4o": 60,
                 "openai:gpt-4o-mini": 200,
@@ -271,10 +257,10 @@ class QuotaManager:
         )
 
         # Before making request
-        quota.check_quota_before_request("openai:gpt-4o", estimated_cost=0.05)
+        quota.check_quota_before_request("openai:gpt-4o")
 
         # After request completes
-        quota.record_request("openai:gpt-4o", cost_usd=0.048, success=True)
+        quota.record_request("openai:gpt-4o", success=True)
 
         # On 429 error
         try:
@@ -288,21 +274,14 @@ class QuotaManager:
     def __init__(
         self,
         *,
-        daily_budget_usd: float | None = None,
         rate_limits: dict[str, int] | None = None,
         rate_limit_window: float = 60.0,
         enable_adaptive_backoff: bool = True,
         backoff_base_delay: float = 1.0,
         backoff_max_delay: float = 60.0,
     ) -> None:
-        self._daily_budget = daily_budget_usd
         self._rate_limits = rate_limits or {}
         self._rate_limit_window = rate_limit_window
-
-        # Daily spend tracking
-        self._daily_spend: float = 0.0
-        self._spend_reset_date: date = datetime.now(UTC).date()
-        self._spend_lock = threading.Lock()
 
         # Rate limiters per model
         self._limiters: dict[str, RateLimiter] = {}
@@ -323,22 +302,6 @@ class QuotaManager:
             else None
         )
 
-    def check_budget_available(self, cost_usd: float) -> bool:
-        """Check if the daily budget has room for the estimated cost.
-
-        Args:
-            cost_usd: Estimated cost of the request in USD.
-
-        Returns:
-            True if budget is available, False if exceeded.
-        """
-        if self._daily_budget is None:
-            return True
-
-        with self._spend_lock:
-            self._maybe_reset_daily_spend()
-            return self._daily_spend + cost_usd <= self._daily_budget
-
     def check_rate_limit_available(self, model: str) -> bool:
         """Check if a request is within the rate limit for the model.
 
@@ -354,46 +317,28 @@ class QuotaManager:
 
         return limiter.is_allowed(model)
 
-    def check_quota_before_request(self, model: str, estimated_cost: float = 0.0) -> None:
-        """Check all quota constraints before making a request.
+    def check_quota_before_request(self, model: str) -> None:
+        """Check rate-limit constraints before making a request.
 
         Raises:
-            BudgetExceededError: If daily budget would be exceeded.
             RateLimitError: If rate limit would be exceeded.
 
         Args:
             model: Model identifier.
-            estimated_cost: Estimated cost of the request in USD.
         """
-        # Check budget
-        if not self.check_budget_available(estimated_cost):
-            raise BudgetExceededError(
-                f"Daily budget of ${self._daily_budget:.2f} would be exceeded. "
-                f"Current spend: ${self._daily_spend:.2f}, "
-                f"Requested: ${estimated_cost:.2f}"
-            )
-
-        # Check rate limit
         if not self.check_rate_limit_available(model):
             raise RateLimitError(
                 f"Rate limit exceeded for model '{model}'. "
                 f"Limit: {self._rate_limits.get(model, 0)} requests/{self._rate_limit_window}s"
             )
 
-    def record_request(self, model: str, cost_usd: float, success: bool = True) -> None:
+    def record_request(self, model: str, success: bool = True) -> None:
         """Record a completed request.
 
         Args:
             model: Model identifier.
-            cost_usd: Actual cost of the request in USD.
             success: Whether the request succeeded (used for backoff reset).
         """
-        # Record cost
-        with self._spend_lock:
-            self._maybe_reset_daily_spend()
-            self._daily_spend += cost_usd
-
-        # Record rate limit
         limiter = self._limiters.get(model)
         if limiter:
             limiter.record(model)
@@ -401,14 +346,6 @@ class QuotaManager:
         # Reset backoff on success
         if success and self._backoff:
             self._backoff.reset(model)
-
-        logger.debug(
-            "Quota: recorded request for %s (cost=$%.4f, daily_spend=$%.4f/%s)",
-            model,
-            cost_usd,
-            self._daily_spend,
-            f"${self._daily_budget:.2f}" if self._daily_budget else "unlimited",
-        )
 
     def record_rate_limit_error(self, model: str) -> None:
         """Record a 429 (rate limit) error for adaptive backoff.
@@ -439,29 +376,6 @@ class QuotaManager:
 
         return self._backoff.get_delay(model)
 
-    def get_daily_spend(self) -> float:
-        """Get the current daily spend.
-
-        Returns:
-            Total spend for the current day in USD.
-        """
-        with self._spend_lock:
-            self._maybe_reset_daily_spend()
-            return self._daily_spend
-
-    def get_budget_remaining(self) -> float | None:
-        """Get the remaining daily budget.
-
-        Returns:
-            Remaining budget in USD, or None if no budget is configured.
-        """
-        if self._daily_budget is None:
-            return None
-
-        with self._spend_lock:
-            self._maybe_reset_daily_spend()
-            return max(0.0, self._daily_budget - self._daily_spend)
-
     def get_rate_limit_remaining(self, model: str) -> int | None:
         """Get the remaining requests for a model's rate limit.
 
@@ -477,12 +391,6 @@ class QuotaManager:
 
         return limiter.get_remaining(model)
 
-    def reset_daily_spend(self) -> None:
-        """Manually reset the daily spend counter (for testing)."""
-        with self._spend_lock:
-            self._daily_spend = 0.0
-            self._spend_reset_date = datetime.now(UTC).date()
-
     def reset_rate_limits(self, model: str | None = None) -> None:
         """Reset rate limit counters.
 
@@ -497,18 +405,6 @@ class QuotaManager:
             if limiter:
                 limiter.reset(model)
 
-    def _maybe_reset_daily_spend(self) -> None:
-        """Reset daily spend if a new day has started (internal, not thread-safe)."""
-        today = datetime.now(UTC).date()
-        if today > self._spend_reset_date:
-            logger.info(
-                "Daily spend reset: $%.4f -> $0.00 (new day: %s)",
-                self._daily_spend,
-                today.isoformat(),
-            )
-            self._daily_spend = 0.0
-            self._spend_reset_date = today
-
 
 def create_quota_manager_from_config() -> QuotaManager | None:
     """Create a QuotaManager from framework configuration.
@@ -516,15 +412,12 @@ def create_quota_manager_from_config() -> QuotaManager | None:
     Returns:
         QuotaManager instance if quota management is enabled, None otherwise.
     """
-    from fireflyframework_agentic.config import get_config
-
     cfg = get_config()
 
     if not cfg.quota_enabled:
         return None
 
     return QuotaManager(
-        daily_budget_usd=cfg.quota_budget_daily_usd,
         rate_limits=cfg.quota_rate_limits,
         enable_adaptive_backoff=cfg.quota_adaptive_backoff,
     )

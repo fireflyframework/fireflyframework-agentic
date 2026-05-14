@@ -121,11 +121,35 @@ class PromptCacheMiddleware:
         self,
         *,
         cache_system_prompt: bool = True,
+        cache_last_message: bool = True,
+        cache_tool_definitions: bool = False,
         cache_min_tokens: int = 1024,
         cache_ttl_seconds: int = 300,
         enabled: bool = True,
     ) -> None:
+        """
+        Args:
+            cache_system_prompt: Cache the system prompt block (Anthropic).
+                Reduces per-call cost when the system prompt is large and
+                reused across calls (extractor, judge, classifier, ...).
+            cache_last_message: Cache the last user message block
+                (Anthropic). Useful when the same large content (e.g. a
+                document) is sent across multiple agent calls within the
+                cache TTL window.
+            cache_tool_definitions: Cache the tool definitions block
+                (Anthropic). Off by default — only valuable when the
+                agent has many tools.
+            cache_min_tokens: Documented minimum for caching to be
+                cost-effective; informational only at the moment, the
+                provider enforces its own minimum.
+            cache_ttl_seconds: 300 -> 5m, 3600 -> 1h. Mapped to
+                Anthropic's `"5m"`/`"1h"` settings; any other value
+                rounds to `"5m"`.
+            enabled: Master switch.
+        """
         self._cache_system_prompt = cache_system_prompt
+        self._cache_last_message = cache_last_message
+        self._cache_tool_definitions = cache_tool_definitions
         self._cache_min_tokens = cache_min_tokens
         self._cache_ttl_seconds = cache_ttl_seconds
         self._enabled = enabled
@@ -204,27 +228,59 @@ class PromptCacheMiddleware:
     async def _configure_anthropic_caching(self, context: Any) -> None:
         """Configure Anthropic-specific prompt caching.
 
-        Anthropic uses `cache_control` breakpoints to mark cacheable content.
-        System prompts are automatically cached when they meet minimum token requirements.
+        Translates the middleware's options into pydantic-ai's
+        ``model_settings`` so the Anthropic provider injects
+        ``cache_control`` breakpoints on the right blocks:
+
+        * ``anthropic_cache_instructions`` -- caches the (last) system
+          prompt block.
+        * ``anthropic_cache_messages`` -- caches the last user-message
+          content block, useful when the same document or context is
+          replayed across calls.
+        * ``anthropic_cache_tool_definitions`` -- caches the last tool
+          definition.
+
+        TTL: 300s -> ``"5m"``, 3600s -> ``"1h"``. Anything else falls
+        back to ``"5m"``.
 
         Args:
-            context: Middleware context.
+            context: Middleware context. We append into its
+                ``kwargs["model_settings"]`` so pydantic-ai's Anthropic
+                provider sees the settings on the next ``Agent.run``.
+                If the caller already provided ``model_settings`` we
+                merge into it without overwriting existing keys.
         """
-        if not self._cache_system_prompt:
+        if not any(
+            (
+                self._cache_system_prompt,
+                self._cache_last_message,
+                self._cache_tool_definitions,
+            )
+        ):
             return
 
-        # Store caching configuration in metadata for Pydantic AI agent
-        # The actual caching is handled by the Anthropic provider
-        if not hasattr(context, "metadata"):
-            context.metadata = {}
+        ttl: Any = "1h" if self._cache_ttl_seconds >= 3600 else "5m"
 
-        context.metadata["_prompt_cache_enabled"] = True
-        context.metadata["_cache_min_tokens"] = self._cache_min_tokens
+        if not hasattr(context, "kwargs") or context.kwargs is None:
+            context.kwargs = {}
+        settings = context.kwargs.get("model_settings")
+        if not isinstance(settings, dict):
+            settings = {}
+            context.kwargs["model_settings"] = settings
+
+        if self._cache_system_prompt:
+            settings.setdefault("anthropic_cache_instructions", ttl)
+        if self._cache_last_message:
+            settings.setdefault("anthropic_cache_messages", ttl)
+        if self._cache_tool_definitions:
+            settings.setdefault("anthropic_cache_tool_definitions", ttl)
 
         logger.debug(
-            "PromptCacheMiddleware: Enabled Anthropic prompt caching (min_tokens=%d, ttl=%ds)",
-            self._cache_min_tokens,
-            self._cache_ttl_seconds,
+            "PromptCacheMiddleware: Anthropic cache configured (system=%s, last_msg=%s, tools=%s, ttl=%s)",
+            self._cache_system_prompt,
+            self._cache_last_message,
+            self._cache_tool_definitions,
+            ttl,
         )
 
     async def _configure_openai_caching(self, context: Any) -> None:
