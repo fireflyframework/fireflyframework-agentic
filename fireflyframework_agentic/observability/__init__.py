@@ -14,16 +14,32 @@
 
 """Observability subpackage -- tracing, metrics, events, and exporters."""
 
+from fireflyframework_agentic.observability.budget import (
+    BudgetGate,
+    BudgetMode,
+    BudgetRule,
+    BudgetWindow,
+    ScopeContext,
+)
 from fireflyframework_agentic.observability.cost import (
-    CostCalculator,
-    GenAIPricesCostCalculator,
-    StaticPriceCostCalculator,
-    get_cost_calculator,
+    DEFAULT_RESOLVERS,
+    CostContext,
+    genai_prices_cost,
+    provider_reported_cost,
+    resolve_cost,
 )
 from fireflyframework_agentic.observability.decorators import metered, traced
 from fireflyframework_agentic.observability.events import FireflyEvent, FireflyEvents, default_events
 from fireflyframework_agentic.observability.exporters import ProviderBundle, configure_exporters
 from fireflyframework_agentic.observability.metrics import FireflyMetrics, default_metrics
+from fireflyframework_agentic.observability.sinks import (
+    CostSink,
+    EventBusSink,
+    JSONLFileSink,
+    LoggingSink,
+    OTelMetricsSink,
+    WebhookSink,
+)
 from fireflyframework_agentic.observability.tracer import (
     FireflyTracer,
     default_tracer,
@@ -39,26 +55,38 @@ from fireflyframework_agentic.observability.usage import (
 )
 
 __all__ = [
-    "CostCalculator",
+    "BudgetGate",
+    "BudgetMode",
+    "BudgetRule",
+    "BudgetWindow",
+    "CostContext",
+    "CostSink",
+    "DEFAULT_RESOLVERS",
+    "EventBusSink",
     "FireflyEvent",
     "FireflyEvents",
     "FireflyMetrics",
     "FireflyTracer",
-    "GenAIPricesCostCalculator",
+    "JSONLFileSink",
+    "LoggingSink",
+    "OTelMetricsSink",
     "ProviderBundle",
-    "StaticPriceCostCalculator",
+    "ScopeContext",
     "UsageRecord",
     "UsageSummary",
     "UsageTracker",
+    "WebhookSink",
     "configure_exporters",
     "default_events",
     "default_metrics",
     "default_tracer",
     "default_usage_tracker",
     "extract_trace_context",
-    "get_cost_calculator",
+    "genai_prices_cost",
     "inject_trace_context",
     "metered",
+    "provider_reported_cost",
+    "resolve_cost",
     "trace_context_scope",
     "traced",
 ]

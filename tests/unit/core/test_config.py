@@ -10,18 +10,8 @@ from fireflyframework_agentic.config import FireflyAgenticConfig
 
 class TestConfigValidation:
     def test_valid_config(self) -> None:
-        cfg = FireflyAgenticConfig(
-            budget_limit_usd=10.0,
-            budget_alert_threshold_usd=5.0,
-        )
+        cfg = FireflyAgenticConfig(budget_limit_usd=10.0)
         assert cfg.budget_limit_usd == 10.0
-
-    def test_alert_exceeds_limit_raises(self) -> None:
-        with pytest.raises(ValidationError, match="budget_alert_threshold_usd"):
-            FireflyAgenticConfig(
-                budget_limit_usd=5.0,
-                budget_alert_threshold_usd=10.0,
-            )
 
     def test_chunk_overlap_exceeds_size_raises(self) -> None:
         with pytest.raises(ValidationError, match="default_chunk_overlap"):
@@ -37,6 +27,14 @@ class TestConfigValidation:
     def test_default_config_is_valid(self) -> None:
         cfg = FireflyAgenticConfig()
         assert cfg.qos_consistency_runs >= 2
+
+    def test_removed_cost_calculator_field_raises(self) -> None:
+        with pytest.raises(ValidationError, match="Removed cost-tracking config fields"):
+            FireflyAgenticConfig(cost_calculator="auto")
+
+    def test_removed_budget_alert_threshold_field_raises(self) -> None:
+        with pytest.raises(ValidationError, match="Removed cost-tracking config fields"):
+            FireflyAgenticConfig(budget_alert_threshold_usd=5.0)
 
 
 class TestConfigAuthAndUsageFields:

@@ -229,7 +229,7 @@ class TestCostGuardMiddleware:
         tracker._cumulative_cost = 10.0
         mw = CostGuardMiddleware(budget_usd=5.0, tracker=tracker)
         ctx = MiddlewareContext(agent_name="test", prompt="hello")
-        with pytest.raises(BudgetExceededError, match="Budget exceeded"):
+        with pytest.raises(BudgetExceededError, match=r"Budget '.*' exceeded"):
             await mw.before_run(ctx)
 
     async def test_allows_under_budget(self) -> None:
@@ -333,7 +333,7 @@ class TestCostGuardCircuitBreaker:
         tracker = _FakeTracker(cost=10.0)
         mw = CostGuardMiddleware(budget_usd=5.0, tracker=tracker, warn_only=False)
         ctx = MiddlewareContext(agent_name="test", prompt="hi")
-        with pytest.raises(BudgetExceededError, match="Budget exceeded"):
+        with pytest.raises(BudgetExceededError, match=r"Budget '.*' exceeded"):
             await mw.before_run(ctx)
 
     async def test_per_call_limit_blocks(self):
