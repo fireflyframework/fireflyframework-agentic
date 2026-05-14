@@ -27,7 +27,7 @@ from fireflyframework_agentic.observability.budget import (
     BudgetRule,
     BudgetWindow,
 )
-from fireflyframework_agentic.observability.cost import CostContext
+from fireflyframework_agentic.observability.cost_resolvers import CostContext
 from fireflyframework_agentic.observability.usage import UsageTracker
 
 _INPUT_PRICE = 1e-4
