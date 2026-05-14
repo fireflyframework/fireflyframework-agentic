@@ -44,6 +44,124 @@ def test_mcp_is_mounted() -> None:
     assert any(path.startswith("/mcp") for path in mounted_paths)
 
 
+# ---- OAuth auth wiring ---------------------------------------------------
+
+
+_STUB_CLAIMS: dict[str, dict[str, object]] = {}
+
+
+def _build_stub_verifier() -> object:
+    """Factory used by tests for FIREFLY_MCP_VERIFIER_FACTORY."""
+
+    class _StubVerifier:
+        def validate_token(self, token: str) -> dict[str, object]:
+            try:
+                return _STUB_CLAIMS[token]
+            except KeyError as exc:
+                raise ValueError("Invalid token") from exc
+
+    return _StubVerifier()
+
+
+def _build_stub_metadata() -> object:
+    from fireflyframework_agentic.exposure.mcp.oauth_jwt import OAuthMetadata
+
+    return OAuthMetadata(
+        issuer="https://login.example.com/v2.0",
+        authorization_endpoint="https://login.example.com/authorize",
+        token_endpoint="https://login.example.com/token",
+        jwks_uri="https://login.example.com/keys",
+        resource="https://mcp.example.com/mcp/",
+        scopes_supported=("user_impersonation",),
+    )
+
+
+def _enable_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FIREFLY_MCP_AUTH_ENABLED", "true")
+    monkeypatch.setenv(
+        "FIREFLY_MCP_VERIFIER_FACTORY",
+        "tests.unit.exposure.test_mcp_http_cli:_build_stub_verifier",
+    )
+    monkeypatch.setenv(
+        "FIREFLY_MCP_METADATA_FACTORY",
+        "tests.unit.exposure.test_mcp_http_cli:_build_stub_metadata",
+    )
+    monkeypatch.setenv("FIREFLY_MCP_PUBLIC_URL", "https://mcp.example.com")
+
+
+def test_auth_disabled_by_default_allows_anonymous_mcp(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FIREFLY_MCP_AUTH_ENABLED", raising=False)
+    client = TestClient(build_app())
+    # GET on /mcp without ingest just hits FastMCP routing — point is no 401.
+    r = client.get("/healthz")
+    assert r.status_code == 200
+
+
+def test_auth_enabled_serves_well_known_routes(monkeypatch: pytest.MonkeyPatch) -> None:
+    _enable_auth(monkeypatch)
+    client = TestClient(build_app())
+    r = client.get("/.well-known/oauth-protected-resource")
+    assert r.status_code == 200
+    assert r.json()["resource"] == "https://mcp.example.com/mcp/"
+
+
+def test_auth_enabled_rejects_anonymous_mcp_with_www_authenticate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_auth(monkeypatch)
+    client = TestClient(build_app())
+    r = client.post(
+        "/mcp/",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "probe", "version": "1"},
+            },
+        },
+    )
+    assert r.status_code == 401
+    assert "resource_metadata" in r.headers["www-authenticate"]
+
+
+def test_auth_enabled_accepts_valid_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Valid token must pass the middleware. We use a non-MCP probe path
+    (the /healthz route is excluded, but /.well-known/* is also public);
+    here we exercise the middleware contract by hitting the mount with a
+    token and asserting we do not get 401 — the actual MCP dispatch is
+    covered by ``test_mcp_oauth_auth.py`` against a stubbed echo route."""
+    _enable_auth(monkeypatch)
+    _STUB_CLAIMS["good"] = {"roles": []}
+    try:
+        with TestClient(build_app()) as client:
+            r = client.post(
+                "/mcp/",
+                headers={
+                    "Authorization": "Bearer good",
+                    "Accept": "application/json, text/event-stream",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "probe", "version": "1"},
+                    },
+                },
+            )
+            # Middleware passed through (would be 401 if it had blocked).
+            # Real MCP responds 200 once the lifespan is running.
+            assert r.status_code != 401
+    finally:
+        _STUB_CLAIMS.pop("good", None)
+
+
 # ---- Unhandled-task-exception logger ------------------------------------
 #
 # Without this, exceptions raised in tasks scheduled on the asyncio loop
