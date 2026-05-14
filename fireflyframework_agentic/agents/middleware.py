@@ -50,6 +50,12 @@ class MiddlewareContext:
         deps: The dependencies object.
         kwargs: Extra keyword arguments passed to ``run()``.
         metadata: Arbitrary dict for middleware to share state across hooks.
+        model: The model identifier the agent will call (e.g.
+            ``"anthropic:claude-sonnet-4-6"``). Populated by
+            :meth:`FireflyAgent.run` so middleware can detect the
+            provider without reaching back into the agent.
+        context: Optional :class:`AgentContext` carrying correlation /
+            experiment ids.
     """
 
     agent_name: str
@@ -58,6 +64,7 @@ class MiddlewareContext:
     deps: Any = None
     kwargs: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
+    model: str = ""
     context: Any = None
 
 

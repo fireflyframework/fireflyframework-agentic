@@ -168,7 +168,7 @@ agentic loop runs:
    most importantly **`find_similar(value=…)`** which finds rows
    whose value contains the user's literal string, case-insensitively
    and accent-folded. Crucially, `find_similar` tokenises the value:
-   *"Javier Alvarez"* matches *"Francisco Javier Álvarez Fernández"*
+   *"Sam Lee"* matches *"Patrick Ulric Bréwster Fernández"*
    even though no single SQL `=` or naive `LIKE` would.
 3. Once the LLM is confident, it calls `run_select(sql)` with the
    final SELECT. The query is sandboxed (SELECT-only, errors are
@@ -182,7 +182,7 @@ The result is one of three things:
 - **empty** — the SELECT was syntactically fine but matched nothing.
   The "probe trail" — every `inspect_table` call the LLM made — is
   preserved and forwarded to the answerer, so the user can be told
-  *"no exact match for 'Javier Alvarez', but the closest names I
+  *"no exact match for 'Sam Lee', but the closest names I
   found are: …"*. This is exactly the "did you mean" experience.
 - **unsupported** — the LLM decided the question is out of scope of
   the available schemas (no relevant table) or every attempt errored
@@ -247,8 +247,8 @@ That cost is sunk; everything afterwards is cheap.
   thousands of times.
 - **Fuzzy entity matching on tables.** `find_similar` with
   accent-folding + token-AND/OR catches the kinds of human-typed
-  variations that crash a literal SQL `=`: *"Javier Alvarez"* →
-  *"Francisco Javier Álvarez Fernández Aragón"*. The answerer can
+  variations that crash a literal SQL `=`: *"Sam Lee"* →
+  *"Patrick Ulric Bréwster Häthaway Önken"*. The answerer can
   prepend *"no exact match, but here are the closest names"* and
   still return the row.
 - **Citations.** Every claim in the final answer is anchored to a
@@ -266,7 +266,7 @@ optionally, a small SQL query**. It struggles in roughly four shapes.
 
 ### 1. Multi-hop reasoning across documents
 
-*"Who did the manager of Javier Alvarez sign the 2024 services deal
+*"Who did the manager of Sam Lee sign the 2024 services deal
 with?"* — this needs (a) find Javier, (b) find his manager, (c) find
 the manager's signed deals, (d) extract the counterparty. The
 structured path can handle (a)–(c) only if all three relationships

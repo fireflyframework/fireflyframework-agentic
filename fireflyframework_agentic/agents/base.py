@@ -253,6 +253,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             method="run",
             deps=deps,
             kwargs=kwargs,
+            model=self._model_identifier,
             context=context,
         )
         await self._middleware.run_before(mw_ctx)
@@ -298,6 +299,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             method="run_sync",
             deps=deps,
             kwargs=kwargs,
+            model=self._model_identifier,
             context=context,
         )
         if len(self._middleware) > 0:
@@ -357,6 +359,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             method="run_stream",
             deps=deps,
             kwargs=kwargs,
+            model=self._model_identifier,
             context=context,
         )
         await self._middleware.run_before(mw_ctx)
@@ -437,7 +440,10 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             input_tokens = getattr(usage, "input_tokens", 0) or 0
             output_tokens = getattr(usage, "output_tokens", 0) or 0
             request_count = getattr(usage, "requests", 0) or 0
-            cache_creation = getattr(usage, "cache_creation_tokens", 0) or 0
+            # pydantic-ai's ``Usage`` exposes ``cache_write_tokens`` (the
+            # number of tokens written to the prompt cache); fall back to
+            # ``cache_creation_tokens`` for older SDKs that used that name.
+            cache_creation = getattr(usage, "cache_write_tokens", 0) or getattr(usage, "cache_creation_tokens", 0) or 0
             cache_read = getattr(usage, "cache_read_tokens", 0) or 0
 
             default_usage_tracker.record_call(
@@ -505,6 +511,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             method="run_with_reasoning",
             deps=None,
             kwargs=kwargs,
+            model=self._model_identifier,
             context=context,
         )
         await self._middleware.run_before(mw_ctx)
