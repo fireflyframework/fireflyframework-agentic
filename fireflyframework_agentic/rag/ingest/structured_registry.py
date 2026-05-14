@@ -29,11 +29,20 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
-from fireflyframework_agentic.agents.templates import create_extractor_agent
+from fireflyframework_agentic.agents.base import FireflyAgent
 from fireflyframework_agentic.rag.corpus import SqliteCorpus
 
-from .structured_pipeline import _normalize_sheet_name
-from .structured_schema import SchemaFeedback, TargetSchema
+from .structured_pipeline import (
+    _HEADER_SCAN_ROWS,
+    _normalize_sheet_name,
+    _pick_header_row_idx,
+)
+from .structured_schema import SchemaFeedback, TableSpec, TargetSchema
+
+# Re-exported for tests that import them from this module — moved to
+# structured_pipeline.py so discovery and ingestion share one
+# definition of "which row is the header in an Excel sheet."
+__all__ = ["_HEADER_SCAN_ROWS", "_pick_header_row_idx"]
 
 try:
     import openpyxl as _openpyxl
@@ -118,7 +127,18 @@ _SKILL = (
     "- nullable: false only if every sample row has a non-empty value.\n"
     "- primary_key: true if the column looks like a unique identifier "
     "(named 'id' or ending in '_id', sequential integers with no duplicates).\n"
-    "- At most one primary key per table.\n\n"
+    "- Multiple columns can be marked primary_key — they form a composite "
+    "primary key. Use this when the unique row identity is a combination of "
+    "columns (e.g. (customer_id, period) on a monthly-metrics table, "
+    "or (employee_id, route) on a per-route activity table where an "
+    "employee can appear in multiple rows for different routes). When "
+    "the sample shows duplicates on a single candidate ID column, the "
+    "real key is almost always composite — pair it with the discriminating "
+    "column rather than leaving the table keyless.\n"
+    "- Leave every column primary_key=false when no combination of columns "
+    "would yield a unique row. A table with no primary key is still a valid "
+    "table and MUST appear in the schema; the absence of a PK is a property "
+    "of the columns, not a reason to drop the table from the output.\n\n"
     "**Foreign keys (only when multiple tables are present):**\n"
     "- Set foreign_key to '<table>.<column>' when a column's values plausibly "
     "reference another table's primary key. Common signals: column ends in "
@@ -126,7 +146,8 @@ _SKILL = (
     "prefix (e.g. customer_id → customers.id).\n"
     "- Do not invent references across unrelated tables; leave foreign_key "
     "null when the relationship is not clearly supported by names + types.\n"
-    "- A column that is itself a primary_key must NOT also be a foreign_key.\n\n"
+    "- A column that is itself a primary_key (or part of a composite "
+    "primary key) must NOT also be a foreign_key.\n\n"
     "**Multi-sheet Excel / multi-file folders:** One TableSpec per source "
     "(sheet or file). Skip sources where all sample rows are empty."
 )
@@ -184,55 +205,41 @@ def _excel_sample(path: Path) -> str:
         raise RuntimeError("openpyxl is required for Excel files: pip install openpyxl")
     wb = _openpyxl.load_workbook(path, read_only=True, data_only=True)  # type: ignore[union-attr]
     parts: list[str] = []
-    # Pull a few extra rows so banner-row detection (below) has room to
-    # look past the title / spacer / column-number rows real-world Excel
-    # files often have before the actual headers.
-    scan_budget = _SAMPLE_ROWS + 6
+    # Pull enough rows for both header detection (first _HEADER_SCAN_ROWS)
+    # and the sample window (_SAMPLE_ROWS + 1 after the picked header).
+    scan_budget = _HEADER_SCAN_ROWS + _SAMPLE_ROWS + 1
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
         all_rows = list(ws.iter_rows(values_only=True))[:scan_budget]
         if not all_rows:
             continue
-        header_idx = _pick_header_row_idx(all_rows[:8])
+        header_idx = _pick_header_row_idx(all_rows[:_HEADER_SCAN_ROWS])
         rows = all_rows[header_idx : header_idx + _SAMPLE_ROWS + 1]
         if not rows:
             continue
+        # Skip sheets with no usable header — feeding the LLM
+        # ``Headers: [None, None, None]`` blocks is what makes it return
+        # ``{}`` on messy multi-sheet workbooks where one sheet is
+        # essentially blank. ≥2 non-null cells AND ≥1 string is the
+        # minimum bar for a header that's worth including.
+        header = list(rows[0])
+        non_null = [v for v in header if v is not None]
+        string_count = sum(1 for v in non_null if isinstance(v, str))
+        if len(non_null) < 2 or string_count == 0:
+            log.warning(
+                "schema discovery: skipping sheet %r in %s — no usable header row "
+                "found within the first %d rows (header preview: %r)",
+                sheet_name,
+                path.name,
+                _HEADER_SCAN_ROWS,
+                header[:8],
+            )
+            continue
         name = _normalize_sheet_name(sheet_name)
-        lines = [f"Sheet (table): {name}", f"Headers: {list(rows[0])}"]
+        lines = [f"Sheet (table): {name}", f"Headers: {header}"]
         lines += [f"  {list(r)}" for r in rows[1:]]
         parts.append("\n".join(lines))
     return "\n\n".join(parts)
-
-
-def _pick_header_row_idx(candidate_rows: list[tuple[Any, ...]]) -> int:
-    """Choose the row in *candidate_rows* most likely to be the real header.
-
-    Heuristic, in order:
-      1. Skip empty / one-cell title rows.
-      2. Prefer the first row dominated by *string* cells (real headers
-         in Excel are almost always strings, not integers). This catches
-         the common "section numbers banner above text headers" pattern
-         where row 0 reads ``[None, None, 1, 2, 3, ...]`` and row 1 reads
-         ``['PRID', 'EMPLOYEE_ID', 'NAME', ...]``.
-      3. Fall back to the first row with ≥2 non-null cells.
-
-    Returns 0 when no row passes any test (so the existing behaviour for
-    well-formed sheets is preserved).
-    """
-    # 1. First non-trivial row.
-    multi_cell = [(i, r) for i, r in enumerate(candidate_rows) if sum(1 for v in r if v is not None) >= 2]
-    if not multi_cell:
-        return 0
-    # 2. String-dominated row (more than half of non-null cells are strings).
-    for i, r in multi_cell:
-        non_null = [v for v in r if v is not None]
-        if not non_null:
-            continue
-        string_count = sum(1 for v in non_null if isinstance(v, str))
-        if string_count * 2 > len(non_null):
-            return i
-    # 3. Fallback: first multi-cell row.
-    return multi_cell[0][0]
 
 
 def _sample_for(path: Path) -> str:
@@ -255,6 +262,102 @@ def _multi_file_sample(paths: list[Path]) -> str:
     return "\n\n".join(parts)
 
 
+def _make_discovery_agent(model: str | Any) -> FireflyAgent[Any, TargetSchema]:
+    """Build the schema-discovery agent.
+
+    Uses ``FireflyAgent`` directly with ``_SKILL`` as the *full*
+    instructions rather than going through ``create_extractor_agent``.
+    The extractor template's preamble ("If a field cannot be found,
+    return null. Do not infer or hallucinate values.") conflicts with
+    schema discovery, where ``tables`` cannot be null and the model
+    must produce *some* best-effort interpretation of every sheet —
+    that conflict was the proximate cause of empty-``{}`` outputs on
+    messy real-world workbooks.
+    """
+    return FireflyAgent(
+        "schema_discovery",
+        model=model,
+        instructions=_SKILL,
+        output_type=TargetSchema,
+        description="Infers a relational TargetSchema from tabular samples.",
+        tags=("rag", "ingest", "structured", "schema"),
+        auto_register=False,
+    )
+
+
+_RETRY_NUDGE = (
+    "\n\nIMPORTANT: your previous response contained no tables. The "
+    "output contract above is binding — produce a non-empty TargetSchema "
+    "with one TableSpec per sheet/file in the sample, even on messy or "
+    "ambiguous data. Empty is not an option."
+)
+
+
+async def _run_with_retry_on_empty(agent: Any, prompt: str) -> TargetSchema:
+    """Run the discovery agent; on an empty result, retry once with a
+    short nudge. The LLM is non-deterministic on borderline-messy inputs
+    (the same sample produces a non-empty schema on most runs and ``{}``
+    on a minority). One retry is cheap and turns a flaky pass rate into
+    a reliable one without changing the failure semantics of the safety
+    net: if the second attempt is also empty, we still raise the
+    diagnostic ValueError so the user sees a clear actionable error
+    rather than silent corruption.
+    """
+    result = await agent.run(prompt)
+    schema: TargetSchema = result.output
+    if schema.tables:
+        return schema
+    log.warning("schema discovery returned empty schema; retrying once with explicit nudge")
+    result = await agent.run(prompt + _RETRY_NUDGE)
+    return result.output  # caller checks .tables and raises if still empty
+
+
+def _empty_schema_diagnostic(
+    label: str,
+    sample: str,
+    *,
+    previous_schema: TargetSchema | None = None,
+    corrections: str = "",
+) -> str:
+    """Build a human-friendly error for ``schema.tables == []`` cases.
+
+    Includes a truncated sample so the user can see what the model saw
+    without flooding the error stream (real samples are ~10 KB). When
+    the empty schema came out of a *refinement* call (previous_schema
+    non-empty), the diagnostic frames it differently: the model
+    discarded the validated baseline rather than failing to find one.
+    """
+    preview = sample[:1800] + ("…" if len(sample) > 1800 else "")
+    if previous_schema is not None and previous_schema.tables:
+        prior_names = ", ".join(t.name for t in previous_schema.tables)
+        return (
+            f"schema discovery refinement returned an empty schema for "
+            f"{label}, discarding the {len(previous_schema.tables)}-table "
+            f"baseline you already validated ({prior_names}). The model "
+            "should have carried those tables forward and only edited the "
+            "ones your corrections targeted. "
+            "Fix options: (1) the MCP host can fall back to the previous "
+            "schema and apply the corrections programmatically (the "
+            "TargetSchema dict is editable); (2) re-issue "
+            "discover_corpus_schema with a narrower correction string "
+            "that targets one table at a time. "
+            f"\n\nCorrections that triggered this:\n{corrections}"
+            f"\n\nSample sent to the model (truncated to 1800 chars):\n{preview}"
+        )
+    return (
+        f"schema discovery produced an empty schema for {label}. "
+        "The model could not infer any tables from the sampled rows — "
+        "this usually means the sheets are non-tabular (pivot reports, "
+        "dashboards, merged-cell layouts) or the real headers sit past "
+        "the scan window. "
+        "Fix options: (1) re-save each sheet as a flat CSV with headers "
+        "in row 1 and retry; (2) call discover_corpus_schema again with "
+        "`corrections=<free-text description of the table structure>` so "
+        "the model gets explicit guidance.\n\n"
+        f"Sample sent to the model (truncated to 1800 chars):\n{preview}"
+    )
+
+
 async def discover_schema(
     path: Path,
     *,
@@ -266,26 +369,41 @@ async def discover_schema(
 
     When *corrections* and *previous_schema* are provided the agent is asked to
     refine *previous_schema* according to the supplied corrections.
+
+    Raises ``ValueError`` (wrapped to ``ToolError`` upstream) when the
+    LLM returns an empty schema — pydantic-ai no longer retries this
+    case because ``TargetSchema.tables`` defaults to ``[]``.
     """
-    agent = create_extractor_agent(
-        TargetSchema,
-        name="schema_discovery",
-        model=model,
-        extra_instructions=_SKILL,
-        auto_register=False,
-    )
+    agent = _make_discovery_agent(model)
     sample = _sample_for(path)
     if corrections and previous_schema is not None:
         prompt = (
             f"File: {path.name}\n\n{sample}\n\n"
             f"Previous schema attempt:\n{previous_schema.model_dump_json(indent=2)}\n\n"
             f"User corrections:\n{corrections}\n\n"
-            "Produce a corrected schema addressing the user's corrections."
+            "Produce a corrected schema addressing the user's corrections. "
+            "Refinement contract: your output MUST contain every table from "
+            "the previous schema that the corrections do not explicitly ask "
+            "you to drop. If a correction says 'drop X' or 'remove X', omit "
+            "that table; otherwise carry it forward — modified per the "
+            "corrections if they target it, unchanged otherwise. Returning "
+            "an empty schema during refinement is never correct: the user "
+            "already validated the previous schema, and the corrections are "
+            "edits on top of it, not a signal to start over."
         )
     else:
         prompt = f"File: {path.name}\n\n{sample}"
-    result = await agent.run(prompt)
-    return result.output
+    schema = await _run_with_retry_on_empty(agent, prompt)
+    if not schema.tables:
+        raise ValueError(
+            _empty_schema_diagnostic(
+                path.name,
+                sample,
+                previous_schema=previous_schema,
+                corrections=corrections,
+            )
+        )
+    return schema
 
 
 async def discover_schema_for_paths(
@@ -304,35 +422,61 @@ async def discover_schema_for_paths(
 
     When *corrections* and *previous_schema* are provided the agent is asked
     to refine *previous_schema* according to the supplied free-text feedback.
+
+    Raises ``ValueError`` when the LLM returns an empty schema. See
+    :func:`discover_schema` for the rationale.
     """
     if not paths:
         return TargetSchema(tables=[])
     if len(paths) == 1:
         return await discover_schema(paths[0], model=model, corrections=corrections, previous_schema=previous_schema)
-    agent = create_extractor_agent(
-        TargetSchema,
-        name="schema_discovery",
-        model=model,
-        extra_instructions=_SKILL,
-        auto_register=False,
-    )
-    sample = _multi_file_sample(paths)
+    # Multi-file: prefer per-file discovery and merge. A single combined
+    # LLM call (one prompt, every sheet of every file concatenated) was
+    # the original design — it let the model propose cross-file foreign
+    # keys — but it is fragile on real workbooks: one messy sheet (dual
+    # pivot, stacked sub-tables) anywhere in the combined sample makes
+    # the model return ``{}`` for the *entire* multi-file output. Per-file
+    # discovery isolates that failure mode to the offending file, and
+    # cross-file FK relationships can be added by the user via a
+    # refinement round with explicit corrections.
     if corrections and previous_schema is not None:
+        # Refinement is intrinsically multi-file (it operates on the
+        # union schema), so keep the original combined-prompt path here.
+        agent = _make_discovery_agent(model)
+        sample = _multi_file_sample(paths)
         prompt = (
             f"You are given {len(paths)} tabular sources.\n\n{sample}\n\n"
             f"Previous schema attempt:\n{previous_schema.model_dump_json(indent=2)}\n\n"
             f"User corrections:\n{corrections}\n\n"
             "Produce a corrected schema addressing the user's corrections. "
-            "Re-evaluate foreign_key relationships in light of the feedback."
+            "Re-evaluate foreign_key relationships in light of the feedback. "
+            "Refinement contract: your output MUST contain every table from "
+            "the previous schema that the corrections do not explicitly ask "
+            "you to drop. If a correction says 'drop X' or 'remove X', omit "
+            "that table; otherwise carry it forward — modified per the "
+            "corrections if they target it, unchanged otherwise. Returning "
+            "an empty schema during refinement is never correct."
         )
-    else:
-        prompt = (
-            f"You are given {len(paths)} tabular sources. Infer one TableSpec "
-            f"per source and propose foreign_key relationships where the data "
-            f"clearly supports them.\n\n{sample}"
-        )
-    result = await agent.run(prompt)
-    return result.output
+        schema = await _run_with_retry_on_empty(agent, prompt)
+        if not schema.tables:
+            label = (
+                f"{len(paths)} tabular sources ({', '.join(p.name for p in paths[:5])}{'…' if len(paths) > 5 else ''})"
+            )
+            raise ValueError(
+                _empty_schema_diagnostic(
+                    label,
+                    sample,
+                    previous_schema=previous_schema,
+                    corrections=corrections,
+                )
+            )
+        return schema
+    # Initial discovery: per-file + merge.
+    merged: list[TableSpec] = []
+    for p in paths:
+        s = await discover_schema(p, model=model)
+        merged.extend(s.tables)
+    return TargetSchema(tables=merged)
 
 
 async def discover_schema_interactive(
