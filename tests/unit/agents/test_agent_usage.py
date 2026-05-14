@@ -26,11 +26,11 @@ from fireflyframework_agentic.observability.usage import UsageTracker
 class _FakeUsage:
     """Simulates pydantic_ai RunUsage."""
 
-    def __init__(self, *, input_tokens=10, output_tokens=5, total_tokens=15, request_count=1):
+    def __init__(self, *, input_tokens=10, output_tokens=5, total_tokens=15, requests=1):
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
         self.total_tokens = total_tokens
-        self.request_count = request_count
+        self.requests = requests
         self.cache_creation_tokens = 0
         self.cache_read_tokens = 0
 
@@ -56,7 +56,7 @@ class TestAgentRecordUsage:
         fake_result = _FakeResult(usage=_FakeUsage(input_tokens=100, output_tokens=50, total_tokens=150))
 
         with patch(
-            "fireflyframework_agentic.observability.usage.default_usage_tracker",
+            "fireflyframework_agentic.agents.base.default_usage_tracker",
             tracker,
         ):
             agent._record_usage(fake_result, 42.0)
@@ -74,7 +74,7 @@ class TestAgentRecordUsage:
         fake_result = _FakeResult(usage=_FakeUsage(total_tokens=50))
 
         with patch(
-            "fireflyframework_agentic.observability.usage.default_usage_tracker",
+            "fireflyframework_agentic.agents.base.default_usage_tracker",
             tracker,
         ):
             agent._record_usage(fake_result, 10.0, correlation_id="pipe-123")
@@ -90,7 +90,7 @@ class TestAgentRecordUsage:
         fake_result = _FakeResult(usage=_FakeUsage(input_tokens=1000, output_tokens=500, total_tokens=1500))
 
         with patch(
-            "fireflyframework_agentic.observability.usage.default_usage_tracker",
+            "fireflyframework_agentic.agents.base.default_usage_tracker",
             tracker,
         ):
             agent._record_usage(fake_result, 100.0)
@@ -108,7 +108,7 @@ class TestAgentRecordUsage:
         fake_result = _FakeResult()
 
         with patch(
-            "fireflyframework_agentic.observability.usage.default_usage_tracker",
+            "fireflyframework_agentic.agents.base.default_usage_tracker",
             tracker,
         ):
             agent._record_usage(fake_result, 10.0)
@@ -125,7 +125,7 @@ class TestAgentRecordUsage:
             output = "hi"
 
         with patch(
-            "fireflyframework_agentic.observability.usage.default_usage_tracker",
+            "fireflyframework_agentic.agents.base.default_usage_tracker",
             tracker,
         ):
             agent._record_usage(_NoUsageResult(), 10.0)
@@ -138,7 +138,7 @@ class TestAgentRecordUsage:
         fake_result = _FakeResult(usage=_FakeUsage(total_tokens=10))
 
         with patch(
-            "fireflyframework_agentic.observability.usage.default_usage_tracker",
+            "fireflyframework_agentic.agents.base.default_usage_tracker",
             tracker,
         ):
             agent._record_usage(fake_result, 5.0)
