@@ -191,8 +191,7 @@ def test_list_corpora_passes_with_any_role_and_sets_contextvar() -> None:
     r = client.post(
         "/mcp",
         headers=_auth("t1"),
-        json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-              "params": {"name": "list_corpora", "arguments": {}}},
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "list_corpora", "arguments": {}}},
     )
     assert r.status_code == 200
 

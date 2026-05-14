@@ -231,9 +231,7 @@ def build_entra_verifier() -> EntraTokenVerifier:
     tenant = os.environ.get("AZURE_TENANT_ID")
     client = os.environ.get("AZURE_CLIENT_ID")
     if not tenant or not client:
-        raise RuntimeError(
-            "build_entra_verifier requires AZURE_TENANT_ID and AZURE_CLIENT_ID"
-        )
+        raise RuntimeError("build_entra_verifier requires AZURE_TENANT_ID and AZURE_CLIENT_ID")
     return EntraTokenVerifier(tenant_id=tenant, audience=f"api://{client}")
 
 
@@ -253,10 +251,7 @@ def build_entra_metadata() -> OAuthMetadata:
     client = os.environ.get("AZURE_CLIENT_ID")
     host = os.environ.get("FIREFLY_MCP_PUBLIC_URL", "").rstrip("/")
     if not tenant or not client or not host:
-        raise RuntimeError(
-            "build_entra_metadata requires AZURE_TENANT_ID, AZURE_CLIENT_ID, "
-            "and FIREFLY_MCP_PUBLIC_URL"
-        )
+        raise RuntimeError("build_entra_metadata requires AZURE_TENANT_ID, AZURE_CLIENT_ID, and FIREFLY_MCP_PUBLIC_URL")
     base = f"https://login.microsoftonline.com/{tenant}"
     return OAuthMetadata(
         issuer=f"{base}/v2.0",
