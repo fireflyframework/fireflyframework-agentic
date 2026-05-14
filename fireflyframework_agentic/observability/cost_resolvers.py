@@ -39,10 +39,12 @@ Alternatives considered:
   — the only authoritative numbers, but lag from minutes (Anthropic
   usage) to ~24h (cost). Use them to reconcile, not to gate live calls.
 
-When you hit a model genai-prices doesn't know, the chain currently
-falls through to ``0.0`` after a one-shot warning + ``cost_unknown``
-metric. That silent-zero is tracked in
-`issue #174 <https://github.com/fireflyframework/fireflyframework-agentic/issues/174>`_.
+When you hit a model genai-prices doesn't know, the chain returns
+``None`` after a WARNING + ``cost_unknown`` metric on every call.
+Consumers (e.g. :class:`~fireflyframework_agentic.observability.usage.UsageTracker`)
+decide whether to coerce ``None`` to ``0.0``, skip the metric, or alert.
+Setting ``FIREFLY_AGENTIC_COST_STRICT=true`` (or ``config.cost_strict``)
+turns unresolved costs into :class:`UnknownModelCostError` instead.
 """
 
 from __future__ import annotations
@@ -55,9 +57,18 @@ from typing import Any
 from genai_prices import Usage as _GenAIUsage  # type: ignore[import-untyped]
 from genai_prices import calc_price  # type: ignore[import-untyped]
 
+from fireflyframework_agentic.config import get_config
 from fireflyframework_agentic.observability.metrics import default_metrics
 
 logger = logging.getLogger(__name__)
+
+
+class UnknownModelCostError(RuntimeError):
+    """Raised by :func:`resolve_cost` in strict mode when no resolver matches."""
+
+    def __init__(self, model: str) -> None:
+        super().__init__(f"No cost resolver could price model '{model}'")
+        self.model = model
 
 
 @dataclass(frozen=True)
@@ -94,14 +105,12 @@ def provider_reported_cost(ctx: CostContext) -> float | None:
     return None
 
 
-_UNKNOWN_MODEL_WARNED: set[str] = set()
+def _warn_unknown_model(model: str) -> None:
+    """Fire WARNING + ``cost_unknown`` metric for every unresolved call.
 
-
-def _warn_unknown_model_once(model: str) -> None:
-    if model in _UNKNOWN_MODEL_WARNED:
-        return
-    _UNKNOWN_MODEL_WARNED.add(model)
-    logger.warning("genai-prices has no entry for model '%s'; cost recorded as 0.0", model)
+    Per-call (no dedup) so dashboards can rate-alert on the metric.
+    """
+    logger.warning("genai-prices has no entry for model '%s'", model)
     try:
         default_metrics.record_error(operation="cost_unknown")
     except Exception:  # noqa: BLE001
@@ -120,7 +129,7 @@ def genai_prices_cost(ctx: CostContext) -> float | None:
         (reasoning tokens bill at the output rate).
 
     On unknown model (LookupError): emits ``cost_unknown`` metric +
-    WARNING once per model, returns None.
+    WARNING on every call, returns None.
     """
     parts = ctx.model.split(":", 1)
     if len(parts) == 2:
@@ -137,7 +146,7 @@ def genai_prices_cost(ctx: CostContext) -> float | None:
     try:
         result = calc_price(usage, model_ref, provider_id=provider)
     except LookupError:
-        _warn_unknown_model_once(ctx.model)
+        _warn_unknown_model(ctx.model)
         return None
     except Exception:  # noqa: BLE001
         logger.debug("genai-prices lookup raised for '%s'", ctx.model, exc_info=True)
@@ -149,11 +158,33 @@ def genai_prices_cost(ctx: CostContext) -> float | None:
 DEFAULT_RESOLVERS: tuple[CostFn, ...] = (provider_reported_cost, genai_prices_cost)
 
 
-def resolve_cost(ctx: CostContext, resolvers: Sequence[CostFn] | None = None) -> float:
-    """Return the first non-None result from the chain, else 0.0."""
+def _strict_mode_from_config() -> bool:
+    try:
+        return bool(get_config().cost_strict)
+    except Exception:  # noqa: BLE001
+        logger.debug("Failed to read cost_strict from config; assuming False", exc_info=True)
+        return False
+
+
+def resolve_cost(
+    ctx: CostContext,
+    resolvers: Sequence[CostFn] | None = None,
+    *,
+    strict: bool | None = None,
+) -> float | None:
+    """Return the first non-None result from the chain, else ``None``.
+
+    When ``strict`` is ``True`` (or unset and
+    ``FIREFLY_AGENTIC_COST_STRICT`` / ``config.cost_strict`` is true),
+    raise :class:`UnknownModelCostError` instead of returning ``None``.
+    """
     chain = resolvers if resolvers is not None else DEFAULT_RESOLVERS
     for fn in chain:
         result = fn(ctx)
         if result is not None:
             return float(result)
-    return 0.0
+    if strict is None:
+        strict = _strict_mode_from_config()
+    if strict:
+        raise UnknownModelCostError(ctx.model)
+    return None
