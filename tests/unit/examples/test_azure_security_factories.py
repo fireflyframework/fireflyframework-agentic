@@ -15,7 +15,7 @@ from examples.corpus_search.azure_security import (
     build_entra_metadata,
     build_entra_verifier,
 )
-from fireflyframework_agentic.exposure.mcp.oauth_jwt import OAuthMetadata
+from fireflyframework_agentic.exposure.mcp.auth import OAuthMetadata
 
 
 def test_verifier_factory_returns_entra_verifier(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,15 +1,20 @@
 # Copyright 2026 Firefly Software Foundation
 # Licensed under the Apache License, Version 2.0.
 
-"""Starlette middleware that gates MCP tool calls behind an OAuth 2.0 / OIDC
-bearer token and App-Roles RBAC.
+"""OAuth 2.0 / OIDC auth for the MCP HTTP exposure.
 
-The middleware is provider-agnostic: it depends on a ``TokenVerifier``
-Protocol (see :mod:`fireflyframework_agentic.exposure.mcp.oauth_jwt`)
-that returns claims, and a ``required_role_fn`` mapping
-``(tool_name, corpus_id) -> role_value`` for App-Roles checks. Concrete
-providers live in ``examples/`` and are injected by
-:mod:`fireflyframework_agentic.exposure.mcp.http_cli` at startup.
+Three responsibilities, all provider-agnostic:
+
+* ``OAuthMetadata`` / ``TokenVerifier`` / ``RequiredRoleFn`` — the types
+  the middleware depends on. Concrete providers (Entra, Okta, …) live in
+  ``examples/`` and are injected by
+  :mod:`fireflyframework_agentic.exposure.mcp.http_cli` at startup.
+* :func:`add_oauth_metadata_routes` — mounts the two public
+  ``/.well-known/`` documents (RFC 9728 + RFC 8414) so MCP clients can
+  bootstrap OAuth login automatically.
+* :class:`OAuthJWTMiddleware` — Starlette middleware that validates
+  bearer tokens via the supplied ``TokenVerifier`` and enforces
+  App-Roles RBAC.
 """
 
 from __future__ import annotations
@@ -17,18 +22,97 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from typing import Any
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any, Protocol, runtime_checkable
 
+from fastapi import FastAPI
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from fireflyframework_agentic.exposure.mcp.oauth_jwt import (
-    RequiredRoleFn,
-    TokenVerifier,
-)
-
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Provider-agnostic types
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class OAuthMetadata:
+    """Static OAuth 2.0 / OIDC metadata advertised by the server.
+
+    Populated by an operator-supplied factory at startup and rendered at
+    ``/.well-known/oauth-protected-resource`` and
+    ``/.well-known/oauth-authorization-server``.
+    """
+
+    issuer: str
+    authorization_endpoint: str
+    token_endpoint: str
+    jwks_uri: str
+    resource: str
+    scopes_supported: tuple[str, ...]
+
+
+@runtime_checkable
+class TokenVerifier(Protocol):
+    """Verifies a bearer token and returns its claims dict.
+
+    Implementations: ``EntraTokenVerifier`` (examples/corpus_search) or any
+    other provider-specific RBACManager subclass. Must raise ``ValueError``
+    on any validation failure — the middleware maps that to ``401``.
+    """
+
+    def validate_token(self, token: str) -> dict[str, Any]: ...
+
+
+RequiredRoleFn = Callable[[str, str], str | None]
+"""``(tool_name, corpus_id) -> role_value`` mapping for App-Roles RBAC.
+
+Returning ``None`` means the call requires no per-corpus role (lifecycle /
+no-corpus tools). Mapping is injected so deployments can adopt different
+naming conventions without forking the middleware."""
+
+
+# ---------------------------------------------------------------------------
+# Public /.well-known/ discovery routes (RFC 9728 + RFC 8414)
+# ---------------------------------------------------------------------------
+
+
+def add_oauth_metadata_routes(app: FastAPI, metadata: OAuthMetadata) -> None:
+    """Mount the two well-known metadata endpoints on ``app``.
+
+    These routes MUST be reachable without authentication — clients
+    fetch them precisely because they do not yet hold a token.
+    """
+
+    @app.get("/.well-known/oauth-protected-resource")
+    def protected_resource() -> dict[str, Any]:
+        return {
+            "resource": metadata.resource,
+            "authorization_servers": [metadata.issuer],
+            "scopes_supported": list(metadata.scopes_supported),
+            "bearer_methods_supported": ["header"],
+        }
+
+    @app.get("/.well-known/oauth-authorization-server")
+    def authorization_server() -> dict[str, Any]:
+        return {
+            "issuer": metadata.issuer,
+            "authorization_endpoint": metadata.authorization_endpoint,
+            "token_endpoint": metadata.token_endpoint,
+            "jwks_uri": metadata.jwks_uri,
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code", "refresh_token"],
+            "code_challenge_methods_supported": ["S256"],
+        }
+
+
+# ---------------------------------------------------------------------------
+# OAuth JWT middleware
+# ---------------------------------------------------------------------------
 
 _EXCLUDED_PATHS: frozenset[str] = frozenset({"/healthz"})
 _JSONRPC_ERR_AUTH = -32001

@@ -27,7 +27,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
-    from fireflyframework_agentic.exposure.mcp.oauth_jwt import OAuthMetadata
+    from fireflyframework_agentic.exposure.mcp.auth import OAuthMetadata
 
 import jwt
 from azure.identity import DefaultAzureCredential
@@ -235,7 +235,7 @@ def build_entra_verifier() -> EntraTokenVerifier:
     return EntraTokenVerifier(tenant_id=tenant, audience=f"api://{client}")
 
 
-def build_entra_metadata() -> OAuthMetadata:
+def build_entra_metadata() -> "OAuthMetadata":
     """Default metadata factory for ``FIREFLY_MCP_METADATA_FACTORY``.
 
     Reads ``AZURE_TENANT_ID``, ``AZURE_CLIENT_ID``, and
@@ -245,7 +245,7 @@ def build_entra_metadata() -> OAuthMetadata:
     """
     import os
 
-    from fireflyframework_agentic.exposure.mcp.oauth_jwt import OAuthMetadata
+    from fireflyframework_agentic.exposure.mcp.auth import OAuthMetadata
 
     tenant = os.environ.get("AZURE_TENANT_ID")
     client = os.environ.get("AZURE_CLIENT_ID")

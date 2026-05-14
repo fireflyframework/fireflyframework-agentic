@@ -64,7 +64,7 @@ def _build_stub_verifier() -> object:
 
 
 def _build_stub_metadata() -> object:
-    from fireflyframework_agentic.exposure.mcp.oauth_jwt import OAuthMetadata
+    from fireflyframework_agentic.exposure.mcp.auth import OAuthMetadata
 
     return OAuthMetadata(
         issuer="https://login.example.com/v2.0",
