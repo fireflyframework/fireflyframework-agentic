@@ -24,7 +24,10 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from fireflyframework_agentic.exposure.mcp.oauth_jwt import OAuthMetadata
 
 import jwt
 from azure.identity import DefaultAzureCredential
@@ -270,3 +273,66 @@ def build_default_store(
     credential = DefaultAzureCredential()
     client = SecretClient(vault_url=vault_url, credential=credential)
     return KeyVaultTokenStore(client=client, prefix=prefix)
+
+
+# ----------------------------------------------------------------------------
+# OAuth / Entra ID factories for firefly-mcp-http
+# ----------------------------------------------------------------------------
+#
+# These two factories are the defaults wired into the framework's
+# ``_install_oauth_auth`` helper via ``FIREFLY_MCP_VERIFIER_FACTORY`` and
+# ``FIREFLY_MCP_METADATA_FACTORY``. They translate three operator-supplied
+# env vars (``AZURE_TENANT_ID``, ``AZURE_CLIENT_ID``,
+# ``FIREFLY_MCP_PUBLIC_URL``) into the provider-agnostic OAuth types the
+# framework understands. Operators on a different IdP swap these for
+# their own callables — the framework code stays unchanged.
+
+
+def build_entra_verifier() -> EntraTokenVerifier:
+    """Default verifier factory for ``FIREFLY_MCP_VERIFIER_FACTORY``.
+
+    Reads ``AZURE_TENANT_ID`` and ``AZURE_CLIENT_ID`` from the
+    environment. Raises ``RuntimeError`` with a clear message if either
+    is missing — the alternative (a confusing JWT validation failure on
+    first request) makes ops debugging much harder.
+    """
+    import os
+
+    tenant = os.environ.get("AZURE_TENANT_ID")
+    client = os.environ.get("AZURE_CLIENT_ID")
+    if not tenant or not client:
+        raise RuntimeError(
+            "build_entra_verifier requires AZURE_TENANT_ID and AZURE_CLIENT_ID"
+        )
+    return EntraTokenVerifier(tenant_id=tenant, audience=f"api://{client}")
+
+
+def build_entra_metadata() -> OAuthMetadata:
+    """Default metadata factory for ``FIREFLY_MCP_METADATA_FACTORY``.
+
+    Reads ``AZURE_TENANT_ID``, ``AZURE_CLIENT_ID``, and
+    ``FIREFLY_MCP_PUBLIC_URL`` (the canonical https URL of this MCP
+    server, no trailing slash) to populate the ``OAuthMetadata`` doc
+    returned at ``/.well-known/*``.
+    """
+    import os
+
+    from fireflyframework_agentic.exposure.mcp.oauth_jwt import OAuthMetadata
+
+    tenant = os.environ.get("AZURE_TENANT_ID")
+    client = os.environ.get("AZURE_CLIENT_ID")
+    host = os.environ.get("FIREFLY_MCP_PUBLIC_URL", "").rstrip("/")
+    if not tenant or not client or not host:
+        raise RuntimeError(
+            "build_entra_metadata requires AZURE_TENANT_ID, AZURE_CLIENT_ID, "
+            "and FIREFLY_MCP_PUBLIC_URL"
+        )
+    base = f"https://login.microsoftonline.com/{tenant}"
+    return OAuthMetadata(
+        issuer=f"{base}/v2.0",
+        authorization_endpoint=f"{base}/oauth2/v2.0/authorize",
+        token_endpoint=f"{base}/oauth2/v2.0/token",
+        jwks_uri=f"{base}/discovery/v2.0/keys",
+        resource=f"{host}/mcp/",
+        scopes_supported=(f"api://{client}/user_impersonation",),
+    )
