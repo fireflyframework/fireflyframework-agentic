@@ -180,7 +180,7 @@ class OAuthJWTMiddleware(BaseHTTPMiddleware):
         self._required_role_fn = required_role_fn
         self._roles_claim = roles_claim
         self._mount = mount_path.rstrip("/") or "/"
-        self._www_authenticate = f'Bearer resource_metadata="{metadata_url}"'
+        self._metadata_url = metadata_url
 
     async def dispatch(self, request: Request, call_next: Any) -> Response:
         path = request.url.path
@@ -239,7 +239,27 @@ class OAuthJWTMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
     def _unauthorized(self, detail: str) -> JSONResponse:
-        return _err(401, detail, headers={"WWW-Authenticate": self._www_authenticate})
+        """Build a RFC 6750-shaped 401.
+
+        The ``WWW-Authenticate`` header carries the OAuth 2.0 challenge
+        (``realm``, ``error``, ``error_description``) plus the RFC 9728
+        ``resource_metadata`` parameter that tells the client where to
+        discover the authorization server. The body uses the OAuth error
+        format (``error`` / ``error_description``) rather than JSON-RPC
+        — clients implementing the MCP Authorization spec look for that
+        shape to recognise an OAuth-protected resource.
+        """
+        challenge = (
+            f'Bearer realm="OAuth", '
+            f'resource_metadata="{self._metadata_url}", '
+            f'error="invalid_token", '
+            f'error_description="{detail}"'
+        )
+        return JSONResponse(
+            {"error": "invalid_token", "error_description": detail},
+            status_code=401,
+            headers={"WWW-Authenticate": challenge},
+        )
 
     def _extract_roles(self, claims: dict[str, Any]) -> tuple[str, ...]:
         raw = claims.get(self._roles_claim, [])
