@@ -184,7 +184,7 @@ def main() -> None:
 
     Loads ``.env`` from the current working directory (or any ancestor) so
     a developer running the server from a project directory gets its
-    variables (``EMBEDDING_MODEL``, ``FIREFLY_MCP_KEYVAULT_URL``, …)
+    variables (``EMBEDDING_MODEL``, ``AZURE_TENANT_ID``, …)
     without an explicit shell ``source``. ``usecwd=True`` anchors the
     search on cwd (the default would walk up from this module's
     install location, which is wrong for a CLI). Real environment
