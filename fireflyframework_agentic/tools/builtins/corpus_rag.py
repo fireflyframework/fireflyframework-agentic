@@ -35,8 +35,21 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import sqlglot
-from sqlglot import exp as sqlglot_exp
+# sqlglot is only required by ``corpus_sql`` — it ships in the
+# ``corpus-search`` extra alongside the rest of this tool's runtime
+# stack. Other tools in this module (``knowledge_search``,
+# ``ingest_corpus_filesystem``, …) work without it, so we tolerate
+# its absence at import time and surface a clear error inside the SQL
+# tool's validator if a caller actually exercises that code path
+# without the extra installed.
+try:
+    import sqlglot
+    from sqlglot import exp as sqlglot_exp
+    from sqlglot.errors import ParseError as _SqlglotParseError
+except ImportError:  # pragma: no cover - exercised only when the extra is missing
+    sqlglot = None  # type: ignore[assignment]
+    sqlglot_exp = None  # type: ignore[assignment]
+    _SqlglotParseError = Exception  # type: ignore[assignment,misc]
 
 from fireflyframework_agentic.content.sources.local_folder import (
     LocalFolderSource,
@@ -439,7 +452,7 @@ def _structured_table_names(schemas: list[TargetSchema]) -> set[str]:
     return {t.name for s in schemas for t in s.tables}
 
 
-def _validate_select(sql: str, allowed_tables: set[str]) -> tuple[sqlglot_exp.Select, list[str]] | str:
+def _validate_select(sql: str, allowed_tables: set[str]) -> tuple[Any, list[str]] | str:
     """Parse *sql* and ensure it is a single SELECT against allowed tables.
 
     Returns the parsed expression and the list of referenced table names on
@@ -452,9 +465,14 @@ def _validate_select(sql: str, allowed_tables: set[str]) -> tuple[sqlglot_exp.Se
     surface clear errors to the caller instead of an opaque SQLite
     ``attempt to write a readonly database``.
     """
+    if sqlglot is None or sqlglot_exp is None:
+        return (
+            "sqlglot is required for corpus_sql; install the `corpus-search` "
+            "extra (e.g. `pip install 'fireflyframework-agentic[corpus-search]'`)"
+        )
     try:
         statements = sqlglot.parse(sql, read="sqlite")
-    except sqlglot.errors.ParseError as exc:
+    except _SqlglotParseError as exc:
         return f"SQL parse error: {exc}"
     statements = [s for s in statements if s is not None]
     if not statements:
