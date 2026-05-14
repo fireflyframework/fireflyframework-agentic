@@ -54,7 +54,7 @@ from fireflyframework_agentic.observability.budget import (
     BudgetRule,
     BudgetWindow,
 )
-from fireflyframework_agentic.observability.cost import (
+from fireflyframework_agentic.observability.cost_resolvers import (
     DEFAULT_RESOLVERS,
     CostContext,
 )
