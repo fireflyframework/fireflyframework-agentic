@@ -102,7 +102,9 @@ def _install_oauth_auth(app: FastAPI) -> None:
 
     roles_claim = os.environ.get("FIREFLY_MCP_ROLES_CLAIM", "roles")
     public_url = os.environ.get("FIREFLY_MCP_PUBLIC_URL", "").rstrip("/")
-    metadata_url = f"{public_url}/.well-known/oauth-protected-resource" if public_url else "/.well-known/oauth-protected-resource"
+    metadata_url = (
+        f"{public_url}/.well-known/oauth-protected-resource" if public_url else "/.well-known/oauth-protected-resource"
+    )
 
     app.add_middleware(
         OAuthJWTMiddleware,
