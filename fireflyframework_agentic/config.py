@@ -22,7 +22,7 @@ in the environment will override the ``default_model`` field.
 from __future__ import annotations
 
 import threading
-from typing import Literal
+from typing import Any
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -106,12 +106,6 @@ class FireflyAgenticConfig(BaseSettings):
 
     budget_limit_usd: float | None = None
     """Hard budget limit in USD.  When exceeded, a warning is logged."""
-
-    budget_alert_threshold_usd: float | None = None
-    """Soft alert threshold in USD.  A warning is logged when reached."""
-
-    cost_calculator: Literal["auto", "genai_prices", "static"] = "auto"
-    """Cost calculator preference: ``"auto"``, ``"genai_prices"``, or ``"static"``."""
 
     # -- Memory -------------------------------------------------------------
     memory_backend: str = "in_memory"
@@ -254,18 +248,21 @@ class FireflyAgenticConfig(BaseSettings):
     vector_store_namespace: str = "default"
     """Default namespace for vector store operations."""
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_removed_cost_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            removed = {"cost_calculator", "budget_alert_threshold_usd"} & set(data)
+            if removed:
+                raise ValueError(
+                    f"Removed cost-tracking config fields: {sorted(removed)}. "
+                    "See docs/observability.md for the new BudgetGate / resolver API."
+                )
+        return data
+
     @model_validator(mode="after")
     def _validate_cross_fields(self) -> FireflyAgenticConfig:
         """Validate cross-field constraints."""
-        if (
-            self.budget_alert_threshold_usd is not None
-            and self.budget_limit_usd is not None
-            and self.budget_alert_threshold_usd > self.budget_limit_usd
-        ):
-            raise ValueError(
-                f"budget_alert_threshold_usd ({self.budget_alert_threshold_usd}) "
-                f"must not exceed budget_limit_usd ({self.budget_limit_usd})"
-            )
         if self.default_chunk_overlap >= self.default_chunk_size:
             raise ValueError(
                 f"default_chunk_overlap ({self.default_chunk_overlap}) "

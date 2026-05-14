@@ -1,24 +1,16 @@
 # Copyright 2026 Firefly Software Foundation
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Licensed under the Apache License, Version 2.0
 
 """Usage tracking for LLM API calls.
 
-:class:`UsageTracker` is the central accumulator for token usage, cost,
-and latency across all agents, reasoning patterns, and pipeline nodes.
-Each call is captured as a :class:`UsageRecord` and automatically emitted
-to :class:`~fireflyframework_agentic.observability.metrics.FireflyMetrics`
-and :class:`~fireflyframework_agentic.observability.events.FireflyEvents`.
+:class:`UsageTracker` is a thin orchestrator: it resolves cost via a
+``CostResolver`` chain, builds a :class:`UsageRecord`, hands the record
+to a :class:`BudgetGate` for accumulation/enforcement, then fans the
+record out to a chain of :class:`CostSink` consumers.
+
+The legacy ``record(usage)`` low-level entry is preserved for in-tree
+producers that already construct a :class:`UsageRecord` (agents,
+reasoning, experiments).
 """
 
 from __future__ import annotations
@@ -26,31 +18,31 @@ from __future__ import annotations
 import logging
 import threading
 from collections import defaultdict
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
 
+from fireflyframework_agentic.config import get_config
+from fireflyframework_agentic.observability.budget import BudgetGate, BudgetRule
+from fireflyframework_agentic.observability.cost.resolvers import (
+    CostContext,
+    CostFn,
+    resolve_cost,
+)
+from fireflyframework_agentic.observability.sinks import (
+    CostSink,
+    EventBusSink,
+    OTelMetricsSink,
+    _emit_safely,
+)
+
 logger = logging.getLogger(__name__)
 
 
 class UsageRecord(BaseModel):
-    """A single LLM usage observation.
-
-    Attributes:
-        agent: Name of the agent that made the call.
-        model: Model identifier (e.g. ``"openai:gpt-4o"``).
-        input_tokens: Number of input/prompt tokens.
-        output_tokens: Number of output/completion tokens.
-        total_tokens: Combined token count.
-        cache_creation_tokens: Tokens written to prompt cache.
-        cache_read_tokens: Tokens read from prompt cache.
-        request_count: Number of LLM requests in this run.
-        cost_usd: Estimated cost in USD.
-        latency_ms: Wall-clock time in milliseconds.
-        timestamp: When the usage was recorded.
-        correlation_id: Optional ID linking records to a pipeline run.
-    """
+    """A single LLM usage observation. Schema is intentionally stable."""
 
     agent: str = ""
     model: str = ""
@@ -67,20 +59,6 @@ class UsageRecord(BaseModel):
 
 
 class UsageSummary(BaseModel):
-    """Aggregated usage statistics.
-
-    Attributes:
-        total_input_tokens: Sum of all input tokens.
-        total_output_tokens: Sum of all output tokens.
-        total_tokens: Sum of all tokens.
-        total_cost_usd: Sum of estimated costs.
-        total_requests: Sum of LLM request counts.
-        total_latency_ms: Sum of latencies.
-        record_count: Number of individual usage records.
-        by_agent: Per-agent breakdown of tokens, cost, and requests.
-        by_model: Per-model breakdown of tokens, cost, and requests.
-    """
-
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_tokens: int = 0
@@ -93,7 +71,6 @@ class UsageSummary(BaseModel):
 
 
 def _aggregate(records: list[UsageRecord]) -> UsageSummary:
-    """Build a :class:`UsageSummary` from a list of records."""
     by_agent: dict[str, dict[str, Any]] = defaultdict(
         lambda: {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost_usd": 0.0, "requests": 0}
     )
@@ -102,7 +79,6 @@ def _aggregate(records: list[UsageRecord]) -> UsageSummary:
     )
     total_in = total_out = total_tok = total_req = 0
     total_cost = total_lat = 0.0
-
     for r in records:
         total_in += r.input_tokens
         total_out += r.output_tokens
@@ -110,7 +86,6 @@ def _aggregate(records: list[UsageRecord]) -> UsageSummary:
         total_req += r.request_count
         total_cost += r.cost_usd
         total_lat += r.latency_ms
-
         if r.agent:
             a = by_agent[r.agent]
             a["input_tokens"] += r.input_tokens
@@ -118,7 +93,6 @@ def _aggregate(records: list[UsageRecord]) -> UsageSummary:
             a["total_tokens"] += r.total_tokens
             a["cost_usd"] += r.cost_usd
             a["requests"] += r.request_count
-
         if r.model:
             m = by_model[r.model]
             m["input_tokens"] += r.input_tokens
@@ -126,7 +100,6 @@ def _aggregate(records: list[UsageRecord]) -> UsageSummary:
             m["total_tokens"] += r.total_tokens
             m["cost_usd"] += r.cost_usd
             m["requests"] += r.request_count
-
     return UsageSummary(
         total_input_tokens=total_in,
         total_output_tokens=total_out,
@@ -140,160 +113,141 @@ def _aggregate(records: list[UsageRecord]) -> UsageSummary:
     )
 
 
+# Type alias: a resolver is either the full chain (Sequence[CostFn]) or a single callable.
+_ResolverArg = Sequence[CostFn] | Callable[[CostContext], float] | None
+
+
 class UsageTracker:
-    """Thread-safe accumulator for LLM usage records.
+    """Thread-safe accumulator + fan-out for :class:`UsageRecord`."""
 
-    When :meth:`record` is called, the tracker:
-
-    1. Appends the record to the internal list.
-    2. Emits token and cost metrics via :class:`FireflyMetrics`.
-    3. Emits a structured event via :class:`FireflyEvents`.
-    4. Checks budget thresholds and logs warnings.
-
-    Parameters:
-        max_records: Maximum number of records to retain in memory.
-            When exceeded, the oldest records are evicted (FIFO).
-            ``0`` means unlimited (not recommended for long-running services).
-    """
-
-    def __init__(self, *, max_records: int = 0) -> None:
+    def __init__(
+        self,
+        *,
+        sinks: Sequence[CostSink] | None = None,
+        resolver: _ResolverArg = None,
+        gate: BudgetGate | None = None,
+        max_records: int = 0,
+    ) -> None:
         self._records: list[UsageRecord] = []
-        self._lock = threading.Lock()
         self._cumulative_cost: float = 0.0
         self._max_records = max_records
+        self._lock = threading.Lock()
+        self._sinks: list[CostSink] = list(sinks or [])
+        self._resolver = resolver
+        self._gate = gate
 
-    def record(self, usage: UsageRecord) -> None:
-        """Append a usage record and emit to observability sinks."""
+    # -- High-level entry ------------------------------------------------
+    def record_call(
+        self,
+        *,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        cache_creation_tokens: int = 0,
+        cache_read_tokens: int = 0,
+        reasoning_tokens: int = 0,
+        provider_payload: Mapping[str, Any] | None = None,
+        agent: str = "",
+        correlation_id: str = "",
+        latency_ms: float = 0.0,
+        request_count: int = 0,
+        scope_ctx=None,
+    ) -> UsageRecord:
+        ctx = CostContext(
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_creation_tokens=cache_creation_tokens,
+            cache_read_tokens=cache_read_tokens,
+            reasoning_tokens=reasoning_tokens,
+            provider_payload=provider_payload,
+        )
+        cost = self._resolve(ctx)
+        record = UsageRecord(
+            agent=agent,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=input_tokens + output_tokens + reasoning_tokens,
+            cache_creation_tokens=cache_creation_tokens,
+            cache_read_tokens=cache_read_tokens,
+            request_count=request_count,
+            cost_usd=cost,
+            latency_ms=latency_ms,
+            correlation_id=correlation_id,
+        )
+        self.record(record, scope_ctx=scope_ctx)
+        return record
+
+    def _resolve(self, ctx: CostContext) -> float:
+        if self._resolver is None:
+            return resolve_cost(ctx)
+        if callable(self._resolver):
+            result = self._resolver(ctx)
+            return 0.0 if result is None else float(result)
+        return resolve_cost(ctx, self._resolver)
+
+    # -- Low-level entry -------------------------------------------------
+    def record(self, usage: UsageRecord, scope_ctx=None) -> None:
         with self._lock:
             self._records.append(usage)
             self._cumulative_cost += usage.cost_usd
-            # Evict oldest records when limit is exceeded
             if self._max_records > 0 and len(self._records) > self._max_records:
                 excess = len(self._records) - self._max_records
                 del self._records[:excess]
+        if self._gate is not None:
+            self._gate.commit(usage, scope_ctx)
+        for sink in self._sinks:
+            _emit_safely(sink, usage)
 
-        # Emit to OTel metrics
-        self._emit_metrics(usage)
+    # -- Sink management -------------------------------------------------
+    def add_sink(self, sink: CostSink) -> None:
+        self._sinks.append(sink)
 
-        # Emit structured event
-        self._emit_event(usage)
-
-        # Check budget
-        self._check_budget(usage)
-
+    # -- Read accessors --------------------------------------------------
     @property
     def records(self) -> list[UsageRecord]:
-        """Read-only copy of all recorded usage."""
         with self._lock:
             return list(self._records)
 
     @property
     def cumulative_cost_usd(self) -> float:
-        """Running total cost across all records."""
         with self._lock:
             return self._cumulative_cost
 
     def get_summary(self) -> UsageSummary:
-        """Aggregate summary of all records."""
         with self._lock:
             return _aggregate(list(self._records))
 
     def get_summary_for_agent(self, agent_name: str) -> UsageSummary:
-        """Aggregate summary filtered by agent name."""
         with self._lock:
             filtered = [r for r in self._records if r.agent == agent_name]
         return _aggregate(filtered)
 
     def get_summary_for_correlation(self, correlation_id: str) -> UsageSummary:
-        """Aggregate summary filtered by correlation ID (pipeline run)."""
         with self._lock:
             filtered = [r for r in self._records if r.correlation_id == correlation_id]
         return _aggregate(filtered)
 
     def reset(self) -> None:
-        """Clear all records and reset cumulative cost."""
         with self._lock:
             self._records.clear()
             self._cumulative_cost = 0.0
 
-    @staticmethod
-    def _emit_metrics(usage: UsageRecord) -> None:
-        """Send usage data to OTel metrics."""
-        try:
-            from fireflyframework_agentic.observability.metrics import default_metrics
 
-            if usage.total_tokens > 0:
-                default_metrics.record_tokens(usage.total_tokens, agent=usage.agent, model=usage.model)
-            if usage.input_tokens > 0:
-                default_metrics.record_prompt_tokens(usage.input_tokens, agent=usage.agent, model=usage.model)
-            if usage.output_tokens > 0:
-                default_metrics.record_completion_tokens(usage.output_tokens, agent=usage.agent, model=usage.model)
-            if usage.cost_usd > 0:
-                default_metrics.record_cost(usage.cost_usd, agent=usage.agent, model=usage.model)
-            if usage.latency_ms > 0:
-                default_metrics.record_latency(usage.latency_ms, operation="agent.run", agent=usage.agent)
-        except Exception:  # noqa: BLE001
-            logger.debug("Failed to emit usage metrics", exc_info=True)
-
-    @staticmethod
-    def _emit_event(usage: UsageRecord) -> None:
-        """Emit a structured event for the usage record."""
-        try:
-            from fireflyframework_agentic.observability.events import default_events
-
-            default_events.agent_completed(
-                usage.agent,
-                tokens=usage.total_tokens,
-                latency_ms=usage.latency_ms,
-                model=usage.model,
-                cost_usd=usage.cost_usd,
-                input_tokens=usage.input_tokens,
-                output_tokens=usage.output_tokens,
-            )
-        except Exception:  # noqa: BLE001
-            logger.debug("Failed to emit usage event", exc_info=True)
-
-    def _check_budget(self, usage: UsageRecord) -> None:
-        """Log warnings when budget thresholds are exceeded."""
-        try:
-            from fireflyframework_agentic.config import get_config
-
-            cfg = get_config()
-            if not cfg.cost_tracking_enabled:
-                return
-
-            cumulative = self.cumulative_cost_usd
-
-            if cfg.budget_alert_threshold_usd is not None and cumulative >= cfg.budget_alert_threshold_usd:
-                logger.warning(
-                    "Budget alert: cumulative cost $%.4f has reached the alert threshold of $%.4f (agent=%s, model=%s)",
-                    cumulative,
-                    cfg.budget_alert_threshold_usd,
-                    usage.agent,
-                    usage.model,
-                )
-
-            if cfg.budget_limit_usd is not None and cumulative >= cfg.budget_limit_usd:
-                logger.warning(
-                    "Budget EXCEEDED: cumulative cost $%.4f has exceeded the limit of $%.4f (agent=%s, model=%s)",
-                    cumulative,
-                    cfg.budget_limit_usd,
-                    usage.agent,
-                    usage.model,
-                )
-        except Exception:  # noqa: BLE001
-            logger.debug("Failed to check budget", exc_info=True)
-
-
-def _create_default_tracker() -> UsageTracker:
-    """Create the default tracker with config-driven max_records."""
+def _build_default_tracker() -> UsageTracker:
+    """Construct the module-level tracker with defaults driven by config."""
+    sinks: list[CostSink] = [OTelMetricsSink(), EventBusSink()]
+    gate: BudgetGate | None = None
+    max_records = 10_000
     try:
-        from fireflyframework_agentic.config import get_config
-
-        return UsageTracker(max_records=get_config().usage_tracker_max_records)
+        cfg = get_config()
+        if cfg.budget_limit_usd is not None:
+            gate = BudgetGate([BudgetRule(name="config_global", limit_usd=cfg.budget_limit_usd)])
+        max_records = cfg.usage_tracker_max_records
     except Exception:  # noqa: BLE001
-        return UsageTracker(max_records=10_000)
+        logger.debug("Falling back to defaults for usage tracker", exc_info=True)
+    return UsageTracker(sinks=sinks, gate=gate, max_records=max_records)
 
 
-# Module-level singleton
-default_usage_tracker = _create_default_tracker()
+default_usage_tracker = _build_default_tracker()
