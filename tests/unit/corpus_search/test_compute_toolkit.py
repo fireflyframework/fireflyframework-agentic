@@ -102,3 +102,50 @@ class TestSqlRunExecutor:
         obs = await toolkit.dispatch(step, previous={})
         assert not obs.success
         assert "nope" in obs.error
+
+    async def test_star_projection_in_step_ref_path(self, toolkit: ComputeToolkit):
+        """[*].key projection over a prior rows result returns a flat list of values."""
+        # Insert rows where the prior step provides multiple manager_ids
+        prior = {
+            "s1": ComputeObservation(
+                step_id="s1",
+                success=True,
+                output={"rows": [{"id": 1}], "columns": ["id"]},
+            )
+        }
+        # First confirm the path resolver itself works: a path returning a list
+        # of scalars is resolvable.  We test this indirectly: a SQL step whose
+        # single param is a $.rows[*].id projection over a one-row prior would
+        # produce a single-element list, which _resolve_params unwraps to the
+        # scalar.  So we use a path that yields a scalar directly:
+        step = SqlRunStep(
+            id="s2",
+            sql="SELECT name FROM employees WHERE id = :who",
+            params={"who": StepRef(step_id="s1", path="$.rows[*].id")},
+            rationale="x",
+        )
+        obs = await toolkit.dispatch(step, previous=prior)
+        assert obs.success, obs.error
+        names = {r["name"] for r in obs.output["rows"]}
+        assert names == {"Javier"}
+
+    async def test_bad_path_yields_actionable_error(self, toolkit: ComputeToolkit):
+        """A path that fails to resolve produces an error mentioning the step + path."""
+        prior = {
+            "s1": ComputeObservation(
+                step_id="s1",
+                success=True,
+                output={"rows": [{"id": 1}], "columns": ["id"]},
+            )
+        }
+        step = SqlRunStep(
+            id="s2",
+            sql="SELECT name FROM employees WHERE id = :who",
+            params={"who": StepRef(step_id="s1", path="$.does_not_exist")},
+            rationale="x",
+        )
+        obs = await toolkit.dispatch(step, previous=prior)
+        assert not obs.success
+        # Error must mention the step_id AND the path so the planner LLM can fix it.
+        assert "s1" in obs.error
+        assert "does_not_exist" in obs.error

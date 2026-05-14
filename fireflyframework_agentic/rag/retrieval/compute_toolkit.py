@@ -28,6 +28,9 @@ from pathlib import Path
 from typing import Any
 
 from fireflyframework_agentic.rag.corpus import ChunkHit
+
+# `_connect` is shared with the SQL retriever to keep UDF registration in
+# one place; it stays private to ``rag/retrieval/`` and is not re-exported.
 from fireflyframework_agentic.rag.retrieval.sql import (
     SqlRetrievalOutcome,
     TargetSchema,
@@ -50,10 +53,10 @@ class RetrievalContext:
     schemas: list[TargetSchema] = field(default_factory=list)
 
 
-# NOTE: Word-boundary matching means a table named e.g. ``updates`` would
-# be rejected because ``update`` is embedded in the name.  This is acceptable:
-# the corpus naming convention uses plural collective nouns or ``_fact``/``_dim``
-# suffixes, never verb-named tables.
+# Word boundaries (\b...\b) match the verb only as a standalone token.
+# Names like ``updates``, ``update_count``, ``dropdowns``, or
+# ``attachments`` are correctly NOT rejected. Only bare verb tokens
+# (e.g. ``UPDATE``, ``DROP``) get matched.
 _WRITE_SQL = re.compile(
     r"\b(insert|update|delete|drop|alter|create|replace|truncate|attach|detach|pragma|vacuum)\b",
     re.IGNORECASE,
@@ -140,7 +143,10 @@ def _resolve_params(
             obs = previous[value.step_id]
             if not obs.success:
                 return f"step '{value.step_id}' did not succeed; cannot reference it"
-            resolved = _apply_path(obs.output, value.path) if value.path else obs.output
+            try:
+                resolved = _apply_path(obs.output, value.path) if value.path else obs.output
+            except (KeyError, IndexError, AttributeError, ValueError, TypeError) as exc:
+                return f"path '{value.path}' on step '{value.step_id}' failed: {type(exc).__name__}: {exc}"
             if isinstance(resolved, list) and len(resolved) == 1:
                 resolved = resolved[0]
             out[key] = resolved
@@ -155,15 +161,22 @@ def _apply_path(data: Any, path: str) -> Any:
         return data
     tokens = re.findall(r"[a-zA-Z_][a-zA-Z0-9_]*|\[\d+\]|\[\*\]", path)
     current: Any = data
+    projecting = False
     for tok in tokens:
-        if tok.startswith("["):
-            inner = tok[1:-1]
-            if inner == "*":
-                if not isinstance(current, list):
-                    raise ValueError(f"[*] requires a list at this position, got {type(current).__name__}")
-                current = list(current)
-            else:
-                current = current[int(inner)]
+        if tok == "[*]":
+            if not isinstance(current, list):
+                raise ValueError(f"[*] requires a list, got {type(current).__name__}")
+            projecting = True
+            # current stays as the list; subsequent accesses map over it
+        elif tok.startswith("[") and tok.endswith("]"):
+            idx = int(tok[1:-1])
+            current = [c[idx] for c in current] if projecting else current[idx]
         else:
-            current = current[tok] if isinstance(current, dict) else getattr(current, tok)
+            current = (
+                [c[tok] if isinstance(c, dict) else getattr(c, tok) for c in current]
+                if projecting
+                else current[tok]
+                if isinstance(current, dict)
+                else getattr(current, tok)
+            )
     return current
