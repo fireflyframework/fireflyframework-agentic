@@ -651,6 +651,18 @@ class CorpusAgent:
             span.set_attribute("firefly.rag.outcome", outcome)
             return answer
 
+    async def list_schemas(self) -> list[TargetSchema]:
+        """Return every ``TargetSchema`` saved by structured ingestion.
+
+        Returns an empty list when the corpus has only ever ingested
+        unstructured documents. Used by read-only tools (``list_corpus_schemas``,
+        ``corpus_sql``) that need to surface or whitelist the structured
+        tables without invoking the SQL retriever's LLM loop.
+        """
+        await self._ensure_corpus_ready()
+        assert self._schema_registry is not None
+        return await self._schema_registry.list_schemas()
+
     async def stats(self) -> CorpusStats:
         """Return document, chunk, and schema counts for the corpus."""
         await self._ensure_corpus_ready()

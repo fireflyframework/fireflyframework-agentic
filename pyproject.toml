@@ -121,6 +121,10 @@ rag = [
 ]
 corpus-search = [
     "fireflyframework-agentic[rag,vectorstores-sqlite-vec]",
+    # sqlglot parses the user-supplied SELECT in the ``corpus_sql`` MCP tool
+    # to whitelist table references against the structured-ingestion schema
+    # registry (rejecting reads from internal tables like ``chunks`` / ``_schemas``).
+    "sqlglot>=26.0.0",
 ]
 vectorstores-chroma = [
     "chromadb>=0.5.0",
