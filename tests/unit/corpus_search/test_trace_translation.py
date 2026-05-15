@@ -71,6 +71,35 @@ def test_trace_translation_emits_thought_for_text_parts():
     assert "search" in trace.steps[0].content
 
 
+def test_trace_translation_filters_final_result_plumbing():
+    """pydantic-ai's implicit output tool (default name 'final_result')
+    must not appear in the trace — the Answer itself carries that content,
+    and surfacing it would confuse trace replay (no closure to call).
+    """
+    msgs = [
+        ModelResponse(
+            parts=[
+                ToolCallPart(
+                    tool_call_id="final0",
+                    tool_name="final_result",
+                    args={"text": "...", "citations": []},
+                )
+            ]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    tool_call_id="final0",
+                    tool_name="final_result",
+                    content="ok",
+                )
+            ]
+        ),
+    ]
+    trace = _trace_from_messages(msgs, pattern_name="reasoning_answerer")
+    assert trace.steps == []
+
+
 def test_trace_translation_truncates_long_observations():
     long = "x" * 5000
     msgs = [

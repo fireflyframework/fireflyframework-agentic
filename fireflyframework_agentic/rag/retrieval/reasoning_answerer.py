@@ -174,6 +174,13 @@ def _build_python_compute_tool():
 
 _OBS_CAP = 2000
 
+# pydantic-ai exposes the structured-output handoff as an implicit tool
+# call (default name "final_result"). That's internal plumbing — the
+# Answer itself carries the final content, so surfacing it as an
+# ActionStep would be noise and would confuse trace replay (no tool
+# closure to call back into).
+_PYDANTIC_AI_OUTPUT_TOOL_NAMES: frozenset[str] = frozenset({"final_result"})
+
 
 def _truncate_obs(text: str) -> str:
     if len(text) <= _OBS_CAP:
@@ -213,9 +220,13 @@ def _trace_from_messages(messages, *, pattern_name: str):
                 if part.content:
                     trace.add_step(ThoughtStep(content=part.content))
             elif isinstance(part, ToolCallPart):
+                if part.tool_name in _PYDANTIC_AI_OUTPUT_TOOL_NAMES:
+                    continue
                 args = part.args if isinstance(part.args, dict) else {}
                 trace.add_step(ActionStep(tool_name=part.tool_name, tool_args=args))
             elif isinstance(part, ToolReturnPart):
+                if part.tool_name in _PYDANTIC_AI_OUTPUT_TOOL_NAMES:
+                    continue
                 trace.add_step(
                     ObservationStep(
                         content=_truncate_obs(str(part.content)),
