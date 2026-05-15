@@ -677,6 +677,13 @@ class CorpusAgent:
                 "firefly.rag.answer_strategy": self._answer_strategy,
             },
         ) as span:
+            # ``self._answerer`` is concretely a ``ReasoningAnswerAgent`` on the
+            # reasoning branch and an ``AnswerAgent`` on the fast branch —
+            # they have different ``answer(...)`` signatures, dispatched here
+            # by ``self._answer_strategy``. The field is typed ``Any`` because
+            # importing ``ReasoningAnswerAgent`` at class-definition time would
+            # introduce a circular import (it lives under ``rag.retrieval``,
+            # which imports ``rag.agent``).
             if self._answer_strategy == "reasoning":
                 answer = await self._answerer.answer(question, include_trace=include_trace)
             else:

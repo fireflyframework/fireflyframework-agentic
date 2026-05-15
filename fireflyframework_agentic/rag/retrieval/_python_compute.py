@@ -240,6 +240,14 @@ def _df_to_markdown(df: Any) -> str:
 def _render(value: Any) -> str:
     """Render a result value for return to the LLM. Special-cases DataFrame and
     ndarray to keep traces readable; falls back to ``repr``.
+
+    Both optional-dep imports are wrapped in ``try/except ImportError``
+    defensively: ``_build_namespace`` raises with a clear install hint when
+    numpy/pandas are missing, so in practice the sandbox refuses to run
+    before we ever reach ``_render``. Keeping the guards here means a
+    future caller that bypasses the namespace builder (e.g. a unit test
+    that hands ``_render`` a value directly) still degrades gracefully to
+    ``repr`` instead of crashing.
     """
     try:
         import pandas as pd
@@ -247,6 +255,8 @@ def _render(value: Any) -> str:
         if isinstance(value, pd.DataFrame):
             return _df_to_markdown(value)
     except ImportError:
+        # pandas not installed (no [reasoning-eval] extra); fall through
+        # to the numpy probe and then the ``repr`` fallback.
         pass
     try:
         import numpy as np
@@ -255,6 +265,8 @@ def _render(value: Any) -> str:
             with np.printoptions(threshold=200, edgeitems=3):
                 return repr(value)
     except ImportError:
+        # numpy not installed either; ``repr`` below handles every other
+        # value type, so this is the right place to give up.
         pass
     return repr(value)
 
@@ -318,7 +330,17 @@ def run_python_compute(
                 else:
                     _RUN_BLOCK(compile(tree, "<python_compute>", "exec"), ns)
                     holder.append(ns.get("result"))
-        except BaseException as exc:  # noqa: BLE001
+        # We deliberately catch BaseException rather than Exception. The
+        # sandbox is meant to confine *any* exit from the LLM-authored
+        # source so the host stays up: that includes SystemExit (which
+        # ``raise SystemExit`` from sandboxed code would otherwise
+        # terminate the host process), GeneratorExit, and anything else
+        # subclassed off BaseException. We run on a daemon worker thread,
+        # not the main thread, so signal-driven KeyboardInterrupt cannot
+        # land here in practice (Python delivers signals only to the main
+        # thread), and the usual "don't swallow KeyboardInterrupt" rule
+        # doesn't apply.
+        except BaseException as exc:  # noqa: BLE001 — see comment above
             err.append(exc)
 
     t = threading.Thread(target=_runner, daemon=True)
