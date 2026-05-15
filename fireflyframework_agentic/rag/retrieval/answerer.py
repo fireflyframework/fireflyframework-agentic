@@ -30,6 +30,8 @@ from fireflyframework_agentic.rag.retrieval.sql import EMPTY_SQL_HEADING
 if TYPE_CHECKING:
     from fireflyframework_agentic.rag.retrieval.sql import SqlRetrievalOutcome
 
+from fireflyframework_agentic.reasoning.trace import ReasoningTrace  # noqa: E402, F401 — runtime, for Answer field
+
 _NO_INFO_TEXT = "I don't have enough information."
 
 _INSTRUCTIONS = f"""\
@@ -92,11 +94,14 @@ class Answer(BaseModel):
     ``cited_sources`` is enriched by :class:`AnswerAgent` *after* the LLM
     call from the hits passed in — gives the caller chunk_id → source_path
     mapping without forcing the LLM to handle paths in its output schema.
+    ``reasoning_trace`` is populated by ``ReasoningAnswerAgent`` when the
+    caller passes ``include_trace=True``.
     """
 
     text: str
     citations: list[str] = Field(default_factory=list)
     cited_sources: list[CitedSource] = Field(default_factory=list)
+    reasoning_trace: ReasoningTrace | None = None
 
 
 def format_chunks_for_prompt(hits: Sequence[ChunkHit]) -> str:
