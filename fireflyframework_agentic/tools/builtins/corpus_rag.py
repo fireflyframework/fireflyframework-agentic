@@ -33,7 +33,7 @@ import os
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 # sqlglot is only required by ``corpus_sql`` — it ships in the
 # ``corpus-search`` extra alongside the rest of this tool's runtime
@@ -64,7 +64,7 @@ log = logging.getLogger(__name__)
 
 _DEFAULT_CORPUS_ROOT = "/tmp/firefly/corpora"
 
-_AGENT_CACHE: dict[str, CorpusAgent] = {}
+_AGENT_CACHE: dict[tuple[str, str], CorpusAgent] = {}
 _WRITE_LOCKS: dict[str, asyncio.Lock] = {}
 _CACHE_LOCK = asyncio.Lock()
 
@@ -82,27 +82,36 @@ authorised_corpora_var: contextvars.ContextVar[tuple[str, ...] | None] = context
 )
 
 
-async def _agent_for(corpus_id: str) -> CorpusAgent:
-    """Return a process-wide CorpusAgent for *corpus_id*, creating one on
-    first use.
+async def _agent_for(
+    corpus_id: str,
+    *,
+    strategy: Literal["fast", "reasoning"] = "fast",
+) -> CorpusAgent:
+    """Return a process-wide CorpusAgent for *(corpus_id, strategy)*, creating
+    one on first use.
 
     Sharing the agent means sharing its DatabaseStore / LocalBackend /
-    SqliteCorpus connections so the asyncio.Lock inside the backend
-    actually serialises writes from multiple tool calls in the same
-    process. Construction is sync and does no I/O (no SQLite open until
-    the agent's first ensure_corpus_ready) so holding _CACHE_LOCK across
-    it is harmless.
+    SqliteCorpus connections so the asyncio.Lock inside the backend actually
+    serialises writes from multiple tool calls in the same process.
+    Construction is sync and does no I/O (no SQLite open until the agent's
+    first ensure_corpus_ready) so holding _CACHE_LOCK across it is harmless.
+
+    Cache key includes the strategy so the same process can serve both the
+    fast and reasoning paths for the same corpus without one tearing down
+    the other's lazily-constructed retrieval components.
     """
+    key = (corpus_id, strategy)
     async with _CACHE_LOCK:
-        if corpus_id not in _AGENT_CACHE:
-            _AGENT_CACHE[corpus_id] = CorpusAgent(
+        if key not in _AGENT_CACHE:
+            _AGENT_CACHE[key] = CorpusAgent(
                 root=_corpus_root() / corpus_id,
                 embed_model=os.environ["EMBEDDING_MODEL"],
                 expansion_model=os.environ["EXPANSION_MODEL"],
                 answer_model=os.environ["ANSWER_MODEL"],
                 rerank_model=os.environ["RERANK_MODEL"],
+                answer_strategy=strategy,
             )
-        return _AGENT_CACHE[corpus_id]
+        return _AGENT_CACHE[key]
 
 
 def _write_lock_for(corpus_id: str) -> asyncio.Lock:
@@ -133,13 +142,14 @@ async def _shutdown_agents() -> None:
     _AGENT_CACHE.clear()
     _WRITE_LOCKS.clear()
     log.debug("shutting down %d cached corpus agent(s)", len(items))
-    for corpus_id, agent in items:
+    for (corpus_id, strategy), agent in items:
         try:
             await agent.close()
         except Exception:
             log.warning(
-                "failed to close cached CorpusAgent corpus_id=%s during shutdown",
+                "failed to close cached CorpusAgent corpus_id=%s strategy=%s during shutdown",
                 corpus_id,
+                strategy,
                 exc_info=True,
             )
 
@@ -397,17 +407,31 @@ async def knowledge_search(corpus_id: str, question: str, top_k: int = 5) -> dic
 @firefly_tool(
     "corpus_query",
     description=(
-        "Run the full corpus pipeline (expand → retrieve → rerank → answer) and "
-        "return a grounded answer with inline citations. Raises if corpus_id is "
-        "unknown."
+        "Run the corpus pipeline and return a grounded answer with inline "
+        "citations. Raises if corpus_id is unknown.\n\n"
+        "strategy='fast' (default): one-shot expand→retrieve→rerank→answer "
+        "pipeline. Cheapest, one LLM call. Existing behaviour.\n\n"
+        "strategy='reasoning': tool-using agent that plans its own retrieval "
+        "and can call knowledge_search, sql_query, inspect_table, and a "
+        "restricted python_compute sandbox. More LLM turns, more capable on "
+        "multi-step / quantitative questions. Pass include_trace=true to "
+        "attach a typed ReasoningTrace to the response — every ActionStep "
+        "carries tool_name + tool_args and can be re-executed manually to "
+        "reproduce the answer."
     ),
     tags=("rag", "query"),
 )
-async def corpus_query(corpus_id: str, question: str, top_k: int = 5) -> dict[str, Any]:
+async def corpus_query(
+    corpus_id: str,
+    question: str,
+    top_k: int = 5,
+    strategy: Literal["fast", "reasoning"] = "fast",
+    include_trace: bool = False,
+) -> dict[str, Any]:
     _assert_corpus_exists(corpus_id)
-    agent = await _agent_for(corpus_id)
-    answer = await agent.query(question, top_k=top_k)
-    return {
+    agent = await _agent_for(corpus_id, strategy=strategy)
+    answer = await agent.query(question, top_k=top_k, include_trace=include_trace)
+    payload: dict[str, Any] = {
         "corpus_id": corpus_id,
         "question": question,
         "answer": answer.text,
@@ -416,6 +440,9 @@ async def corpus_query(corpus_id: str, question: str, top_k: int = 5) -> dict[st
             {"chunk_id": c.chunk_id, "source_path": c.source_path, "snippet": c.snippet} for c in answer.cited_sources
         ],
     }
+    if include_trace and answer.reasoning_trace is not None:
+        payload["reasoning_trace"] = answer.reasoning_trace.model_dump(mode="json")
+    return payload
 
 
 # ---------- structured-data introspection ----------------------------------
