@@ -119,6 +119,10 @@ ollama-embeddings = [
 rag = [
     "fireflyframework-agentic[markitdown,watch,openai-embeddings]",
 ]
+reasoning-eval = [
+    "numpy>=2.0.0",
+    "pandas>=2.2.0",
+]
 corpus-search = [
     "fireflyframework-agentic[rag,vectorstores-sqlite-vec]",
     # sqlglot parses the user-supplied SELECT in the ``corpus_sql`` MCP tool
