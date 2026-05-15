@@ -93,3 +93,244 @@ def validate_source(source: str) -> None:
             mod = (node.module or "").split(".", 1)[0]
             if mod not in WHITELISTED_MODULES:
                 raise PythonComputeError(f"from-import of '{node.module}' is not allowed")
+
+
+import builtins as _builtins  # noqa: E402
+import io  # noqa: E402
+import random  # noqa: E402
+import threading  # noqa: E402
+from contextlib import redirect_stdout  # noqa: E402
+from typing import Any  # noqa: E402
+
+# Sandbox-boundary aliases. These two Python builtins are exactly the
+# call sites we want a security reviewer to read: a compiled AST that has
+# already passed validate_source().
+_RUN_BLOCK = _builtins.exec  # run a compiled exec-mode AST in our namespace
+_RUN_EXPR = _builtins.eval  # evaluate a compiled expression in our namespace
+
+ALLOWED_BUILTINS: frozenset[str] = frozenset(
+    {
+        "abs",
+        "all",
+        "any",
+        "bool",
+        "bytes",
+        "chr",
+        "dict",
+        "divmod",
+        "enumerate",
+        "filter",
+        "float",
+        "frozenset",
+        "int",
+        "isinstance",
+        "issubclass",
+        "iter",
+        "len",
+        "list",
+        "map",
+        "max",
+        "min",
+        "next",
+        "ord",
+        "pow",
+        "print",
+        "range",
+        "repr",
+        "reversed",
+        "round",
+        "set",
+        "slice",
+        "sorted",
+        "str",
+        "sum",
+        "tuple",
+        "zip",
+    }
+)
+
+
+def _build_namespace(data: dict[str, Any] | None) -> dict[str, Any]:
+    """Build the locals/globals for one run. Imports are lazy so a missing
+    numpy/pandas surfaces a clear error rather than a module-load failure.
+    """
+    safe_builtins: dict[str, Any] = {name: getattr(_builtins, name) for name in ALLOWED_BUILTINS}
+    # __import__ is needed at runtime when the source contains `import X` or
+    # `from X import Y` — Python's import machinery looks it up in builtins.
+    # Static imports are already gated by validate_source against WHITELISTED_MODULES,
+    # and dynamic invocation (the literal call `__import__(...)`) is blocked by the
+    # validator's dunder-name rule.
+    safe_builtins["__import__"] = _builtins.__import__
+    ns: dict[str, Any] = {"__builtins__": safe_builtins}
+
+    import calendar
+    import collections
+    import dataclasses
+    import datetime as _dt
+    import decimal
+    import enum
+    import fractions
+    import functools
+    import itertools
+    import json as _json
+    import math
+    import operator
+    import re
+    import statistics
+    import string
+    import textwrap
+    import unicodedata
+
+    ns.update(
+        {
+            "math": math,
+            "statistics": statistics,
+            "decimal": decimal,
+            "fractions": fractions,
+            "datetime": _dt,
+            "calendar": calendar,
+            "re": re,
+            "string": string,
+            "textwrap": textwrap,
+            "unicodedata": unicodedata,
+            "json": _json,
+            "collections": collections,
+            "itertools": itertools,
+            "functools": functools,
+            "operator": operator,
+            "dataclasses": dataclasses,
+            "enum": enum,
+            # Per-call deterministic random source; host state untouched.
+            "random": random.Random(0),
+        }
+    )
+
+    try:
+        import numpy as _np
+
+        ns["np"] = _np
+        ns["numpy"] = _np
+    except ImportError as exc:
+        raise RuntimeError("install fireflyframework-agentic[reasoning-eval] to use python_compute") from exc
+    try:
+        import pandas as _pd
+
+        ns["pd"] = _pd
+        ns["pandas"] = _pd
+    except ImportError as exc:
+        raise RuntimeError("install fireflyframework-agentic[reasoning-eval] to use python_compute") from exc
+
+    if data:
+        ns.update(data)
+    return ns
+
+
+def _df_to_markdown(df: Any) -> str:
+    """Render a pandas DataFrame as a minimal markdown table. Inline rather
+    than ``df.to_markdown(index=False)`` so we don't take a dep on tabulate.
+    """
+    cols = [str(c) for c in df.columns]
+    rows = [[str(v) for v in row] for row in df.itertuples(index=False, name=None)]
+    header = "| " + " | ".join(cols) + " |"
+    sep = "| " + " | ".join(["---"] * len(cols)) + " |"
+    body = "\n".join("| " + " | ".join(r) + " |" for r in rows)
+    return f"{header}\n{sep}\n{body}" if body else f"{header}\n{sep}"
+
+
+def _render(value: Any) -> str:
+    """Render a result value for return to the LLM. Special-cases DataFrame and
+    ndarray to keep traces readable; falls back to ``repr``.
+    """
+    try:
+        import pandas as pd
+
+        if isinstance(value, pd.DataFrame):
+            return _df_to_markdown(value)
+    except ImportError:
+        pass
+    try:
+        import numpy as np
+
+        if isinstance(value, np.ndarray):
+            with np.printoptions(threshold=200, edgeitems=3):
+                return repr(value)
+    except ImportError:
+        pass
+    return repr(value)
+
+
+def _truncate(text: str, cap: int) -> str:
+    if len(text) <= cap:
+        return text
+    excess = len(text) - cap
+    return text[:cap] + f"… (truncated, {excess} more bytes)"
+
+
+def run_python_compute(
+    source: str,
+    data: dict[str, Any] | None = None,
+    *,
+    timeout_seconds: float = 5.0,
+    output_cap_bytes: int = 8192,
+) -> str:
+    """Validate, execute, and render restricted Python.
+
+    Returns the rendered result (or last-expression value if ``result`` is not
+    set), with captured stdout prepended. On any failure (denied AST, syntax,
+    runtime, timeout) returns a string starting with ``"python_compute error:"``
+    or ``"python_compute timeout"`` so the LLM can self-correct without the
+    loop dying.
+    """
+    try:
+        validate_source(source)
+    except PythonComputeError as exc:
+        return f"python_compute error: {exc}"
+
+    try:
+        ns = _build_namespace(data)
+    except RuntimeError as exc:
+        return f"python_compute error: {exc}"
+
+    tree = ast.parse(source, mode="exec")
+    last = tree.body[-1] if tree.body else None
+    explicitly_assigns_result = any(
+        isinstance(s, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "result" for t in s.targets)
+        for s in tree.body
+    )
+    take_last_expr = isinstance(last, ast.Expr) and not explicitly_assigns_result
+
+    buf = io.StringIO()
+    holder: list[Any] = []
+    err: list[BaseException] = []
+
+    def _runner() -> None:
+        try:
+            with redirect_stdout(buf):
+                if take_last_expr and last is not None:
+                    body_tree = ast.Module(body=tree.body[:-1], type_ignores=[])
+                    expr_tree = ast.Expression(body=last.value)
+                    ast.fix_missing_locations(body_tree)
+                    ast.fix_missing_locations(expr_tree)
+                    _RUN_BLOCK(compile(body_tree, "<python_compute>", "exec"), ns)
+                    holder.append(_RUN_EXPR(compile(expr_tree, "<python_compute>", "eval"), ns))
+                else:
+                    _RUN_BLOCK(compile(tree, "<python_compute>", "exec"), ns)
+                    holder.append(ns.get("result"))
+        except BaseException as exc:  # noqa: BLE001
+            err.append(exc)
+
+    t = threading.Thread(target=_runner, daemon=True)
+    t.start()
+    t.join(timeout=timeout_seconds)
+    if t.is_alive():
+        return f"python_compute timeout after {timeout_seconds}s"
+    if err:
+        return f"python_compute error: {type(err[0]).__name__}: {err[0]}"
+
+    parts: list[str] = []
+    stdout = buf.getvalue()
+    if stdout:
+        parts.append(stdout.rstrip("\n"))
+    parts.append(_render(holder[0] if holder else None))
+    combined = "\n".join(parts)
+    return _truncate(combined, output_cap_bytes)

@@ -52,3 +52,78 @@ def test_validate_rejects_from_import_of_non_whitelisted():
 def test_validate_rejects_attribute_subclasses_escape():
     with pytest.raises(PythonComputeError, match="dunder"):
         validate_source("().__class__.__bases__[0].__subclasses__()")
+
+
+from fireflyframework_agentic.rag.retrieval._python_compute import run_python_compute  # noqa: E402
+
+
+def test_run_returns_result_binding():
+    out = run_python_compute("result = 1 + 2")
+    assert "3" in out
+
+
+def test_run_returns_last_expression_when_no_result():
+    out = run_python_compute("1 + 2")
+    assert "3" in out
+
+
+def test_run_returns_none_when_no_expression():
+    out = run_python_compute("x = 1")
+    assert "None" in out
+
+
+def test_run_binds_data_as_locals():
+    out = run_python_compute("result = sum(values)", data={"values": [1, 2, 3]})
+    assert "6" in out
+
+
+def test_run_captures_print_output():
+    out = run_python_compute("print('hello')\nresult = 1")
+    assert "hello" in out
+    assert "1" in out
+
+
+def test_run_uses_per_call_random_seed():
+    import random as host_random
+
+    host_state = host_random.getstate()
+    out1 = run_python_compute("result = random.random()")
+    out2 = run_python_compute("result = random.random()")
+    assert out1 == out2  # deterministic: fresh Random(0) each call
+    assert host_random.getstate() == host_state  # host state untouched
+
+
+def test_run_numpy_works():
+    out = run_python_compute("import numpy as np\nresult = float(np.mean([1.0, 2.0, 3.0]))")
+    assert "2.0" in out
+
+
+def test_run_pandas_dataframe_renders_as_markdown():
+    out = run_python_compute("import pandas as pd\nresult = pd.DataFrame({'a': [1, 2], 'b': [3, 4]})")
+    assert "|" in out and "a" in out and "b" in out
+
+
+def test_run_denied_pattern_returns_error_string():
+    out = run_python_compute("__import__('os')")
+    assert out.startswith("python_compute error:")
+
+
+def test_run_syntax_error_returns_error_string():
+    out = run_python_compute("def (oops:")
+    assert out.startswith("python_compute error:")
+
+
+def test_run_undefined_name_returns_error_string():
+    out = run_python_compute("result = undefined_thing")
+    assert out.startswith("python_compute error:")
+
+
+def test_run_timeout_returns_error_string():
+    out = run_python_compute("while True:\n    pass", timeout_seconds=0.2)
+    assert out.startswith("python_compute timeout") or out.startswith("python_compute error:")
+
+
+def test_run_output_cap_truncates():
+    out = run_python_compute("result = list(range(1000))", output_cap_bytes=50)
+    assert "truncated" in out
+    assert len(out) <= 100  # cap + suffix wiggle
