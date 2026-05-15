@@ -411,3 +411,4 @@ New telemetry, routed through `fireflyframework_agentic/rag/_telemetry.py`:
 - Plan-then-ReAct decomposition for multi-hop questions (the agent plans sub-questions, runs a small ReAct loop per sub-question). Punt until questions in the wild demand it.
 - Streaming traces — emit `ActionStep`s as they happen rather than at the end of `answer()`. Useful for chat UIs showing reasoning live.
 - Per-corpus tool customisation — let an operator disable `code_eval` or restrict `inspect_table` ops on a per-corpus basis.
+- **Pydantic Monty evaluation** (tracked in #186): two watch-items — (A) replacing `_code_eval.py`'s AST-validated Python sandbox with Monty's Rust-based interpreter once its pydantic-ai integration GAs and numpy/pandas are supported; (B) adding an alternate `answer_strategy="monty"` where the LLM writes one Python script that calls tools as functions, reducing round-trips on multi-step questions.
