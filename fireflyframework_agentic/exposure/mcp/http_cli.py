@@ -145,6 +145,44 @@ def _log_unhandled_loop_exception(loop: asyncio.AbstractEventLoop, context: dict
         log.error("asyncio: %s (source=%s)", message, src)
 
 
+def _configure_telemetry() -> None:
+    """Wire OpenTelemetry exporters from environment variables.
+
+    Reads ``APPLICATIONINSIGHTS_CONNECTION_STRING`` (Azure Monitor) and/or
+    ``OTEL_EXPORTER_OTLP_ENDPOINT`` (vendor-neutral OTLP) and registers SDK
+    providers via :func:`configure_exporters`. Without this call,
+    ``metrics.get_meter`` / ``trace.get_tracer`` return NoOp implementations
+    and every measurement is silently dropped, even when the env var is set.
+
+    Idempotent — safe to call multiple times. Failures are logged as a
+    warning but do not abort startup (telemetry is best-effort; the server
+    must still serve requests if Application Insights is unreachable).
+    """
+    from fireflyframework_agentic.observability import configure_exporters
+
+    appinsights_cs = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING")
+    otlp_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if not appinsights_cs and not otlp_endpoint:
+        logging.getLogger(__name__).info(
+            "OTel exporters not configured: neither APPLICATIONINSIGHTS_CONNECTION_STRING "
+            "nor OTEL_EXPORTER_OTLP_ENDPOINT is set — running with NoOp providers."
+        )
+        return
+    try:
+        configure_exporters(
+            service_name="firefly-mcp-http",
+            azure_monitor_connection_string=appinsights_cs,
+            otlp_endpoint=otlp_endpoint,
+        )
+        logging.getLogger(__name__).info(
+            "OTel exporters configured (azure_monitor=%s, otlp=%s)",
+            bool(appinsights_cs),
+            bool(otlp_endpoint),
+        )
+    except Exception as exc:  # noqa: BLE001 — best-effort telemetry
+        logging.getLogger(__name__).warning("OTel exporter configuration failed: %s — running with NoOp providers", exc)
+
+
 def main() -> None:
     """Entry point registered as ``firefly-mcp-http`` in ``[project.scripts]``.
 
@@ -159,6 +197,14 @@ def main() -> None:
     manifest before the process starts, see no behavioural change.
     """
     load_dotenv(find_dotenv(usecwd=True))
+
+    # Wire OpenTelemetry exporters BEFORE any framework code (which calls
+    # metrics.get_meter / trace.get_tracer at import time) records a
+    # measurement. configure_exporters registers the SDK providers — without
+    # it the global OTel API returns NoOp instruments and every span,
+    # histogram record, and counter increment is silently dropped, even
+    # when ``APPLICATIONINSIGHTS_CONNECTION_STRING`` is set in the env.
+    _configure_telemetry()
 
     # Force-attach our handler before uvicorn boots its loop. uvicorn picks
     # up loop="auto" → uvloop on Unix; both honour ``set_exception_handler``.
