@@ -766,3 +766,26 @@ uv run python examples/reasoning_cot.py
 ```
 
 See [examples/README.md](../examples/README.md) for the full list.
+
+## Note: tool-using ReAct is implemented outside `reasoning/`
+
+The patterns in this module (`ReActPattern`, `PlanAndExecutePattern`, etc.)
+drive **text-shaped** reason → act → observe loops via plain
+`agent.run(prompt)` calls. They do not dispatch real function tools — for
+example, `ReActPattern._act` runs the LLM with a text prompt and emits a
+placeholder `ActionStep(tool_name="react_action", tool_args={"thought": …})`
+whose payload is the LLM's free-text description of the action.
+
+The framework's tool-using ReAct implementation lives next to its first
+consumer in
+[`fireflyframework_agentic/rag/retrieval/reasoning_answerer.py`](../fireflyframework_agentic/rag/retrieval/reasoning_answerer.py).
+It delegates the loop to pydantic-ai's native tool-calling
+(`FireflyAgent(tools=[...])`), then translates the resulting message
+history into a typed `ReasoningTrace` so the existing trace API still
+applies. See [use-case-corpus-search.md §14](use-case-corpus-search.md) for the user-facing
+contract.
+
+**Open follow-up**: promote a generic `ToolCallingReActPattern` into this
+module once a second consumer needs it. The trace-translation helper
+(`_trace_from_messages` in `reasoning_answerer.py`) is the load-bearing
+piece to lift.
