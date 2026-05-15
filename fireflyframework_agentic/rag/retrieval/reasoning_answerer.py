@@ -88,3 +88,30 @@ def _build_knowledge_search():
         return out
 
     return knowledge_search
+
+
+def _build_sql_query():
+    """Return an async ``sql_query(question)`` closure wrapping
+    :meth:`StructuredRetriever.retrieve`.
+
+    Returns a JSON-serialisable dict so the LLM sees a clean shape. Side-effect:
+    appends the :class:`SqlRetrievalOutcome` to ``ctx.sql_calls`` for telemetry.
+    """
+    from typing import Any
+
+    async def sql_query(question: str) -> dict[str, Any]:
+        ctx = _CURRENT_CTX.get()
+        assert ctx is not None, "sql_query called outside answer()"
+        assert ctx.structured_retriever is not None
+        outcome = await ctx.structured_retriever.retrieve(question, ctx.schemas)
+        ctx.sql_calls.append(outcome)
+        return {
+            "outcome": outcome.outcome,
+            "attempted_sql": outcome.attempted_sql,
+            "result_markdown": outcome.result_markdown,
+            "probe_trail": [
+                {"table": p.table, "column": p.column, "op": p.op, "result": p.result} for p in outcome.probe_trail
+            ],
+        }
+
+    return sql_query

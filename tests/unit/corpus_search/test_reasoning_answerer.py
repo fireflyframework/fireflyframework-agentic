@@ -70,3 +70,39 @@ async def test_knowledge_search_requires_ctx():
     knowledge_search = _build_knowledge_search()
     with pytest.raises(AssertionError):
         await knowledge_search(query="x")
+
+
+from fireflyframework_agentic.rag.retrieval.reasoning_answerer import _build_sql_query  # noqa: E402
+from fireflyframework_agentic.rag.retrieval.sql import (  # noqa: E402
+    ProbeRecord,
+    SqlRetrievalOutcome,
+)
+
+
+@pytest.mark.asyncio
+async def test_sql_query_serialises_outcome_and_records():
+    outcome = SqlRetrievalOutcome(
+        outcome="answered",
+        result_markdown="| col |\n| --- |\n| 1 |",
+        attempted_sql="SELECT col FROM t",
+        probe_trail=[ProbeRecord(table="t", column="col", op="count", result="1")],
+    )
+    retriever = AsyncMock()
+    retriever.retrieve.return_value = outcome
+    ctx = _LoopContext(
+        corpus_agent=None,
+        structured_retriever=retriever,
+        schemas=[],
+        db_path=Path("/tmp/x.sqlite"),
+    )
+    tok = _CURRENT_CTX.set(ctx)
+    try:
+        sql_query = _build_sql_query()
+        out = await sql_query(question="how many rows?")
+    finally:
+        _CURRENT_CTX.reset(tok)
+    assert out["outcome"] == "answered"
+    assert out["attempted_sql"] == "SELECT col FROM t"
+    assert "| col |" in out["result_markdown"]
+    assert out["probe_trail"] == [{"table": "t", "column": "col", "op": "count", "result": "1"}]
+    assert ctx.sql_calls == [outcome]
