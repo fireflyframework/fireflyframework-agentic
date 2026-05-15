@@ -54,3 +54,37 @@ class _LoopContext:
 _CURRENT_CTX: contextvars.ContextVar[_LoopContext | None] = contextvars.ContextVar(
     "reasoning_answerer_ctx", default=None
 )
+
+
+_SNIPPET_CHARS = 400
+
+
+def _build_knowledge_search():
+    """Return an async ``knowledge_search(query, top_k=5)`` closure.
+
+    Closes over the contextvar — callers must :meth:`answer` first. Side-effect:
+    every returned :class:`ChunkHit` is recorded in
+    ``ctx.accumulated_hits[chunk_id]`` so the orchestrator can enrich
+    ``Answer.cited_sources`` post-hoc.
+    """
+    from typing import Any
+
+    async def knowledge_search(query: str, top_k: int = 5) -> list[dict[str, Any]]:
+        ctx = _CURRENT_CTX.get()
+        assert ctx is not None, "knowledge_search called outside answer()"
+        assert ctx.corpus_agent is not None
+        hits = await ctx.corpus_agent.retrieve(query, top_k=top_k, rerank=True)
+        out: list[dict[str, Any]] = []
+        for h in hits:
+            ctx.accumulated_hits[h.chunk_id] = h
+            out.append(
+                {
+                    "chunk_id": h.chunk_id,
+                    "source_path": h.source_path,
+                    "score": h.score,
+                    "snippet": h.content[:_SNIPPET_CHARS],
+                }
+            )
+        return out
+
+    return knowledge_search
