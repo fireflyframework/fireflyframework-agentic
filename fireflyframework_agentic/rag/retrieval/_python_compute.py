@@ -297,7 +297,9 @@ def run_python_compute(
         isinstance(s, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "result" for t in s.targets)
         for s in tree.body
     )
-    take_last_expr = isinstance(last, ast.Expr) and not explicitly_assigns_result
+    # Bind the trailing expression node directly so the type narrows from
+    # ``ast.stmt`` to ``ast.Expr`` and ``.value`` access type-checks cleanly.
+    last_expr: ast.Expr | None = last if isinstance(last, ast.Expr) and not explicitly_assigns_result else None
 
     buf = io.StringIO()
     holder: list[Any] = []
@@ -306,9 +308,9 @@ def run_python_compute(
     def _runner() -> None:
         try:
             with redirect_stdout(buf):
-                if take_last_expr and last is not None:
+                if last_expr is not None:
                     body_tree = ast.Module(body=tree.body[:-1], type_ignores=[])
-                    expr_tree = ast.Expression(body=last.value)
+                    expr_tree = ast.Expression(body=last_expr.value)
                     ast.fix_missing_locations(body_tree)
                     ast.fix_missing_locations(expr_tree)
                     _RUN_BLOCK(compile(body_tree, "<python_compute>", "exec"), ns)
