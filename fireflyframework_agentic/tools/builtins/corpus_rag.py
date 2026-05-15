@@ -414,10 +414,13 @@ async def knowledge_search(corpus_id: str, question: str, top_k: int = 5) -> dic
         "strategy='reasoning': tool-using agent that plans its own retrieval "
         "and can call knowledge_search, sql_query, inspect_table, and a "
         "restricted python_compute sandbox. More LLM turns, more capable on "
-        "multi-step / quantitative questions. Pass include_trace=true to "
-        "attach a typed ReasoningTrace to the response — every ActionStep "
+        "multi-step / quantitative questions. The response includes a typed "
+        "ReasoningTrace by default (include_trace=true) — every ActionStep "
         "carries tool_name + tool_args and can be re-executed manually to "
-        "reproduce the answer."
+        "reproduce the answer. Pass include_trace=false to suppress it "
+        "(smaller payload). The fast path never carries a trace regardless "
+        "of include_trace, so existing fast-path response shapes are "
+        "unchanged."
     ),
     tags=("rag", "query"),
 )
@@ -426,7 +429,7 @@ async def corpus_query(
     question: str,
     top_k: int = 5,
     strategy: Literal["fast", "reasoning"] = "fast",
-    include_trace: bool = False,
+    include_trace: bool = True,
 ) -> dict[str, Any]:
     _assert_corpus_exists(corpus_id)
     agent = await _agent_for(corpus_id, strategy=strategy)
@@ -440,6 +443,9 @@ async def corpus_query(
             {"chunk_id": c.chunk_id, "source_path": c.source_path, "snippet": c.snippet} for c in answer.cited_sources
         ],
     }
+    # Trace only attaches when the reasoning path produced one — on the fast
+    # path ``answer.reasoning_trace`` is always None, so the legacy response
+    # shape is preserved by construction.
     if include_trace and answer.reasoning_trace is not None:
         payload["reasoning_trace"] = answer.reasoning_trace.model_dump(mode="json")
     return payload
