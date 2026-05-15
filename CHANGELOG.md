@@ -28,10 +28,13 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
   dict), so a recorded trace is re-executable: see
   `tests/examples/corpus_search/test_trace_is_replayable.py`.
 - **MCP `corpus_query` tool** gains two optional params, `strategy` and
-  `include_trace`, mirroring the same options on `CorpusAgent.query`.
-  Existing response shape is preserved unless `include_trace=true`.
-  Process-wide agent cache keys by `(corpus_id, strategy)` so both paths
-  can coexist for the same corpus.
+  `include_trace`. `include_trace` defaults to `True` — callers that hit
+  the reasoning path receive the typed `ReasoningTrace` in the response
+  without opting in. The fast path never populates a trace regardless of
+  the flag, so the legacy fast-path JSON shape is unchanged. Pass
+  `include_trace=false` to opt out (smaller payload). Process-wide agent
+  cache keys by `(corpus_id, strategy)` so both paths can coexist for the
+  same corpus.
 - **New optional extra `[reasoning-eval]`** pulls in `numpy>=2.0` and
   `pandas>=2.2` for the `python_compute` sandbox. The sandbox itself is
   AST-validated (denylist on dunder names, `eval`/`exec`/`compile`/
