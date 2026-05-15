@@ -58,6 +58,82 @@ DISALLOWED_BUILTIN_NAMES: frozenset[str] = frozenset(
     }
 )
 
+# Attribute names that perform filesystem / network IO when invoked on the
+# whitelisted modules (numpy / pandas) or instances built from them. These
+# are denied regardless of the receiver because attribute targets can be
+# rebound (``df = pd.DataFrame(...); df.to_X(...)``); checking only the
+# ``Name.id`` of the receiver would miss any chained or aliased call.
+#
+# Threat model: an LLM consuming retrieved corpus chunks reads
+# attacker-influenced content. Without these guards, a prompt-injected
+# chunk could direct the sandbox at host files via ``pd.read_csv``,
+# ``np.fromfile``, etc., or trigger deserialisation-time code paths
+# via the ``read_p*``/``to_p*`` family (an arbitrary-code surface).
+DISALLOWED_ATTRIBUTE_NAMES: frozenset[str] = frozenset(
+    {
+        # pandas IO: read from disk or network
+        "read_csv",
+        "read_pickle",
+        "read_json",
+        "read_sql",
+        "read_sql_query",
+        "read_sql_table",
+        "read_table",
+        "read_excel",
+        "read_html",
+        "read_xml",
+        "read_feather",
+        "read_parquet",
+        "read_orc",
+        "read_hdf",
+        "read_sas",
+        "read_spss",
+        "read_stata",
+        "read_gbq",
+        "read_fwf",
+        "read_clipboard",
+        "read_msgpack",
+        # pandas IO: write to disk
+        "to_pickle",
+        "to_csv",
+        "to_json",
+        "to_sql",
+        "to_excel",
+        "to_html",
+        "to_xml",
+        "to_feather",
+        "to_parquet",
+        "to_orc",
+        "to_hdf",
+        "to_sas",
+        "to_spss",
+        "to_stata",
+        "to_gbq",
+        "to_clipboard",
+        "to_msgpack",
+        # numpy IO: read from disk
+        "fromfile",
+        "loadtxt",
+        "load",
+        "memmap",
+        "genfromtxt",
+        # numpy IO: write to disk
+        "save",
+        "savetxt",
+        "savez",
+        "savez_compressed",
+        "tofile",
+    }
+)
+
+# String literals that, when fed to ``str.format()`` / ``str.format_map()``
+# / ``__format__``, enumerate Python's class hierarchy and reach back to
+# unsafe primitives. They never appear in legitimate compute and signal
+# format-string sandbox escape research.
+SUSPICIOUS_FORMAT_TOKENS: frozenset[str] = frozenset(
+    {"__class__", "__bases__", "__mro__", "__subclasses__", "__globals__", "__builtins__"}
+)
+
 
 class PythonComputeError(Exception):
     """Raised by the validator when source contains a denied AST pattern."""
@@ -76,14 +152,31 @@ def validate_source(source: str) -> None:
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and node.id.startswith("__") and node.id.endswith("__"):
             raise PythonComputeError(f"dunder name '{node.id}' is not allowed")
-        if isinstance(node, ast.Attribute) and node.attr.startswith("__") and node.attr.endswith("__"):
-            raise PythonComputeError(f"dunder attribute '.{node.attr}' is not allowed")
+        if isinstance(node, ast.Attribute):
+            if node.attr.startswith("__") and node.attr.endswith("__"):
+                raise PythonComputeError(f"dunder attribute '.{node.attr}' is not allowed")
+            # Block filesystem / network IO entry points on numpy / pandas
+            # regardless of the receiver. ``pd.read_csv`` and
+            # ``df.to_pickle`` both go through here.
+            if node.attr in DISALLOWED_ATTRIBUTE_NAMES:
+                raise PythonComputeError(
+                    f"attribute '.{node.attr}' is not allowed (filesystem / network IO is denied in the sandbox)"
+                )
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             name = node.func.id
             if name.startswith("__") and name.endswith("__"):
                 raise PythonComputeError(f"dunder name '{name}' is not allowed")
             if name in DISALLOWED_BUILTIN_NAMES:
                 raise PythonComputeError(f"call to '{name}' is not allowed")
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            # Block format-string sandbox-escape literals like
+            # '{0.__class__.__bases__}' — these never appear in legitimate
+            # compute but reach back to unsafe primitives via str.format.
+            for token in SUSPICIOUS_FORMAT_TOKENS:
+                if token in node.value:
+                    raise PythonComputeError(
+                        f"string literal contains suspicious format token '{token}' (sandbox-escape research surface)"
+                    )
         if isinstance(node, ast.Import):
             for alias in node.names:
                 top = alias.name.split(".", 1)[0]
@@ -272,10 +365,13 @@ def _render(value: Any) -> str:
 
 
 def _truncate(text: str, cap: int) -> str:
+    # ``cap`` is a character count, not a byte count. For multi-byte
+    # output (CJK, emoji) the on-the-wire size is larger but truncation
+    # happens at the readable boundary, which is what the LLM cares about.
     if len(text) <= cap:
         return text
     excess = len(text) - cap
-    return text[:cap] + f"… (truncated, {excess} more bytes)"
+    return text[:cap] + f"… (truncated, {excess} more chars)"
 
 
 def run_python_compute(
@@ -283,7 +379,7 @@ def run_python_compute(
     data: dict[str, Any] | None = None,
     *,
     timeout_seconds: float = 5.0,
-    output_cap_bytes: int = 8192,
+    output_cap_chars: int = 8192,
 ) -> str:
     """Validate, execute, and render restricted Python.
 
@@ -357,4 +453,4 @@ def run_python_compute(
         parts.append(stdout.rstrip("\n"))
     parts.append(_render(holder[0] if holder else None))
     combined = "\n".join(parts)
-    return _truncate(combined, output_cap_bytes)
+    return _truncate(combined, output_cap_chars)

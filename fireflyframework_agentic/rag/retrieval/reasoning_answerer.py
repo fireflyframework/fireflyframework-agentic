@@ -253,7 +253,17 @@ def _trace_from_messages(messages, *, pattern_name: str):
             elif isinstance(part, ToolCallPart):
                 if part.tool_name in _PYDANTIC_AI_OUTPUT_TOOL_NAMES:
                     continue
-                args = part.args if isinstance(part.args, dict) else {}
+                # ``ToolCallPart.args`` is ``str | dict | None`` — providers like
+                # OpenAI surface tool-call args as a JSON string while Anthropic
+                # delivers a dict. ``args_as_dict()`` is the canonical accessor
+                # that handles both. Reading ``.args`` directly and gating on
+                # ``isinstance(..., dict)`` silently drops args for OpenAI-served
+                # runs, which would break the reproducibility contract that
+                # ``test_trace_is_replayable.py`` enforces.
+                try:
+                    args = part.args_as_dict()
+                except Exception:  # noqa: BLE001 — malformed args, fall back
+                    args = {}
                 trace.add_step(ActionStep(tool_name=part.tool_name, tool_args=args))
             elif isinstance(part, ToolReturnPart):
                 if part.tool_name in _PYDANTIC_AI_OUTPUT_TOOL_NAMES:

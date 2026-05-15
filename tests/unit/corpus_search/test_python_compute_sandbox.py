@@ -124,6 +124,92 @@ def test_run_timeout_returns_error_string():
 
 
 def test_run_output_cap_truncates():
-    out = run_python_compute("result = list(range(1000))", output_cap_bytes=50)
+    out = run_python_compute("result = list(range(1000))", output_cap_chars=50)
     assert "truncated" in out
     assert len(out) <= 100  # cap + suffix wiggle
+
+
+# ---- C2: pandas/numpy IO is denied at the AST level --------------------
+#
+# Threat model: an LLM consuming retrieved corpus chunks reads
+# attacker-influenced content. Without the DISALLOWED_ATTRIBUTE_NAMES
+# guards, a prompt-injected chunk could direct the sandbox at host files
+# via ``pd.read_csv('/etc/passwd')`` or trigger an arbitrary-code surface
+# via ``pd.read_pickle(...)``. The validator denies these at parse time.
+
+
+def test_pandas_read_csv_is_denied():
+    """Filesystem read via pandas — the canonical exfil vector."""
+    with pytest.raises(PythonComputeError, match="read_csv"):
+        validate_source("import pandas as pd\npd.read_csv('/etc/passwd')")
+
+
+def test_pandas_read_pickle_is_denied():
+    """Reading a pickle file is an arbitrary-code-execution surface; the
+    sandbox must reject the entry point before the code runs."""
+    with pytest.raises(PythonComputeError, match="read_pickle"):
+        validate_source("import pandas as pd\npd.read_pickle('/tmp/x.pkl')")
+
+
+def test_pandas_to_pickle_via_instance_method_is_denied():
+    """Attribute denylist is receiver-independent: a DataFrame method call
+    must be denied even though the receiver is not ``pd`` directly."""
+    src = "import pandas as pd\ndf = pd.DataFrame({'a': [1]})\ndf.to_pickle('/tmp/x.pkl')"
+    with pytest.raises(PythonComputeError, match="to_pickle"):
+        validate_source(src)
+
+
+def test_numpy_fromfile_is_denied():
+    with pytest.raises(PythonComputeError, match="fromfile"):
+        validate_source("import numpy as np\nnp.fromfile('/etc/passwd')")
+
+
+def test_numpy_load_is_denied():
+    """np.load on a .npy file can deserialise pickled Python objects,
+    same arbitrary-code surface as pd.read_pickle."""
+    with pytest.raises(PythonComputeError, match="load"):
+        validate_source("import numpy as np\nnp.load('/tmp/x.npy')")
+
+
+def test_pandas_to_csv_to_attacker_path_is_denied():
+    """Filesystem write: the LLM should not be able to dump arbitrary
+    files in writable locations."""
+    src = "import pandas as pd\npd.DataFrame({'a':[1]}).to_csv('/tmp/exfil.csv')"
+    with pytest.raises(PythonComputeError, match="to_csv"):
+        validate_source(src)
+
+
+def test_legitimate_dataframe_arithmetic_still_works():
+    """Sanity guard: the denylist must NOT block legitimate compute. A
+    DataFrame constructed in-memory and aggregated should pass."""
+    src = (
+        "import pandas as pd\n"
+        "df = pd.DataFrame({'x': [1, 2, 3], 'y': [4, 5, 6]})\n"
+        "result = float(df['x'].mean() + df['y'].std())"
+    )
+    validate_source(src)  # must not raise
+    out = run_python_compute(src)
+    assert "error" not in out.lower(), f"expected clean compute, got: {out}"
+
+
+# ---- I1: format-string class-hierarchy enumeration is denied -----------
+
+
+def test_format_class_lookup_string_is_denied():
+    """``'{0.__class__.__bases__}'.format(())`` enumerates Python's class
+    hierarchy via str.format — the canonical sandbox-escape research probe.
+    The dunder filter catches ``.__class__`` only as AST attribute access;
+    when it's a string literal fed to format, we need a constant-scan."""
+    with pytest.raises(PythonComputeError, match="format token"):
+        validate_source("'{0.__class__.__bases__}'.format(())")
+
+
+def test_format_globals_lookup_string_is_denied():
+    with pytest.raises(PythonComputeError, match="format token"):
+        validate_source("'{0.__globals__}'.format(0)")
+
+
+def test_innocent_strings_pass():
+    """Plain string literals must not trip the format-token denylist."""
+    validate_source("result = 'hello world'")
+    validate_source("name = 'Alice'\ngreeting = f'Hi, {name}'")
