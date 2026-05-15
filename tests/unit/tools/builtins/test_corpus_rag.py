@@ -754,3 +754,85 @@ async def test_corpus_sql_read_only_connection_blocks_writes(configured_env: Pat
 
     with pytest.raises(_sqlite3.OperationalError, match="readonly"):
         _execute_select_readonly(sqlite_path, "DELETE FROM t", params=None, limit=10)
+
+
+@pytest.mark.asyncio
+async def test_corpus_query_strategy_fast_keeps_legacy_response_shape(
+    configured_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Default strategy must not surface reasoning_trace; existing MCP clients
+    see the same JSON shape they did before this feature landed.
+    """
+    from fireflyframework_agentic.rag.retrieval.answerer import Answer, CitedSource
+    from fireflyframework_agentic.tools.builtins import corpus_rag
+    from fireflyframework_agentic.tools.builtins.corpus_rag import corpus_query
+
+    # Make _assert_corpus_exists a no-op so we don't need to materialise a
+    # corpus.sqlite — we're only testing the response-shape contract here.
+    monkeypatch.setattr(corpus_rag, "_assert_corpus_exists", lambda corpus_id: None)
+
+    class _StubAgent:
+        async def query(self, question, *, top_k=5, include_trace=False):
+            assert include_trace is False, "fast strategy should not be asked for a trace"
+            return Answer(
+                text="ok",
+                citations=["c1"],
+                cited_sources=[CitedSource(chunk_id="c1", source_path="/x", snippet="hi")],
+            )
+
+    monkeypatch.setitem(corpus_rag._AGENT_CACHE, ("t1", "fast"), _StubAgent())
+    out = await corpus_query.execute(corpus_id="t1", question="?")
+    assert "reasoning_trace" not in out
+    assert out["cited_sources"][0]["chunk_id"] == "c1"
+
+
+@pytest.mark.asyncio
+async def test_corpus_query_strategy_reasoning_with_trace(
+    configured_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When strategy='reasoning' and include_trace=true, the response carries
+    a serialised reasoning_trace matching the Answer's typed trace.
+    """
+    from fireflyframework_agentic.rag.retrieval.answerer import Answer
+    from fireflyframework_agentic.reasoning.trace import ActionStep, ReasoningTrace
+    from fireflyframework_agentic.tools.builtins import corpus_rag
+    from fireflyframework_agentic.tools.builtins.corpus_rag import corpus_query
+
+    monkeypatch.setattr(corpus_rag, "_assert_corpus_exists", lambda corpus_id: None)
+
+    trace = ReasoningTrace(pattern_name="reasoning_answerer")
+    trace.add_step(ActionStep(tool_name="knowledge_search", tool_args={"query": "x"}))
+
+    class _StubAgent:
+        async def query(self, question, *, top_k=5, include_trace=False):
+            assert include_trace is True, "reasoning + include_trace should propagate"
+            return Answer(text="ok", citations=[], cited_sources=[], reasoning_trace=trace)
+
+    monkeypatch.setitem(corpus_rag._AGENT_CACHE, ("t1", "reasoning"), _StubAgent())
+    out = await corpus_query.execute(corpus_id="t1", question="?", strategy="reasoning", include_trace=True)
+    assert "reasoning_trace" in out
+    assert out["reasoning_trace"]["pattern_name"] == "reasoning_answerer"
+    assert out["reasoning_trace"]["steps"][0]["tool_name"] == "knowledge_search"
+
+
+@pytest.mark.asyncio
+async def test_corpus_query_strategy_cache_isolation(configured_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fast and reasoning agents for the same corpus must not share the cache
+    slot — otherwise switching strategies in one process tears down the
+    other's lazily-constructed retrieval components.
+    """
+    # Resolve fast and reasoning for the same corpus_id and assert two distinct
+    # CorpusAgent instances came out. Stub the embedder/vector_store factories
+    # so no network is touched.
+    from fireflyframework_agentic.rag import agent as agent_mod
+    from fireflyframework_agentic.tools.builtins import corpus_rag
+
+    monkeypatch.setattr(agent_mod.CorpusAgent, "_build_embedder", lambda self, m: _StubEmbedder())
+    monkeypatch.setattr(agent_mod.CorpusAgent, "_build_vector_store", lambda self: _StubVectorStore())
+
+    a_fast = await corpus_rag._agent_for("t1", strategy="fast")
+    a_reasoning = await corpus_rag._agent_for("t1", strategy="reasoning")
+    assert a_fast is not a_reasoning
+    # Idempotent: second resolve returns the same instance.
+    assert await corpus_rag._agent_for("t1", strategy="fast") is a_fast
+    assert await corpus_rag._agent_for("t1", strategy="reasoning") is a_reasoning
