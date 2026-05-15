@@ -154,3 +154,23 @@ def _build_inspect_table_tool():
         return await inspect_fn(table, column, op, value)
 
     return inspect_table
+
+
+def _build_python_compute_tool():
+    """Return an async ``python_compute(source, data=None)`` closure.
+
+    Runs the sandbox in the event loop's default executor so the worker thread
+    inside :func:`run_python_compute` doesn't block other tool calls.
+    """
+    import asyncio as _asyncio
+    from typing import Any
+
+    from fireflyframework_agentic.rag.retrieval._python_compute import run_python_compute
+
+    async def python_compute(source: str, data: dict[str, Any] | None = None) -> str:
+        ctx = _CURRENT_CTX.get()
+        assert ctx is not None, "python_compute called outside answer()"
+        loop = _asyncio.get_running_loop()
+        return await loop.run_in_executor(None, run_python_compute, source, data)
+
+    return python_compute
