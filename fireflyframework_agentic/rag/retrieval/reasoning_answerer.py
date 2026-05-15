@@ -20,9 +20,12 @@ See spec ``docs/superpowers/specs/2026-05-14-tool-using-corpus-agent-design.md``
 from __future__ import annotations
 
 import contextvars
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
+
+from fireflyframework_agentic.rag._telemetry import reasoning_tool_call_duration
 
 if TYPE_CHECKING:
     from fireflyframework_agentic.rag.agent import CorpusAgent
@@ -59,6 +62,18 @@ _CURRENT_CTX: contextvars.ContextVar[_LoopContext | None] = contextvars.ContextV
 _SNIPPET_CHARS = 400
 
 
+def _record_tool_duration(tool_name: str, t0: float) -> None:
+    """Record wall-clock elapsed ms for one tool call, labelled by tool_name.
+
+    Pulled out to keep the closures readable — every tool wraps its body in
+    a ``try / finally`` that calls this on exit, success or failure.
+    """
+    reasoning_tool_call_duration.record(
+        (time.monotonic() - t0) * 1000.0,
+        {"tool_name": tool_name},
+    )
+
+
 def _build_knowledge_search():
     """Return an async ``knowledge_search(query, top_k=5)`` closure.
 
@@ -72,7 +87,11 @@ def _build_knowledge_search():
         ctx = _CURRENT_CTX.get()
         assert ctx is not None, "knowledge_search called outside answer()"
         assert ctx.corpus_agent is not None
-        hits = await ctx.corpus_agent.retrieve(query, top_k=top_k, rerank=True)
+        t0 = time.monotonic()
+        try:
+            hits = await ctx.corpus_agent.retrieve(query, top_k=top_k, rerank=True)
+        finally:
+            _record_tool_duration("knowledge_search", t0)
         out: list[dict[str, Any]] = []
         for h in hits:
             ctx.accumulated_hits[h.chunk_id] = h
@@ -101,7 +120,11 @@ def _build_sql_query():
         ctx = _CURRENT_CTX.get()
         assert ctx is not None, "sql_query called outside answer()"
         assert ctx.structured_retriever is not None
-        outcome = await ctx.structured_retriever.retrieve(question, ctx.schemas)
+        t0 = time.monotonic()
+        try:
+            outcome = await ctx.structured_retriever.retrieve(question, ctx.schemas)
+        finally:
+            _record_tool_duration("sql_query", t0)
         ctx.sql_calls.append(outcome)
         return {
             "outcome": outcome.outcome,
@@ -148,7 +171,11 @@ def _build_inspect_table_tool():
         assert ctx is not None, "inspect_table called outside answer()"
         sql_ctx = _SqlLoopContext(db_path=ctx.db_path, schemas=ctx.schemas)
         inspect_fn = _build_inspect_tool(sql_ctx)
-        return await inspect_fn(table, column, op, value)
+        t0 = time.monotonic()
+        try:
+            return await inspect_fn(table, column, op, value)
+        finally:
+            _record_tool_duration("inspect_table", t0)
 
     return inspect_table
 
@@ -167,7 +194,11 @@ def _build_python_compute_tool():
         ctx = _CURRENT_CTX.get()
         assert ctx is not None, "python_compute called outside answer()"
         loop = _asyncio.get_running_loop()
-        return await loop.run_in_executor(None, run_python_compute, source, data)
+        t0 = time.monotonic()
+        try:
+            return await loop.run_in_executor(None, run_python_compute, source, data)
+        finally:
+            _record_tool_duration("python_compute", t0)
 
     return python_compute
 
@@ -326,6 +357,7 @@ class ReasoningAnswerAgent:
 
         from pydantic_ai.usage import UsageLimits
 
+        from fireflyframework_agentic.rag._telemetry import reasoning_terminal_state
         from fireflyframework_agentic.rag.retrieval.answerer import (
             Answer,
             _build_cited_sources,
@@ -354,8 +386,34 @@ class ReasoningAnswerAgent:
                 ),
             )
             result = await asyncio.wait_for(run, timeout=self._wall_clock)
-        except (TimeoutError, Exception) as exc:  # noqa: BLE001 — partial-Answer contract
-            log.warning("reasoning_answerer loop ended early: %s", exc)
+        except TimeoutError as exc:
+            log.warning("reasoning_answerer loop ended early (timeout): %s", exc)
+            reasoning_terminal_state.add(1, {"outcome": "timeout"})
+            return Answer(
+                text=(
+                    "I couldn't complete reasoning within the budget. "
+                    f"Partial findings: {len(ctx.accumulated_hits)} chunks, "
+                    f"{len(ctx.sql_calls)} sql calls."
+                ),
+                citations=[],
+                cited_sources=[],
+                reasoning_trace=None,
+            )
+        except Exception as exc:  # noqa: BLE001 — partial-Answer resilience contract
+            # UsageLimitExceeded is the most likely landing here; everything
+            # else (network, model error) is rolled up under "error" so the
+            # caller still gets a structured response. We label tool-limit
+            # and llm-limit separately because they're operator-tunable.
+            label = "error"
+            exc_name = type(exc).__name__
+            if "UsageLimit" in exc_name:
+                msg = str(exc).lower()
+                if "tool" in msg:
+                    label = "tool_limit"
+                elif "request" in msg:
+                    label = "llm_limit"
+            log.warning("reasoning_answerer loop ended early (%s): %s", label, exc)
+            reasoning_terminal_state.add(1, {"outcome": label})
             return Answer(
                 text=(
                     "I couldn't complete reasoning within the budget. "
@@ -376,4 +434,6 @@ class ReasoningAnswerAgent:
         )
         if include_trace:
             answer.reasoning_trace = _trace_from_messages(result.all_messages(), pattern_name="reasoning_answerer")
+        outcome_label = "no_info" if not answer.cited_sources and not ctx.sql_calls else "answered"
+        reasoning_terminal_state.add(1, {"outcome": outcome_label})
         return answer
