@@ -197,6 +197,10 @@ class CorpusAgent:
         rerank_pool: int = 20,
         schema_model: str = "anthropic:claude-sonnet-4-6",
         sql_model: str = "anthropic:claude-haiku-4-5-20251001",
+        answer_strategy: Literal["fast", "reasoning"] = "fast",
+        max_reasoning_tool_calls: int = 20,
+        max_reasoning_llm_calls: int = 10,
+        reasoning_wall_clock_seconds: float = 120.0,
         # test injection — bypass the framework's real backends
         _embedder: Any | None = None,
         _vector_store: Any | None = None,
@@ -226,13 +230,19 @@ class CorpusAgent:
         self._rerank_pool = rerank_pool
         self._schema_model = schema_model
         self._sql_model = sql_model
+        self._answer_strategy = answer_strategy
+        self._max_reasoning_tool_calls = max_reasoning_tool_calls
+        self._max_reasoning_llm_calls = max_reasoning_llm_calls
+        self._reasoning_wall_clock = reasoning_wall_clock_seconds
         self._chunker = MarkdownChunker(max_chunk_tokens=600, chunk_overlap=80)
         self._loader = MarkitdownLoader()
 
         # Retrieval stack — lazy-constructed on first query() so ingest doesn't
         # require the LLM-side API keys (ANTHROPIC_API_KEY).
         self._expander: QueryExpander | None = None
-        self._answerer: AnswerAgent | None = None
+        # AnswerAgent (fast) or ReasoningAnswerAgent (reasoning); resolved
+        # lazily in _ensure_query_ready based on self._answer_strategy.
+        self._answerer: Any = None
         self._retriever: HybridRetriever | None = None
         self._reranker: HaikuReranker | None = None
         self._structured_retriever: StructuredRetriever | None = None
@@ -261,8 +271,6 @@ class CorpusAgent:
             return
         if self._expander is None:
             self._expander = QueryExpander(model=self._expansion_model)
-        if self._answerer is None:
-            self._answerer = AnswerAgent(model=self._answer_model)
         if self._reranker is None:
             self._reranker = HaikuReranker(model=self._rerank_model)
         if self._retriever is None:
@@ -277,6 +285,27 @@ class CorpusAgent:
             # Under AzureBlobBackend the canonical data lives in the blob;
             # reads should route through _db_store.ensure_fresh().
             self._structured_retriever = StructuredRetriever(self.root / "corpus.sqlite", sql_model=self._sql_model)
+        # Answerer must be constructed AFTER structured_retriever so the
+        # reasoning branch can pass it in.
+        if self._answerer is None:
+            if self._answer_strategy == "reasoning":
+                from fireflyframework_agentic.rag.retrieval.reasoning_answerer import (
+                    ReasoningAnswerAgent,
+                )
+
+                assert self._schema_registry is not None
+                self._answerer = ReasoningAnswerAgent(
+                    model=self._answer_model,
+                    corpus_agent=self,
+                    structured_retriever=self._structured_retriever,
+                    schema_registry=self._schema_registry,
+                    db_path=self.root / "corpus.sqlite",
+                    max_tool_calls=self._max_reasoning_tool_calls,
+                    max_llm_calls=self._max_reasoning_llm_calls,
+                    wall_clock_seconds=self._reasoning_wall_clock,
+                )
+            else:
+                self._answerer = AnswerAgent(model=self._answer_model)
         self._query_ready = True
 
     async def _ensure_started(self) -> None:
@@ -618,11 +647,20 @@ class CorpusAgent:
                 return await self._reranker.rerank(question, candidates, top_k=top_k)
             return candidates[:top_k]
 
-    async def query(self, question: str, *, top_k: int = 5) -> Answer:
+    async def query(self, question: str, *, top_k: int = 5, include_trace: bool = False) -> Answer:
         """Run the full pipeline: retrieve (with rerank) + answer.
 
-        RAG retrieval and SQL retrieval run in parallel via ``asyncio.gather``.
-        ``top_k`` is the number of chunks fed into the answer agent *after* reranking.
+        Under ``answer_strategy="fast"`` (default): runs RAG retrieval and SQL
+        retrieval in parallel via ``asyncio.gather``, then feeds both into a
+        one-shot AnswerAgent. ``top_k`` is the number of chunks fed into the
+        answerer *after* reranking. ``include_trace`` is a no-op on this path.
+
+        Under ``answer_strategy="reasoning"``: delegates the whole answer
+        phase to a ReasoningAnswerAgent that calls knowledge_search /
+        sql_query / inspect_table / python_compute tools as it sees fit.
+        ``top_k`` and the up-front retrieval are no longer authoritative —
+        the tool decides. Pass ``include_trace=True`` to attach the typed
+        ReasoningTrace to the returned Answer for reproducibility.
         """
         await self._ensure_query_ready()
         assert self._answerer is not None
@@ -636,14 +674,18 @@ class CorpusAgent:
                 "question": question,
                 "top_k": top_k,
                 "rerank_pool": self._rerank_pool,
+                "firefly.rag.answer_strategy": self._answer_strategy,
             },
         ) as span:
-            schemas = await self._schema_registry.list_schemas()
-            top_hits, sql_outcome = await asyncio.gather(
-                self.retrieve(question, top_k=top_k, rerank=True),
-                self._structured_retriever.retrieve(question, schemas),
-            )
-            answer = await self._answerer.answer(question, top_hits, sql_outcome=sql_outcome)
+            if self._answer_strategy == "reasoning":
+                answer = await self._answerer.answer(question, include_trace=include_trace)
+            else:
+                schemas = await self._schema_registry.list_schemas()
+                top_hits, sql_outcome = await asyncio.gather(
+                    self.retrieve(question, top_k=top_k, rerank=True),
+                    self._structured_retriever.retrieve(question, schemas),
+                )
+                answer = await self._answerer.answer(question, top_hits, sql_outcome=sql_outcome)
             outcome = "no_info" if not answer.cited_sources else "answered"
             elapsed_ms = (time.perf_counter() - query_start) * 1000.0
             query_total_duration.record(elapsed_ms, {"outcome": outcome})
