@@ -175,3 +175,45 @@ async def test_python_compute_tool_runs_source_with_data():
     finally:
         _CURRENT_CTX.reset(tok)
     assert "6" in out
+
+
+from pydantic_ai.models.test import TestModel  # noqa: E402
+
+from fireflyframework_agentic.rag.retrieval.answerer import Answer  # noqa: E402
+from fireflyframework_agentic.rag.retrieval.reasoning_answerer import (  # noqa: E402
+    ReasoningAnswerAgent,
+)
+
+
+@pytest.mark.asyncio
+async def test_reasoning_answerer_runs_with_stub_model_and_returns_answer(tmp_path):
+    hit = ChunkHit(chunk_id="c1", score=1.0, content="X", metadata={}, source_path="/x")
+    corpus = AsyncMock()
+    corpus.retrieve.return_value = [hit]
+    retriever = AsyncMock()
+    retriever.retrieve.return_value = SqlRetrievalOutcome(
+        outcome="answered",
+        result_markdown="| n |\n|-|\n|1|",
+        attempted_sql="SELECT 1",
+        probe_trail=[],
+    )
+    schema_registry = AsyncMock()
+    schema_registry.list_schemas.return_value = []
+
+    # call_tools=[] tells TestModel to skip tool invocation and emit a
+    # default Answer directly — we're testing the orchestrator wiring,
+    # not the model's tool-picking. End-to-end tool exercise lives in the
+    # Tier A replay tests.
+    rae = ReasoningAnswerAgent(
+        model=TestModel(call_tools=[]),
+        corpus_agent=corpus,
+        structured_retriever=retriever,
+        schema_registry=schema_registry,
+        db_path=tmp_path / "corpus.sqlite",
+        max_tool_calls=4,
+        max_llm_calls=4,
+        wall_clock_seconds=10.0,
+    )
+    answer = await rae.answer("how many?", include_trace=True)
+    assert isinstance(answer, Answer)
+    assert answer.reasoning_trace is not None

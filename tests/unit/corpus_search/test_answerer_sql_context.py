@@ -98,3 +98,21 @@ async def test_answer_with_unsupported_outcome_and_no_hits_short_circuits():
         result = await agent.answer("Off-topic question?", [], sql_outcome=outcome)
     mock_agent.run.assert_not_called()
     assert result.text == "I don't have enough information."
+
+
+def test_answer_reasoning_trace_defaults_to_none_and_serialises_clean():
+    a = Answer(text="hi")
+    assert a.reasoning_trace is None
+    dumped = a.model_dump(exclude_none=True)
+    assert "reasoning_trace" not in dumped
+
+
+def test_answer_reasoning_trace_round_trip():
+    from fireflyframework_agentic.reasoning.trace import ActionStep, ReasoningTrace
+
+    trace = ReasoningTrace(pattern_name="reasoning_answerer")
+    trace.add_step(ActionStep(tool_name="knowledge_search", tool_args={"q": "x"}))
+    a = Answer(text="hi", reasoning_trace=trace)
+    dumped = a.model_dump(mode="json")
+    assert dumped["reasoning_trace"]["pattern_name"] == "reasoning_answerer"
+    assert dumped["reasoning_trace"]["steps"][0]["tool_name"] == "knowledge_search"
