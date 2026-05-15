@@ -281,14 +281,16 @@ Available tools:
     find_similar, numeric_summary}. Use BEFORE committing to sql_query when
     you are not sure what values a column contains.
   - python_compute(source, data=None)  — restricted Python sandbox (multi-line,
-    stdlib + numpy + pandas). Pass intermediate results from prior tools as
-    the data dict so the snippet is self-contained.
+    stdlib + numpy + pandas). Use this for ANY arithmetic that appears in your
+    answer. Pass numbers from prior tool observations as the ``data`` dict so
+    the snippet is self-contained and the trace is reproducible.
 
 Strategy:
   1. Probe cheap before committing expensive: inspect_table < sql_query.
-  2. For numeric answers, verify with python_compute over the returned rows
-     when the calculation is non-trivial (weighted means, growth rates, stdev,
-     CV).
+  2. For any answer involving sums, averages, ratios, percentages, growth
+     rates, comparisons, or rankings, you MUST call python_compute. Do not
+     attempt arithmetic in prose — models are unreliable at it, and the
+     python_compute trace is the only way a reader can verify the numbers.
   3. SQL-grounded claims should name the source table. Knowledge-grounded
      claims must carry inline [chunk_id] citations.
   4. If neither retrieval nor SQL surfaces evidence, reply exactly:
@@ -321,7 +323,7 @@ class ReasoningAnswerAgent:
         wall_clock_seconds: float = 120.0,
     ) -> None:
         from fireflyframework_agentic.agents import FireflyAgent
-        from fireflyframework_agentic.rag.retrieval.answerer import Answer
+        from fireflyframework_agentic.rag.retrieval.answerer import Answer, AnswerAgent
 
         self._model = model
         self._corpus_agent = corpus_agent
@@ -351,6 +353,14 @@ class ReasoningAnswerAgent:
             auto_register=False,
         )
 
+        # Fallback synthesiser used when the reasoning loop runs out of budget.
+        # Re-uses the same model so the user gets the same answer-writing
+        # behaviour they'd get on the fast path, but operates over whatever
+        # evidence (chunks + the last SQL outcome) the loop managed to gather
+        # before the budget hit. Without this, a budget-exhausted run returns
+        # an apology instead of the grounded answer the data already supports.
+        self._fallback_answerer = AnswerAgent(model=model)
+
     async def answer(self, question: str, *, include_trace: bool = False):
         import asyncio
         import logging
@@ -377,6 +387,8 @@ class ReasoningAnswerAgent:
         prompt = (f"{schema_context}\n\n" if schema_context else "") + f"Question: {question}"
 
         tok = _CURRENT_CTX.set(ctx)
+        budget_exhausted_label: str | None = None
+        result = None
         try:
             run = self._agent.run(
                 prompt,
@@ -388,22 +400,12 @@ class ReasoningAnswerAgent:
             result = await asyncio.wait_for(run, timeout=self._wall_clock)
         except TimeoutError as exc:
             log.warning("reasoning_answerer loop ended early (timeout): %s", exc)
-            reasoning_terminal_state.add(1, {"outcome": "timeout"})
-            return Answer(
-                text=(
-                    "I couldn't complete reasoning within the budget. "
-                    f"Partial findings: {len(ctx.accumulated_hits)} chunks, "
-                    f"{len(ctx.sql_calls)} sql calls."
-                ),
-                citations=[],
-                cited_sources=[],
-                reasoning_trace=None,
-            )
-        except Exception as exc:  # noqa: BLE001 — partial-Answer resilience contract
+            budget_exhausted_label = "timeout"
+        except Exception as exc:  # noqa: BLE001 — graceful-degradation contract
             # UsageLimitExceeded is the most likely landing here; everything
-            # else (network, model error) is rolled up under "error" so the
-            # caller still gets a structured response. We label tool-limit
-            # and llm-limit separately because they're operator-tunable.
+            # else (network, model error) is rolled up under "error". We
+            # label tool-limit and llm-limit separately because they're
+            # operator-tunable.
             label = "error"
             exc_name = type(exc).__name__
             if "UsageLimit" in exc_name:
@@ -413,20 +415,48 @@ class ReasoningAnswerAgent:
                 elif "request" in msg:
                     label = "llm_limit"
             log.warning("reasoning_answerer loop ended early (%s): %s", label, exc)
-            reasoning_terminal_state.add(1, {"outcome": label})
-            return Answer(
-                text=(
-                    "I couldn't complete reasoning within the budget. "
-                    f"Partial findings: {len(ctx.accumulated_hits)} chunks, "
-                    f"{len(ctx.sql_calls)} sql calls."
-                ),
-                citations=[],
-                cited_sources=[],
-                reasoning_trace=None,
-            )
+            budget_exhausted_label = label
         finally:
             _CURRENT_CTX.reset(tok)
 
+        if budget_exhausted_label is not None:
+            reasoning_terminal_state.add(1, {"outcome": budget_exhausted_label})
+            # Graceful degradation. Hand whatever evidence we managed to
+            # gather to the fast-path synthesiser — it knows how to write
+            # a grounded Answer from (hits, sql_outcome), short-circuits
+            # to "I don't have enough information." when both are empty,
+            # and is the same path the user would have taken on the fast
+            # strategy. The user always gets a real answer; the budget
+            # label is preserved in telemetry and the warning log above.
+            last_sql = ctx.sql_calls[-1] if ctx.sql_calls else None
+            try:
+                fallback = await self._fallback_answerer.answer(
+                    question,
+                    list(ctx.accumulated_hits.values()),
+                    sql_outcome=last_sql,
+                )
+            except Exception as exc:  # noqa: BLE001 — final defence
+                # Synthesiser also crashed (model error, network blip).
+                # Return a structured response so callers still get an
+                # Answer-shaped object — never raise out of answer().
+                log.warning("reasoning_answerer fallback synthesiser also failed: %s", exc)
+                fallback = Answer(
+                    text=(
+                        f"I couldn't complete reasoning ({budget_exhausted_label}) "
+                        "and the fallback synthesiser also failed. Partial findings: "
+                        f"{len(ctx.accumulated_hits)} chunks, {len(ctx.sql_calls)} sql calls."
+                    ),
+                    citations=[],
+                    cited_sources=[],
+                )
+            # reasoning_trace is not reconstructable on the budget-exhausted
+            # path — pydantic-ai has no result.all_messages() to translate when
+            # the run was cancelled mid-flight. Telemetry + the warning log
+            # carry the diagnostic instead.
+            return fallback
+
+        # Happy path.
+        assert result is not None  # narrowing for type-checker
         answer: Answer = result.output
         answer.cited_sources = _build_cited_sources(
             answer.citations,

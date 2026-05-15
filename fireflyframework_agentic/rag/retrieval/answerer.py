@@ -28,6 +28,8 @@ from fireflyframework_agentic.rag.corpus import ChunkHit
 from fireflyframework_agentic.rag.retrieval.sql import EMPTY_SQL_HEADING
 
 if TYPE_CHECKING:
+    from pydantic_ai.models import Model
+
     from fireflyframework_agentic.rag.retrieval.sql import SqlRetrievalOutcome
 
 from fireflyframework_agentic.reasoning.trace import ReasoningTrace  # noqa: E402, F401 — runtime, for Answer field
@@ -153,7 +155,7 @@ class AnswerAgent:
     so callers can present source paths alongside the inline citations.
     """
 
-    def __init__(self, model: str) -> None:
+    def __init__(self, model: str | Model) -> None:
         self._model = model
         self._agent = FireflyAgent(
             name="answer_agent",
