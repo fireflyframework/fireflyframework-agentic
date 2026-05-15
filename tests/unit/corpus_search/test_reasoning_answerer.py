@@ -106,3 +106,50 @@ async def test_sql_query_serialises_outcome_and_records():
     assert "| col |" in out["result_markdown"]
     assert out["probe_trail"] == [{"table": "t", "column": "col", "op": "count", "result": "1"}]
     assert ctx.sql_calls == [outcome]
+
+
+import sqlite3  # noqa: E402
+
+from fireflyframework_agentic.rag.ingest.structured_schema import (  # noqa: E402
+    ColumnSpec,
+    ColumnType,
+    TableSpec,
+    TargetSchema,
+)
+from fireflyframework_agentic.rag.retrieval.reasoning_answerer import (  # noqa: E402
+    _build_inspect_table_tool,
+)
+
+
+@pytest.mark.asyncio
+async def test_inspect_table_distinct_values(tmp_path):
+    db = tmp_path / "corpus.sqlite"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE products (id INTEGER, name TEXT)")
+    conn.execute("INSERT INTO products VALUES (1, 'Widget'), (2, 'Gadget')")
+    conn.commit()
+    conn.close()
+    schema = TargetSchema(
+        tables=[
+            TableSpec(
+                name="products",
+                columns=[
+                    ColumnSpec(name="id", type=ColumnType.integer),
+                    ColumnSpec(name="name", type=ColumnType.string),
+                ],
+            )
+        ]
+    )
+    ctx = _LoopContext(
+        corpus_agent=None,
+        structured_retriever=None,
+        schemas=[schema],
+        db_path=db,
+    )
+    tok = _CURRENT_CTX.set(ctx)
+    try:
+        inspect_table = _build_inspect_table_tool()
+        out = await inspect_table(table="products", column="name", op="distinct_values")
+    finally:
+        _CURRENT_CTX.reset(tok)
+    assert "Widget" in out and "Gadget" in out
