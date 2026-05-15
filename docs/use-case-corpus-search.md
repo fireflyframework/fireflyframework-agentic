@@ -614,3 +614,61 @@ graph layer; the V2 extractors then become graph populators rather than one-shot
 - **RRF** — Reciprocal Rank Fusion. Given multiple ranked result lists, scores each item as `Σ 1 / (k + rank_i)` with `k=60`, producing a single fused ranking. No ML, no training.
 - **Doc-id replace** — re-ingestion semantic: deleting all chunks and vectors for a `doc_id` before re-running ingest.
 - **`CorpusAgent`** — the high-level facade combining `MarkitdownLoader`, `TextChunker`, `OpenAIEmbedder`, `SqliteCorpus`, Chroma, the optional `FolderWatcher`, plus the query stack (`QueryExpander`, `HybridRetriever`, `AnswerAgent`).
+
+---
+
+## 14. Reasoning answers and reproducible traces
+
+`CorpusAgent` has two answer strategies, selected at construction time:
+
+- **`answer_strategy="fast"`** (default) — the expand → hybrid retrieve →
+  rerank → answer pipeline described above. One LLM call for the final
+  answer; cheapest path.
+- **`answer_strategy="reasoning"`** — a tool-using agent that plans its own
+  retrieval. It can call `knowledge_search` (RAG retrieve), `sql_query`
+  (text-to-SQL over structured tables), `inspect_table` (direct SQL
+  probes), and `python_compute` (restricted Python sandbox with stdlib +
+  numpy + pandas). More LLM turns, more capable on multi-step or
+  quantitative questions — and the agent's tool calls land in a typed
+  `ReasoningTrace` you can replay manually.
+
+Example — YoY revenue growth, which the fast path can't compute:
+
+```python
+from pathlib import Path
+
+from fireflyframework_agentic.rag.agent import CorpusAgent
+
+agent = CorpusAgent(
+    root=Path("/data/finance"),
+    embed_model="azure:text-embedding-3-small",
+    expansion_model="anthropic:claude-haiku-4-5-20251001",
+    answer_model="anthropic:claude-sonnet-4-6",
+    rerank_model="anthropic:claude-haiku-4-5-20251001",
+    answer_strategy="reasoning",
+)
+answer = await agent.query(
+    "What's the YoY revenue growth per business unit, 2023 vs 2024?",
+    include_trace=True,
+)
+print(answer.text)
+for step in answer.reasoning_trace.steps:
+    print(step)
+```
+
+Every `ActionStep` in the trace carries `tool_name` plus `tool_args` as a
+plain `dict`, which means anyone reading the trace can re-execute the
+same tool calls and observe the same results (modulo timestamps and
+floating-point reordering). This property is enforced by
+`tests/examples/corpus_search/test_trace_is_replayable.py`.
+
+To enable, install the optional `[reasoning-eval]` extra so `numpy` and
+`pandas` are available to the `python_compute` sandbox:
+
+```bash
+uv sync --extra reasoning-eval
+```
+
+The MCP `corpus_query` tool exposes the same controls via two optional
+params: `strategy="reasoning"` and `include_trace=true`. Existing JSON
+shape is preserved when both default off.
