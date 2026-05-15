@@ -114,6 +114,18 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 
 ### Added
 
+- **`list_corpus_schemas` and `corpus_sql` MCP tools.** Two new read-only
+  entrypoints that expose the structured side of a corpus directly,
+  without going through the LLM-driven `corpus_query` pipeline.
+  `list_corpus_schemas(corpus_id)` returns every `TargetSchema` saved by
+  `ingest_corpus_structured` (column names, types, primary/foreign keys,
+  units) so a host can discover what's queryable; `corpus_sql(corpus_id,
+  sql, params?, limit?)` runs a single `SELECT` and returns raw rows.
+  Safety: the connection is opened in SQLite `mode=ro` so writes
+  physically cannot land, the SQL is parsed with sqlglot and only
+  `SELECT` is accepted, and table references are whitelisted against the
+  schema registry — internal tables (`chunks`, `_schemas`, `ingestions`,
+  …) are rejected. Adds `sqlglot>=26.0.0` to the `corpus-search` extra.
 - **Optional `unit` field on `ColumnSpec`.** Schemas can now declare the
   human-readable unit a numeric column stores (`"USD millions"`,
   `"headcount"`, `"percent"`, `"days"`, …). The SQL retriever's schema
