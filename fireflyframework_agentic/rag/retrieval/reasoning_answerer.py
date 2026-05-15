@@ -115,3 +115,42 @@ def _build_sql_query():
         }
 
     return sql_query
+
+
+def _build_inspect_table_tool():
+    """Return an async ``inspect_table(table, column, op, value=None)`` closure
+    that delegates to the SQL retriever's existing inspect primitives.
+
+    Builds a one-off SQL ``_LoopContext`` per call; the SQL retriever's probe
+    trail is not interesting at the outer layer — the outer trace already
+    captures each ``inspect_table`` call as its own :class:`ActionStep`.
+    """
+    from typing import Literal
+
+    from fireflyframework_agentic.rag.retrieval.sql import (
+        _build_inspect_tool,
+    )
+    from fireflyframework_agentic.rag.retrieval.sql import (
+        _LoopContext as _SqlLoopContext,
+    )
+
+    async def inspect_table(
+        table: str,
+        column: str,
+        op: Literal[
+            "distinct_values",
+            "count",
+            "sample_rows",
+            "value_range",
+            "find_similar",
+            "numeric_summary",
+        ],
+        value: str | None = None,
+    ) -> str:
+        ctx = _CURRENT_CTX.get()
+        assert ctx is not None, "inspect_table called outside answer()"
+        sql_ctx = _SqlLoopContext(db_path=ctx.db_path, schemas=ctx.schemas)
+        inspect_fn = _build_inspect_tool(sql_ctx)
+        return await inspect_fn(table, column, op, value)
+
+    return inspect_table
