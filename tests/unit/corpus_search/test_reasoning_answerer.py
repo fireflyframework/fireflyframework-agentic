@@ -153,3 +153,25 @@ async def test_inspect_table_distinct_values(tmp_path):
     finally:
         _CURRENT_CTX.reset(tok)
     assert "Widget" in out and "Gadget" in out
+
+
+from fireflyframework_agentic.rag.retrieval.reasoning_answerer import (  # noqa: E402
+    _build_python_compute_tool,
+)
+
+
+@pytest.mark.asyncio
+async def test_python_compute_tool_runs_source_with_data():
+    ctx = _LoopContext(
+        corpus_agent=None,
+        structured_retriever=None,
+        schemas=[],
+        db_path=Path("/tmp/x.sqlite"),
+    )
+    tok = _CURRENT_CTX.set(ctx)
+    try:
+        python_compute = _build_python_compute_tool()
+        out = await python_compute(source="result = sum(xs)", data={"xs": [1, 2, 3]})
+    finally:
+        _CURRENT_CTX.reset(tok)
+    assert "6" in out
