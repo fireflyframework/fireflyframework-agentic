@@ -17,14 +17,24 @@
 Prompt caching allows providers to cache portions of prompts (system prompts,
 long contexts, few-shot examples) and reuse them across requests, providing:
 
-- **90-95% cost reduction** on cached tokens (e.g., Anthropic charges ~10% for cache reads)
+- **90-95% cost reduction** on cached tokens (e.g., Anthropic charges ~10% for cache reads,
+  OpenAI ~50% for cached input, Google ~25% for cached content)
 - **Reduced latency** by avoiding reprocessing of cached content
 - **Better throughput** by reducing server-side processing
 
-Supported Providers:
-    - Anthropic Claude (prompt caching API)
-    - OpenAI (prompt caching via cached context in future)
-    - Gemini (context caching API)
+Supported Providers (all wired through pydantic-ai's model_settings):
+    - **Anthropic Claude** (direct + Bedrock-hosted): explicit
+      ``cache_control`` breakpoints on the last system prompt / last user
+      message / last tool definition. 5-minute or 1-hour TTL.
+    - **OpenAI** (direct + Azure-hosted): automatic caching for prompts
+      >= 1024 tokens. The middleware ALSO sets ``prompt_cache_key`` so
+      consecutive requests from the same agent route to the same cache
+      backend, materially improving the automatic-cache hit rate under
+      load. Override via ``openai_cache_key=`` (string or callable).
+    - **Google Gemini**: pre-created ``CachedContent`` resources are
+      passed through to pydantic-ai via ``google_cached_content``.
+      Caller owns the resource lifecycle (create, refresh, delete);
+      this middleware just wires whatever id the caller supplies.
 
 Example::
 
@@ -38,6 +48,9 @@ Example::
             PromptCacheMiddleware(
                 cache_system_prompt=True,
                 cache_min_tokens=1024,
+                # Optional cross-provider knobs:
+                #   openai_cache_key="my-stable-key",
+                #   google_cached_content="cachedContents/abc123",
             ),
         ],
     )
@@ -45,7 +58,7 @@ Example::
     # First request: pays full cost for system prompt
     result1 = await agent.run("Question 1")
 
-    # Subsequent requests: pay ~10% cost for cached system prompt
+    # Subsequent requests: pay reduced cost for cached prefix
     result2 = await agent.run("Question 2")
     result3 = await agent.run("Question 3")
 """
@@ -53,6 +66,7 @@ Example::
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -75,19 +89,41 @@ class PromptCacheMiddleware:
         enabled: Whether caching is enabled (default: True).
 
     Provider-Specific Behavior:
-        **Anthropic:**
-        - Caches content with `cache_control` breakpoints
-        - 5-minute TTL, extended on cache hits
-        - ~90% cost reduction on cached tokens
-        - Requires minimum 1024 tokens for caching
+        **Anthropic (direct + Bedrock):**
+        - Caches content with ``cache_control`` breakpoints on the last
+          system prompt, last user message, and (optionally) last tool
+          definition.
+        - 5-minute or 1-hour TTL (``"5m"`` / ``"1h"``).
+        - ~90% cost reduction on cached tokens; cache hits extend TTL.
+        - Provider enforces a minimum-size threshold (currently 1024
+          input tokens for Sonnet / Opus / Haiku).
 
-        **OpenAI:**
-        - Future support via cached context API
-        - TBD on cost structure
+        **OpenAI (direct + Azure):**
+        - Automatic caching for any prefix >= 1024 tokens; no
+          ``cache_control`` block needed.
+        - The middleware sets ``prompt_cache_key`` so concurrent
+          requests from the same agent route to the same cache backend
+          -- materially improving hit rate under load. The default key
+          is ``ffa-{agent_name}``; override via ``openai_cache_key=``
+          (string or callable). Pass ``""`` to opt out.
+        - Cached input tokens are billed at ~50% of normal pricing.
 
-        **Gemini:**
-        - Context caching API
-        - Longer TTL options available
+        **Google Gemini:**
+        - Caching is via the ``CachedContent`` resource API. Callers
+          create a ``CachedContent`` resource (system instruction +
+          tools + content blocks) and pass its name to this middleware
+          via ``google_cached_content=`` (string or callable). The
+          middleware forwards it to pydantic-ai as
+          ``model_settings.google_cached_content`` and Google bills the
+          cached portion at ~25% of normal pricing.
+        - Resource lifecycle (create, refresh, delete) is the caller's
+          responsibility -- the middleware never creates or evicts
+          ``CachedContent`` resources.
+
+        **Other providers (Mistral, Cohere, DeepSeek, ...):**
+        - No explicit caching primitive currently exposed by
+          ``pydantic-ai`` for these providers; the middleware is a
+          no-op (a debug log line is emitted).
 
     Example::
 
@@ -126,6 +162,8 @@ class PromptCacheMiddleware:
         cache_min_tokens: int = 1024,
         cache_ttl_seconds: int = 300,
         enabled: bool = True,
+        openai_cache_key: str | Callable[[Any], str | None] | None = None,
+        google_cached_content: str | Callable[[Any], str | None] | None = None,
     ) -> None:
         """
         Args:
@@ -146,6 +184,21 @@ class PromptCacheMiddleware:
                 Anthropic's `"5m"`/`"1h"` settings; any other value
                 rounds to `"5m"`.
             enabled: Master switch.
+            openai_cache_key: Routing hint for OpenAI's automatic prompt
+                cache. When set (string or callable returning a string),
+                emitted as ``openai_prompt_cache_key`` in pydantic-ai's
+                ``model_settings`` so consecutive requests from the same
+                agent share the same cache backend. Default behaviour:
+                derive a stable key from the agent name when available.
+                Pass ``""`` to fully opt out of routing hints.
+            google_cached_content: Pre-created Google Gemini
+                ``CachedContent`` resource id (e.g.
+                ``"cachedContents/abc"``). When set, emitted as
+                ``google_cached_content`` in pydantic-ai's
+                ``model_settings``. The middleware does NOT create or
+                manage the resource lifecycle -- callers must create the
+                cached content via the GenAI SDK and pass its name here.
+                Accepts a callable returning the id for late-binding.
         """
         self._cache_system_prompt = cache_system_prompt
         self._cache_last_message = cache_last_message
@@ -153,6 +206,8 @@ class PromptCacheMiddleware:
         self._cache_min_tokens = cache_min_tokens
         self._cache_ttl_seconds = cache_ttl_seconds
         self._enabled = enabled
+        self._openai_cache_key = openai_cache_key
+        self._google_cached_content = google_cached_content
 
     async def before_run(self, context: Any) -> None:
         """Configure prompt caching before agent execution.
@@ -284,37 +339,147 @@ class PromptCacheMiddleware:
         )
 
     async def _configure_openai_caching(self, context: Any) -> None:
-        """Configure OpenAI-specific prompt caching.
+        """Configure OpenAI prompt-cache routing.
 
-        OpenAI's prompt caching is currently in beta and uses automatic
-        cache detection. Future versions may support explicit cache control.
+        OpenAI auto-caches prefixes >= ~1024 tokens on every supported
+        model -- no explicit ``cache_control`` block is needed for the
+        actual caching. What we *can* control is **cache routing**: the
+        ``prompt_cache_key`` parameter (now exposed by pydantic-ai as
+        ``openai_prompt_cache_key`` on ``OpenAIChatModelSettings``)
+        tells OpenAI's load balancer to route requests with the same
+        key to the same backend, materially improving the cache hit
+        rate under concurrent traffic.
 
-        Args:
-            context: Middleware context.
+        Resolution order for the key:
+
+        1. Explicit constructor argument (``openai_cache_key=``) --
+           string or callable. Empty / falsy result means "do not set
+           a key", which is a valid opt-out.
+        2. Default: ``ffa-{agent_name}`` derived from
+           ``context.agent_name`` when available.
+        3. None -- middleware emits nothing and OpenAI's auto-cache
+           still applies, just without sticky routing.
+
+        Caller-provided ``openai_prompt_cache_key`` in
+        ``model_settings`` always wins (``setdefault``).
         """
-        # OpenAI caching is automatic in supported models
-        # No explicit configuration needed currently
-        logger.debug("PromptCacheMiddleware: OpenAI automatic caching enabled")
+        key = self._resolve_openai_cache_key(context)
+        if key is None:
+            logger.debug("PromptCacheMiddleware: OpenAI automatic caching active (no routing key resolved)")
+            return
+
+        settings = self._ensure_model_settings(context)
+        settings.setdefault("openai_prompt_cache_key", key)
+        logger.debug(
+            "PromptCacheMiddleware: OpenAI cache configured (prompt_cache_key=%r)",
+            key,
+        )
 
     async def _configure_gemini_caching(self, context: Any) -> None:
-        """Configure Gemini-specific context caching.
+        """Configure Google Gemini context caching.
 
-        Gemini uses the context caching API to cache long contexts
-        and reuse them across requests.
+        Gemini's caching primitive is the ``CachedContent`` resource:
+        the caller creates one via the GenAI SDK (passing tools,
+        system instruction, and / or content blocks), and references
+        its resource name on subsequent ``generate_content`` calls via
+        ``GenerateContentConfig.cached_content``. Pydantic-ai exposes
+        that knob as ``google_cached_content`` in
+        ``GoogleModelSettings``.
 
-        Args:
-            context: Middleware context.
+        This middleware does NOT create / delete / refresh
+        ``CachedContent`` resources -- their lifecycle (TTL, billing,
+        eviction) is the caller's responsibility. What it does:
+
+        * Reads the constructor's ``google_cached_content`` argument
+          (string or callable). The callable signature is
+          ``(context) -> str | None`` so callers can resolve the
+          right resource per request (e.g. tenant-keyed caches).
+        * If a non-empty id resolves, set
+          ``model_settings.google_cached_content`` so pydantic-ai
+          forwards it to the Google client.
+        * Otherwise the middleware is a no-op for Gemini -- Google
+          auto-caches large contexts implicitly with a flat 25%
+          discount on the cached portion (see
+          https://ai.google.dev/gemini-api/docs/caching).
         """
-        if not hasattr(context, "metadata"):
-            context.metadata = {}
+        resource_id = self._resolve_google_cached_content(context)
+        if not resource_id:
+            logger.debug(
+                "PromptCacheMiddleware: Gemini implicit caching active (no explicit CachedContent resource configured)"
+            )
+            return
 
-        context.metadata["_gemini_cache_enabled"] = True
-        context.metadata["_cache_ttl_seconds"] = self._cache_ttl_seconds
-
+        settings = self._ensure_model_settings(context)
+        settings.setdefault("google_cached_content", resource_id)
         logger.debug(
-            "PromptCacheMiddleware: Enabled Gemini context caching (ttl=%ds)",
-            self._cache_ttl_seconds,
+            "PromptCacheMiddleware: Gemini cache configured (google_cached_content=%r)",
+            resource_id,
         )
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _ensure_model_settings(context: Any) -> dict[str, Any]:
+        """Return the ``kwargs['model_settings']`` dict, creating it if
+        missing. Mirrors the pattern in :meth:`_configure_anthropic_caching`.
+        """
+        if not hasattr(context, "kwargs") or context.kwargs is None:
+            context.kwargs = {}
+        settings = context.kwargs.get("model_settings")
+        if not isinstance(settings, dict):
+            settings = {}
+            context.kwargs["model_settings"] = settings
+        return settings
+
+    def _resolve_openai_cache_key(self, context: Any) -> str | None:
+        """Pick the OpenAI ``prompt_cache_key`` for this request.
+
+        See :meth:`_configure_openai_caching` for the priority order.
+        """
+        configured = self._openai_cache_key
+        if callable(configured):
+            try:
+                resolved = configured(context)
+            except Exception as exc:  # noqa: BLE001 -- never fail extraction on a key resolver
+                logger.warning(
+                    "PromptCacheMiddleware: openai_cache_key callable raised %s; falling back to auto-derived key",
+                    exc,
+                )
+                resolved = None
+            if isinstance(resolved, str) and resolved:
+                return resolved
+            return None
+        if isinstance(configured, str):
+            return configured or None  # explicit empty string -> opt out
+        # Default: derive a stable key from the agent name when present.
+        agent_name = getattr(context, "agent_name", None)
+        if isinstance(agent_name, str) and agent_name:
+            return f"ffa-{agent_name}"
+        return None
+
+    def _resolve_google_cached_content(self, context: Any) -> str | None:
+        """Pick the Gemini ``CachedContent`` resource id for this request."""
+        configured = self._google_cached_content
+        if configured is None:
+            return None
+        if callable(configured):
+            try:
+                resolved = configured(context)
+            except Exception as exc:  # noqa: BLE001 -- degraded but not fatal
+                logger.warning(
+                    "PromptCacheMiddleware: google_cached_content callable "
+                    "raised %s; skipping Gemini cache wiring for this request",
+                    exc,
+                )
+                return None
+            if isinstance(resolved, str) and resolved:
+                return resolved
+            return None
+        if isinstance(configured, str) and configured:
+            return configured
+        return None
 
 
 class CacheStatistics:
