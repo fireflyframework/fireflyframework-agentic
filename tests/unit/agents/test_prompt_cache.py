@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
@@ -80,29 +81,186 @@ class TestPromptCacheMiddleware:
         assert settings["anthropic_cache_messages"] == "5m"
         assert "anthropic_cache_tool_definitions" not in settings
 
-    async def test_before_hook_openai_caching(self):
-        """Test OpenAI-specific caching configuration."""
+    async def test_before_hook_openai_auto_derives_cache_key_from_agent_name(self):
+        """OpenAI default routing key comes from the agent name."""
         middleware = PromptCacheMiddleware()
 
         context = Mock()
         context.model = "openai:gpt-4o"
+        context.agent_name = "flydesk-extractor"
+        context.kwargs = {}
 
-        # Should not raise (OpenAI caching is automatic)
         await middleware.before_run(context)
 
-    async def test_before_hook_gemini_caching(self):
-        """Test Gemini-specific caching configuration."""
-        middleware = PromptCacheMiddleware(cache_ttl_seconds=600)
+        # Auto-derived key: ``ffa-{agent_name}``.
+        assert context.kwargs["model_settings"]["openai_prompt_cache_key"] == ("ffa-flydesk-extractor")
+
+    async def test_before_hook_openai_no_agent_name_emits_no_key(self):
+        """Without an agent name and no explicit override, no key is set."""
+        middleware = PromptCacheMiddleware()
+
+        context = Mock(spec=["model", "kwargs"])  # no agent_name attribute
+        context.model = "openai:gpt-4o"
+        context.kwargs = {}
+
+        await middleware.before_run(context)
+
+        # No openai_prompt_cache_key written; model_settings stays empty.
+        settings = context.kwargs.get("model_settings", {}) or {}
+        assert "openai_prompt_cache_key" not in settings
+
+    async def test_before_hook_openai_explicit_string_key_overrides_default(self):
+        """An explicit string key takes precedence over the agent-name default."""
+        middleware = PromptCacheMiddleware(openai_cache_key="tenant-42")
 
         context = Mock()
-        context.model = "gemini:gemini-1.5-pro"
-        context.metadata = {}
+        context.model = "openai:gpt-4o"
+        context.agent_name = "should-be-ignored"
+        context.kwargs = {}
 
         await middleware.before_run(context)
 
-        # Should configure Gemini caching
-        assert context.metadata["_gemini_cache_enabled"] is True
-        assert context.metadata["_cache_ttl_seconds"] == 600
+        assert context.kwargs["model_settings"]["openai_prompt_cache_key"] == "tenant-42"
+
+    async def test_before_hook_openai_callable_key_evaluated_per_call(self):
+        """Callable keys are evaluated per call, with the context as argument."""
+        captured: list[Any] = []
+
+        def keyfn(ctx: Any) -> str:
+            captured.append(ctx)
+            return f"per-call-{ctx.model.split(':')[-1]}"
+
+        middleware = PromptCacheMiddleware(openai_cache_key=keyfn)
+
+        context = Mock()
+        context.model = "openai:gpt-4o-mini"
+        context.kwargs = {}
+
+        await middleware.before_run(context)
+
+        assert captured == [context]
+        assert context.kwargs["model_settings"]["openai_prompt_cache_key"] == "per-call-gpt-4o-mini"
+
+    async def test_before_hook_openai_empty_string_opts_out(self):
+        """``openai_cache_key=''`` opts out of cache routing entirely."""
+        middleware = PromptCacheMiddleware(openai_cache_key="")
+
+        context = Mock()
+        context.model = "openai:gpt-4o"
+        context.agent_name = "would-be-derived"
+        context.kwargs = {}
+
+        await middleware.before_run(context)
+
+        settings = context.kwargs.get("model_settings", {}) or {}
+        assert "openai_prompt_cache_key" not in settings
+
+    async def test_before_hook_openai_callable_returning_none_falls_through(self):
+        """A callable that returns ``None`` skips the wiring without raising."""
+        middleware = PromptCacheMiddleware(openai_cache_key=lambda _ctx: None)
+
+        context = Mock()
+        context.model = "openai:gpt-4o"
+        context.kwargs = {}
+
+        await middleware.before_run(context)
+
+        settings = context.kwargs.get("model_settings", {}) or {}
+        assert "openai_prompt_cache_key" not in settings
+
+    async def test_before_hook_openai_callable_raising_does_not_block(self):
+        """A raising callable is swallowed -- caching is best-effort, never blocks."""
+
+        def boom(_ctx: Any) -> str:
+            raise RuntimeError("resolver failed")
+
+        middleware = PromptCacheMiddleware(openai_cache_key=boom)
+
+        context = Mock()
+        context.model = "openai:gpt-4o"
+        context.kwargs = {}
+
+        # Must not raise.
+        await middleware.before_run(context)
+        settings = context.kwargs.get("model_settings", {}) or {}
+        assert "openai_prompt_cache_key" not in settings
+
+    async def test_before_hook_openai_preserves_caller_supplied_key(self):
+        """A caller-set ``openai_prompt_cache_key`` wins over the auto-derived one."""
+        middleware = PromptCacheMiddleware()
+
+        context = Mock()
+        context.model = "openai:gpt-4o"
+        context.agent_name = "default-key"
+        context.kwargs = {"model_settings": {"openai_prompt_cache_key": "caller-wins"}}
+
+        await middleware.before_run(context)
+
+        assert context.kwargs["model_settings"]["openai_prompt_cache_key"] == "caller-wins"
+
+    async def test_before_hook_gemini_passes_through_cached_content_string(self):
+        """A configured CachedContent resource id is wired into model_settings."""
+        middleware = PromptCacheMiddleware(
+            google_cached_content="cachedContents/abc123",
+        )
+
+        context = Mock()
+        context.model = "google:gemini-1.5-pro"
+        context.kwargs = {}
+
+        await middleware.before_run(context)
+
+        assert context.kwargs["model_settings"]["google_cached_content"] == ("cachedContents/abc123")
+
+    async def test_before_hook_gemini_passes_through_callable_cached_content(self):
+        """Callable resource resolvers are evaluated per request."""
+
+        middleware = PromptCacheMiddleware(
+            google_cached_content=lambda ctx: f"cachedContents/{ctx.agent_name}",
+        )
+
+        context = Mock()
+        context.model = "google:gemini-2.0-flash"
+        context.agent_name = "judge"
+        context.kwargs = {}
+
+        await middleware.before_run(context)
+
+        assert context.kwargs["model_settings"]["google_cached_content"] == ("cachedContents/judge")
+
+    async def test_before_hook_gemini_without_cached_content_is_noop(self):
+        """No CachedContent configured -> middleware does not touch model_settings."""
+        middleware = PromptCacheMiddleware()  # no google_cached_content
+
+        context = Mock(spec=["model", "kwargs"])
+        context.model = "google:gemini-1.5-pro"
+        context.kwargs = {}
+
+        await middleware.before_run(context)
+
+        assert context.kwargs.get("model_settings", {}) == {}
+
+    async def test_before_hook_gemini_callable_returning_none_is_safe(self):
+        middleware = PromptCacheMiddleware(google_cached_content=lambda _ctx: None)
+
+        context = Mock(spec=["model", "kwargs"])
+        context.model = "google:gemini-1.5-pro"
+        context.kwargs = {}
+
+        await middleware.before_run(context)
+        assert context.kwargs.get("model_settings", {}) == {}
+
+    async def test_before_hook_gemini_callable_raising_is_swallowed(self):
+        def boom(_ctx: Any) -> str:
+            raise RuntimeError("resolver failed")
+
+        middleware = PromptCacheMiddleware(google_cached_content=boom)
+        context = Mock(spec=["model", "kwargs"])
+        context.model = "google:gemini-1.5-pro"
+        context.kwargs = {}
+
+        await middleware.before_run(context)
+        assert context.kwargs.get("model_settings", {}) == {}
 
     async def test_before_hook_bedrock_anthropic_routes_to_anthropic_caching(self):
         """Bedrock-hosted Claude should route to Anthropic caching."""
