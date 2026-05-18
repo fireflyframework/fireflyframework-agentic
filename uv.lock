@@ -1172,9 +1172,6 @@ corpus-search = [
 ]
 dev = [
     { name = "httpx" },
-    { name = "markdown-it-py" },
-    { name = "markitdown", extra = ["docx", "pdf", "pptx", "xlsx"] },
-    { name = "openai" },
     { name = "pdfplumber" },
     { name = "pre-commit" },
     { name = "pyright" },
@@ -1183,10 +1180,7 @@ dev = [
     { name = "pytest-benchmark" },
     { name = "pytest-cov" },
     { name = "ruff" },
-    { name = "sqlglot" },
-    { name = "sqlite-vec" },
     { name = "testcontainers" },
-    { name = "watchfiles" },
 ]
 embeddings = [
     { name = "numpy" },
@@ -1274,7 +1268,6 @@ requires-dist = [
     { name = "cryptography", marker = "extra == 'security'", specifier = ">=44.0.0" },
     { name = "fastapi", marker = "extra == 'rest'", specifier = ">=0.115.0" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.2" },
-    { name = "fireflyframework-agentic", extras = ["corpus-search"], marker = "extra == 'dev'" },
     { name = "fireflyframework-agentic", extras = ["kafka", "rabbitmq", "redis"], marker = "extra == 'queues'" },
     { name = "fireflyframework-agentic", extras = ["markitdown", "watch", "openai-embeddings", "vectorstores-sqlite-vec"], marker = "extra == 'corpus-search'" },
     { name = "fireflyframework-agentic", extras = ["rest", "queues", "postgres", "mongodb", "security", "azure", "http", "embeddings", "openai-embeddings", "cohere-embeddings", "google-embeddings", "mistral-embeddings", "voyage-embeddings", "azure-embeddings", "bedrock-embeddings", "ollama-embeddings", "corpus-search", "vectorstores-chroma", "vectorstores-pinecone", "vectorstores-qdrant", "vectorstores-sqlite-vec", "markitdown", "watch"], marker = "extra == 'all'" },
