@@ -47,7 +47,6 @@ Example::
         middleware=[
             PromptCacheMiddleware(
                 cache_system_prompt=True,
-                cache_min_tokens=1024,
                 # Optional cross-provider knobs:
                 #   openai_cache_key="my-stable-key",
                 #   google_cached_content="cachedContents/abc123",
@@ -271,11 +270,7 @@ class PromptCacheMiddleware:
             usage = result.usage()
             # ``cache_write_tokens`` is the pydantic-ai field name;
             # ``cache_creation_tokens`` is the historical fallback.
-            cache_creation = (
-                getattr(usage, "cache_write_tokens", 0)
-                or getattr(usage, "cache_creation_tokens", 0)
-                or 0
-            )
+            cache_creation = getattr(usage, "cache_write_tokens", 0) or getattr(usage, "cache_creation_tokens", 0) or 0
             cache_read = getattr(usage, "cache_read_tokens", 0) or 0
 
             if cache_creation > 0 or cache_read > 0:
