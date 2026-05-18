@@ -3,13 +3,15 @@
 
 """Corpus RAG tools exposed via MCP.
 
-Six tools:
+Eight tools:
     - list_corpora()
     - ingest_corpus_filesystem(corpus_id, root_path)
     - discover_corpus_schema(corpus_id, path)
     - ingest_corpus_structured(corpus_id, path, schema?)
     - knowledge_search(corpus_id, question, top_k)
     - corpus_query(corpus_id, question, top_k)
+    - list_corpus_schemas(corpus_id)
+    - corpus_sql(corpus_id, sql, params?, limit?)
 
 Each tool resolves a process-wide cached :class:`CorpusAgent` via
 ``_agent_for(corpus_id)`` so every call against a given corpus shares one
@@ -28,9 +30,26 @@ import asyncio
 import contextvars
 import logging
 import os
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+# sqlglot is only required by ``corpus_sql`` — it ships in the
+# ``corpus-search`` extra alongside the rest of this tool's runtime
+# stack. Other tools in this module (``knowledge_search``,
+# ``ingest_corpus_filesystem``, …) work without it, so we tolerate
+# its absence at import time and surface a clear error inside the SQL
+# tool's validator if a caller actually exercises that code path
+# without the extra installed.
+try:
+    import sqlglot
+    from sqlglot import exp as sqlglot_exp
+    from sqlglot.errors import ParseError as _SqlglotParseError
+except ImportError:  # pragma: no cover - exercised only when the extra is missing
+    sqlglot = None  # type: ignore[assignment]
+    sqlglot_exp = None  # type: ignore[assignment]
+    _SqlglotParseError = Exception  # type: ignore[assignment,misc]
 
 from fireflyframework_agentic.content.sources.local_folder import (
     LocalFolderSource,
@@ -399,11 +418,165 @@ async def corpus_query(corpus_id: str, question: str, top_k: int = 5) -> dict[st
     }
 
 
+# ---------- structured-data introspection ----------------------------------
+
+_CORPUS_SQL_DEFAULT_LIMIT = 100
+_CORPUS_SQL_MAX_LIMIT = 1000
+
+
+@firefly_tool(
+    "list_corpus_schemas",
+    description=(
+        "List every structured table registered in the corpus via "
+        "ingest_corpus_structured. Returns the column definitions (name, type, "
+        "nullable, primary_key, foreign_key, unit) for each table. Returns an "
+        "empty 'tables' list when the corpus contains only unstructured "
+        "documents. Read-only; no LLM calls. Use this to discover what "
+        "structured data is queryable via corpus_sql."
+    ),
+    tags=("rag", "structured", "discovery"),
+)
+async def list_corpus_schemas(corpus_id: str) -> dict[str, Any]:
+    _assert_corpus_exists(corpus_id)
+    agent = await _agent_for(corpus_id)
+    schemas = await agent.list_schemas()
+    tables: list[dict[str, Any]] = []
+    for schema in schemas:
+        for table in schema.tables:
+            tables.append(table.model_dump(mode="json"))
+    return {"corpus_id": corpus_id, "tables": tables}
+
+
+def _structured_table_names(schemas: list[TargetSchema]) -> set[str]:
+    """Return the names of every table registered by structured ingestion."""
+    return {t.name for s in schemas for t in s.tables}
+
+
+def _validate_select(sql: str, allowed_tables: set[str]) -> tuple[Any, list[str]] | str:
+    """Parse *sql* and ensure it is a single SELECT against allowed tables.
+
+    Returns the parsed expression and the list of referenced table names on
+    success, or a human-readable error string on rejection. We use the
+    'sqlite' dialect so SQLite-specific syntax (e.g. ``UNION``, window
+    functions, JSON1 operators) parses without spurious errors.
+
+    Rejections are all read-only safety nets — the connection itself is
+    opened in ``mode=ro`` so writes physically cannot land — but they
+    surface clear errors to the caller instead of an opaque SQLite
+    ``attempt to write a readonly database``.
+    """
+    if sqlglot is None or sqlglot_exp is None:
+        return (
+            "sqlglot is required for corpus_sql; install the `corpus-search` "
+            "extra (e.g. `pip install 'fireflyframework-agentic[corpus-search]'`)"
+        )
+    try:
+        statements = sqlglot.parse(sql, read="sqlite")
+    except _SqlglotParseError as exc:
+        return f"SQL parse error: {exc}"
+    statements = [s for s in statements if s is not None]
+    if not statements:
+        return "SQL must contain exactly one statement; got none."
+    if len(statements) > 1:
+        return f"SQL must contain exactly one statement; got {len(statements)}."
+    root = statements[0]
+    if not isinstance(root, sqlglot_exp.Select):
+        return f"Only SELECT statements are allowed; got {type(root).__name__.upper()}."
+    referenced: list[str] = []
+    for table in root.find_all(sqlglot_exp.Table):
+        # ``table.name`` strips quoting; ``table.db`` would carry a schema
+        # qualifier (none expected for sqlite single-DB) and we reject it
+        # for predictability.
+        if table.db:
+            return f"Schema-qualified table references are not allowed: {table.sql()}"
+        name = table.name
+        if name not in allowed_tables:
+            return (
+                f"Table '{name}' is not part of this corpus's structured "
+                f"schema. Allowed tables: {sorted(allowed_tables) or '(none — corpus has no structured data)'}"
+            )
+        referenced.append(name)
+    return root, referenced
+
+
+def _execute_select_readonly(db_path: Path, sql: str, params: dict[str, Any] | None, limit: int) -> dict[str, Any]:
+    """Run *sql* against a read-only connection and return shaped results.
+
+    The connection is opened via ``mode=ro`` so SQLite refuses any write,
+    regardless of what the parser missed. Returns rows as ``list[dict]``
+    and signals truncation when more rows than *limit* matched.
+    """
+    uri = f"file:{db_path}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    try:
+        conn.row_factory = sqlite3.Row
+        cur = conn.execute(sql, params or {})
+        # Pull limit+1 so we can tell the caller whether they hit the cap
+        # without re-running a COUNT query.
+        fetched = cur.fetchmany(limit + 1)
+        truncated = len(fetched) > limit
+        kept = fetched[:limit]
+        columns = [d[0] for d in cur.description] if cur.description else []
+        rows = [dict(r) for r in kept]
+    finally:
+        conn.close()
+    return {"columns": columns, "rows": rows, "truncated": truncated}
+
+
+@firefly_tool(
+    "corpus_sql",
+    description=(
+        "Run a single SELECT statement against the corpus's structured "
+        "tables (the ones registered via ingest_corpus_structured) and return "
+        "raw rows. No LLM involvement: results are deterministic.\n\n"
+        "Safety:\n"
+        "  - The connection is opened read-only (SQLite mode=ro); INSERT / "
+        "UPDATE / DELETE / DDL physically cannot land.\n"
+        "  - Only SELECT is accepted; the SQL is parsed with sqlglot.\n"
+        "  - Only tables registered via ingest_corpus_structured are "
+        "queryable. Internal tables (chunks, _schemas, ingestions, etc.) "
+        "are rejected. Call list_corpus_schemas first to see what tables "
+        "are available.\n"
+        "  - Bind variables via the optional `params` dict (named or "
+        "qmark style) — do not interpolate user input into the SQL string.\n"
+        "  - At most `limit` rows are returned (default 100, max 1000); "
+        "the response carries `truncated=true` if more matched."
+    ),
+    tags=("rag", "structured", "query"),
+)
+async def corpus_sql(
+    corpus_id: str,
+    sql: str,
+    params: dict[str, Any] | None = None,
+    limit: int = _CORPUS_SQL_DEFAULT_LIMIT,
+) -> dict[str, Any]:
+    sqlite_path = _assert_corpus_exists(corpus_id)
+    if limit <= 0:
+        raise ValueError("limit must be positive")
+    capped_limit = min(limit, _CORPUS_SQL_MAX_LIMIT)
+    agent = await _agent_for(corpus_id)
+    schemas = await agent.list_schemas()
+    allowed = _structured_table_names(schemas)
+    validation = _validate_select(sql, allowed)
+    if isinstance(validation, str):
+        raise ValueError(validation)
+    _, referenced_tables = validation
+    result = await asyncio.to_thread(_execute_select_readonly, sqlite_path, sql, params, capped_limit)
+    return {
+        "corpus_id": corpus_id,
+        "sql": sql,
+        "tables": sorted(set(referenced_tables)),
+        **result,
+    }
+
+
 __all__ = [
     "corpus_query",
+    "corpus_sql",
     "discover_corpus_schema",
     "ingest_corpus_filesystem",
     "ingest_corpus_structured",
     "knowledge_search",
     "list_corpora",
+    "list_corpus_schemas",
 ]
