@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "firefly": {
+      "type": "http",
+      "url": "https://mcp.example.com/mcp/"
+    }
+  }
+}
