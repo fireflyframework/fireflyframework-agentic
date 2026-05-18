@@ -116,11 +116,8 @@ bedrock-embeddings = [
 ollama-embeddings = [
     "httpx>=0.28.0",
 ]
-rag = [
-    "fireflyframework-agentic[markitdown,watch,openai-embeddings]",
-]
 corpus-search = [
-    "fireflyframework-agentic[rag,vectorstores-sqlite-vec]",
+    "fireflyframework-agentic[markitdown,watch,openai-embeddings,vectorstores-sqlite-vec]",
     # sqlglot parses the user-supplied SELECT in the ``corpus_sql`` MCP tool
     # to whitelist table references against the structured-ingestion schema
     # registry (rejecting reads from internal tables like ``chunks`` / ``_schemas``).
@@ -153,8 +150,7 @@ dev = [
     "httpx>=0.28.0",
     "pdfplumber>=0.11.0",
     "pre-commit>=3.8.0",
-    "fireflyframework-agentic[markitdown,corpus-search]",
-    "sqlite-vec>=0.1.6",
+    "fireflyframework-agentic[corpus-search]",
 ]
 
 [project.scripts]
