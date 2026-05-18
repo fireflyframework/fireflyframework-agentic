@@ -145,3 +145,115 @@ class TestAgentRecordUsage:
 
         records = tracker.records
         assert records[0].agent == "named-agent"
+
+
+class TestCacheTokensFieldFallback:
+    """Pin the ``cache_write_tokens`` / ``cache_creation_tokens`` fallback.
+
+    pydantic-ai's ``Usage`` exposes cache-write counts under
+    ``cache_write_tokens`` (current) and previously under
+    ``cache_creation_tokens`` (older versions). ``FireflyAgent._record_usage``
+    reads ``cache_write_tokens`` and falls back to ``cache_creation_tokens``.
+    These tests prevent a silent zeroing of cache savings on either a
+    pydantic-ai rename or a regression of the fallback.
+    """
+
+    def test_reads_cache_write_tokens(self):
+        """Current pydantic-ai field name: ``cache_write_tokens``."""
+
+        class _Usage:
+            def __init__(self):
+                self.input_tokens = 100
+                self.output_tokens = 50
+                self.requests = 1
+                self.cache_write_tokens = 4096
+                self.cache_read_tokens = 2048
+                # cache_creation_tokens deliberately absent
+
+        class _Result:
+            def __init__(self):
+                self._usage = _Usage()
+
+            def usage(self):
+                return self._usage
+
+            def new_messages(self):
+                return []
+
+        agent = FireflyAgent(name="cache-write-name", model="test", auto_register=False)
+        tracker = UsageTracker()
+        with patch(
+            "fireflyframework_agentic.agents.base.default_usage_tracker",
+            tracker,
+        ):
+            agent._record_usage(_Result(), 10.0)
+
+        rec = tracker.records[0]
+        assert rec.cache_creation_tokens == 4096
+        assert rec.cache_read_tokens == 2048
+
+    def test_falls_back_to_cache_creation_tokens(self):
+        """Legacy pydantic-ai field name: ``cache_creation_tokens``."""
+
+        class _Usage:
+            def __init__(self):
+                self.input_tokens = 100
+                self.output_tokens = 50
+                self.requests = 1
+                self.cache_creation_tokens = 4096
+                self.cache_read_tokens = 2048
+                # cache_write_tokens deliberately absent
+
+        class _Result:
+            def __init__(self):
+                self._usage = _Usage()
+
+            def usage(self):
+                return self._usage
+
+            def new_messages(self):
+                return []
+
+        agent = FireflyAgent(name="cache-creation-name", model="test", auto_register=False)
+        tracker = UsageTracker()
+        with patch(
+            "fireflyframework_agentic.agents.base.default_usage_tracker",
+            tracker,
+        ):
+            agent._record_usage(_Result(), 10.0)
+
+        rec = tracker.records[0]
+        assert rec.cache_creation_tokens == 4096
+        assert rec.cache_read_tokens == 2048
+
+    def test_cache_write_tokens_wins_when_both_present(self):
+        """If both names are exposed, prefer the current name."""
+
+        class _Usage:
+            def __init__(self):
+                self.input_tokens = 100
+                self.output_tokens = 50
+                self.requests = 1
+                self.cache_write_tokens = 4096
+                self.cache_creation_tokens = 9999  # should be ignored
+                self.cache_read_tokens = 0
+
+        class _Result:
+            def __init__(self):
+                self._usage = _Usage()
+
+            def usage(self):
+                return self._usage
+
+            def new_messages(self):
+                return []
+
+        agent = FireflyAgent(name="both-names", model="test", auto_register=False)
+        tracker = UsageTracker()
+        with patch(
+            "fireflyframework_agentic.agents.base.default_usage_tracker",
+            tracker,
+        ):
+            agent._record_usage(_Result(), 10.0)
+
+        assert tracker.records[0].cache_creation_tokens == 4096
