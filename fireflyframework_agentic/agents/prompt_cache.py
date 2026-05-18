@@ -82,10 +82,9 @@ class PromptCacheMiddleware:
 
     Parameters:
         cache_system_prompt: Whether to cache the system prompt (default: True).
-        cache_min_tokens: Minimum tokens required to enable caching (default: 1024).
-            Providers typically require a minimum length for caching to be cost-effective.
-        cache_ttl_seconds: Cache TTL in seconds (default: 300 = 5 minutes).
-            Note: Actual TTL depends on provider (e.g., Anthropic: 5min, extended with use).
+        cache_ttl_seconds: Cache TTL in seconds. Must be ``300`` (5 minutes,
+            default) or ``3600`` (1 hour). Any other value raises ``ValueError``
+            -- Anthropic only accepts those two TTLs.
         enabled: Whether caching is enabled (default: True).
 
     Provider-Specific Behavior:
@@ -130,7 +129,6 @@ class PromptCacheMiddleware:
         # Cache long system prompts for cost savings
         middleware = PromptCacheMiddleware(
             cache_system_prompt=True,
-            cache_min_tokens=2048,
         )
 
         agent = FireflyAgent(
@@ -159,7 +157,6 @@ class PromptCacheMiddleware:
         cache_system_prompt: bool = True,
         cache_last_message: bool = True,
         cache_tool_definitions: bool = False,
-        cache_min_tokens: int = 1024,
         cache_ttl_seconds: int = 300,
         enabled: bool = True,
         openai_cache_key: str | Callable[[Any], str | None] | None = None,
@@ -171,26 +168,30 @@ class PromptCacheMiddleware:
                 Reduces per-call cost when the system prompt is large and
                 reused across calls (extractor, judge, classifier, ...).
             cache_last_message: Cache the last user message block
-                (Anthropic). Useful when the same large content (e.g. a
-                document) is sent across multiple agent calls within the
-                cache TTL window.
+                (Anthropic). Only takes effect on multi-turn runs --
+                i.e. when the caller passes a non-empty
+                ``message_history`` in ``kwargs``. On one-shot runs the
+                middleware skips this breakpoint, because the last user
+                message is unique to that call and the cache entry it
+                would write can never be read back.
             cache_tool_definitions: Cache the tool definitions block
                 (Anthropic). Off by default — only valuable when the
                 agent has many tools.
-            cache_min_tokens: Documented minimum for caching to be
-                cost-effective; informational only at the moment, the
-                provider enforces its own minimum.
-            cache_ttl_seconds: 300 -> 5m, 3600 -> 1h. Mapped to
-                Anthropic's `"5m"`/`"1h"` settings; any other value
-                rounds to `"5m"`.
+            cache_ttl_seconds: ``300`` -> ``"5m"`` or ``3600`` ->
+                ``"1h"``. Anthropic only accepts those two TTLs; any
+                other value raises ``ValueError`` at construction time.
             enabled: Master switch.
             openai_cache_key: Routing hint for OpenAI's automatic prompt
                 cache. When set (string or callable returning a string),
                 emitted as ``openai_prompt_cache_key`` in pydantic-ai's
                 ``model_settings`` so consecutive requests from the same
                 agent share the same cache backend. Default behaviour:
-                derive a stable key from the agent name when available.
-                Pass ``""`` to fully opt out of routing hints.
+                derive a stable key as ``ffa-{agent_name}-{model_id}``
+                when both are available, or ``ffa-{agent_name}`` when
+                only the name is. The model is included so two model
+                variants of the same agent (e.g. an A/B between
+                ``gpt-4o`` and ``gpt-4.1``) don't share routing
+                affinity. Pass ``""`` to fully opt out.
             google_cached_content: Pre-created Google Gemini
                 ``CachedContent`` resource id (e.g.
                 ``"cachedContents/abc"``). When set, emitted as
@@ -200,10 +201,14 @@ class PromptCacheMiddleware:
                 cached content via the GenAI SDK and pass its name here.
                 Accepts a callable returning the id for late-binding.
         """
+        if cache_ttl_seconds not in (300, 3600):
+            raise ValueError(
+                f"cache_ttl_seconds must be 300 (5 minutes) or 3600 (1 hour); "
+                f"got {cache_ttl_seconds!r}. Anthropic only supports those two TTLs."
+            )
         self._cache_system_prompt = cache_system_prompt
         self._cache_last_message = cache_last_message
         self._cache_tool_definitions = cache_tool_definitions
-        self._cache_min_tokens = cache_min_tokens
         self._cache_ttl_seconds = cache_ttl_seconds
         self._enabled = enabled
         self._openai_cache_key = openai_cache_key
@@ -243,22 +248,34 @@ class PromptCacheMiddleware:
             )
 
     async def after_run(self, context: Any, result: Any) -> Any:
-        """Record cache usage metrics after agent execution.
+        """Log cache hit/miss counts after agent execution.
+
+        Real cost savings are computed per-provider in
+        :mod:`fireflyframework_agentic.observability.cost_resolvers` --
+        we do NOT estimate savings here, because the discount differs by
+        provider (Anthropic ~90% on reads, OpenAI ~50%, Google ~25%)
+        and per-token pricing varies by model.
 
         Args:
-            context: Middleware context.
+            context: Middleware context (unused; kept for hook signature).
             result: Agent result with usage information.
 
         Returns:
             Unchanged result.
         """
+        del context  # hook signature; not used here
         if not self._enabled:
             return result
 
-        # Extract cache usage metrics if available
         if hasattr(result, "usage") and callable(result.usage):
             usage = result.usage()
-            cache_creation = getattr(usage, "cache_creation_tokens", 0) or 0
+            # ``cache_write_tokens`` is the pydantic-ai field name;
+            # ``cache_creation_tokens`` is the historical fallback.
+            cache_creation = (
+                getattr(usage, "cache_write_tokens", 0)
+                or getattr(usage, "cache_creation_tokens", 0)
+                or 0
+            )
             cache_read = getattr(usage, "cache_read_tokens", 0) or 0
 
             if cache_creation > 0 or cache_read > 0:
@@ -267,16 +284,6 @@ class PromptCacheMiddleware:
                     cache_creation,
                     cache_read,
                 )
-
-                # Calculate savings (approximation: 90% cost reduction on cached tokens)
-                if cache_read > 0:
-                    # Rough savings estimate based on typical pricing
-                    estimated_savings_pct = 90
-                    logger.info(
-                        "PromptCacheMiddleware: Estimated savings: ~%d%% on %d cached tokens",
-                        estimated_savings_pct,
-                        cache_read,
-                    )
 
         return result
 
@@ -325,7 +332,8 @@ class PromptCacheMiddleware:
 
         if self._cache_system_prompt:
             settings.setdefault("anthropic_cache_instructions", ttl)
-        if self._cache_last_message:
+        cache_messages_effective = self._cache_last_message and self._has_message_history(context)
+        if cache_messages_effective:
             settings.setdefault("anthropic_cache_messages", ttl)
         if self._cache_tool_definitions:
             settings.setdefault("anthropic_cache_tool_definitions", ttl)
@@ -333,10 +341,24 @@ class PromptCacheMiddleware:
         logger.debug(
             "PromptCacheMiddleware: Anthropic cache configured (system=%s, last_msg=%s, tools=%s, ttl=%s)",
             self._cache_system_prompt,
-            self._cache_last_message,
+            cache_messages_effective,
             self._cache_tool_definitions,
             ttl,
         )
+
+    @staticmethod
+    def _has_message_history(context: Any) -> bool:
+        """Return True if the current run has a non-empty message history.
+
+        Caching the last user message is only useful when subsequent
+        requests can read the entry back -- i.e. on multi-turn runs
+        where the same conversation prefix is replayed. On one-shot
+        runs (no prior history, unique user prompt each call) the cache
+        entry would write 1.25x and never be read.
+        """
+        kwargs = getattr(context, "kwargs", None) or {}
+        history = kwargs.get("message_history")
+        return bool(history)
 
     async def _configure_openai_caching(self, context: Any) -> None:
         """Configure OpenAI prompt-cache routing.
@@ -436,9 +458,21 @@ class PromptCacheMiddleware:
     def _resolve_openai_cache_key(self, context: Any) -> str | None:
         """Pick the OpenAI ``prompt_cache_key`` for this request.
 
-        See :meth:`_configure_openai_caching` for the priority order.
+        Resolution order:
+
+        1. Explicit string argument -- used verbatim. Empty string opts out.
+        2. Explicit callable argument -- evaluated against context.
+           Returning a non-empty string is used verbatim. Returning
+           ``None`` (or raising) falls through to the auto-derived
+           default, matching the no-callable behavior.
+        3. Auto-derived default: ``ffa-{agent_name}-{model_id}`` when
+           both are available, ``ffa-{agent_name}`` when only the name
+           is, ``None`` otherwise. The model is included so two model
+           variants of the same agent don't share routing affinity.
         """
         configured = self._openai_cache_key
+        if isinstance(configured, str):
+            return configured or None  # explicit empty string -> opt out
         if callable(configured):
             try:
                 resolved = configured(context)
@@ -450,14 +484,23 @@ class PromptCacheMiddleware:
                 resolved = None
             if isinstance(resolved, str) and resolved:
                 return resolved
-            return None
-        if isinstance(configured, str):
-            return configured or None  # explicit empty string -> opt out
-        # Default: derive a stable key from the agent name when present.
+            # Callable returned None / non-string / empty -> fall through
+            # to the auto-derived default, same as if no callable was set.
+        return self._auto_derived_openai_key(context)
+
+    @staticmethod
+    def _auto_derived_openai_key(context: Any) -> str | None:
+        """Build ``ffa-{agent_name}[-{model_id}]`` when available."""
         agent_name = getattr(context, "agent_name", None)
-        if isinstance(agent_name, str) and agent_name:
-            return f"ffa-{agent_name}"
-        return None
+        if not isinstance(agent_name, str) or not agent_name:
+            return None
+        model = getattr(context, "model", None)
+        if isinstance(model, str) and model:
+            # Strip the provider prefix (``openai:``, ``azure:``) so the
+            # key is stable across the two surfaces of the same model.
+            model_id = model.split(":", 1)[-1]
+            return f"ffa-{agent_name}-{model_id}"
+        return f"ffa-{agent_name}"
 
     def _resolve_google_cached_content(self, context: Any) -> str | None:
         """Pick the Gemini ``CachedContent`` resource id for this request."""
