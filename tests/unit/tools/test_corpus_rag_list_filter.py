@@ -157,21 +157,21 @@ async def test_list_corpora_authorised_filter_applies_after_registry(
 
 
 def test_resolve_registry_factory_bad_spec() -> None:
-    from fireflyframework_agentic.rag.corpus_backend import resolve_registry_factory
+    from fireflyframework_agentic.rag.corpus import resolve_registry_factory
 
     with pytest.raises(RuntimeError, match="pkg.mod:callable"):
         resolve_registry_factory("not-a-spec")
 
 
 def test_resolve_registry_factory_missing_module() -> None:
-    from fireflyframework_agentic.rag.corpus_backend import resolve_registry_factory
+    from fireflyframework_agentic.rag.corpus import resolve_registry_factory
 
     with pytest.raises(RuntimeError, match="Cannot import"):
         resolve_registry_factory("definitely.not.a.real.module:build_registry")
 
 
 def test_resolve_registry_factory_missing_attribute() -> None:
-    from fireflyframework_agentic.rag.corpus_backend import resolve_registry_factory
+    from fireflyframework_agentic.rag.corpus import resolve_registry_factory
 
     with pytest.raises(RuntimeError, match="without attribute"):
         # `os` is real; `not_a_factory` isn't an attribute of it.
@@ -179,7 +179,7 @@ def test_resolve_registry_factory_missing_attribute() -> None:
 
 
 def test_resolve_registry_factory_returns_callable() -> None:
-    from fireflyframework_agentic.rag.corpus_backend import resolve_registry_factory
+    from fireflyframework_agentic.rag.corpus import resolve_registry_factory
 
     # `os.getcwd` is conveniently callable and importable; we don't
     # actually call it, just resolve.
@@ -188,7 +188,7 @@ def test_resolve_registry_factory_returns_callable() -> None:
 
 
 def test_local_registry_source_uses_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    from fireflyframework_agentic.rag.corpus_backend import LocalCorpusBackendRegistry
+    from fireflyframework_agentic.rag.corpus import LocalCorpusBackendRegistry
 
     monkeypatch.setenv("CORPUS_ROOT", str(tmp_path))
     reg = LocalCorpusBackendRegistry()
@@ -201,7 +201,7 @@ async def test_local_registry_list_corpora_matches_old_behaviour(tmp_path: Path)
     """Regression check: the framework-default registry produces the same
     shape ``list_corpora`` used to produce before the registry pivot.
     """
-    from fireflyframework_agentic.rag.corpus_backend import LocalCorpusBackendRegistry
+    from fireflyframework_agentic.rag.corpus import LocalCorpusBackendRegistry
 
     for cid in ("corpus-a", "corpus-b"):
         (tmp_path / cid).mkdir()
