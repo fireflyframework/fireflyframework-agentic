@@ -137,9 +137,7 @@ def resolve_registry_factory(spec: str):
     """
     module_path, _, attr = spec.partition(":")
     if not module_path or not attr:
-        raise RuntimeError(
-            f"CORPUS_BACKEND_REGISTRY_FACTORY must look like 'pkg.mod:callable', got {spec!r}"
-        )
+        raise RuntimeError(f"CORPUS_BACKEND_REGISTRY_FACTORY must look like 'pkg.mod:callable', got {spec!r}")
     try:
         module = importlib.import_module(module_path)
     except ImportError as exc:
@@ -153,9 +151,7 @@ def resolve_registry_factory(spec: str):
     try:
         return getattr(module, attr)
     except AttributeError as exc:
-        raise RuntimeError(
-            f"Factory {spec!r} resolved to a module without attribute {attr!r}"
-        ) from exc
+        raise RuntimeError(f"Factory {spec!r} resolved to a module without attribute {attr!r}") from exc
 
 
 __all__ = [
