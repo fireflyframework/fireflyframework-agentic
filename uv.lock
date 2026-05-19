@@ -364,6 +364,21 @@ wheels = [
 ]
 
 [[package]]
+name = "azure-storage-blob"
+version = "12.29.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-core" },
+    { name = "cryptography" },
+    { name = "isodate" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/59/25/fdcf1e381922dbab8ba23d6fd78d397fe6cbac6b480310218834b7bc91fe/azure_storage_blob-12.29.0.tar.gz", hash = "sha256:2824ddd7ebc9056034ebc76b17971a38e9aa5835abb0d565b9700493f2a6c657", size = 611359, upload-time = "2026-05-15T03:34:59.865Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c2/2c/6ddee6a3e42d0236ba9259e4df7fa97fdc415ff0802b736c634baaf4b285/azure_storage_blob-12.29.0-py3-none-any.whl", hash = "sha256:ccf8a1bcd5e49df83ab85aab793b579e5ba2eeea2ad8900b2f62ca3a37dc391f", size = 434823, upload-time = "2026-05-15T03:35:01.837Z" },
+]
+
+[[package]]
 name = "bcrypt"
 version = "5.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1119,6 +1134,7 @@ all = [
     { name = "azure-identity" },
     { name = "azure-keyvault-secrets" },
     { name = "azure-monitor-opentelemetry-exporter" },
+    { name = "azure-storage-blob" },
     { name = "boto3" },
     { name = "chromadb" },
     { name = "cohere" },
@@ -1163,6 +1179,8 @@ cohere-embeddings = [
     { name = "cohere" },
 ]
 corpus-search = [
+    { name = "azure-identity" },
+    { name = "azure-storage-blob" },
     { name = "markdown-it-py" },
     { name = "markitdown", extra = ["docx", "pdf", "pptx", "xlsx"] },
     { name = "openai" },
@@ -1260,8 +1278,10 @@ requires-dist = [
     { name = "aiokafka", marker = "extra == 'kafka'", specifier = ">=0.12.0" },
     { name = "asyncpg", marker = "extra == 'postgres'", specifier = ">=0.30.0" },
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.19" },
+    { name = "azure-identity", marker = "extra == 'corpus-search'", specifier = ">=1.19" },
     { name = "azure-keyvault-secrets", marker = "extra == 'azure'", specifier = ">=4.9" },
     { name = "azure-monitor-opentelemetry-exporter", marker = "extra == 'azure'", specifier = ">=1.0.0b30" },
+    { name = "azure-storage-blob", marker = "extra == 'corpus-search'", specifier = ">=12.20.0" },
     { name = "boto3", marker = "extra == 'bedrock-embeddings'", specifier = ">=1.35.0" },
     { name = "chromadb", marker = "extra == 'vectorstores-chroma'", specifier = ">=0.5.0" },
     { name = "cohere", marker = "extra == 'cohere-embeddings'", specifier = ">=5.0.0" },
