@@ -81,7 +81,17 @@ az ad app update --id $APPID --identifier-uris "api://$APPID"
 # 4. Define the user_impersonation scope (via Azure Portal, or `az rest`
 #    against MS Graph PATCH /v1.0/applications/<objectId>).
 
-# 5. Pre-authorize Azure CLI (well-known appId 04b07795-8ddb-461a-bbee-02f9e1bf7b46)
+# 5. Request v2.0 access tokens (the middleware validates against the v2
+#    issuer https://login.microsoftonline.com/<tenant>/v2.0; without this
+#    setting Entra issues v1 tokens with issuer https://sts.windows.net/...
+#    and the middleware rejects them with 401 "Invalid or expired token").
+OBJID=$(az ad app show --id $APPID --query id -o tsv)
+az rest --method patch \
+  --uri "https://graph.microsoft.com/v1.0/applications/$OBJID" \
+  --headers "Content-Type=application/json" \
+  --body '{"api":{"requestedAccessTokenVersion":2}}'
+
+# 6. Pre-authorize Azure CLI (well-known appId 04b07795-8ddb-461a-bbee-02f9e1bf7b46)
 #    so consultants can run `az account get-access-token` without consent prompts.
 ```
 
@@ -157,7 +167,7 @@ firefly-mcp-http
 Then drive it as a real client would:
 
 ```bash
-TOKEN=$(az account get-access-token --resource api://<app-id> --query accessToken -o tsv)
+TOKEN=$(az account get-access-token --scope api://<app-id>/.default --query accessToken -o tsv)
 
 curl -X POST http://localhost:8000/mcp/ \
   -H "Authorization: Bearer $TOKEN" \
@@ -192,7 +202,7 @@ silently for the lifetime of the refresh token (~90 days of inactivity).
 ### Manual curl probe
 
 ```bash
-TOKEN=$(az account get-access-token --resource api://<app-id> --query accessToken -o tsv)
+TOKEN=$(az account get-access-token --scope api://<app-id>/.default --query accessToken -o tsv)
 
 curl -sS -X POST https://mcp.example.com/mcp/ \
   -H "Authorization: Bearer $TOKEN" \
