@@ -58,7 +58,7 @@ def db_store(request, tmp_path):
         pytest.importorskip("azure.storage.blob")
         from azure.storage.blob import BlobServiceClient  # type: ignore[import-not-found]
 
-        from fireflyframework_agentic.storage import AzureBlobBackend
+        from examples.corpus_search.azure_backend import AzureBlobBackend
 
         conn_str = request.getfixturevalue("azurite_connection_string")
         svc = BlobServiceClient.from_connection_string(conn_str)
