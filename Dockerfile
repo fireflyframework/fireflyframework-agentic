@@ -16,8 +16,7 @@ COPY examples ./examples
 
 RUN uv sync --frozen --no-dev \
     --extra rest --extra mcp \
-    --extra rag --extra openai-embeddings --extra azure --extra markitdown \
-    --extra vectorstores-sqlite-vec
+    --extra corpus-search --extra openai-embeddings --extra azure --extra markitdown
 
 FROM python:3.13-slim AS runtime
 
