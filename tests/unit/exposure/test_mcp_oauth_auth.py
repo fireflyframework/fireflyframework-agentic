@@ -241,6 +241,56 @@ def test_role_for_one_corpus_does_not_grant_another() -> None:
     assert r.status_code == 403
 
 
+def test_wildcard_write_role_grants_any_corpus_write() -> None:
+    v = _StubVerifier({"t1": {"roles": ["Corpus.*.Write"]}})
+    client = TestClient(_make_app(verifier=v))
+    r = client.post("/mcp", headers=_auth("t1"), json=_body("ingest_corpus_filesystem", corpus_id="never-seen"))
+    assert r.status_code == 200
+
+
+def test_wildcard_write_role_grants_any_corpus_read() -> None:
+    v = _StubVerifier({"t1": {"roles": ["Corpus.*.Write"]}})
+    client = TestClient(_make_app(verifier=v))
+    r = client.post("/mcp", headers=_auth("t1"), json=_body("corpus_query", corpus_id="never-seen"))
+    assert r.status_code == 200
+
+
+def test_wildcard_read_role_grants_read_only() -> None:
+    v = _StubVerifier({"t1": {"roles": ["Corpus.*.Read"]}})
+    client = TestClient(_make_app(verifier=v))
+    assert client.post("/mcp", headers=_auth("t1"), json=_body("corpus_query", corpus_id="anything")).status_code == 200
+    # Write tool must NOT be granted by ``Corpus.*.Read``.
+    assert (
+        client.post("/mcp", headers=_auth("t1"), json=_body("ingest_corpus_filesystem", corpus_id="anything")).status_code
+        == 403
+    )
+
+
+def test_wildcard_role_publishes_none_authorised_corpora() -> None:
+    """list_corpora must see no corpus filter when the caller has the wildcard role."""
+    from fireflyframework_agentic.tools.builtins.corpus_rag import (
+        authorised_corpora_var,
+    )
+
+    captured: dict[str, tuple[str, ...] | None] = {}
+
+    v = _StubVerifier({"t1": {"roles": ["Corpus.*.Write"]}})
+    app = _make_app(verifier=v)
+
+    @app.post("/mcp/capture")
+    async def capture() -> dict[str, Any]:
+        captured["val"] = authorised_corpora_var.get()
+        return {"ok": True}
+
+    client = TestClient(app)
+    r = client.post(
+        "/mcp",
+        headers=_auth("t1"),
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "list_corpora", "arguments": {}}},
+    )
+    assert r.status_code == 200
+
+
 # ---------- lifecycle / no-corpus -------------------------------------------
 
 

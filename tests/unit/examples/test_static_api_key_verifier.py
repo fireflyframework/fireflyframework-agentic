@@ -17,22 +17,22 @@ from examples.corpus_search.azure_security import (
 )
 
 
-def test_static_key_match_returns_synth_claims() -> None:
-    v = StaticApiKeyVerifier("s3cret", ("alpha", "beta"))
+def test_static_key_match_returns_wildcard_claims() -> None:
+    v = StaticApiKeyVerifier("s3cret")
     claims = v.validate_token("s3cret")
     assert claims["sub"] == "static-api-key"
-    assert set(claims["roles"]) == {"Corpus.alpha.Write", "Corpus.beta.Write"}
+    assert claims["roles"] == ["Corpus.*.Write"]
 
 
 def test_static_key_mismatch_raises() -> None:
-    v = StaticApiKeyVerifier("s3cret", ("alpha",))
+    v = StaticApiKeyVerifier("s3cret")
     with pytest.raises(ValueError, match="Static key mismatch"):
         v.validate_token("wrong")
 
 
 def test_static_key_rejects_empty_api_key() -> None:
     with pytest.raises(ValueError, match="non-empty"):
-        StaticApiKeyVerifier("", ("alpha",))
+        StaticApiKeyVerifier("")
 
 
 def test_composite_returns_first_accepting_verifier() -> None:
@@ -70,21 +70,15 @@ def test_build_composite_with_static_key(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("AZURE_TENANT_ID", "tenant-guid")
     monkeypatch.setenv("AZURE_CLIENT_ID", "client-guid")
     monkeypatch.setenv("FIREFLY_MCP_STATIC_API_KEY", "shared-secret")
-    monkeypatch.setenv("FIREFLY_MCP_STATIC_API_KEY_CORPORA", "alpha, beta ,gamma")
     c = build_composite_verifier()
     claims = c.validate_token("shared-secret")
-    assert set(claims["roles"]) == {
-        "Corpus.alpha.Write",
-        "Corpus.beta.Write",
-        "Corpus.gamma.Write",
-    }
+    assert claims["roles"] == ["Corpus.*.Write"]
 
 
 def test_build_composite_without_static_key_falls_back_to_entra(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AZURE_TENANT_ID", "tenant-guid")
     monkeypatch.setenv("AZURE_CLIENT_ID", "client-guid")
     monkeypatch.delenv("FIREFLY_MCP_STATIC_API_KEY", raising=False)
-    monkeypatch.delenv("FIREFLY_MCP_STATIC_API_KEY_CORPORA", raising=False)
     c = build_composite_verifier()
     with pytest.raises(ValueError):
         c.validate_token("anything")
