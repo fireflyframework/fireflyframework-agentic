@@ -79,7 +79,7 @@ async def main() -> None:
     rr = DelegationRouter(agents, RoundRobinStrategy())
     for i in range(6):
         prompt = f"Request #{i + 1}: Hello!"
-        agent = await rr._strategy.select(rr._agents, prompt)  # Inspect selection
+        agent = (await rr.decide(prompt)).chosen  # Inspect selection.
         result = await agent.run(prompt)
         print(f"  Request {i + 1} → routed to: {agent.name}")
 
@@ -87,7 +87,7 @@ async def main() -> None:
     print("\n=== Capability Strategy (tag='translation') ===\n")
     cap = DelegationRouter(agents, CapabilityStrategy(required_tag="translation"))
     prompt = "Translate 'Good morning' to French."
-    agent = await cap._strategy.select(cap._agents, prompt)
+    agent = (await cap.decide(prompt)).chosen
     result = await agent.run(prompt)
     print(f"  Routed to: {agent.name}")
     print(f"  Output   : {result.output}\n")
@@ -96,7 +96,7 @@ async def main() -> None:
     print("=== Cost-Aware Strategy ===\n")
     cost = DelegationRouter(agents, CostAwareStrategy())
     prompt = "Simple classification: is this positive or negative?"
-    agent = await cost._strategy.select(cost._agents, prompt)
+    agent = (await cost.decide(prompt)).chosen
     result = await agent.run(prompt)
     print(f"  Routed to: {agent.name} (cheapest model)")
     print(f"  Output   : {result.output}\n")
@@ -110,7 +110,7 @@ async def main() -> None:
         "Write a haiku about autumn leaves.",
     ]
     for prompt in prompts:
-        agent = await content._strategy.select(content._agents, prompt)
+        agent = (await content.decide(prompt)).chosen
         result = await agent.run(prompt)
         print(f"  Prompt   : {prompt}")
         print(f"  Routed to: {agent.name}")

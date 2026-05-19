@@ -128,7 +128,7 @@ classDiagram
     }
     class DelegationStrategy {
         <<Protocol>>
-        +select(agents, prompt, **kwargs) Any
+        +decide(agents, prompt, **kwargs) RoutingDecision
     }
     class CompressionStrategy {
         <<Protocol>>
@@ -179,6 +179,9 @@ classDiagram
     DelegationStrategy <|.. CapabilityStrategy
     DelegationStrategy <|.. ContentBasedStrategy
     DelegationStrategy <|.. CostAwareStrategy
+    DelegationStrategy <|.. ChainStrategy
+    DelegationStrategy <|.. FallbackStrategy
+    DelegationStrategy <|.. WeightedStrategy
     CompressionStrategy <|.. TruncationStrategy
     CompressionStrategy <|.. SummarizationStrategy
     CompressionStrategy <|.. MapReduceStrategy
@@ -233,9 +236,16 @@ a global registry, delegation strategies, and declarative decorators.
   middleware chain, run timeout, and streaming usage tracking.
 - **registry.py** -- `AgentRegistry` is a thread-safe singleton that maps names to agents.
 - **lifecycle.py** -- `AgentLifecycle` handles init, warmup, and shutdown hooks.
-- **delegation.py** -- Multi-agent delegation via `RoundRobinStrategy`,
-  `CapabilityStrategy`, `ContentBasedStrategy` (LLM routing), and
-  `CostAwareStrategy` (cheapest model), coordinated by `DelegationRouter`.
+- **delegation.py** -- Multi-agent delegation. Strategies return
+  `RoutingDecision` objects (ranked, scored `Candidate` tuples plus
+  metadata). Built-ins: `RoundRobinStrategy`, `CapabilityStrategy`,
+  `ContentBasedStrategy` (LLM routing), and `CostAwareStrategy` (priced
+  via the cost resolver chain, pool-relative normalisation).
+  Combinators `ChainStrategy`, `FallbackStrategy`, and `WeightedStrategy`
+  nest strategies without subclassing. `DelegationRouter` separates
+  `decide()` (pure, emits the `firefly.routing.decision` OTel event)
+  from `execute()` (runs the chosen agent, forks memory); `route()`
+  remains the one-call convenience.
 - **context.py** -- `AgentContext` carries request-scoped data through an agent run.
 - **decorators.py** -- `@firefly_agent` registers an agent declaratively.
 - **middleware.py** -- `AgentMiddleware` protocol and `MiddlewareChain` for

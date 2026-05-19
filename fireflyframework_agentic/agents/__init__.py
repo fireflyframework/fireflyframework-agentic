@@ -33,12 +33,17 @@ from fireflyframework_agentic.agents.cache import ResultCache
 from fireflyframework_agentic.agents.context import AgentContext
 from fireflyframework_agentic.agents.decorators import firefly_agent
 from fireflyframework_agentic.agents.delegation import (
+    Candidate,
     CapabilityStrategy,
+    ChainStrategy,
     ContentBasedStrategy,
     CostAwareStrategy,
     DelegationRouter,
     DelegationStrategy,
+    FallbackStrategy,
     RoundRobinStrategy,
+    RoutingDecision,
+    WeightedStrategy,
 )
 from fireflyframework_agentic.agents.fallback import FallbackModelWrapper, run_with_fallback
 from fireflyframework_agentic.agents.lifecycle import AgentLifecycle, agent_lifecycle
@@ -67,7 +72,9 @@ __all__ = [
     "BudgetExceededError",
     "CacheMiddleware",
     "CacheStatistics",
+    "Candidate",
     "CapabilityStrategy",
+    "ChainStrategy",
     "ContentBasedStrategy",
     "CostAwareStrategy",
     "CostGuardMiddleware",
@@ -75,6 +82,7 @@ __all__ = [
     "DelegationStrategy",
     "ExplainabilityMiddleware",
     "FallbackModelWrapper",
+    "FallbackStrategy",
     "FireflyAgent",
     "LoggingMiddleware",
     "MiddlewareChain",
@@ -88,7 +96,9 @@ __all__ = [
     "ResultCache",
     "RetryMiddleware",
     "RoundRobinStrategy",
+    "RoutingDecision",
     "ValidationMiddleware",
+    "WeightedStrategy",
     "agent_registry",
     "create_classifier_agent",
     "create_conversational_agent",

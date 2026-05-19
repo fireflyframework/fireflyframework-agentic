@@ -12,22 +12,42 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Multi-agent delegation with pluggable routing strategies.
+"""Multi-agent delegation with pluggable, composable routing strategies.
 
 A :class:`DelegationRouter` accepts a pool of agents and a
 :class:`DelegationStrategy` that decides which agent handles a given input.
-Users can implement the :class:`DelegationStrategy` protocol to provide
-custom routing logic.
+Strategies return :class:`RoutingDecision` objects: ranked, scored candidate
+lists with free-form metadata. Decisions can be inspected, cached, replayed
+or executed via the router.
+
+Four built-in strategies (:class:`RoundRobinStrategy`,
+:class:`CapabilityStrategy`, :class:`ContentBasedStrategy`,
+:class:`CostAwareStrategy`) cover the common cases. Three combinators
+(:class:`ChainStrategy`, :class:`FallbackStrategy`,
+:class:`WeightedStrategy`) compose them without subclassing.
 """
 
 from __future__ import annotations
 
 import itertools
+import json
 import logging
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+import time
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
+
+from pydantic_ai import Agent as PydanticAgent
 
 from fireflyframework_agentic.exceptions import DelegationError
+from fireflyframework_agentic.observability.cost_resolvers import (
+    DEFAULT_RESOLVERS,
+    CostContext,
+    CostFn,
+    UnknownModelCostError,
+    resolve_cost,
+)
+from fireflyframework_agentic.observability.tracer import default_tracer
 from fireflyframework_agentic.types import UserContent
 
 if TYPE_CHECKING:
@@ -37,96 +57,184 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# -- Core types --------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Candidate:
+    """One scored candidate produced by a :class:`DelegationStrategy`.
+
+    Attributes:
+        agent: The candidate agent.
+        score: Normalised score in ``[0.0, 1.0]``; higher is better.
+        reason: Short human-readable explanation of why this score.
+    """
+
+    agent: FireflyAgent[Any, Any]
+    score: float
+    reason: str
+
+
+@dataclass(frozen=True)
+class RoutingDecision:
+    """The output of :meth:`DelegationStrategy.decide`.
+
+    Attributes:
+        candidates: Ranked best-first; may be empty (meaning "no opinion").
+        strategy: Class name of the strategy that produced the decision.
+        metadata: Free-form mapping flattened into the OTel decision event
+            under the ``routing.`` prefix.
+    """
+
+    candidates: tuple[Candidate, ...]
+    strategy: str
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    @property
+    def chosen(self) -> FireflyAgent[Any, Any]:
+        """Return the top candidate's agent.
+
+        Raises:
+            DelegationError: If the decision is empty.
+        """
+        if not self.candidates:
+            raise DelegationError("Empty routing decision")
+        return self.candidates[0].agent
+
+
 @runtime_checkable
 class DelegationStrategy(Protocol):
     """Protocol for agent selection strategies.
 
-    Implement this protocol to create custom routing logic.  The framework
-    ships with :class:`RoundRobinStrategy` and :class:`CapabilityStrategy`.
+    Implement this protocol to create custom routing logic. The framework
+    ships with :class:`RoundRobinStrategy`, :class:`CapabilityStrategy`,
+    :class:`ContentBasedStrategy`, and :class:`CostAwareStrategy`, plus
+    three combinators (:class:`ChainStrategy`, :class:`FallbackStrategy`,
+    :class:`WeightedStrategy`).
     """
 
-    async def select(
+    async def decide(
         self,
         agents: Sequence[FireflyAgent[Any, Any]],
         prompt: str | Sequence[UserContent],
         **kwargs: Any,
-    ) -> FireflyAgent[Any, Any]:
-        """Choose an agent from *agents* to handle *prompt*."""
+    ) -> RoutingDecision:
+        """Produce a routing decision for *prompt* over *agents*."""
         ...
 
 
+# -- Built-in strategies -----------------------------------------------------
+
+
 class RoundRobinStrategy:
-    """Cycle through agents in order, wrapping back to the first after the last."""
+    """Cycle through agents in order, wrapping back to the first after the last.
+
+    Returns a 1-element decision with ``score=1.0``. Empty pool yields an
+    empty decision (no exception); the router raises only when
+    :meth:`DelegationRouter.execute` is called on an empty decision.
+    """
 
     def __init__(self) -> None:
         # Lazily initialised so the cycle resets if the agent pool changes.
         self._cycle: itertools.cycle[FireflyAgent[Any, Any]] | None = None
         self._last_agents: list[FireflyAgent[Any, Any]] = []
+        self._turn: int = 0
 
-    async def select(
+    async def decide(
         self,
         agents: Sequence[FireflyAgent[Any, Any]],
         prompt: str | Sequence[UserContent],
         **kwargs: Any,
-    ) -> FireflyAgent[Any, Any]:
+    ) -> RoutingDecision:
+        """Pick the next agent in round-robin order."""
+        del prompt, kwargs
         if not agents:
-            raise DelegationError("No agents available for delegation")
+            return RoutingDecision(candidates=(), strategy=type(self).__name__, metadata={})
         if self._cycle is None or self._last_agents != list(agents):
             self._cycle = itertools.cycle(agents)
             self._last_agents = list(agents)
-        return next(self._cycle)
+            self._turn = 0
+        agent = next(self._cycle)
+        turn = self._turn
+        self._turn += 1
+        candidate = Candidate(agent=agent, score=1.0, reason="round-robin turn")
+        return RoutingDecision(
+            candidates=(candidate,),
+            strategy=type(self).__name__,
+            metadata={"turn": turn},
+        )
 
 
 class CapabilityStrategy:
-    """Select the first agent whose tags include a required capability.
+    """Select all agents whose tags include a required capability.
+
+    Returns every matching agent with ``score=1.0``; non-matching agents
+    are omitted. No-match yields an empty decision (composable with
+    :class:`FallbackStrategy`).
 
     Parameters:
-        required_tag: The tag that the selected agent must possess.
+        required_tag: The tag that selected agents must possess.
     """
 
     def __init__(self, required_tag: str) -> None:
         self._tag = required_tag
 
-    async def select(
+    async def decide(
         self,
         agents: Sequence[FireflyAgent[Any, Any]],
         prompt: str | Sequence[UserContent],
         **kwargs: Any,
-    ) -> FireflyAgent[Any, Any]:
+    ) -> RoutingDecision:
+        """Return all agents tagged with the required capability."""
+        del prompt, kwargs
+        matches: list[Candidate] = []
         for agent in agents:
-            if hasattr(agent, "tags") and self._tag in agent.tags:
-                return agent
-        raise DelegationError(f"No agent found with required tag '{self._tag}'")
+            tags = getattr(agent, "tags", None)
+            if tags is not None and self._tag in tags:
+                matches.append(Candidate(agent=agent, score=1.0, reason=f"has tag '{self._tag}'"))
+        return RoutingDecision(
+            candidates=tuple(matches),
+            strategy=type(self).__name__,
+            metadata={"required_tag": self._tag, "match_count": len(matches)},
+        )
 
 
 class ContentBasedStrategy:
     """Select an agent by asking an LLM which is best suited for the prompt.
 
-    The strategy builds a short description of each agent (from its *name*
-    and *description* attributes) and asks the routing model to pick the
-    most suitable one.  This is ideal when agents have overlapping
-    capabilities and a simple tag match isn't sufficient.
+    The strategy builds a short description of each agent (from its
+    ``name`` and ``description`` attributes) and asks the routing model
+    to rank them.
+
+    Score comes from the LLM's confidence when supplied, else
+    ``1.0 / rank``. On LLM failure the strategy returns an empty
+    decision so :class:`FallbackStrategy` can take over (it does NOT
+    silently return the first agent).
 
     Parameters:
         model: A *pydantic-ai* model name used for the routing decision
-            (e.g. ``"openai:gpt-4o-mini"``).  Kept lightweight by design.
+            (e.g. ``"openai:gpt-4o-mini"``). Kept lightweight by design.
     """
 
     def __init__(self, model: str = "openai:gpt-4o-mini") -> None:
         self._model = model
 
-    async def select(
+    async def decide(
         self,
         agents: Sequence[FireflyAgent[Any, Any]],
         prompt: str | Sequence[UserContent],
         **kwargs: Any,
-    ) -> FireflyAgent[Any, Any]:
+    ) -> RoutingDecision:
+        """Ask the routing LLM to pick the best agent for *prompt*."""
         if not agents:
-            raise DelegationError("No agents available for delegation")
+            return RoutingDecision(candidates=(), strategy=type(self).__name__, metadata={})
         if len(agents) == 1:
-            return agents[0]
+            return RoutingDecision(
+                candidates=(Candidate(agent=agents[0], score=1.0, reason="only candidate"),),
+                strategy=type(self).__name__,
+                metadata={"singleton": True},
+            )
 
-        # Build agent descriptions
         descriptions: list[str] = []
         for i, agent in enumerate(agents):
             name = getattr(agent, "name", f"agent_{i}")
@@ -143,91 +251,355 @@ class ContentBasedStrategy:
         )
 
         try:
-            from pydantic_ai import Agent as PydanticAgent
-
             router = PydanticAgent(self._model, system_prompt="You pick the best agent.")
             result = await router.run(routing_prompt)
-            idx_str = result.output.strip()
-            # Extract first integer from response
-            digits = "".join(c for c in idx_str if c.isdigit())[:3]
-            if digits:
-                idx = int(digits)
-                if 0 <= idx < len(agents):
-                    return agents[idx]
-            logger.warning("Content-based routing got non-numeric response: %r", idx_str[:50])
         except Exception:
-            logger.warning("Content-based routing failed, falling back to first agent")
+            logger.warning("Content-based routing LLM call failed", exc_info=True)
+            return RoutingDecision(
+                candidates=(),
+                strategy=type(self).__name__,
+                metadata={"error": "llm_failure"},
+            )
 
-        return agents[0]
+        idx_str = result.output.strip()
+        digits = "".join(c for c in idx_str if c.isdigit())[:3]
+        if not digits:
+            logger.warning("Content-based routing got non-numeric response: %r", idx_str[:50])
+            return RoutingDecision(
+                candidates=(),
+                strategy=type(self).__name__,
+                metadata={"error": "non_numeric_response"},
+            )
+
+        idx = int(digits)
+        if not (0 <= idx < len(agents)):
+            logger.warning("Content-based routing returned out-of-range index %d", idx)
+            return RoutingDecision(
+                candidates=(),
+                strategy=type(self).__name__,
+                metadata={"error": "out_of_range"},
+            )
+
+        # Single chosen agent with full confidence; no per-other ranking given.
+        chosen = Candidate(agent=agents[idx], score=1.0, reason=f"LLM picked index {idx}")
+        return RoutingDecision(
+            candidates=(chosen,),
+            strategy=type(self).__name__,
+            metadata={"llm_index": idx, "model": self._model},
+        )
 
 
 class CostAwareStrategy:
-    """Select the agent backed by the cheapest model.
+    """Rank agents by per-call cost via the project's cost resolver chain.
 
-    Agents are expected to expose a ``model_name`` attribute (which
-    :class:`FireflyAgent` provides).  The strategy maps known model
-    names to approximate relative cost tiers and picks the cheapest.
-    Unknown models are assigned a middle-tier cost.
+    Cost per agent is computed with
+    :func:`fireflyframework_agentic.observability.cost_resolvers.resolve_cost`
+    against a synthetic :class:`CostContext` representing a typical call.
+    Scores are pool-relative linear normalisations:
+    ``score = 1.0 - (cost - min) / (max - min)``. All-equal costs (or a
+    single agent) score ``1.0``.
+
+    Parameters:
+        sample_input_tokens: Representative input tokens for pricing.
+        sample_output_tokens: Representative output tokens for pricing.
+        sample_cache_creation_tokens: Representative cache-creation tokens.
+        sample_cache_read_tokens: Representative cache-read tokens.
+        sample_reasoning_tokens: Representative reasoning tokens.
+        resolvers: Optional cost resolver chain. Defaults to
+            :data:`DEFAULT_RESOLVERS`.
+        on_unknown: How to handle agents the resolver chain cannot price.
+            ``"skip"`` omits, ``"lowest"`` includes with score ``0.0``,
+            ``"raise"`` raises :class:`UnknownModelCostError`.
     """
 
-    # Approximate relative cost tiers (lower = cheaper)
-    _COST_TIERS: dict[str, int] = {
-        "gpt-4o-mini": 1,
-        "gpt-4.1-mini": 1,
-        "gpt-4.1-nano": 0,
-        "claude-3-5-haiku": 1,
-        "claude-3-haiku": 1,
-        "claude-4-haiku": 1,
-        "gemini-2.0-flash": 1,
-        "gemini-2.5-flash": 1,
-        "gpt-4o": 3,
-        "gpt-4.1": 3,
-        "claude-3-5-sonnet": 3,
-        "claude-4-sonnet": 3,
-        "gemini-2.5-pro": 4,
-        "claude-3-opus": 5,
-        "claude-4-opus": 5,
-        "o1": 5,
-        "o3": 5,
-        "o4-mini": 3,
-    }
+    def __init__(
+        self,
+        *,
+        sample_input_tokens: int = 1000,
+        sample_output_tokens: int = 500,
+        sample_cache_creation_tokens: int = 0,
+        sample_cache_read_tokens: int = 0,
+        sample_reasoning_tokens: int = 0,
+        resolvers: Sequence[CostFn] | None = None,
+        on_unknown: Literal["skip", "lowest", "raise"] = "skip",
+    ) -> None:
+        self._sample_input_tokens = sample_input_tokens
+        self._sample_output_tokens = sample_output_tokens
+        self._sample_cache_creation_tokens = sample_cache_creation_tokens
+        self._sample_cache_read_tokens = sample_cache_read_tokens
+        self._sample_reasoning_tokens = sample_reasoning_tokens
+        self._resolvers = tuple(resolvers) if resolvers is not None else DEFAULT_RESOLVERS
+        self._on_unknown = on_unknown
 
-    def _cost_tier(self, model_name: str) -> int:
-        """Return cost tier for a model, with middle-tier default."""
-        lower = model_name.lower()
-        # Strip provider prefix (e.g. "openai:gpt-4o" -> "gpt-4o")
-        if ":" in lower:
-            lower = lower.split(":", 1)[1]
-        for key, tier in self._COST_TIERS.items():
-            if key in lower:
-                return tier
-        return 3  # Default to middle tier
+    def _agent_cost(self, agent: FireflyAgent[Any, Any]) -> float | None:
+        """Compute the synthetic per-call cost for *agent*."""
+        model_name = getattr(agent, "model_name", "") or getattr(agent, "_model_identifier", "")
+        if not model_name:
+            return None
+        ctx = CostContext(
+            model=model_name,
+            input_tokens=self._sample_input_tokens,
+            output_tokens=self._sample_output_tokens,
+            cache_creation_tokens=self._sample_cache_creation_tokens,
+            cache_read_tokens=self._sample_cache_read_tokens,
+            reasoning_tokens=self._sample_reasoning_tokens,
+        )
+        # Force non-strict so we control the unknown-model branch ourselves.
+        return resolve_cost(ctx, resolvers=self._resolvers, strict=False)
 
-    async def select(
+    async def decide(
         self,
         agents: Sequence[FireflyAgent[Any, Any]],
         prompt: str | Sequence[UserContent],
         **kwargs: Any,
-    ) -> FireflyAgent[Any, Any]:
+    ) -> RoutingDecision:
+        """Rank agents by ascending cost (cheapest first)."""
         if not agents:
-            raise DelegationError("No agents available for delegation")
+            return RoutingDecision(candidates=(), strategy=type(self).__name__, metadata={})
 
-        best_agent = agents[0]
-        best_cost = float("inf")
-
+        priced: list[tuple[FireflyAgent[Any, Any], float]] = []
+        unknown: list[FireflyAgent[Any, Any]] = []
         for agent in agents:
-            model_name = getattr(agent, "model_name", "") or getattr(agent, "_model_identifier", "")
-            cost = self._cost_tier(model_name) if model_name else 3
-            if cost < best_cost:
-                best_cost = cost
-                best_agent = agent
+            cost = self._agent_cost(agent)
+            if cost is None:
+                if self._on_unknown == "raise":
+                    model_name = getattr(agent, "model_name", "") or getattr(agent, "_model_identifier", "")
+                    raise UnknownModelCostError(model_name or "<unknown>")
+                unknown.append(agent)
+            else:
+                priced.append((agent, cost))
 
-        logger.debug(
-            "CostAwareStrategy selected '%s' (tier=%s)",
-            getattr(best_agent, "name", repr(best_agent)),
-            best_cost,
+        candidates: list[Candidate] = []
+        if priced:
+            costs = [c for _, c in priced]
+            lo, hi = min(costs), max(costs)
+            span = hi - lo
+            for agent, cost in priced:
+                score = 1.0 if span == 0 else 1.0 - (cost - lo) / span
+                candidates.append(
+                    Candidate(
+                        agent=agent,
+                        score=score,
+                        reason=f"cost ${cost:.6f} (pool min ${lo:.6f}, max ${hi:.6f})",
+                    )
+                )
+
+        if self._on_unknown == "lowest":
+            for agent in unknown:
+                candidates.append(Candidate(agent=agent, score=0.0, reason="cost unknown (on_unknown='lowest')"))
+
+        candidates.sort(key=lambda c: c.score, reverse=True)
+        return RoutingDecision(
+            candidates=tuple(candidates),
+            strategy=type(self).__name__,
+            metadata={
+                "priced_count": len(priced),
+                "unknown_count": len(unknown),
+                "on_unknown": self._on_unknown,
+            },
         )
-        return best_agent
+
+
+# -- Combinators -------------------------------------------------------------
+
+
+class ChainStrategy:
+    """Sequential narrowing across stages.
+
+    Each stage receives the surviving candidate agents from the previous
+    stage's decision (not the full pool). Final stage's scores are
+    returned. An empty intermediate decision short-circuits to an empty
+    result.
+
+    Parameters:
+        *stages: Strategies to apply in order.
+    """
+
+    def __init__(self, *stages: DelegationStrategy) -> None:
+        self._stages: tuple[DelegationStrategy, ...] = stages
+
+    async def decide(
+        self,
+        agents: Sequence[FireflyAgent[Any, Any]],
+        prompt: str | Sequence[UserContent],
+        **kwargs: Any,
+    ) -> RoutingDecision:
+        """Apply stages sequentially, narrowing the candidate pool each step."""
+        if not self._stages:
+            return RoutingDecision(candidates=(), strategy=type(self).__name__, metadata={})
+
+        current_agents: Sequence[FireflyAgent[Any, Any]] = list(agents)
+        last_decision: RoutingDecision | None = None
+        stage_names: list[str] = []
+        for stage in self._stages:
+            stage_names.append(type(stage).__name__)
+            decision = await stage.decide(current_agents, prompt, **kwargs)
+            if not decision.candidates:
+                return RoutingDecision(
+                    candidates=(),
+                    strategy=type(self).__name__,
+                    metadata={"stages": stage_names, "short_circuited_at": type(stage).__name__},
+                )
+            current_agents = [c.agent for c in decision.candidates]
+            last_decision = decision
+
+        assert last_decision is not None  # at least one stage ran with non-empty result.
+        return RoutingDecision(
+            candidates=last_decision.candidates,
+            strategy=type(self).__name__,
+            metadata={"stages": stage_names},
+        )
+
+
+class FallbackStrategy:
+    """Try strategies in order; return the first non-empty decision.
+
+    Also falls back when a strategy raises :class:`DelegationError`.
+
+    Parameters:
+        *strategies: Strategies to try in order.
+    """
+
+    def __init__(self, *strategies: DelegationStrategy) -> None:
+        self._strategies: tuple[DelegationStrategy, ...] = strategies
+
+    async def decide(
+        self,
+        agents: Sequence[FireflyAgent[Any, Any]],
+        prompt: str | Sequence[UserContent],
+        **kwargs: Any,
+    ) -> RoutingDecision:
+        """Return the first non-empty downstream decision."""
+        tried: list[str] = []
+        for strategy in self._strategies:
+            tried.append(type(strategy).__name__)
+            try:
+                decision = await strategy.decide(agents, prompt, **kwargs)
+            except DelegationError:
+                logger.warning(
+                    "FallbackStrategy: %s raised DelegationError, trying next",
+                    type(strategy).__name__,
+                    exc_info=True,
+                )
+                continue
+            if decision.candidates:
+                return RoutingDecision(
+                    candidates=decision.candidates,
+                    strategy=type(self).__name__,
+                    metadata={
+                        "tried": tried,
+                        "chosen_strategy": type(strategy).__name__,
+                        "inner_metadata": dict(decision.metadata),
+                    },
+                )
+        return RoutingDecision(
+            candidates=(),
+            strategy=type(self).__name__,
+            metadata={"tried": tried},
+        )
+
+
+class WeightedStrategy:
+    """Parallel score blend across strategies.
+
+    Each child strategy is run on the full agent pool. The final score
+    per agent is the weighted average of per-strategy scores; agents
+    absent from a strategy's candidates contribute ``0`` from that
+    strategy (an explicit rejection drags down the blended score).
+    Weights need not sum to ``1.0`` — they are normalised internally.
+
+    Final candidates are filtered by ``min_score`` and ranked descending.
+
+    Parameters:
+        strategies: Sequence of ``(strategy, weight)`` pairs.
+        min_score: Drop candidates whose blended score is below this
+            threshold (default ``0.0``).
+    """
+
+    def __init__(
+        self,
+        *,
+        strategies: Sequence[tuple[DelegationStrategy, float]],
+        min_score: float = 0.0,
+    ) -> None:
+        self._strategies = tuple(strategies)
+        self._min_score = min_score
+
+    async def decide(
+        self,
+        agents: Sequence[FireflyAgent[Any, Any]],
+        prompt: str | Sequence[UserContent],
+        **kwargs: Any,
+    ) -> RoutingDecision:
+        """Run each child strategy and blend scores."""
+        if not agents or not self._strategies:
+            return RoutingDecision(candidates=(), strategy=type(self).__name__, metadata={})
+
+        total_weight = sum(w for _, w in self._strategies)
+        if total_weight <= 0:
+            return RoutingDecision(
+                candidates=(),
+                strategy=type(self).__name__,
+                metadata={"error": "non_positive_total_weight"},
+            )
+
+        # Keep agent identity by object id; preserve original order for ties.
+        agent_order = list(agents)
+        agent_ids = [id(a) for a in agent_order]
+        blended: dict[int, float] = {aid: 0.0 for aid in agent_ids}
+        reasons: dict[int, list[str]] = {aid: [] for aid in agent_ids}
+        strategy_names: list[str] = []
+
+        for strategy, weight in self._strategies:
+            strategy_names.append(type(strategy).__name__)
+            decision = await strategy.decide(agent_order, prompt, **kwargs)
+            normalised_weight = weight / total_weight
+            scored = {id(c.agent): c.score for c in decision.candidates}
+            for aid in agent_ids:
+                score = scored.get(aid, 0.0)
+                blended[aid] += score * normalised_weight
+                reasons[aid].append(f"{type(strategy).__name__}={score:.3f}")
+
+        candidates: list[Candidate] = []
+        for agent, aid in zip(agent_order, agent_ids, strict=True):
+            score = blended[aid]
+            if score < self._min_score:
+                continue
+            candidates.append(
+                Candidate(
+                    agent=agent,
+                    score=score,
+                    reason=f"weighted({', '.join(reasons[aid])})",
+                )
+            )
+        candidates.sort(key=lambda c: c.score, reverse=True)
+        return RoutingDecision(
+            candidates=tuple(candidates),
+            strategy=type(self).__name__,
+            metadata={
+                "strategies": strategy_names,
+                "min_score": self._min_score,
+            },
+        )
+
+
+# -- Router ------------------------------------------------------------------
+
+
+def _coerce_otel_value(value: Any) -> Any:
+    """Coerce *value* to a type OpenTelemetry accepts as a span attribute.
+
+    OTel accepts ``str``, ``int``, ``float``, ``bool``, and homogeneous
+    sequences of those. Anything else is serialised to a JSON string.
+    """
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (list, tuple)) and all(isinstance(v, (str, int, float, bool)) for v in value):
+        return list(value)
+    try:
+        return json.dumps(value, default=str, sort_keys=True)
+    except (TypeError, ValueError):
+        return str(value)
 
 
 class DelegationRouter:
@@ -235,11 +607,11 @@ class DelegationRouter:
 
     Parameters:
         agents: The pool of agents available for delegation.
-        strategy: The strategy used to select among *agents*.
+        strategy: The strategy used to decide among *agents*.
         memory: Optional :class:`MemoryManager` shared across all
-            delegated agents.  When provided, the selected agent
-            receives the memory's conversation history and working
-            context automatically.
+            delegated agents. When provided, the chosen agent receives
+            a forked memory scope automatically on
+            :meth:`execute`/:meth:`route`.
     """
 
     def __init__(
@@ -262,21 +634,99 @@ class DelegationRouter:
     def memory(self, value: MemoryManager | None) -> None:
         self._memory = value
 
-    async def route(self, prompt: str | Sequence[UserContent], **kwargs: Any) -> Any:
-        """Select an agent via the strategy and run it with *prompt*.
+    async def decide(
+        self,
+        prompt: str | Sequence[UserContent],
+        **kwargs: Any,
+    ) -> RoutingDecision:
+        """Run the strategy and emit the OTel decision event.
 
-        *prompt* may be a plain string or a multimodal sequence.
-        If a :class:`MemoryManager` is attached, the selected agent's
-        memory is set to a forked scope before running.
-        Returns the agent's run result.
+        Pure routing: does not execute the chosen agent and does not
+        fork memory. Idempotent w.r.t. agent state.
         """
-        agent = await self._strategy.select(self._agents, prompt, **kwargs)
+        start = time.perf_counter()
+        decision = await self._strategy.decide(self._agents, prompt, **kwargs)
+        duration_ms = (time.perf_counter() - start) * 1000.0
+
+        chosen_agent_name: str | None
+        chosen_score: float | None
+        if decision.candidates:
+            top = decision.candidates[0]
+            chosen_agent_name = getattr(top.agent, "name", repr(top.agent))
+            chosen_score = top.score
+        else:
+            chosen_agent_name = None
+            chosen_score = None
+
+        candidates_json = json.dumps(
+            [
+                {
+                    "agent": getattr(c.agent, "name", repr(c.agent)),
+                    "score": c.score,
+                    "reason": c.reason,
+                }
+                for c in decision.candidates
+            ],
+            default=str,
+        )
+
+        attributes: dict[str, Any] = {
+            "strategy": decision.strategy,
+            "candidates_count": len(decision.candidates),
+            "chosen_agent": chosen_agent_name if chosen_agent_name is not None else "",
+            "chosen_score": chosen_score if chosen_score is not None else -1.0,
+            "duration_ms": duration_ms,
+            "routing.candidates_json": candidates_json,
+        }
+        for key, value in decision.metadata.items():
+            attributes[f"routing.{key}"] = _coerce_otel_value(value)
+
+        with default_tracer.custom_span("firefly.routing.decision", **attributes):
+            pass
+
+        logger.debug(
+            "Routing decision: strategy=%s candidates=%d chosen=%s score=%s",
+            decision.strategy,
+            len(decision.candidates),
+            chosen_agent_name,
+            chosen_score,
+        )
+        return decision
+
+    async def execute(
+        self,
+        decision: RoutingDecision,
+        prompt: str | Sequence[UserContent],
+        *,
+        deps: Any = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Run ``decision.chosen`` with *prompt*.
+
+        Forks memory if the router has a :class:`MemoryManager` attached.
+
+        Raises:
+            DelegationError: If *decision* has no candidates.
+        """
+        agent = decision.chosen  # raises DelegationError on empty.
         logger.debug("Delegated to agent '%s'", getattr(agent, "name", repr(agent)))
 
-        # Propagate memory to the selected agent
         if self._memory is not None and hasattr(agent, "memory"):
             agent_name = getattr(agent, "name", "delegated")
             agent.memory = self._memory.fork(working_scope_id=f"delegation:{agent_name}")
 
-        deps = kwargs.pop("deps", None)
         return await agent.run(prompt, deps=deps, **kwargs)
+
+    async def route(
+        self,
+        prompt: str | Sequence[UserContent],
+        **kwargs: Any,
+    ) -> Any:
+        """Convenience: :meth:`decide` then :meth:`execute`.
+
+        Existing callers using ``await router.route(prompt)`` keep
+        working unchanged.
+        """
+        deps = kwargs.pop("deps", None)
+        decision = await self.decide(prompt, **kwargs)
+        return await self.execute(decision, prompt, deps=deps, **kwargs)
