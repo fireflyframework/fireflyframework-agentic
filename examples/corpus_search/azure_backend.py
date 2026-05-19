@@ -12,7 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""AzureBlobBackend: sqlite file in Azure Blob Storage."""
+"""AzureBlobBackend: sqlite file in Azure Blob Storage.
+
+Requires the ``storage-azure`` extra (``pip install
+'fireflyframework-agentic[storage-azure]'``). ``azure-storage-blob`` is
+imported lazily inside :meth:`__init__` so importing this module on a
+host that doesn't have the SDK installed succeeds; callers only pay the
+import cost when they actually construct a backend.
+"""
 
 from __future__ import annotations
 

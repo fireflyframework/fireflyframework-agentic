@@ -122,6 +122,12 @@ corpus-search = [
     # to whitelist table references against the structured-ingestion schema
     # registry (rejecting reads from internal tables like ``chunks`` / ``_schemas``).
     "sqlglot>=26.0.0",
+    # AzureBlobBackend (examples/corpus_search/azure_backend.py) is an
+    # optional swap-in for remote corpus storage; the example also drives
+    # the Container Apps deployment path. Listed alongside the rest of the
+    # corpus_search example's runtime stack so a single extra suffices.
+    "azure-storage-blob>=12.20.0",
+    "azure-identity>=1.19",
 ]
 vectorstores-chroma = [
     "chromadb>=0.5.0",
