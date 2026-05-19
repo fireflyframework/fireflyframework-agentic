@@ -257,10 +257,11 @@ def build_entra_verifier() -> EntraTokenVerifier:
 class StaticApiKeyVerifier:
     """Match a static bearer against a configured key.
 
-    Returns synthesized claims granting ``Corpus.<id>.Write`` for each
-    corpus in ``authorised_corpora``. ``Write`` implies ``Read`` per the
-    middleware's role-implication rule, so a single role per corpus
-    covers every tool.
+    Returns synthesized claims granting the wildcard ``Corpus.*.Write``
+    role, which the middleware treats as universal access — every
+    corpus, including any added later. This is the right model for an
+    operator-issued shared key: rotating the key changes the secret, not
+    the set of corpora it can reach.
 
     The verifier is intentionally minimal: no expiry, no audience, no
     issuer. The only secret is the key; treat its loss as you would a
@@ -268,11 +269,10 @@ class StaticApiKeyVerifier:
     re-issued).
     """
 
-    def __init__(self, api_key: str, authorised_corpora: tuple[str, ...]) -> None:
+    def __init__(self, api_key: str) -> None:
         if not api_key:
             raise ValueError("api_key must be non-empty")
         self._api_key = api_key
-        self._authorised_corpora = tuple(authorised_corpora)
 
     def validate_token(self, token: str) -> dict[str, Any]:
         import hmac
@@ -281,7 +281,7 @@ class StaticApiKeyVerifier:
             raise ValueError("Static key mismatch")
         return {
             "sub": "static-api-key",
-            "roles": [f"Corpus.{cid}.Write" for cid in self._authorised_corpora],
+            "roles": ["Corpus.*.Write"],
         }
 
 
@@ -312,19 +312,18 @@ class CompositeVerifier:
 def build_composite_verifier() -> CompositeVerifier:
     """Verifier factory that prefers a static API key, falling back to Entra.
 
-    Reads ``FIREFLY_MCP_STATIC_API_KEY`` and
-    ``FIREFLY_MCP_STATIC_API_KEY_CORPORA`` (comma-separated corpus IDs).
-    Both are optional: if either is unset, the composite reduces to the
-    Entra-only path so deployments that only need SSO keep working.
+    Reads ``FIREFLY_MCP_STATIC_API_KEY``. When set, the static key grants
+    universal corpus access via the ``Corpus.*.Write`` wildcard role, so
+    new corpora are reachable the moment they exist — no env-var update,
+    no key rotation. When unset, the composite reduces to the Entra-only
+    path so deployments that only need SSO keep working.
     """
     import os
 
     verifiers: list[Any] = []
     api_key = os.environ.get("FIREFLY_MCP_STATIC_API_KEY", "").strip()
-    corpora_csv = os.environ.get("FIREFLY_MCP_STATIC_API_KEY_CORPORA", "").strip()
-    if api_key and corpora_csv:
-        corpora = tuple(c.strip() for c in corpora_csv.split(",") if c.strip())
-        verifiers.append(StaticApiKeyVerifier(api_key, corpora))
+    if api_key:
+        verifiers.append(StaticApiKeyVerifier(api_key))
     verifiers.append(build_entra_verifier())
     return CompositeVerifier(*verifiers)
 
