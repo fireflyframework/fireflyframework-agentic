@@ -55,7 +55,7 @@ from fireflyframework_agentic.content.sources.local_folder import (
     LocalFolderSourceConfig,
 )
 from fireflyframework_agentic.rag import CorpusAgent, CorpusNotFoundError
-from fireflyframework_agentic.rag.corpus_backend import (
+from fireflyframework_agentic.rag.corpus import (
     CorpusBackendRegistry,
     LocalCorpusBackendRegistry,
     resolve_registry_factory,
