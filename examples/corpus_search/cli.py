@@ -297,7 +297,7 @@ def _build_db_store(root: Path):
     elif backend_kind == _BACKEND_AZURE:
         from azure.identity import DefaultAzureCredential  # type: ignore[import-not-found]
 
-        from fireflyframework_agentic.storage import AzureBlobBackend
+        from examples.corpus_search.azure_backend import AzureBlobBackend
 
         container_url = os.environ[_AZURE_CONTAINER_URL_ENV]
         blob_name = os.environ.get(_AZURE_BLOB_NAME_ENV, _DEFAULT_BLOB_NAME)

@@ -31,7 +31,6 @@ import contextvars
 import logging
 import os
 import sqlite3
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -56,21 +55,71 @@ from fireflyframework_agentic.content.sources.local_folder import (
     LocalFolderSourceConfig,
 )
 from fireflyframework_agentic.rag import CorpusAgent, CorpusNotFoundError
+from fireflyframework_agentic.rag.corpus import (
+    CorpusBackendRegistry,
+    LocalCorpusBackendRegistry,
+    resolve_registry_factory,
+)
 from fireflyframework_agentic.rag.ingest import TargetSchema
 from fireflyframework_agentic.rag.ingest.structured_registry import is_tabular_file
+from fireflyframework_agentic.storage import DatabaseStore
 from fireflyframework_agentic.tools.decorators import firefly_tool
 
 log = logging.getLogger(__name__)
 
-_DEFAULT_CORPUS_ROOT = "/tmp/firefly/corpora"
+# Selects the implementation of :class:`CorpusBackendRegistry`. The default
+# resolves to ``LocalCorpusBackendRegistry`` (filesystem under
+# ``CORPUS_ROOT``). Non-filesystem backends — Azure Blob, S3, GCS — ship
+# their own registry in ``examples/`` and are activated by setting this
+# env var to ``"module.path:callable"``, mirroring
+# ``FIREFLY_MCP_TOKEN_STORE_FACTORY``. Keeps the framework free of
+# vendor-specific dependencies.
+_REGISTRY_FACTORY_ENV = "CORPUS_BACKEND_REGISTRY_FACTORY"
 
 _AGENT_CACHE: dict[str, CorpusAgent] = {}
 _WRITE_LOCKS: dict[str, asyncio.Lock] = {}
 _CACHE_LOCK = asyncio.Lock()
+_REGISTRY: CorpusBackendRegistry | None = None
 
 
 def _corpus_root() -> Path:
-    return Path(os.path.expandvars(os.environ.get("CORPUS_ROOT", _DEFAULT_CORPUS_ROOT)))
+    """Return the local filesystem root for the default registry.
+
+    Backwards-compatibility helper for tests that drove the original
+    filesystem-only ``list_corpora`` by setting ``CORPUS_ROOT`` and
+    populating a directory tree. Equivalent to
+    ``LocalCorpusBackendRegistry().root``; production code reaches the
+    same path via :func:`_registry`.
+    """
+    return LocalCorpusBackendRegistry().root
+
+
+def _registry() -> CorpusBackendRegistry:
+    """Return the process-wide :class:`CorpusBackendRegistry`.
+
+    Resolved once on first use from ``CORPUS_BACKEND_REGISTRY_FACTORY``
+    (a ``"module.path:callable"`` spec). Defaults to the framework's
+    built-in :class:`LocalCorpusBackendRegistry`. Cached for the
+    process; a future ``_shutdown_agents`` may reset this if backend
+    swaps become a runtime concern.
+    """
+    global _REGISTRY
+    cached = _REGISTRY
+    if cached is not None:
+        return cached
+    spec = os.environ.get(_REGISTRY_FACTORY_ENV)
+    if spec:
+        factory = resolve_registry_factory(spec)
+        registry: CorpusBackendRegistry = factory()
+    else:
+        registry = LocalCorpusBackendRegistry()
+    _REGISTRY = registry
+    return registry
+
+
+def _build_db_store(corpus_id: str) -> DatabaseStore:
+    backend = _registry().backend_for(corpus_id)
+    return DatabaseStore(backend, store_id=f"corpus_rag:{corpus_id}")
 
 
 # Populated by CorpusAuthMiddleware when per-corpus auth is enabled. A value
@@ -86,21 +135,36 @@ async def _agent_for(corpus_id: str) -> CorpusAgent:
     """Return a process-wide CorpusAgent for *corpus_id*, creating one on
     first use.
 
-    Sharing the agent means sharing its DatabaseStore / LocalBackend /
+    Sharing the agent means sharing its DatabaseStore / backend /
     SqliteCorpus connections so the asyncio.Lock inside the backend
     actually serialises writes from multiple tool calls in the same
     process. Construction is sync and does no I/O (no SQLite open until
     the agent's first ensure_corpus_ready) so holding _CACHE_LOCK across
     it is harmless.
+
+    The DatabaseStore is selected by env (``CORPUS_BACKEND``): local
+    filesystem (default) or Azure blob storage. The agent receives a
+    constructed ``db_store`` so its internal ``root`` (used for
+    intermediate scratch files) and the backend's source of truth can
+    diverge — under blob mode, ``root`` is a local cache dir that the
+    backend syncs against the canonical blob.
     """
     async with _CACHE_LOCK:
         if corpus_id not in _AGENT_CACHE:
+            db_store = _build_db_store(corpus_id)
+            # ``root`` is used by CorpusAgent for scratch / structured-retriever
+            # state. Under local mode it equals the parent of the sqlite file
+            # (so existing layout is unchanged). Under blob mode we still need
+            # a local directory; co-locate it next to the DatabaseStore cache
+            # so a single ``rm -rf`` clears all corpus state for that id.
+            root = db_store.cache_path.parent
             _AGENT_CACHE[corpus_id] = CorpusAgent(
-                root=_corpus_root() / corpus_id,
+                root=root,
                 embed_model=os.environ["EMBEDDING_MODEL"],
                 expansion_model=os.environ["EXPANSION_MODEL"],
                 answer_model=os.environ["ANSWER_MODEL"],
                 rerank_model=os.environ["RERANK_MODEL"],
+                db_store=db_store,
             )
         return _AGENT_CACHE[corpus_id]
 
@@ -144,16 +208,23 @@ async def _shutdown_agents() -> None:
             )
 
 
-def _assert_corpus_exists(corpus_id: str) -> Path:
-    """Raise CorpusNotFoundError if no SQLite file at the expected path."""
-    # TODO: this LocalBackend-shaped existence check assumes the corpus.sqlite
-    # on disk is canonical. Under AzureBlobBackend the canonical artifact
-    # lives in the blob; existence should route through _db_store.ensure_fresh()
-    # before consulting the local cache.
-    sqlite_path = _corpus_root() / corpus_id / "corpus.sqlite"
-    if not sqlite_path.exists():
-        raise CorpusNotFoundError(corpus_id, str(sqlite_path))
-    return sqlite_path
+async def _assert_corpus_exists(corpus_id: str) -> Path:
+    """Raise CorpusNotFoundError unless the corpus's sqlite is reachable.
+
+    Routes through the configured backend so the existence check is
+    correct under any :class:`CorpusBackendRegistry`. The returned path
+    is the local working copy, freshly synced via
+    :meth:`DatabaseStore.ensure_fresh` — for filesystem-backed
+    registries that's the same file the backend serves; for remote
+    backends it's the local cache populated from the canonical
+    artifact.
+    """
+    agent = await _agent_for(corpus_id)
+    store = agent._db_store
+    if not await store.exists():
+        raise CorpusNotFoundError(corpus_id, str(store.cache_path))
+    path, _generation = await store.ensure_fresh()
+    return path
 
 
 # ---------- discovery ------------------------------------------------------
@@ -162,40 +233,26 @@ def _assert_corpus_exists(corpus_id: str) -> Path:
 @firefly_tool(
     "list_corpora",
     description=(
-        "List every corpus_id available on this server. A corpus_id is the name "
-        "of a subdirectory of CORPUS_ROOT that contains a corpus.sqlite file. "
+        "List every corpus_id available on this server. A corpus_id identifies "
+        "one corpus.sqlite artifact held by the configured backend registry — "
+        "by default a subdirectory of CORPUS_ROOT, but operators can swap in "
+        "alternative registries (e.g. Azure blob) via the "
+        "CORPUS_BACKEND_REGISTRY_FACTORY env var. "
         "Call this first when you don't know which corpus to query. Returns "
-        "an empty list if CORPUS_ROOT does not exist or contains no corpora. "
-        "When per-corpus auth is enabled, the response is filtered to the "
-        "corpora the caller's bearer token authorises."
+        "an empty list when no corpora exist. When per-corpus auth is enabled, "
+        "the response is filtered to the corpora the caller's bearer token "
+        "authorises."
     ),
     tags=("rag", "discovery"),
 )
 async def list_corpora() -> dict[str, Any]:
-    root = _corpus_root()
-    corpora: list[dict[str, Any]] = []
+    registry = _registry()
     allowed = authorised_corpora_var.get()
-    if root.is_dir():
-        for entry in sorted(root.iterdir()):
-            # TODO: walking the local filesystem assumes LocalBackend
-            # semantics where each entry / "corpus.sqlite" is the canonical
-            # artifact. Under AzureBlobBackend the source of truth is the
-            # blob container; enumeration should query the backend directly
-            # rather than CORPUS_ROOT.
-            sqlite_path = entry / "corpus.sqlite"
-            if not (entry.is_dir() and sqlite_path.is_file()):
-                continue
-            if allowed is not None and entry.name not in allowed:
-                continue
-            st = sqlite_path.stat()
-            corpora.append(
-                {
-                    "corpus_id": entry.name,
-                    "size_bytes": st.st_size,
-                    "modified": datetime.fromtimestamp(st.st_mtime, tz=UTC).isoformat(),
-                }
-            )
-    return {"corpus_root": str(root), "corpora": corpora}
+    entries = await registry.list_corpora()
+    if allowed is not None:
+        allowed_set = set(allowed)
+        entries = [e for e in entries if e["corpus_id"] in allowed_set]
+    return {"corpus_root": registry.source, "corpora": entries}
 
 
 # ---------- ingest ---------------------------------------------------------
@@ -375,7 +432,7 @@ async def ingest_corpus_structured(
     tags=("rag", "query"),
 )
 async def knowledge_search(corpus_id: str, question: str, top_k: int = 5) -> dict[str, Any]:
-    _assert_corpus_exists(corpus_id)
+    await _assert_corpus_exists(corpus_id)
     agent = await _agent_for(corpus_id)
     hits = await agent.retrieve(question, top_k=top_k, rerank=True)
     return {
@@ -404,7 +461,7 @@ async def knowledge_search(corpus_id: str, question: str, top_k: int = 5) -> dic
     tags=("rag", "query"),
 )
 async def corpus_query(corpus_id: str, question: str, top_k: int = 5) -> dict[str, Any]:
-    _assert_corpus_exists(corpus_id)
+    await _assert_corpus_exists(corpus_id)
     agent = await _agent_for(corpus_id)
     answer = await agent.query(question, top_k=top_k)
     return {
@@ -437,7 +494,7 @@ _CORPUS_SQL_MAX_LIMIT = 1000
     tags=("rag", "structured", "discovery"),
 )
 async def list_corpus_schemas(corpus_id: str) -> dict[str, Any]:
-    _assert_corpus_exists(corpus_id)
+    await _assert_corpus_exists(corpus_id)
     agent = await _agent_for(corpus_id)
     schemas = await agent.list_schemas()
     tables: list[dict[str, Any]] = []
@@ -550,7 +607,7 @@ async def corpus_sql(
     params: dict[str, Any] | None = None,
     limit: int = _CORPUS_SQL_DEFAULT_LIMIT,
 ) -> dict[str, Any]:
-    sqlite_path = _assert_corpus_exists(corpus_id)
+    sqlite_path = await _assert_corpus_exists(corpus_id)
     if limit <= 0:
         raise ValueError("limit must be positive")
     capped_limit = min(limit, _CORPUS_SQL_MAX_LIMIT)
