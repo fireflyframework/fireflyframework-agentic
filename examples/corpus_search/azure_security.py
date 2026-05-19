@@ -266,21 +266,25 @@ def build_entra_metadata() -> OAuthMetadata:
     # at Entra so the client runs the OAuth flow against the real IdP —
     # we are not acting as an authorization-server proxy.
     # ``resource`` is advertised at ``/.well-known/oauth-protected-resource``
-    # and MCP clients (Claude Code et al.) forward it to Entra as the RFC 8707
-    # ``resource=`` parameter on the token request. Entra requires that value
-    # to match one of the App Registration's ``identifierUris``, which on
-    # single-tenant apps without a verified custom domain is locked to the
-    # ``api://<client>`` form (Entra rejects raw https URLs as alias values).
-    # Sending the canonical https URL here produces AADSTS9010010 ("The
-    # resource parameter provided in the request doesn't match with the
-    # requested scopes") at the token endpoint, so we use the App-Registration
-    # alias instead. The audience claim Entra puts on v2 tokens is the bare
-    # client GUID either way, which is what ``EntraTokenVerifier`` validates.
+    # and MCP clients forward it to Entra as the RFC 8707 ``resource=``
+    # parameter on the token request. Two opposing constraints apply:
+    #   * The MCP SDK (Claude Code) validates the metadata's ``resource``
+    #     against the server URL and accepts only an exact match or the
+    #     URL's origin — using ``api://<client>`` trips
+    #     "Protected resource ... does not match expected ... (or origin)".
+    #   * Entra requires the value to match an App Registration
+    #     ``identifierUri``. It accepts ``https://<host>`` origins on
+    #     verified-or-Microsoft-owned domains, but rejects identifier URIs
+    #     that include a path (``/mcp/``) — those return AADSTS9010010 at
+    #     the token endpoint.
+    # The intersection that both clients accept is the host origin, so the
+    # operator must register ``https://<host>`` on the App Reg's
+    # ``identifierUris`` and we advertise the same value here.
     return OAuthMetadata(
         issuer=host,
         authorization_endpoint=f"{base}/oauth2/v2.0/authorize",
         token_endpoint=f"{base}/oauth2/v2.0/token",
         jwks_uri=f"{base}/discovery/v2.0/keys",
-        resource=f"api://{client}",
+        resource=host,
         scopes_supported=(f"api://{client}/user_impersonation",),
     )
