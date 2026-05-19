@@ -104,15 +104,17 @@ def _registry() -> CorpusBackendRegistry:
     swaps become a runtime concern.
     """
     global _REGISTRY
-    if _REGISTRY is not None:
-        return _REGISTRY
+    cached = _REGISTRY
+    if cached is not None:
+        return cached
     spec = os.environ.get(_REGISTRY_FACTORY_ENV)
     if spec:
         factory = resolve_registry_factory(spec)
-        _REGISTRY = factory()
+        registry: CorpusBackendRegistry = factory()
     else:
-        _REGISTRY = LocalCorpusBackendRegistry()
-    return _REGISTRY
+        registry = LocalCorpusBackendRegistry()
+    _REGISTRY = registry
+    return registry
 
 
 def _build_db_store(corpus_id: str) -> DatabaseStore:
