@@ -280,11 +280,16 @@ def build_entra_metadata() -> OAuthMetadata:
     # The intersection that both clients accept is the host origin, so the
     # operator must register ``https://<host>`` on the App Reg's
     # ``identifierUris`` and we advertise the same value here.
+    # ``scopes_supported`` must be expressed under the same identifierUri as
+    # ``resource``: Entra issues AADSTS9010010 when the token request mixes
+    # identifier URIs (e.g. ``resource=https://.../`` with
+    # ``scope=api://<client>/user_impersonation``) even when both URIs are
+    # registered on the App Reg. Both fields therefore share the host origin.
     return OAuthMetadata(
         issuer=host,
         authorization_endpoint=f"{base}/oauth2/v2.0/authorize",
         token_endpoint=f"{base}/oauth2/v2.0/token",
         jwks_uri=f"{base}/discovery/v2.0/keys",
         resource=host,
-        scopes_supported=(f"api://{client}/user_impersonation",),
+        scopes_supported=(f"{host}/user_impersonation",),
     )

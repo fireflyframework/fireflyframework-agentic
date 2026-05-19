@@ -47,7 +47,8 @@ def test_metadata_factory_returns_populated_metadata(monkeypatch: pytest.MonkeyP
     # (origin match) and Entra (identifierUri with no path) accept. The
     # operator must register the same origin on the App Reg.
     assert md.resource == "https://mcp.example.com"
-    assert md.scopes_supported == ("api://client-guid/user_impersonation",)
+    # scope's identifierUri matches ``resource`` to avoid AADSTS9010010.
+    assert md.scopes_supported == ("https://mcp.example.com/user_impersonation",)
 
 
 def test_metadata_factory_strips_trailing_slash(monkeypatch: pytest.MonkeyPatch) -> None:
