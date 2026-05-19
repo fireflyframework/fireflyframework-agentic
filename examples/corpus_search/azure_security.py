@@ -24,17 +24,16 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from fireflyframework_agentic.exposure.mcp.auth import OAuthMetadata
 
 import jwt
 from azure.identity import DefaultAzureCredential
 from jwt import PyJWKClient
 from msal import ConfidentialClientApplication
 
-from fireflyframework_agentic.security.corpus_token import (
-    CorpusTokenStore,
-    validate_corpus_id,
-)
 from fireflyframework_agentic.security.rbac import RBACManager
 
 logger = logging.getLogger(__name__)
@@ -68,8 +67,9 @@ class EntraTokenVerifier(RBACManager):
 
     Parameters:
         tenant_id: Entra tenant (directory) GUID.
-        audience: Expected ``aud`` claim — typically ``api://{client_id}`` of
-            the resource (i.e. this server's app registration).
+        audience: Expected ``aud`` claim. For Entra v2.0 access tokens (which
+            this verifier requires via the ``.../v2.0`` issuer pin) this is the
+            bare ``client_id`` GUID, not ``api://{client_id}``.
         jwk_client: Override the default :class:`jwt.PyJWKClient`. Tests inject
             a fake; production deployments may inject one with custom HTTP
             settings.
@@ -207,66 +207,69 @@ class EntraOBOClient:
 
 
 # ----------------------------------------------------------------------------
-# Per-corpus capability tokens — Key Vault backend
+# OAuth / Entra ID factories for firefly-mcp-http
 # ----------------------------------------------------------------------------
 #
-# Concrete implementation of ``CorpusTokenStore`` (defined in
-# ``fireflyframework_agentic.security.corpus_token``) backed by Azure Key Vault.
-# Lives here, not in the framework, so the framework stays
-# provider-agnostic — operators on a non-Azure back-end can swap this for
-# their own ``CorpusTokenStore`` without touching the middleware.
+# These two factories are the defaults wired into the framework's
+# ``_install_oauth_auth`` helper via ``FIREFLY_MCP_VERIFIER_FACTORY`` and
+# ``FIREFLY_MCP_METADATA_FACTORY``. They translate three operator-supplied
+# env vars (``AZURE_TENANT_ID``, ``AZURE_CLIENT_ID``,
+# ``FIREFLY_MCP_PUBLIC_URL``) into the provider-agnostic OAuth types the
+# framework understands. Operators on a different IdP swap these for
+# their own callables — the framework code stays unchanged.
 
 
-class KeyVaultTokenStore:
-    """Async fetcher for per-corpus tokens from Azure Key Vault.
+def build_entra_verifier() -> EntraTokenVerifier:
+    """Default verifier factory for ``FIREFLY_MCP_VERIFIER_FACTORY``.
 
-    Implements the :class:`CorpusTokenStore` Protocol. Returns ``None``
-    for not-found / disabled secrets so the caller can map those to
-    ``403 Forbidden`` without revealing whether the secret exists.
-    Other Azure errors propagate so the caller can fail closed (``503``).
-
-    ``client`` is typed as ``Any`` because the real
-    ``azure.keyvault.secrets.aio.SecretClient`` has a richer
-    ``get_secret`` signature than the subset we use; the tests duck-type
-    a stub that matches the same shape.
+    Reads ``AZURE_TENANT_ID`` and ``AZURE_CLIENT_ID`` from the
+    environment. Raises ``RuntimeError`` with a clear message if either
+    is missing — the alternative (a confusing JWT validation failure on
+    first request) makes ops debugging much harder.
     """
+    import os
 
-    def __init__(self, *, client: Any, prefix: str) -> None:
-        self._client = client
-        self._prefix = prefix
-
-    async def get_corpus_token(self, corpus_id: str) -> str | None:
-        validate_corpus_id(corpus_id)
-        from azure.core.exceptions import ResourceNotFoundError
-
-        name = f"{self._prefix}{corpus_id}"
-        try:
-            secret = await self._client.get_secret(name)
-        except ResourceNotFoundError:
-            return None
-        return getattr(secret, "value", None)
-
-    async def aclose(self) -> None:
-        await self._client.close()
+    tenant = os.environ.get("AZURE_TENANT_ID")
+    client = os.environ.get("AZURE_CLIENT_ID")
+    if not tenant or not client:
+        raise RuntimeError("build_entra_verifier requires AZURE_TENANT_ID and AZURE_CLIENT_ID")
+    # v2 access tokens carry the bare client GUID in `aud` (not `api://<guid>`).
+    # The verifier pins the issuer to `.../v2.0`, so only v2 tokens can pass —
+    # matching audience to the bare client keeps both checks consistent.
+    return EntraTokenVerifier(tenant_id=tenant, audience=client)
 
 
-def build_default_store(
-    *,
-    vault_url: str,
-    prefix: str = "firefly-mcp-corpus-token-",
-) -> CorpusTokenStore:
-    """Construct a :class:`KeyVaultTokenStore` wired to the real Azure SDK.
+def build_entra_metadata() -> OAuthMetadata:
+    """Default metadata factory for ``FIREFLY_MCP_METADATA_FACTORY``.
 
-    Uses managed identity in Azure Container Apps; falls back to
-    ``az login`` locally. The credential needs **Key Vault Secrets User**
-    (``get``) — no ``list`` / ``set`` / ``delete``.
-
-    This is the default factory wired into ``firefly-mcp-http`` when the
-    operator enables per-corpus auth without setting
-    ``FIREFLY_MCP_TOKEN_STORE_FACTORY`` to a custom callable.
+    Reads ``AZURE_TENANT_ID``, ``AZURE_CLIENT_ID``, and
+    ``FIREFLY_MCP_PUBLIC_URL`` (the canonical https URL of this MCP
+    server, no trailing slash) to populate the ``OAuthMetadata`` doc
+    returned at ``/.well-known/*``.
     """
-    from azure.keyvault.secrets.aio import SecretClient
+    import os
 
-    credential = DefaultAzureCredential()
-    client = SecretClient(vault_url=vault_url, credential=credential)
-    return KeyVaultTokenStore(client=client, prefix=prefix)
+    from fireflyframework_agentic.exposure.mcp.auth import OAuthMetadata
+
+    tenant = os.environ.get("AZURE_TENANT_ID")
+    client = os.environ.get("AZURE_CLIENT_ID")
+    host = os.environ.get("FIREFLY_MCP_PUBLIC_URL", "").rstrip("/")
+    if not tenant or not client or not host:
+        raise RuntimeError("build_entra_metadata requires AZURE_TENANT_ID, AZURE_CLIENT_ID, and FIREFLY_MCP_PUBLIC_URL")
+    base = f"https://login.microsoftonline.com/{tenant}"
+    # ``issuer`` is the URL the MCP client uses to discover the auth server
+    # (RFC 8414): it MUST match the URL where the metadata is served, i.e.
+    # our own host. Entra's actual issuer URL is hardcoded inside
+    # ``EntraTokenVerifier`` and used only for JWT ``iss`` validation, so
+    # advertising our own URL here does not affect token verification.
+    # We point ``authorization_endpoint`` / ``token_endpoint`` / ``jwks_uri``
+    # at Entra so the client runs the OAuth flow against the real IdP —
+    # we are not acting as an authorization-server proxy.
+    return OAuthMetadata(
+        issuer=host,
+        authorization_endpoint=f"{base}/oauth2/v2.0/authorize",
+        token_endpoint=f"{base}/oauth2/v2.0/token",
+        jwks_uri=f"{base}/discovery/v2.0/keys",
+        resource=f"{host}/mcp/",
+        scopes_supported=(f"api://{client}/user_impersonation",),
+    )
