@@ -67,8 +67,9 @@ class EntraTokenVerifier(RBACManager):
 
     Parameters:
         tenant_id: Entra tenant (directory) GUID.
-        audience: Expected ``aud`` claim — typically ``api://{client_id}`` of
-            the resource (i.e. this server's app registration).
+        audience: Expected ``aud`` claim. For Entra v2.0 access tokens (which
+            this verifier requires via the ``.../v2.0`` issuer pin) this is the
+            bare ``client_id`` GUID, not ``api://{client_id}``.
         jwk_client: Override the default :class:`jwt.PyJWKClient`. Tests inject
             a fake; production deployments may inject one with custom HTTP
             settings.
@@ -232,7 +233,10 @@ def build_entra_verifier() -> EntraTokenVerifier:
     client = os.environ.get("AZURE_CLIENT_ID")
     if not tenant or not client:
         raise RuntimeError("build_entra_verifier requires AZURE_TENANT_ID and AZURE_CLIENT_ID")
-    return EntraTokenVerifier(tenant_id=tenant, audience=f"api://{client}")
+    # v2 access tokens carry the bare client GUID in `aud` (not `api://<guid>`).
+    # The verifier pins the issuer to `.../v2.0`, so only v2 tokens can pass —
+    # matching audience to the bare client keeps both checks consistent.
+    return EntraTokenVerifier(tenant_id=tenant, audience=client)
 
 
 def build_entra_metadata() -> OAuthMetadata:
