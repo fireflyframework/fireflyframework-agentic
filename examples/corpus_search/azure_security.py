@@ -239,6 +239,95 @@ def build_entra_verifier() -> EntraTokenVerifier:
     return EntraTokenVerifier(tenant_id=tenant, audience=client)
 
 
+# ----------------------------------------------------------------------------
+# Static API-key verifier (operator-controlled, JWT-free auth path)
+# ----------------------------------------------------------------------------
+#
+# Use case: hand a long-lived shared key to trusted callers (consultants,
+# CI jobs) without putting them through Entra OAuth. The key is a single
+# secret stored in Key Vault; rotation is a single env-var change.
+#
+# Treats Authorization: Bearer <key> as a match-or-defer: if the incoming
+# bearer equals the configured key (constant-time compare), the verifier
+# returns synthesized claims with App Roles for the configured corpora.
+# Anything else raises ValueError, which the surrounding CompositeVerifier
+# uses as the signal to fall through to JWT validation.
+
+
+class StaticApiKeyVerifier:
+    """Match a static bearer against a configured key.
+
+    Returns synthesized claims granting the wildcard ``Corpus.*.Write``
+    role, which the middleware treats as universal access — every
+    corpus, including any added later. This is the right model for an
+    operator-issued shared key: rotating the key changes the secret, not
+    the set of corpora it can reach.
+
+    The verifier is intentionally minimal: no expiry, no audience, no
+    issuer. The only secret is the key; treat its loss as you would a
+    revoked refresh token (rotate by changing the env var, all clients
+    re-issued).
+    """
+
+    def __init__(self, api_key: str) -> None:
+        if not api_key:
+            raise ValueError("api_key must be non-empty")
+        self._api_key = api_key
+
+    def validate_token(self, token: str) -> dict[str, Any]:
+        import hmac
+
+        if not hmac.compare_digest(token, self._api_key):
+            raise ValueError("Static key mismatch")
+        return {
+            "sub": "static-api-key",
+            "roles": ["Corpus.*.Write"],
+        }
+
+
+class CompositeVerifier:
+    """Try each verifier in order; return the first set of claims accepted.
+
+    A ``ValueError`` from one verifier defers to the next. If all
+    verifiers reject, the final ``ValueError`` is re-raised so the
+    middleware can return a clean ``401``.
+    """
+
+    def __init__(self, *verifiers: Any) -> None:
+        if not verifiers:
+            raise ValueError("CompositeVerifier requires at least one verifier")
+        self._verifiers = verifiers
+
+    def validate_token(self, token: str) -> dict[str, Any]:
+        last_error: Exception | None = None
+        for verifier in self._verifiers:
+            try:
+                return verifier.validate_token(token)
+            except ValueError as exc:
+                last_error = exc
+        assert last_error is not None
+        raise last_error
+
+
+def build_composite_verifier() -> CompositeVerifier:
+    """Verifier factory that prefers a static API key, falling back to Entra.
+
+    Reads ``FIREFLY_MCP_STATIC_API_KEY``. When set, the static key grants
+    universal corpus access via the ``Corpus.*.Write`` wildcard role, so
+    new corpora are reachable the moment they exist — no env-var update,
+    no key rotation. When unset, the composite reduces to the Entra-only
+    path so deployments that only need SSO keep working.
+    """
+    import os
+
+    verifiers: list[Any] = []
+    api_key = os.environ.get("FIREFLY_MCP_STATIC_API_KEY", "").strip()
+    if api_key:
+        verifiers.append(StaticApiKeyVerifier(api_key))
+    verifiers.append(build_entra_verifier())
+    return CompositeVerifier(*verifiers)
+
+
 def build_entra_metadata() -> OAuthMetadata:
     """Default metadata factory for ``FIREFLY_MCP_METADATA_FACTORY``.
 
