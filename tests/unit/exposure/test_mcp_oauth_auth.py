@@ -261,7 +261,9 @@ def test_wildcard_read_role_grants_read_only() -> None:
     assert client.post("/mcp", headers=_auth("t1"), json=_body("corpus_query", corpus_id="anything")).status_code == 200
     # Write tool must NOT be granted by ``Corpus.*.Read``.
     assert (
-        client.post("/mcp", headers=_auth("t1"), json=_body("ingest_corpus_filesystem", corpus_id="anything")).status_code
+        client.post(
+            "/mcp", headers=_auth("t1"), json=_body("ingest_corpus_filesystem", corpus_id="anything")
+        ).status_code
         == 403
     )
 
