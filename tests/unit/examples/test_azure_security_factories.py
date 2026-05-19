@@ -43,7 +43,11 @@ def test_metadata_factory_returns_populated_metadata(monkeypatch: pytest.MonkeyP
     assert md.issuer == "https://mcp.example.com"
     assert md.authorization_endpoint == "https://login.microsoftonline.com/tenant-guid/oauth2/v2.0/authorize"
     assert md.jwks_uri.endswith("/discovery/v2.0/keys")
-    assert md.resource == "https://mcp.example.com/mcp/"
+    # ``resource`` advertises the App-Registration alias (api://<client>) so it
+    # matches an Entra ``identifierUri`` — sending the raw https URL hits
+    # AADSTS9010010 at the token endpoint. See ``build_entra_metadata`` for
+    # the full reasoning.
+    assert md.resource == "api://client-guid"
     assert md.scopes_supported == ("api://client-guid/user_impersonation",)
 
 
@@ -52,7 +56,8 @@ def test_metadata_factory_strips_trailing_slash(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setenv("AZURE_CLIENT_ID", "c")
     monkeypatch.setenv("FIREFLY_MCP_PUBLIC_URL", "https://mcp.example.com/")
     md = build_entra_metadata()
-    assert md.resource == "https://mcp.example.com/mcp/"
+    # ``issuer`` (the only host-derived field left) drops the trailing slash.
+    assert md.issuer == "https://mcp.example.com"
 
 
 def test_metadata_factory_requires_env(monkeypatch: pytest.MonkeyPatch) -> None:
