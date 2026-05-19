@@ -265,11 +265,22 @@ def build_entra_metadata() -> OAuthMetadata:
     # We point ``authorization_endpoint`` / ``token_endpoint`` / ``jwks_uri``
     # at Entra so the client runs the OAuth flow against the real IdP —
     # we are not acting as an authorization-server proxy.
+    # ``resource`` is advertised at ``/.well-known/oauth-protected-resource``
+    # and MCP clients (Claude Code et al.) forward it to Entra as the RFC 8707
+    # ``resource=`` parameter on the token request. Entra requires that value
+    # to match one of the App Registration's ``identifierUris``, which on
+    # single-tenant apps without a verified custom domain is locked to the
+    # ``api://<client>`` form (Entra rejects raw https URLs as alias values).
+    # Sending the canonical https URL here produces AADSTS9010010 ("The
+    # resource parameter provided in the request doesn't match with the
+    # requested scopes") at the token endpoint, so we use the App-Registration
+    # alias instead. The audience claim Entra puts on v2 tokens is the bare
+    # client GUID either way, which is what ``EntraTokenVerifier`` validates.
     return OAuthMetadata(
         issuer=host,
         authorization_endpoint=f"{base}/oauth2/v2.0/authorize",
         token_endpoint=f"{base}/oauth2/v2.0/token",
         jwks_uri=f"{base}/discovery/v2.0/keys",
-        resource=f"{host}/mcp/",
+        resource=f"api://{client}",
         scopes_supported=(f"api://{client}/user_impersonation",),
     )
