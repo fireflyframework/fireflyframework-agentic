@@ -307,6 +307,12 @@ class OAuthJWTMiddleware(BaseHTTPMiddleware):
         ``Corpus.<id>.Write`` implies ``Corpus.<id>.Read`` — the implication
         is enforced here rather than in the IdP so operators only assign
         the higher-privilege role.
+
+        ``Corpus.*.<level>`` is a wildcard that grants the requested level
+        for any corpus. ``Corpus.*.Write`` further implies any
+        ``Corpus.<id>.Read``, matching the per-corpus Write→Read rule.
+        Wildcards are useful for operator-issued static keys that need to
+        cover corpora that don't exist yet at key-mint time.
         """
         if required in roles:
             return True
@@ -314,6 +320,10 @@ class OAuthJWTMiddleware(BaseHTTPMiddleware):
             implied_write = required[: -len(".Read")] + ".Write"
             if implied_write in roles:
                 return True
+            if "Corpus.*.Read" in roles or "Corpus.*.Write" in roles:
+                return True
+        elif required.endswith(".Write") and "Corpus.*.Write" in roles:
+            return True
         return False
 
     @staticmethod
@@ -384,6 +394,14 @@ class OAuthJWTMiddleware(BaseHTTPMiddleware):
             authorised_corpora_var,
         )
 
+        # Wildcard ``Corpus.*.Read|Write`` short-circuits filtering: the
+        # caller is authorised for every corpus, including ones that don't
+        # exist yet, so publish ``None`` (the contextvar's "no filter"
+        # sentinel) instead of a list that would need updating each time a
+        # new corpus is created.
+        if "Corpus.*.Read" in roles or "Corpus.*.Write" in roles:
+            authorised_corpora_var.set(None)
+            return
         authorised: set[str] = set()
         for role in roles:
             if not role.startswith("Corpus."):
