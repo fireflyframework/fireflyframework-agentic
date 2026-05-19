@@ -101,6 +101,11 @@ class RoutingDecision:
             raise DelegationError("Empty routing decision")
         return self.candidates[0].agent
 
+    @classmethod
+    def empty(cls, strategy: str, **metadata: Any) -> RoutingDecision:
+        """Build an empty (no-opinion) decision tagged with *strategy*."""
+        return cls(candidates=(), strategy=strategy, metadata=metadata)
+
 
 @runtime_checkable
 class DelegationStrategy(Protocol):
@@ -135,10 +140,8 @@ class RoundRobinStrategy:
     """
 
     def __init__(self) -> None:
-        # Lazily initialised so the cycle resets if the agent pool changes.
         self._cycle: itertools.cycle[FireflyAgent[Any, Any]] | None = None
         self._last_agents: list[FireflyAgent[Any, Any]] = []
-        self._turn: int = 0
 
     async def decide(
         self,
@@ -149,19 +152,16 @@ class RoundRobinStrategy:
         """Pick the next agent in round-robin order."""
         del prompt, kwargs
         if not agents:
-            return RoutingDecision(candidates=(), strategy=type(self).__name__, metadata={})
+            return RoutingDecision.empty(type(self).__name__)
         if self._cycle is None or self._last_agents != list(agents):
             self._cycle = itertools.cycle(agents)
             self._last_agents = list(agents)
-            self._turn = 0
         agent = next(self._cycle)
-        turn = self._turn
-        self._turn += 1
         candidate = Candidate(agent=agent, score=1.0, reason="round-robin turn")
         return RoutingDecision(
             candidates=(candidate,),
             strategy=type(self).__name__,
-            metadata={"turn": turn},
+            metadata={},
         )
 
 
@@ -226,20 +226,21 @@ class ContentBasedStrategy:
         **kwargs: Any,
     ) -> RoutingDecision:
         """Ask the routing LLM to pick the best agent for *prompt*."""
+        name = type(self).__name__
         if not agents:
-            return RoutingDecision(candidates=(), strategy=type(self).__name__, metadata={})
+            return RoutingDecision.empty(name)
         if len(agents) == 1:
             return RoutingDecision(
                 candidates=(Candidate(agent=agents[0], score=1.0, reason="only candidate"),),
-                strategy=type(self).__name__,
+                strategy=name,
                 metadata={"singleton": True},
             )
 
         descriptions: list[str] = []
         for i, agent in enumerate(agents):
-            name = getattr(agent, "name", f"agent_{i}")
+            agent_name = getattr(agent, "name", f"agent_{i}")
             desc = getattr(agent, "description", "")
-            descriptions.append(f"{i}: {name} - {desc or 'no description'}")
+            descriptions.append(f"{i}: {agent_name} - {desc or 'no description'}")
 
         prompt_text = prompt if isinstance(prompt, str) else str(prompt)
         routing_prompt = (
@@ -255,30 +256,18 @@ class ContentBasedStrategy:
             result = await router.run(routing_prompt)
         except Exception:
             logger.warning("Content-based routing LLM call failed", exc_info=True)
-            return RoutingDecision(
-                candidates=(),
-                strategy=type(self).__name__,
-                metadata={"error": "llm_failure"},
-            )
+            return RoutingDecision.empty(name, error="llm_failure")
 
         idx_str = result.output.strip()
         digits = "".join(c for c in idx_str if c.isdigit())[:3]
         if not digits:
             logger.warning("Content-based routing got non-numeric response: %r", idx_str[:50])
-            return RoutingDecision(
-                candidates=(),
-                strategy=type(self).__name__,
-                metadata={"error": "non_numeric_response"},
-            )
+            return RoutingDecision.empty(name, error="non_numeric_response")
 
         idx = int(digits)
         if not (0 <= idx < len(agents)):
             logger.warning("Content-based routing returned out-of-range index %d", idx)
-            return RoutingDecision(
-                candidates=(),
-                strategy=type(self).__name__,
-                metadata={"error": "out_of_range"},
-            )
+            return RoutingDecision.empty(name, error="out_of_range")
 
         # Single chosen agent with full confidence; no per-other ranking given.
         chosen = Candidate(agent=agents[idx], score=1.0, reason=f"LLM picked index {idx}")
@@ -355,7 +344,7 @@ class CostAwareStrategy:
     ) -> RoutingDecision:
         """Rank agents by ascending cost (cheapest first)."""
         if not agents:
-            return RoutingDecision(candidates=(), strategy=type(self).__name__, metadata={})
+            return RoutingDecision.empty(type(self).__name__)
 
         priced: list[tuple[FireflyAgent[Any, Any], float]] = []
         unknown: list[FireflyAgent[Any, Any]] = []
@@ -425,8 +414,9 @@ class ChainStrategy:
         **kwargs: Any,
     ) -> RoutingDecision:
         """Apply stages sequentially, narrowing the candidate pool each step."""
+        name = type(self).__name__
         if not self._stages:
-            return RoutingDecision(candidates=(), strategy=type(self).__name__, metadata={})
+            return RoutingDecision.empty(name)
 
         current_agents: Sequence[FireflyAgent[Any, Any]] = list(agents)
         last_decision: RoutingDecision | None = None
@@ -435,18 +425,15 @@ class ChainStrategy:
             stage_names.append(type(stage).__name__)
             decision = await stage.decide(current_agents, prompt, **kwargs)
             if not decision.candidates:
-                return RoutingDecision(
-                    candidates=(),
-                    strategy=type(self).__name__,
-                    metadata={"stages": stage_names, "short_circuited_at": type(stage).__name__},
-                )
+                return RoutingDecision.empty(name, stages=stage_names, short_circuited_at=type(stage).__name__)
             current_agents = [c.agent for c in decision.candidates]
             last_decision = decision
 
-        assert last_decision is not None  # at least one stage ran with non-empty result.
+        if last_decision is None:
+            return RoutingDecision.empty(name, stages=stage_names)
         return RoutingDecision(
             candidates=last_decision.candidates,
-            strategy=type(self).__name__,
+            strategy=name,
             metadata={"stages": stage_names},
         )
 
@@ -492,11 +479,7 @@ class FallbackStrategy:
                         "inner_metadata": dict(decision.metadata),
                     },
                 )
-        return RoutingDecision(
-            candidates=(),
-            strategy=type(self).__name__,
-            metadata={"tried": tried},
-        )
+        return RoutingDecision.empty(type(self).__name__, tried=tried)
 
 
 class WeightedStrategy:
@@ -511,18 +494,17 @@ class WeightedStrategy:
     Final candidates are filtered by ``min_score`` and ranked descending.
 
     Parameters:
-        strategies: Sequence of ``(strategy, weight)`` pairs.
+        *weighted: ``(strategy, weight)`` pairs, one per child strategy.
         min_score: Drop candidates whose blended score is below this
             threshold (default ``0.0``).
     """
 
     def __init__(
         self,
-        *,
-        strategies: Sequence[tuple[DelegationStrategy, float]],
+        *weighted: tuple[DelegationStrategy, float],
         min_score: float = 0.0,
     ) -> None:
-        self._strategies = tuple(strategies)
+        self._strategies = weighted
         self._min_score = min_score
 
     async def decide(
@@ -532,16 +514,13 @@ class WeightedStrategy:
         **kwargs: Any,
     ) -> RoutingDecision:
         """Run each child strategy and blend scores."""
+        name = type(self).__name__
         if not agents or not self._strategies:
-            return RoutingDecision(candidates=(), strategy=type(self).__name__, metadata={})
+            return RoutingDecision.empty(name)
 
         total_weight = sum(w for _, w in self._strategies)
         if total_weight <= 0:
-            return RoutingDecision(
-                candidates=(),
-                strategy=type(self).__name__,
-                metadata={"error": "non_positive_total_weight"},
-            )
+            return RoutingDecision.empty(name, error="non_positive_total_weight")
 
         # Keep agent identity by object id; preserve original order for ties.
         agent_order = list(agents)
@@ -648,35 +627,27 @@ class DelegationRouter:
         decision = await self._strategy.decide(self._agents, prompt, **kwargs)
         duration_ms = (time.perf_counter() - start) * 1000.0
 
-        chosen_agent_name: str | None
-        chosen_score: float | None
-        if decision.candidates:
-            top = decision.candidates[0]
-            chosen_agent_name = getattr(top.agent, "name", repr(top.agent))
-            chosen_score = top.score
-        else:
-            chosen_agent_name = None
-            chosen_score = None
-
-        candidates_json = json.dumps(
-            [
-                {
-                    "agent": getattr(c.agent, "name", repr(c.agent)),
-                    "score": c.score,
-                    "reason": c.reason,
-                }
-                for c in decision.candidates
-            ],
-            default=str,
-        )
+        top = decision.candidates[0] if decision.candidates else None
+        chosen_agent_name = getattr(top.agent, "name", repr(top.agent)) if top else None
+        chosen_score = top.score if top else None
 
         attributes: dict[str, Any] = {
             "strategy": decision.strategy,
             "candidates_count": len(decision.candidates),
-            "chosen_agent": chosen_agent_name if chosen_agent_name is not None else "",
+            "chosen_agent": chosen_agent_name or "",
             "chosen_score": chosen_score if chosen_score is not None else -1.0,
             "duration_ms": duration_ms,
-            "routing.candidates_json": candidates_json,
+            "routing.candidates_json": json.dumps(
+                [
+                    {
+                        "agent": getattr(c.agent, "name", repr(c.agent)),
+                        "score": c.score,
+                        "reason": c.reason,
+                    }
+                    for c in decision.candidates
+                ],
+                default=str,
+            ),
         }
         for key, value in decision.metadata.items():
             attributes[f"routing.{key}"] = _coerce_otel_value(value)
@@ -708,7 +679,7 @@ class DelegationRouter:
         Raises:
             DelegationError: If *decision* has no candidates.
         """
-        agent = decision.chosen  # raises DelegationError on empty.
+        agent = decision.chosen
         logger.debug("Delegated to agent '%s'", getattr(agent, "name", repr(agent)))
 
         if self._memory is not None and hasattr(agent, "memory"):

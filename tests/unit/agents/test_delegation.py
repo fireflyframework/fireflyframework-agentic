@@ -134,16 +134,6 @@ async def test_round_robin_empty_pool_returns_empty_decision():
     assert decision.strategy == "RoundRobinStrategy"
 
 
-@pytest.mark.asyncio
-async def test_round_robin_metadata_has_turn():
-    strategy = RoundRobinStrategy()
-    agents = [_fake("a"), _fake("b")]
-    d1 = await strategy.decide(agents, "p")
-    d2 = await strategy.decide(agents, "p")
-    assert d1.metadata["turn"] == 0
-    assert d2.metadata["turn"] == 1
-
-
 # -- CapabilityStrategy ----------------------------------------------------
 
 
@@ -415,8 +405,8 @@ async def test_weighted_normalises_weights_internally():
     s2 = _ScriptedStrategy({"a": 0.0, "b": 1.0})
     agents = [_fake("a"), _fake("b")]
 
-    w_raw = WeightedStrategy(strategies=[(s1, 3.0), (s2, 1.0)])
-    w_norm = WeightedStrategy(strategies=[(s1, 0.75), (s2, 0.25)])
+    w_raw = WeightedStrategy((s1, 3.0), (s2, 1.0))
+    w_norm = WeightedStrategy((s1, 0.75), (s2, 0.25))
 
     d_raw = await w_raw.decide(agents, "p")
     d_norm = await w_norm.decide(agents, "p")
@@ -432,7 +422,7 @@ async def test_weighted_absent_agent_contributes_zero():
     s1 = _ScriptedStrategy({"a": 1.0})  # b omitted.
     s2 = _ScriptedStrategy({"a": 1.0, "b": 1.0})
     agents = [_fake("a"), _fake("b")]
-    w = WeightedStrategy(strategies=[(s1, 1.0), (s2, 1.0)])
+    w = WeightedStrategy((s1, 1.0), (s2, 1.0))
     decision = await w.decide(agents, "p")
     by_name = {c.agent.name: c.score for c in decision.candidates}
     # a: (1.0*0.5 + 1.0*0.5) = 1.0; b: (0*0.5 + 1.0*0.5) = 0.5.
@@ -444,7 +434,7 @@ async def test_weighted_absent_agent_contributes_zero():
 async def test_weighted_min_score_filter():
     s1 = _ScriptedStrategy({"a": 1.0, "b": 0.1})
     agents = [_fake("a"), _fake("b")]
-    w = WeightedStrategy(strategies=[(s1, 1.0)], min_score=0.5)
+    w = WeightedStrategy((s1, 1.0), min_score=0.5)
     decision = await w.decide(agents, "p")
     names = [c.agent.name for c in decision.candidates]
     assert names == ["a"]
@@ -454,7 +444,7 @@ async def test_weighted_min_score_filter():
 async def test_weighted_scores_in_unit_range():
     s1 = _ScriptedStrategy({"a": 1.0, "b": 0.4})
     s2 = _ScriptedStrategy({"a": 0.3, "b": 0.9})
-    w = WeightedStrategy(strategies=[(s1, 2.0), (s2, 1.0)])
+    w = WeightedStrategy((s1, 2.0), (s2, 1.0))
     agents = [_fake("a"), _fake("b")]
     decision = await w.decide(agents, "p")
     for c in decision.candidates:
@@ -464,7 +454,7 @@ async def test_weighted_scores_in_unit_range():
 @pytest.mark.asyncio
 async def test_weighted_ranks_descending():
     s1 = _ScriptedStrategy({"a": 0.2, "b": 0.9})
-    w = WeightedStrategy(strategies=[(s1, 1.0)])
+    w = WeightedStrategy((s1, 1.0))
     agents = [_fake("a"), _fake("b")]
     decision = await w.decide(agents, "p")
     names = [c.agent.name for c in decision.candidates]
@@ -592,8 +582,6 @@ async def test_router_emits_otel_decision_event(monkeypatch):
     assert attrs["chosen_agent"] == "a"
     assert attrs["chosen_score"] == 1.0
     assert "duration_ms" in attrs
-    # routing.turn flattened from metadata; OTel-safe primitive.
-    assert attrs["routing.turn"] == 0
     # candidates_json must be a JSON string.
     parsed = json.loads(attrs["routing.candidates_json"])
     assert parsed[0]["agent"] == "a"
@@ -666,6 +654,6 @@ def test_all_strategies_satisfy_protocol():
         CostAwareStrategy(),
         ChainStrategy(),
         FallbackStrategy(),
-        WeightedStrategy(strategies=[(RoundRobinStrategy(), 1.0)]),
+        WeightedStrategy((RoundRobinStrategy(), 1.0)),
     ]:
         assert isinstance(s, DelegationStrategy)

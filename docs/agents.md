@@ -240,7 +240,7 @@ Three combinators nest strategies without subclassing:
   stage receives the surviving candidates from the previous one.
 - `FallbackStrategy(s1, s2, ...)` — first non-empty decision wins;
   also recovers from `DelegationError`.
-- `WeightedStrategy(strategies=[(s, w), ...], min_score=0.0)` —
+- `WeightedStrategy((s, w), ..., min_score=0.0)` —
   parallel score blend; weights normalised internally; agents missing
   from a strategy's candidates contribute `0`.
 
