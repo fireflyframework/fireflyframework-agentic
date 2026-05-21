@@ -34,7 +34,7 @@ import json
 import logging
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 from pydantic_ai import Agent as PydanticAgent
@@ -68,11 +68,16 @@ class Candidate:
         agent: The candidate agent.
         score: Normalised score in ``[0.0, 1.0]``; higher is better.
         reason: Short human-readable explanation of why this score.
+            Treat as display-only — do not parse.
+        metadata: Optional structured per-candidate data (e.g. component
+            scores from :class:`WeightedStrategy`). Mirrors the role of
+            :attr:`RoutingDecision.metadata` at the candidate level.
     """
 
     agent: FireflyAgent[Any, Any]
     score: float
     reason: str
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -141,7 +146,7 @@ class RoundRobinStrategy:
 
     def __init__(self) -> None:
         self._cycle: itertools.cycle[FireflyAgent[Any, Any]] | None = None
-        self._last_agents: list[FireflyAgent[Any, Any]] = []
+        self._last_ids: tuple[int, ...] = ()
 
     async def decide(
         self,
@@ -149,13 +154,21 @@ class RoundRobinStrategy:
         prompt: str | Sequence[UserContent],
         **kwargs: Any,
     ) -> RoutingDecision:
-        """Pick the next agent in round-robin order."""
+        """Pick the next agent in round-robin order.
+
+        Resets the cursor whenever the pool's object identities change.
+        Inside a combinator that passes a freshly-built sub-pool every
+        call (e.g. :class:`ChainStrategy`), the cycle effectively resets
+        each turn — call this strategy directly from the router for
+        stateful cycling.
+        """
         del prompt, kwargs
         if not agents:
             return RoutingDecision.empty(type(self).__name__)
-        if self._cycle is None or self._last_agents != list(agents):
+        ids = tuple(id(a) for a in agents)
+        if self._cycle is None or ids != self._last_ids:
             self._cycle = itertools.cycle(agents)
-            self._last_agents = list(agents)
+            self._last_ids = ids
         agent = next(self._cycle)
         candidate = Candidate(agent=agent, score=1.0, reason="round-robin turn")
         return RoutingDecision(
@@ -195,7 +208,7 @@ class CapabilityStrategy:
         return RoutingDecision(
             candidates=tuple(matches),
             strategy=type(self).__name__,
-            metadata={"required_tag": self._tag, "match_count": len(matches)},
+            metadata={"required_tag": self._tag},
         )
 
 
@@ -291,11 +304,12 @@ class CostAwareStrategy:
     single agent) score ``1.0``.
 
     Parameters:
-        sample_input_tokens: Representative input tokens for pricing.
-        sample_output_tokens: Representative output tokens for pricing.
-        sample_cache_creation_tokens: Representative cache-creation tokens.
-        sample_cache_read_tokens: Representative cache-read tokens.
-        sample_reasoning_tokens: Representative reasoning tokens.
+        sample: Representative :class:`CostContext` used to price each
+            agent. Only the token counts are read; the ``model`` field is
+            overwritten per agent. Defaults to ``1000`` input / ``500``
+            output tokens, everything else zero — fine for relative
+            ranking, override if cache or reasoning tokens dominate your
+            workload.
         resolvers: Optional cost resolver chain. Defaults to
             :data:`DEFAULT_RESOLVERS`.
         on_unknown: How to handle agents the resolver chain cannot price.
@@ -303,22 +317,16 @@ class CostAwareStrategy:
             ``"raise"`` raises :class:`UnknownModelCostError`.
     """
 
+    _DEFAULT_SAMPLE = CostContext(model="", input_tokens=1000, output_tokens=500)
+
     def __init__(
         self,
         *,
-        sample_input_tokens: int = 1000,
-        sample_output_tokens: int = 500,
-        sample_cache_creation_tokens: int = 0,
-        sample_cache_read_tokens: int = 0,
-        sample_reasoning_tokens: int = 0,
+        sample: CostContext | None = None,
         resolvers: Sequence[CostFn] | None = None,
         on_unknown: Literal["skip", "lowest", "raise"] = "skip",
     ) -> None:
-        self._sample_input_tokens = sample_input_tokens
-        self._sample_output_tokens = sample_output_tokens
-        self._sample_cache_creation_tokens = sample_cache_creation_tokens
-        self._sample_cache_read_tokens = sample_cache_read_tokens
-        self._sample_reasoning_tokens = sample_reasoning_tokens
+        self._sample = sample if sample is not None else self._DEFAULT_SAMPLE
         self._resolvers = tuple(resolvers) if resolvers is not None else DEFAULT_RESOLVERS
         self._on_unknown = on_unknown
 
@@ -326,14 +334,7 @@ class CostAwareStrategy:
         """Compute the synthetic per-call cost for *agent*."""
         if not agent.model_identifier:
             return None
-        ctx = CostContext(
-            model=agent.model_identifier,
-            input_tokens=self._sample_input_tokens,
-            output_tokens=self._sample_output_tokens,
-            cache_creation_tokens=self._sample_cache_creation_tokens,
-            cache_read_tokens=self._sample_cache_read_tokens,
-            reasoning_tokens=self._sample_reasoning_tokens,
-        )
+        ctx = replace(self._sample, model=agent.model_identifier)
         # Force non-strict so we control the unknown-model branch ourselves.
         return resolve_cost(ctx, resolvers=self._resolvers, strict=False)
 
@@ -442,11 +443,7 @@ class ChainStrategy:
 
         if last_decision is None:
             return RoutingDecision.empty(name, stages=stage_names)
-        return RoutingDecision(
-            candidates=last_decision.candidates,
-            strategy=name,
-            metadata={"stages": stage_names},
-        )
+        return replace(last_decision, strategy=name, metadata={"stages": stage_names})
 
 
 class FallbackStrategy:
@@ -548,18 +545,19 @@ class WeightedStrategy:
         agent_order = list(agents)
         agent_ids = [id(a) for a in agent_order]
         blended: dict[int, float] = {aid: 0.0 for aid in agent_ids}
-        reasons: dict[int, list[str]] = {aid: [] for aid in agent_ids}
+        components: dict[int, dict[str, float]] = {aid: {} for aid in agent_ids}
         strategy_names: list[str] = []
 
         for strategy, weight in self._strategies:
-            strategy_names.append(type(strategy).__name__)
+            strategy_name = type(strategy).__name__
+            strategy_names.append(strategy_name)
             decision = await strategy.decide(agent_order, prompt, **kwargs)
             normalised_weight = weight / total_weight
             scored = {id(c.agent): c.score for c in decision.candidates}
             for aid in agent_ids:
                 score = scored.get(aid, 0.0)
                 blended[aid] += score * normalised_weight
-                reasons[aid].append(f"{type(strategy).__name__}={score:.3f}")
+                components[aid][strategy_name] = score
 
         candidates: list[Candidate] = []
         for agent, aid in zip(agent_order, agent_ids, strict=True):
@@ -570,7 +568,8 @@ class WeightedStrategy:
                 Candidate(
                     agent=agent,
                     score=score,
-                    reason=f"weighted({', '.join(reasons[aid])})",
+                    reason="weighted blend",
+                    metadata={"components": components[aid]},
                 )
             )
         candidates.sort(key=lambda c: c.score, reverse=True)
