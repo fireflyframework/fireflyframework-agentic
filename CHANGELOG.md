@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
-## [Unreleased]
+## [26.05.21] - 2026-05-21
 
 ### Changed (BREAKING — delegation routing API)
 
