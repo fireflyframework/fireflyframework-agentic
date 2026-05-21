@@ -47,7 +47,7 @@ from fireflyframework_agentic.agents.delegation import (
 
 load_dotenv()
 
-MODEL = os.environ.get("MODEL", "openai:gpt-4o-mini")
+MODEL = os.environ["MODEL"]
 
 
 async def main() -> None:
