@@ -552,23 +552,15 @@ async def test_router_decide_does_not_fork_memory():
 
 @pytest.mark.asyncio
 async def test_router_emits_otel_decision_event(monkeypatch):
-    """One ``firefly.routing.decision`` span per decide() with expected attrs."""
-    from contextlib import contextmanager
-
+    """One ``firefly.routing.decision`` event per decide() with expected attrs."""
     from fireflyframework_agentic.agents import delegation as delegation_mod
 
     captured: list[tuple[str, dict[str, Any]]] = []
 
-    class _FakeSpan:
-        def set_attribute(self, *_args, **_kwargs):  # pragma: no cover - unused.
-            pass
-
-    @contextmanager
-    def fake_custom_span(name: str, **attributes: Any):
+    def fake_event(name: str, **attributes: Any) -> None:
         captured.append((name, dict(attributes)))
-        yield _FakeSpan()
 
-    monkeypatch.setattr(delegation_mod.default_tracer, "custom_span", fake_custom_span)
+    monkeypatch.setattr(delegation_mod.default_tracer, "event", fake_event)
 
     a = _fake("a")
     router = DelegationRouter([a], RoundRobinStrategy())
@@ -591,18 +583,15 @@ async def test_router_emits_otel_decision_event(monkeypatch):
 @pytest.mark.asyncio
 async def test_router_emits_one_event_even_for_combinator(monkeypatch):
     """Combinators don't emit their own events — only the top-level router does."""
-    from contextlib import contextmanager
-
     from fireflyframework_agentic.agents import delegation as delegation_mod
 
     captured: list[str] = []
 
-    @contextmanager
-    def fake_custom_span(name: str, **attributes: Any):
+    def fake_event(name: str, **attributes: Any) -> None:
+        del attributes
         captured.append(name)
-        yield None
 
-    monkeypatch.setattr(delegation_mod.default_tracer, "custom_span", fake_custom_span)
+    monkeypatch.setattr(delegation_mod.default_tracer, "event", fake_event)
 
     chain = ChainStrategy(RoundRobinStrategy(), RoundRobinStrategy())
     router = DelegationRouter([_fake("a")], chain)
@@ -613,18 +602,15 @@ async def test_router_emits_one_event_even_for_combinator(monkeypatch):
 @pytest.mark.asyncio
 async def test_router_event_metadata_coerced_for_otel(monkeypatch):
     """Non-trivial metadata values are JSON-serialised for OTel attribute compatibility."""
-    from contextlib import contextmanager
-
     from fireflyframework_agentic.agents import delegation as delegation_mod
 
     captured: list[dict[str, Any]] = []
 
-    @contextmanager
-    def fake_custom_span(name: str, **attributes: Any):
+    def fake_event(name: str, **attributes: Any) -> None:
+        del name
         captured.append(dict(attributes))
-        yield None
 
-    monkeypatch.setattr(delegation_mod.default_tracer, "custom_span", fake_custom_span)
+    monkeypatch.setattr(delegation_mod.default_tracer, "event", fake_event)
 
     class _MetadataStrategy:
         async def decide(self, agents, prompt, **kwargs):

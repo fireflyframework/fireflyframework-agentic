@@ -663,8 +663,7 @@ class DelegationRouter:
         for key, value in decision.metadata.items():
             attributes[f"routing.{key}"] = _coerce_otel_value(value)
 
-        with default_tracer.custom_span("firefly.routing.decision", **attributes):
-            pass
+        default_tracer.event("firefly.routing.decision", **attributes)
 
         logger.debug(
             "Routing decision: strategy=%s candidates=%d chosen=%s score=%s",
