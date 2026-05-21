@@ -157,15 +157,21 @@ await lifecycle.run_warmup()
 ## Multi-Agent Delegation
 
 When a task requires multiple specialised agents, the delegation system routes work
-to the right agent based on a configurable strategy.
+to the right agent based on a configurable strategy. Strategies return a
+`RoutingDecision`: a ranked tuple of `Candidate` objects (each with an
+agent, a score in `[0.0, 1.0]`, and a short reason) plus free-form metadata.
+`DelegationRouter.decide()` is pure (runs the strategy and emits the
+`firefly.routing.decision` OTel event); `execute()` runs the chosen agent
+and forks memory if attached; `route()` is the one-call convenience.
 
 ```mermaid
 flowchart TD
     REQ[Incoming Request] --> DR[DelegationRouter]
     DR --> S{Strategy}
-    S -->|Round Robin| A1[Agent A]
-    S -->|Round Robin| A2[Agent B]
-    S -->|Capability| A3[Best Match Agent]
+    S -->|RoundRobin| A1[Agent A]
+    S -->|Capability| A2[Best Match Agent]
+    S -->|ContentBased| A3[LLM-Picked Agent]
+    S -->|CostAware| A4[Cheapest Agent]
 ```
 
 ### Round Robin
@@ -182,7 +188,9 @@ result = await router.route("Summarise this document.")
 
 ### Capability-Based
 
-Selects the first agent whose tags include a required capability:
+Returns every agent whose tags include the required capability, each
+scored `1.0`. No-match yields an empty decision (so it composes with
+`FallbackStrategy`):
 
 ```python
 from fireflyframework_agentic.agents.delegation import CapabilityStrategy, DelegationRouter
@@ -196,7 +204,9 @@ result = await router.route("Translate this text to French.")
 
 Uses a lightweight LLM call to analyse the prompt and pick the best-suited
 agent from the pool. Ideal when agents have overlapping capabilities and
-simple tag matching is insufficient:
+simple tag matching is insufficient. On LLM failure it returns an empty
+decision (so `FallbackStrategy` can take over) — it does not silently
+return the first agent.
 
 ```python
 from fireflyframework_agentic.agents.delegation import ContentBasedStrategy, DelegationRouter
@@ -206,25 +216,58 @@ router = DelegationRouter([agent_a, agent_b, agent_c], strategy)
 result = await router.route("Translate this legal document to French.")
 ```
 
-The strategy builds a short description of each agent (from its `name` and
-`description` attributes) and asks the routing model to pick the most
-suitable one.
-
 ### Cost-Aware
 
-Selects the agent backed by the cheapest model. Agents are ranked by
-approximate cost tiers derived from their `model_name` attribute:
+Ranks agents by per-call cost via the project's cost resolver chain
+(`resolve_cost` / `genai-prices`). Scores are pool-relative linear
+normalisations: `score = 1.0 - (cost - min) / (max - min)`. Ties (or a
+single agent) score `1.0`. Unknown models are handled per `on_unknown`
+(`"skip"`, `"lowest"`, or `"raise"`).
 
 ```python
 from fireflyframework_agentic.agents.delegation import CostAwareStrategy, DelegationRouter
 
-strategy = CostAwareStrategy()
+strategy = CostAwareStrategy()  # uses DEFAULT_RESOLVERS.
 router = DelegationRouter([expensive_agent, cheap_agent], strategy)
 result = await router.route("Simple classification task.")
-# Selects cheap_agent (lower cost tier)
 ```
 
-Unknown models are assigned a middle-tier cost.
+### Composing Strategies
+
+Three combinators nest strategies without subclassing:
+
+- `ChainStrategy(stage1, stage2, ...)` — sequential narrowing; each
+  stage receives the surviving candidates from the previous one.
+- `FallbackStrategy(s1, s2, ...)` — first non-empty decision wins;
+  also recovers from `DelegationError`.
+- `WeightedStrategy((s, w), ..., min_score=0.0)` —
+  parallel score blend; weights normalised internally; agents missing
+  from a strategy's candidates contribute `0`.
+
+```python
+from fireflyframework_agentic.agents.delegation import (
+    CapabilityStrategy, CostAwareStrategy, ChainStrategy, FallbackStrategy,
+    ContentBasedStrategy, RoundRobinStrategy,
+)
+
+# Keep only vision-capable agents, then rank survivors by cost.
+chain = ChainStrategy(CapabilityStrategy("vision"), CostAwareStrategy())
+
+# Try LLM routing first; fall back to round-robin on empty/error.
+fallback = FallbackStrategy(ContentBasedStrategy(), RoundRobinStrategy())
+```
+
+### Decide / Execute Split
+
+`route()` is shorthand for `decide()` + `execute()`. Splitting them
+lets callers inspect, cache, dry-run, or replay decisions:
+
+```python
+decision = await router.decide("Translate to French.")
+for c in decision.candidates:
+    print(c.agent.name, c.score, c.reason)
+result = await router.execute(decision, "Translate to French.")
+```
 
 ---
 

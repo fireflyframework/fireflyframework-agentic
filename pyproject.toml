@@ -1,6 +1,6 @@
 [project]
 name = "fireflyframework-agentic"
-version = "26.05.11"
+version = "26.05.21"
 description = "A GenAI metaframework built on Pydantic AI for building production-grade GenAI applications with agents, reasoning patterns, prompt engineering, observability, and more."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -116,19 +116,22 @@ bedrock-embeddings = [
 ollama-embeddings = [
     "httpx>=0.28.0",
 ]
-rag = [
-    "fireflyframework-agentic[markitdown,watch,openai-embeddings]",
-]
 reasoning-eval = [
     "numpy>=2.0.0",
     "pandas>=2.2.0",
 ]
 corpus-search = [
-    "fireflyframework-agentic[rag,vectorstores-sqlite-vec]",
+    "fireflyframework-agentic[markitdown,watch,openai-embeddings,vectorstores-sqlite-vec]",
     # sqlglot parses the user-supplied SELECT in the ``corpus_sql`` MCP tool
     # to whitelist table references against the structured-ingestion schema
     # registry (rejecting reads from internal tables like ``chunks`` / ``_schemas``).
     "sqlglot>=26.0.0",
+    # AzureBlobBackend (examples/corpus_search/azure_backend.py) is an
+    # optional swap-in for remote corpus storage; the example also drives
+    # the Container Apps deployment path. Listed alongside the rest of the
+    # corpus_search example's runtime stack so a single extra suffices.
+    "azure-storage-blob>=12.20.0",
+    "azure-identity>=1.19",
 ]
 vectorstores-chroma = [
     "chromadb>=0.5.0",
@@ -157,8 +160,6 @@ dev = [
     "httpx>=0.28.0",
     "pdfplumber>=0.11.0",
     "pre-commit>=3.8.0",
-    "fireflyframework-agentic[markitdown]",
-    "sqlite-vec>=0.1.6",
 ]
 
 [project.scripts]

@@ -7,7 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
-## [Unreleased]
+## [26.05.21] - 2026-05-21
+
+### Changed (BREAKING — delegation routing API)
+
+- **`DelegationStrategy.select()` replaced by `decide() -> RoutingDecision`.**
+  Strategies now return ranked, scored `Candidate` tuples plus metadata
+  instead of a single agent. No deprecation shim: a shim would lock in
+  the single-agent return shape we are explicitly escaping. External
+  implementers get a clean `Protocol` mismatch at type-check time.
+  `DelegationRouter.route()` keeps its exact current signature, so the
+  common call site is unaffected. New combinators `ChainStrategy`,
+  `FallbackStrategy`, and `WeightedStrategy` nest strategies without
+  subclassing; `DelegationRouter.decide()` / `execute()` split selection
+  from execution and emit a `firefly.routing.decision` OTel event.
+- **`CapabilityStrategy` and `ContentBasedStrategy` now return empty
+  decisions instead of raising / silently falling back.** Previously
+  `CapabilityStrategy` raised `DelegationError` on no-match (blocking
+  composition with fallback) and `ContentBasedStrategy` silently
+  returned the first agent on LLM failure (hiding errors). Both now
+  return empty `RoutingDecision` objects. Callers using bare
+  `router.route()` still see `DelegationError("Empty routing
+  decision")` from `execute()` — same exception class, different
+  message.
+- **`CostAwareStrategy` no longer carries a hardcoded model→tier
+  table.** Cost per agent is computed via `resolve_cost` from
+  `fireflyframework_agentic.observability.cost_resolvers` against a
+  synthetic `CostContext` (defaults: 1000 input / 500 output tokens),
+  and scores are pool-relative linear normalisations. New keyword
+  arguments configure the sample tokens, the resolver chain, and the
+  `on_unknown` policy (`"skip"` / `"lowest"` / `"raise"`).
 
 ### Added
 
