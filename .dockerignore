@@ -12,7 +12,8 @@ build
 dist
 docs
 tests
-examples
+# examples/corpus_search holds the default OAuth factories the image
+# loads at runtime (build_entra_verifier / build_entra_metadata).
 *.md
 !README.md
 .env

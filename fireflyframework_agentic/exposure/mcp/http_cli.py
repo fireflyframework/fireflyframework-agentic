@@ -9,10 +9,12 @@
 """``firefly-mcp-http`` CLI — run the MCP server over Streamable HTTP.
 
 Used by network deployments (e.g. Azure Container Apps). When
-``FIREFLY_MCP_CORPUS_AUTH_ENABLED=true`` the process additionally
-enforces per-corpus capability tokens fetched from Azure Key Vault —
-see ``docs/deploy/mcp-corpus-auth.md``. With the flag off, behaviour is
-unchanged: auth is the responsibility of the ingress layer.
+``FIREFLY_MCP_AUTH_ENABLED=true`` the process additionally enforces
+OAuth 2.0 / OIDC bearer-token authentication with App-Roles RBAC, and
+publishes the RFC 9728 / RFC 8414 discovery metadata so MCP clients can
+bootstrap login automatically — see ``docs/deploy/mcp-corpus-auth.md``.
+With the flag off, behaviour is unchanged: auth is the responsibility of
+the ingress layer.
 """
 
 from __future__ import annotations
@@ -38,8 +40,8 @@ def build_app() -> FastAPI:
     mcp_app = create_mcp_app().http_app(path="/")
     app = FastAPI(title="firefly-mcp", version="0.1.0", lifespan=mcp_app.lifespan)
 
-    if os.environ.get("FIREFLY_MCP_CORPUS_AUTH_ENABLED", "").lower() == "true":
-        _install_corpus_auth(app)
+    if os.environ.get("FIREFLY_MCP_AUTH_ENABLED", "").lower() == "true":
+        _install_oauth_auth(app)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
@@ -49,35 +51,69 @@ def build_app() -> FastAPI:
     return app
 
 
-def _install_corpus_auth(app: FastAPI) -> None:
-    """Add CorpusAuthMiddleware. The concrete token store is resolved at
-    install time via ``FIREFLY_MCP_TOKEN_STORE_FACTORY``, which points
-    at a ``"module.path:callable"`` factory that returns a
-    ``CorpusTokenStore``. The default is the Azure Key Vault factory
-    that ships with the corpus-search example, so existing deployments
-    keep working out of the box; operators on a non-Azure back-end set
-    the env var to their own factory and the framework needs no Azure
-    deps to run.
-    """
-    vault_url = os.environ.get("FIREFLY_MCP_KEYVAULT_URL")
-    if not vault_url:
-        raise RuntimeError("FIREFLY_MCP_CORPUS_AUTH_ENABLED=true but FIREFLY_MCP_KEYVAULT_URL is unset")
+def _default_required_role(tool_name: str, corpus_id: str) -> str | None:
+    """Default App-Roles convention: ``Corpus.<id>.Read`` for read tools,
+    ``Corpus.<id>.Write`` for write tools. Returns ``None`` for any tool
+    that does not target a specific corpus."""
+    if tool_name in {"corpus_query", "knowledge_search"}:
+        return f"Corpus.{corpus_id}.Read"
+    if tool_name in {
+        "ingest_corpus_filesystem",
+        "ingest_corpus_structured",
+        "discover_corpus_schema",
+    }:
+        return f"Corpus.{corpus_id}.Write"
+    return None
 
-    factory_spec = os.environ.get(
-        "FIREFLY_MCP_TOKEN_STORE_FACTORY",
-        "examples.corpus_search.azure_security:build_default_store",
+
+def _install_oauth_auth(app: FastAPI) -> None:
+    """Install OAuthJWTMiddleware + public ``/.well-known/*`` discovery routes.
+
+    The concrete provider is injected via two factory env vars whose
+    values are ``"module.path:callable"`` specs, resolved by
+    :func:`_resolve_factory`:
+
+    * ``FIREFLY_MCP_VERIFIER_FACTORY`` — returns a ``TokenVerifier``.
+    * ``FIREFLY_MCP_METADATA_FACTORY`` — returns an ``OAuthMetadata``.
+
+    Defaults point at the Entra helpers in the corpus-search example so
+    Azure deployments keep working out of the box; operators on a
+    different IdP set the vars to their own factories and the framework
+    needs no Azure / Entra deps to run.
+    """
+    from fireflyframework_agentic.exposure.mcp.auth import (
+        OAuthJWTMiddleware,
+        add_oauth_metadata_routes,
     )
 
-    from fireflyframework_agentic.exposure.mcp.auth import CorpusAuthMiddleware
-    from fireflyframework_agentic.security.corpus_token import CorpusTokenCache
+    verifier_spec = os.environ.get(
+        "FIREFLY_MCP_VERIFIER_FACTORY",
+        "examples.corpus_search.azure_security:build_entra_verifier",
+    )
+    metadata_spec = os.environ.get(
+        "FIREFLY_MCP_METADATA_FACTORY",
+        "examples.corpus_search.azure_security:build_entra_metadata",
+    )
 
-    ttl = float(os.environ.get("FIREFLY_MCP_TOKEN_CACHE_TTL_SECONDS", "300"))
-    prefix = os.environ.get("FIREFLY_MCP_TOKEN_SECRET_PREFIX", "firefly-mcp-corpus-token-")
+    verifier = _resolve_factory(verifier_spec)()
+    metadata = _resolve_factory(metadata_spec)()
 
-    factory = _resolve_factory(factory_spec)
-    store = factory(vault_url=vault_url, prefix=prefix)
-    cache = CorpusTokenCache(ttl_seconds=ttl)
-    app.add_middleware(CorpusAuthMiddleware, store=store, cache=cache, mount_path="/mcp")
+    add_oauth_metadata_routes(app, metadata)
+
+    roles_claim = os.environ.get("FIREFLY_MCP_ROLES_CLAIM", "roles")
+    public_url = os.environ.get("FIREFLY_MCP_PUBLIC_URL", "").rstrip("/")
+    metadata_url = (
+        f"{public_url}/.well-known/oauth-protected-resource" if public_url else "/.well-known/oauth-protected-resource"
+    )
+
+    app.add_middleware(
+        OAuthJWTMiddleware,
+        verifier=verifier,
+        required_role_fn=_default_required_role,
+        roles_claim=roles_claim,
+        mount_path="/mcp",
+        metadata_url=metadata_url,
+    )
 
 
 def _resolve_factory(spec: str):
@@ -91,15 +127,15 @@ def _resolve_factory(spec: str):
 
     module_path, _, attr = spec.partition(":")
     if not module_path or not attr:
-        raise RuntimeError(f"FIREFLY_MCP_TOKEN_STORE_FACTORY must look like 'pkg.mod:callable', got {spec!r}")
+        raise RuntimeError(f"Factory spec must look like 'pkg.mod:callable', got {spec!r}")
     try:
         module = importlib.import_module(module_path)
     except ImportError as exc:
         raise RuntimeError(
-            f"Cannot import token-store factory module {module_path!r}: {exc}. "
-            "If you are using the default Azure-Key-Vault factory, install the "
-            "corpus_search example deps or point "
-            "FIREFLY_MCP_TOKEN_STORE_FACTORY at your own factory."
+            f"Cannot import factory module {module_path!r}: {exc}. "
+            "If you are using the default Entra factories, install the "
+            "corpus_search example deps or point the FIREFLY_MCP_*_FACTORY "
+            "env var at your own factory."
         ) from exc
     try:
         return getattr(module, attr)
@@ -150,7 +186,7 @@ def main() -> None:
 
     Loads ``.env`` from the current working directory (or any ancestor) so
     a developer running the server from a project directory gets its
-    variables (``EMBEDDING_MODEL``, ``FIREFLY_MCP_KEYVAULT_URL``, …)
+    variables (``EMBEDDING_MODEL``, ``AZURE_TENANT_ID``, …)
     without an explicit shell ``source``. ``usecwd=True`` anchors the
     search on cwd (the default would walk up from this module's
     install location, which is wrong for a CLI). Real environment

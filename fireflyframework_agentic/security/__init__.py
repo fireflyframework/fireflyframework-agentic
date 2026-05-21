@@ -20,12 +20,6 @@ This module provides:
 - **SQL injection** prevention for database tools
 """
 
-from fireflyframework_agentic.security.corpus_token import (
-    CorpusTokenCache,
-    CorpusTokenStore,
-    corpus_token_digest,
-    validate_corpus_id,
-)
 from fireflyframework_agentic.security.encryption import AESEncryptionProvider, EncryptedMemoryStore, EncryptionProvider
 from fireflyframework_agentic.security.output_guard import OutputGuard, default_output_guard
 from fireflyframework_agentic.security.prompt_guard import PromptGuard, default_prompt_guard
@@ -33,16 +27,12 @@ from fireflyframework_agentic.security.rbac import RBACManager, require_permissi
 
 __all__ = [
     "AESEncryptionProvider",
-    "CorpusTokenCache",
-    "CorpusTokenStore",
     "EncryptedMemoryStore",
     "EncryptionProvider",
     "OutputGuard",
     "PromptGuard",
     "RBACManager",
-    "corpus_token_digest",
     "default_output_guard",
     "default_prompt_guard",
     "require_permission",
-    "validate_corpus_id",
 ]
