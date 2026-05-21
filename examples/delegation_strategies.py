@@ -76,6 +76,10 @@ async def main() -> None:
     agents = [translator, analyst, writer]
 
     # ── 1. Round Robin ──────────────────────────────────────────────────
+    # Cycles through agents in order, ignoring the prompt. Useful for
+    # evenly distributing load when all agents are interchangeable.
+    # `decide()` returns the selection without running the agent — handy
+    # for inspecting routing behaviour cheaply.
     print("=== Round Robin Strategy ===\n")
     rr = DelegationRouter(agents, RoundRobinStrategy())
     for i in range(6):
@@ -84,12 +88,19 @@ async def main() -> None:
         print(f"  Request {i + 1} → routed to: {decision.chosen.name}")
 
     # ── 2. Capability-Based ─────────────────────────────────────────────
+    # Picks the agent whose `tags` include the required tag. Here only
+    # `translator` has "translation", so it always wins. `route()` is the
+    # one-liner: decide + run + return the agent's output in one call.
     print("\n=== Capability Strategy (tag='translation') ===\n")
     cap = DelegationRouter(agents, CapabilityStrategy(required_tag="translation"))
     result = await cap.route("Translate 'Good morning' to French.")
     print(f"  Output: {result.output}\n")
 
     # ── 3. Cost-Aware (show the full ranking, not just the winner) ──────
+    # Ranks agents by the price of their underlying model and picks the
+    # cheapest. Here all three agents use the same MODEL, so prices tie —
+    # the printed ranking exposes the score/reason the strategy assigned
+    # to each candidate (useful for debugging routing decisions).
     print("=== Cost-Aware Strategy ===\n")
     cost = DelegationRouter(agents, CostAwareStrategy())
     decision = await cost.decide("Simple classification: is this positive or negative?")
@@ -98,6 +109,10 @@ async def main() -> None:
     print()
 
     # ── 4. Content-Based (LLM routing) ──────────────────────────────────
+    # Uses a small LLM to read the prompt and pick the best-matching
+    # agent based on each agent's `description`. This is the only built-in
+    # strategy that costs an extra model call — use it when rules over
+    # tags/cost aren't expressive enough.
     print("=== Content-Based Strategy (LLM routing) ===\n")
     content = DelegationRouter(agents, ContentBasedStrategy(model="openai:gpt-4o-mini"))
     for prompt in [
