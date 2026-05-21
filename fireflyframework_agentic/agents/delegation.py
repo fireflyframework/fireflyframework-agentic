@@ -386,8 +386,7 @@ class CostAwareStrategy:
         unknown_candidates: list[Candidate] = []
         if self._on_unknown == "lowest":
             unknown_candidates = [
-                Candidate(agent=agent, score=0.0, reason="cost unknown (on_unknown='lowest')")
-                for agent in unknown
+                Candidate(agent=agent, score=0.0, reason="cost unknown (on_unknown='lowest')") for agent in unknown
             ]
 
         return RoutingDecision(
