@@ -14,12 +14,14 @@
 
 """Multi-agent delegation strategies example.
 
-Demonstrates:
-- ``DelegationRouter`` with four built-in strategies.
-- ``RoundRobinStrategy`` — cycles through agents evenly.
-- ``CapabilityStrategy`` — selects by tag matching.
-- ``CostAwareStrategy`` — picks the cheapest model.
-- ``ContentBasedStrategy`` — uses an LLM to route by prompt content.
+Demonstrates ``DelegationRouter`` with the four built-in strategies
+(``RoundRobinStrategy``, ``CapabilityStrategy``, ``CostAwareStrategy``,
+``ContentBasedStrategy``) plus one combinator (``ChainStrategy``). Shows
+both the ``route()`` one-liner and the ``decide()`` form used to inspect
+the full ranked candidate list.
+
+See ``docs/agents.md`` for the full API (decide/execute split, all three
+combinators, OTel decision event).
 
 Usage::
 
@@ -36,6 +38,7 @@ from dotenv import load_dotenv
 from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.agents.delegation import (
     CapabilityStrategy,
+    ChainStrategy,
     ContentBasedStrategy,
     CostAwareStrategy,
     DelegationRouter,
@@ -44,29 +47,30 @@ from fireflyframework_agentic.agents.delegation import (
 
 load_dotenv()
 
-MODEL = os.environ["MODEL"]
+# Three distinct model tiers so CostAwareStrategy has real spread to rank.
+MODEL_CHEAP = os.environ["MODEL_CHEAP"]
+MODEL_MED = os.environ["MODEL_MED"]
+MODEL_EXPENSIVE = os.environ["MODEL_EXPENSIVE"]
 
 
 async def main() -> None:
-
-    # Create specialised agents with different models and tags
     translator = FireflyAgent(
         name="translator",
-        model="openai:gpt-4o-mini",
+        model=MODEL_CHEAP,
         instructions="You are a professional translator.",
         tags=["translation", "languages"],
         description="Translates text between languages",
     )
     analyst = FireflyAgent(
         name="analyst",
-        model=MODEL,
+        model=MODEL_MED,
         instructions="You are a data analyst. Provide concise insights.",
         tags=["analysis", "data"],
         description="Analyses data and provides insights",
     )
     writer = FireflyAgent(
         name="writer",
-        model="openai:gpt-4o-mini",
+        model=MODEL_EXPENSIVE,
         instructions="You are a creative writer.",
         tags=["creative", "writing"],
         description="Writes creative content",
@@ -75,46 +79,71 @@ async def main() -> None:
     agents = [translator, analyst, writer]
 
     # ── 1. Round Robin ──────────────────────────────────────────────────
+    # Cycles through agents in order, ignoring the prompt. Useful for
+    # evenly distributing load when all agents are interchangeable.
+    # `decide()` returns the selection without running the agent — handy
+    # for inspecting routing behaviour cheaply.
     print("=== Round Robin Strategy ===\n")
     rr = DelegationRouter(agents, RoundRobinStrategy())
     for i in range(6):
         prompt = f"Request #{i + 1}: Hello!"
-        agent = (await rr.decide(prompt)).chosen  # Inspect selection.
-        result = await agent.run(prompt)
-        print(f"  Request {i + 1} → routed to: {agent.name}")
+        decision = await rr.decide(prompt)
+        print(f"  Request {i + 1} → routed to: {decision.chosen.name}")
 
     # ── 2. Capability-Based ─────────────────────────────────────────────
+    # Picks the agent whose `tags` include the required tag. Here only
+    # `translator` has "translation", so it always wins. `route()` is the
+    # one-liner: decide + run + return the agent's output in one call.
     print("\n=== Capability Strategy (tag='translation') ===\n")
     cap = DelegationRouter(agents, CapabilityStrategy(required_tag="translation"))
-    prompt = "Translate 'Good morning' to French."
-    agent = (await cap.decide(prompt)).chosen
-    result = await agent.run(prompt)
-    print(f"  Routed to: {agent.name}")
-    print(f"  Output   : {result.output}\n")
+    result = await cap.route("Translate 'Good morning' to French.")
+    print(f"  Output: {result.output}\n")
 
-    # ── 3. Cost-Aware ───────────────────────────────────────────────────
+    # ── 3. Cost-Aware (show the full ranking, not just the winner) ──────
+    # Ranks agents by the price of their underlying model and picks the
+    # cheapest. Each agent uses a different tier (cheap/med/expensive),
+    # so the printed ranking shows real spread — score 1.00 is the
+    # cheapest, 0.00 the most expensive, with the reason explaining
+    # the price relative to the pool min/max.
     print("=== Cost-Aware Strategy ===\n")
     cost = DelegationRouter(agents, CostAwareStrategy())
-    prompt = "Simple classification: is this positive or negative?"
-    agent = (await cost.decide(prompt)).chosen
-    result = await agent.run(prompt)
-    print(f"  Routed to: {agent.name} (cheapest model)")
-    print(f"  Output   : {result.output}\n")
+    decision = await cost.decide("Simple classification: is this positive or negative?")
+    for c in decision.candidates:
+        print(f"  {c.agent.name:11} ({c.agent.model_identifier:25}) score={c.score:.2f}  {c.reason}")
+    print()
 
     # ── 4. Content-Based (LLM routing) ──────────────────────────────────
+    # Uses a small LLM to read the prompt and pick the best-matching
+    # agent based on each agent's `description`. This is the only built-in
+    # strategy that costs an extra model call — use it when rules over
+    # tags/cost aren't expressive enough.
     print("=== Content-Based Strategy (LLM routing) ===\n")
-    content = DelegationRouter(agents, ContentBasedStrategy(model="openai:gpt-4o-mini"))
-    prompts = [
-        "Translate this document to Spanish.",
-        "Analyse the sales trends from Q4.",
+    content = DelegationRouter(agents, ContentBasedStrategy(model=MODEL_CHEAP))
+    for prompt in [
+        "Translate 'Good night' to Spanish.",
+        "Analyse these Q4 sales: Jan 120, Feb 95, Mar 140.",
         "Write a haiku about autumn leaves.",
-    ]
-    for prompt in prompts:
-        agent = (await content.decide(prompt)).chosen
-        result = await agent.run(prompt)
+    ]:
+        decision = await content.decide(prompt)
+        result = await content.execute(decision, prompt)
         print(f"  Prompt   : {prompt}")
-        print(f"  Routed to: {agent.name}")
+        print(f"  Routed to: {decision.chosen.name}")
         print(f"  Output   : {result.output[:100]}...\n")
+
+    # ── 5. ChainStrategy: capability-filter, then cheapest ──────────────
+    # Strategies run in order, each narrowing the candidate pool:
+    #   1. CapabilityStrategy(required_tag="translation") keeps only agents
+    #      tagged "translation" (here: just the `translator` agent).
+    #   2. CostAwareStrategy ranks the survivors by model price and picks
+    #      the cheapest.
+    # Use chains when one rule isn't enough — e.g. "must be able to do X,
+    # and among those that can, pick the cheapest / fastest / least loaded".
+    print("=== Chain Strategy (capability → cost-aware) ===\n")
+    chain = ChainStrategy(CapabilityStrategy(required_tag="translation"), CostAwareStrategy())
+    router = DelegationRouter(agents, chain)
+    decision = await router.decide("Translate 'Thank you' to Japanese.")
+    print(f"  Survivors after capability filter: {[c.agent.name for c in decision.candidates]}")
+    print(f"  Chosen (cheapest survivor)       : {decision.chosen.name}")
 
 
 if __name__ == "__main__":
