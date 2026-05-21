@@ -360,28 +360,40 @@ class CostAwareStrategy:
             else:
                 priced.append((agent, cost))
 
-        candidates: list[Candidate] = []
+        # Priced agents are normalised to [0.0, 1.0]; the most expensive priced
+        # agent scores 0.0. Unknown agents (under on_unknown="lowest") also score
+        # 0.0 — same numeric value, different meaning. To preserve the
+        # "priced beats unknown" intent without leaking a sentinel score outside
+        # the [0, 1] contract, sort priced and unknown independently and then
+        # concatenate: ordering encodes preference, score stays honest about
+        # confidence. Consumers blending via WeightedStrategy still see 0.0 for
+        # both buckets — per-Candidate metadata (not score) is the right place
+        # to disambiguate them if needed.
+        priced_candidates: list[Candidate] = []
         if priced:
             costs = [c for _, c in priced]
             lo, hi = min(costs), max(costs)
             span = hi - lo
             for agent, cost in priced:
                 score = 1.0 if span == 0 else 1.0 - (cost - lo) / span
-                candidates.append(
+                priced_candidates.append(
                     Candidate(
                         agent=agent,
                         score=score,
                         reason=f"cost ${cost:.6f} (pool min ${lo:.6f}, max ${hi:.6f})",
                     )
                 )
+            priced_candidates.sort(key=lambda c: c.score, reverse=True)
 
+        unknown_candidates: list[Candidate] = []
         if self._on_unknown == "lowest":
-            for agent in unknown:
-                candidates.append(Candidate(agent=agent, score=0.0, reason="cost unknown (on_unknown='lowest')"))
+            unknown_candidates = [
+                Candidate(agent=agent, score=0.0, reason="cost unknown (on_unknown='lowest')")
+                for agent in unknown
+            ]
 
-        candidates.sort(key=lambda c: c.score, reverse=True)
         return RoutingDecision(
-            candidates=tuple(candidates),
+            candidates=tuple(priced_candidates + unknown_candidates),
             strategy=type(self).__name__,
             metadata={
                 "priced_count": len(priced),
