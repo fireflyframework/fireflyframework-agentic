@@ -129,7 +129,7 @@ async def run_with_fallback(
 
     fallback.reset()
     original_model = agent.agent.model
-    original_identifier = agent._model_identifier
+    original_identifier = agent.model_identifier
     last_error: Exception | None = None
 
     while True:
@@ -146,10 +146,10 @@ async def run_with_fallback(
                 break
             # Swap the underlying model on the pydantic_ai agent
             agent.agent.model = next_model
-            agent._model_identifier = get_model_identifier(next_model)
+            agent.model_identifier = get_model_identifier(next_model)
 
     # Restore the original model regardless of outcome
     agent.agent.model = original_model
-    agent._model_identifier = original_identifier
+    agent.model_identifier = original_identifier
     fallback.reset()
     raise last_error  # type: ignore[misc]

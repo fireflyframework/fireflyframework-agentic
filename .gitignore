@@ -113,6 +113,7 @@ logs/
 # Claude Code
 .claude/
 CLAUDE.md
+.mcp.json
 
 # AntiGravity / misc tools
 .antigravity/
@@ -141,5 +142,5 @@ docs/plans/
 # `examples/corpus_search/test_queries.template.md` is the in-repo template)
 examples/corpus_search/test_queries.md
 examples/corpus_search/test_queries.local.md
-docs/superpowers/specs/*-run-report.md
-docs/superpowers/specs/*-query-results.json
+docs/superpowers/
+PLAYGROUND.md

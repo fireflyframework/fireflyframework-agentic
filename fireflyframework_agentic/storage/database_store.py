@@ -129,6 +129,18 @@ class DatabaseStore:
     def cache_path(self) -> Path:
         return self._cache_path
 
+    async def exists(self) -> bool:
+        """Return whether the canonical artifact exists in the backend.
+
+        Cheaper than :meth:`ensure_fresh` when the caller only needs to
+        decide between "does the corpus exist" and "raise not-found" —
+        no download, no etag reconciliation. Reflects whatever the
+        backend reports right now; concurrent writers may flip the
+        answer between this call and a subsequent read.
+        """
+        meta = await self._backend.metadata()
+        return meta.exists
+
     async def ensure_fresh(self) -> tuple[Path, int]:
         async with self._inproc_lock:
             now = time.monotonic()

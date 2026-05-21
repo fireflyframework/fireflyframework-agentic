@@ -775,7 +775,10 @@ async def test_corpus_query_strategy_fast_keeps_legacy_response_shape(
 
     # Make _assert_corpus_exists a no-op so we don't need to materialise a
     # corpus.sqlite — we're only testing the response-shape contract here.
-    monkeypatch.setattr(corpus_rag, "_assert_corpus_exists", lambda corpus_id: None)
+    async def _noop_assert(corpus_id: str) -> None:
+        return None
+
+    monkeypatch.setattr(corpus_rag, "_assert_corpus_exists", _noop_assert)
 
     class _StubAgent:
         async def query(self, question, *, top_k=5, include_trace=True):
@@ -806,7 +809,10 @@ async def test_corpus_query_strategy_reasoning_with_trace(
     from fireflyframework_agentic.tools.builtins import corpus_rag
     from fireflyframework_agentic.tools.builtins.corpus_rag import corpus_query
 
-    monkeypatch.setattr(corpus_rag, "_assert_corpus_exists", lambda corpus_id: None)
+    async def _noop_assert(corpus_id: str) -> None:
+        return None
+
+    monkeypatch.setattr(corpus_rag, "_assert_corpus_exists", _noop_assert)
 
     trace = ReasoningTrace(pattern_name="reasoning_answerer")
     trace.add_step(ActionStep(tool_name="knowledge_search", tool_args={"query": "x"}))
@@ -838,7 +844,10 @@ async def test_corpus_query_reasoning_returns_trace_by_default(
     from fireflyframework_agentic.tools.builtins import corpus_rag
     from fireflyframework_agentic.tools.builtins.corpus_rag import corpus_query
 
-    monkeypatch.setattr(corpus_rag, "_assert_corpus_exists", lambda corpus_id: None)
+    async def _noop_assert(corpus_id: str) -> None:
+        return None
+
+    monkeypatch.setattr(corpus_rag, "_assert_corpus_exists", _noop_assert)
 
     trace = ReasoningTrace(pattern_name="reasoning_answerer")
     trace.add_step(ActionStep(tool_name="sql_query", tool_args={"question": "x"}))
@@ -868,7 +877,10 @@ async def test_corpus_query_include_trace_false_opts_out(configured_env: Path, m
     from fireflyframework_agentic.tools.builtins import corpus_rag
     from fireflyframework_agentic.tools.builtins.corpus_rag import corpus_query
 
-    monkeypatch.setattr(corpus_rag, "_assert_corpus_exists", lambda corpus_id: None)
+    async def _noop_assert(corpus_id: str) -> None:
+        return None
+
+    monkeypatch.setattr(corpus_rag, "_assert_corpus_exists", _noop_assert)
 
     trace = ReasoningTrace(pattern_name="reasoning_answerer")
     trace.add_step(ActionStep(tool_name="sql_query", tool_args={"question": "x"}))
