@@ -204,12 +204,14 @@ class ContentBasedStrategy:
 
     The strategy builds a short description of each agent (from its
     ``name`` and ``description`` attributes) and asks the routing model
-    to rank them.
+    to pick the single best-suited index.
 
-    Score comes from the LLM's confidence when supplied, else
-    ``1.0 / rank``. On LLM failure the strategy returns an empty
-    decision so :class:`FallbackStrategy` can take over (it does NOT
-    silently return the first agent).
+    Returns a one-candidate decision with ``score=1.0`` (the LLM is not
+    asked for ranks or confidences, so no per-agent ranking is exposed
+    — treat blends via :class:`WeightedStrategy` accordingly). On LLM
+    failure, non-numeric response, or out-of-range index the strategy
+    returns an empty decision so :class:`FallbackStrategy` can take
+    over (it does NOT silently return the first agent).
 
     Parameters:
         model: A *pydantic-ai* model name used for the routing decision
