@@ -701,13 +701,22 @@ class DelegationRouter:
     async def route(
         self,
         prompt: str | Sequence[UserContent],
-        **kwargs: Any,
+        *,
+        deps: Any = None,
+        decide_kwargs: Mapping[str, Any] | None = None,
+        **run_kwargs: Any,
     ) -> Any:
         """Convenience: :meth:`decide` then :meth:`execute`.
 
-        Existing callers using ``await router.route(prompt)`` keep
-        working unchanged.
+        ``**run_kwargs`` are forwarded only to the chosen agent's ``run``;
+        strategy-specific kwargs go through the explicit ``decide_kwargs``
+        mapping. Splitting the two avoids the previous ambiguity where the
+        same kwargs were forwarded to both layers (and a kwarg the
+        strategy consumed but the agent did not — or vice versa — raised
+        ``TypeError`` from the wrong side).
+
+        Existing callers using ``await router.route(prompt)`` or
+        ``await router.route(prompt, deps=...)`` keep working unchanged.
         """
-        deps = kwargs.pop("deps", None)
-        decision = await self.decide(prompt, **kwargs)
-        return await self.execute(decision, prompt, deps=deps, **kwargs)
+        decision = await self.decide(prompt, **(decide_kwargs or {}))
+        return await self.execute(decision, prompt, deps=deps, **run_kwargs)
