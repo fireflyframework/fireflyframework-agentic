@@ -47,27 +47,30 @@ from fireflyframework_agentic.agents.delegation import (
 
 load_dotenv()
 
-MODEL = os.environ["MODEL"]
+# Three distinct model tiers so CostAwareStrategy has real spread to rank.
+MODEL_CHEAP = os.environ["MODEL_CHEAP"]
+MODEL_MED = os.environ["MODEL_MED"]
+MODEL_EXPENSIVE = os.environ["MODEL_EXPENSIVE"]
 
 
 async def main() -> None:
     translator = FireflyAgent(
         name="translator",
-        model=MODEL,
+        model=MODEL_CHEAP,
         instructions="You are a professional translator.",
         tags=["translation", "languages"],
         description="Translates text between languages",
     )
     analyst = FireflyAgent(
         name="analyst",
-        model=MODEL,
+        model=MODEL_MED,
         instructions="You are a data analyst. Provide concise insights.",
         tags=["analysis", "data"],
         description="Analyses data and provides insights",
     )
     writer = FireflyAgent(
         name="writer",
-        model=MODEL,
+        model=MODEL_EXPENSIVE,
         instructions="You are a creative writer.",
         tags=["creative", "writing"],
         description="Writes creative content",
@@ -98,9 +101,10 @@ async def main() -> None:
 
     # ── 3. Cost-Aware (show the full ranking, not just the winner) ──────
     # Ranks agents by the price of their underlying model and picks the
-    # cheapest. Here all three agents use the same MODEL, so prices tie —
-    # the printed ranking exposes the score/reason the strategy assigned
-    # to each candidate (useful for debugging routing decisions).
+    # cheapest. Each agent uses a different tier (cheap/med/expensive),
+    # so the printed ranking shows real spread — score 1.00 is the
+    # cheapest, 0.00 the most expensive, with the reason explaining
+    # the price relative to the pool min/max.
     print("=== Cost-Aware Strategy ===\n")
     cost = DelegationRouter(agents, CostAwareStrategy())
     decision = await cost.decide("Simple classification: is this positive or negative?")
@@ -114,14 +118,16 @@ async def main() -> None:
     # strategy that costs an extra model call — use it when rules over
     # tags/cost aren't expressive enough.
     print("=== Content-Based Strategy (LLM routing) ===\n")
-    content = DelegationRouter(agents, ContentBasedStrategy(model=MODEL))
+    content = DelegationRouter(agents, ContentBasedStrategy(model=MODEL_CHEAP))
     for prompt in [
-        "Translate this document to Spanish.",
-        "Analyse the sales trends from Q4.",
+        "Translate 'Good night' to Spanish.",
+        "Analyse these Q4 sales: Jan 120, Feb 95, Mar 140.",
         "Write a haiku about autumn leaves.",
     ]:
-        result = await content.route(prompt)
+        decision = await content.decide(prompt)
+        result = await content.execute(decision, prompt)
         print(f"  Prompt   : {prompt}")
+        print(f"  Routed to: {decision.chosen.name}")
         print(f"  Output   : {result.output[:100]}...\n")
 
     # ── 5. ChainStrategy: capability-filter, then cheapest ──────────────
