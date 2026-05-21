@@ -114,7 +114,7 @@ async def main() -> None:
     # strategy that costs an extra model call — use it when rules over
     # tags/cost aren't expressive enough.
     print("=== Content-Based Strategy (LLM routing) ===\n")
-    content = DelegationRouter(agents, ContentBasedStrategy(model="openai:gpt-4o-mini"))
+    content = DelegationRouter(agents, ContentBasedStrategy(model=MODEL))
     for prompt in [
         "Translate this document to Spanish.",
         "Analyse the sales trends from Q4.",
