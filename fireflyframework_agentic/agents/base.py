@@ -142,7 +142,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         # Keep the original model identifier for cost tracking.
         from fireflyframework_agentic.model_utils import get_model_identifier
 
-        self._model_identifier: str = get_model_identifier(resolved_model)
+        self.model_identifier: str = get_model_identifier(resolved_model)
 
         self._memory = memory
 
@@ -253,7 +253,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             method="run",
             deps=deps,
             kwargs=kwargs,
-            model=self._model_identifier,
+            model=self.model_identifier,
             context=context,
         )
         await self._middleware.run_before(mw_ctx)
@@ -299,7 +299,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             method="run_sync",
             deps=deps,
             kwargs=kwargs,
-            model=self._model_identifier,
+            model=self.model_identifier,
             context=context,
         )
         if len(self._middleware) > 0:
@@ -359,7 +359,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             method="run_stream",
             deps=deps,
             kwargs=kwargs,
-            model=self._model_identifier,
+            model=self.model_identifier,
             context=context,
         )
         await self._middleware.run_before(mw_ctx)
@@ -447,7 +447,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             cache_read = getattr(usage, "cache_read_tokens", 0) or 0
 
             default_usage_tracker.record_call(
-                model=self._model_identifier,
+                model=self.model_identifier,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 cache_creation_tokens=cache_creation,
@@ -458,7 +458,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
                 latency_ms=elapsed_ms,
                 scope_ctx=ScopeContext(
                     agent=self._name,
-                    model=self._model_identifier,
+                    model=self.model_identifier,
                     correlation_id=correlation_id,
                 ),
             )
@@ -511,7 +511,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             method="run_with_reasoning",
             deps=None,
             kwargs=kwargs,
-            model=self._model_identifier,
+            model=self.model_identifier,
             context=context,
         )
         await self._middleware.run_before(mw_ctx)
@@ -614,7 +614,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
                 max_delay=max_delay,
             )
 
-        key = self._model_identifier
+        key = self.model_identifier
 
         for attempt in range(max_retries + 1):
             try:
