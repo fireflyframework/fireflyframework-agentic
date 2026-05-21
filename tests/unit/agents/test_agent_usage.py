@@ -85,7 +85,7 @@ class TestAgentRecordUsage:
 
     def test_record_usage_cost_calculation(self):
         agent = FireflyAgent(name="cost-test", model="test", auto_register=False)
-        agent._model_identifier = "openai:gpt-4o"  # exercise real pricing path without API key
+        agent.model_identifier = "openai:gpt-4o"  # exercise real pricing path without API key
         tracker = UsageTracker()
         fake_result = _FakeResult(usage=_FakeUsage(input_tokens=1000, output_tokens=500, total_tokens=1500))
 

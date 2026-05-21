@@ -50,12 +50,12 @@ class _FakeAgent:
     def __init__(
         self,
         name: str,
-        model_name: str = "",
+        model_identifier: str = "",
         tags: tuple[str, ...] = (),
         description: str = "",
     ) -> None:
         self.name = name
-        self.model_name = model_name
+        self.model_identifier = model_identifier
         self.tags = tags
         self.description = description
         self.run_calls: list[tuple[Any, Any]] = []
@@ -67,14 +67,14 @@ class _FakeAgent:
 
 def _fake(
     name: str,
-    model_name: str = "",
+    model_identifier: str = "",
     tags: tuple[str, ...] = (),
     description: str = "",
 ) -> FireflyAgent[Any, Any]:
     """Create a `_FakeAgent` typed as `FireflyAgent` for routing tests."""
     return cast(
         "FireflyAgent[Any, Any]",
-        _FakeAgent(name=name, model_name=model_name, tags=tags, description=description),
+        _FakeAgent(name=name, model_identifier=model_identifier, tags=tags, description=description),
     )
 
 
@@ -202,7 +202,7 @@ async def test_content_based_llm_failure_returns_empty():
 @pytest.mark.asyncio
 async def test_cost_aware_single_agent_score_one():
     strategy = CostAwareStrategy(resolvers=[_fixed_cost({"m1": 0.001})])
-    agents = [_fake("only", model_name="m1")]
+    agents = [_fake("only", model_identifier="m1")]
     decision = await strategy.decide(agents, "p")
     assert len(decision.candidates) == 1
     assert decision.candidates[0].score == 1.0
@@ -212,9 +212,9 @@ async def test_cost_aware_single_agent_score_one():
 async def test_cost_aware_pool_relative_normalisation():
     strategy = CostAwareStrategy(resolvers=[_fixed_cost({"cheap": 0.001, "mid": 0.002, "exp": 0.003})])
     agents = [
-        _fake("exp", model_name="exp"),
-        _fake("cheap", model_name="cheap"),
-        _fake("mid", model_name="mid"),
+        _fake("exp", model_identifier="exp"),
+        _fake("cheap", model_identifier="cheap"),
+        _fake("mid", model_identifier="mid"),
     ]
     decision = await strategy.decide(agents, "p")
     names = [c.agent.name for c in decision.candidates]
@@ -229,8 +229,8 @@ async def test_cost_aware_pool_relative_normalisation():
 async def test_cost_aware_all_equal_costs_all_score_one():
     strategy = CostAwareStrategy(resolvers=[_fixed_cost({"m": 0.005})])
     agents = [
-        _fake("a", model_name="m"),
-        _fake("b", model_name="m"),
+        _fake("a", model_identifier="m"),
+        _fake("b", model_identifier="m"),
     ]
     decision = await strategy.decide(agents, "p")
     assert all(c.score == 1.0 for c in decision.candidates)
@@ -243,8 +243,8 @@ async def test_cost_aware_on_unknown_skip():
         on_unknown="skip",
     )
     agents = [
-        _fake("known", model_name="known"),
-        _fake("unknown", model_name="never-priced"),
+        _fake("known", model_identifier="known"),
+        _fake("unknown", model_identifier="never-priced"),
     ]
     decision = await strategy.decide(agents, "p")
     names = [c.agent.name for c in decision.candidates]
@@ -258,8 +258,8 @@ async def test_cost_aware_on_unknown_lowest():
         on_unknown="lowest",
     )
     agents = [
-        _fake("known", model_name="known"),
-        _fake("unknown", model_name="never-priced"),
+        _fake("known", model_identifier="known"),
+        _fake("unknown", model_identifier="never-priced"),
     ]
     decision = await strategy.decide(agents, "p")
     names = [c.agent.name for c in decision.candidates]
@@ -276,8 +276,8 @@ async def test_cost_aware_on_unknown_raise():
         on_unknown="raise",
     )
     agents = [
-        _fake("known", model_name="known"),
-        _fake("unknown", model_name="never-priced"),
+        _fake("known", model_identifier="known"),
+        _fake("unknown", model_identifier="never-priced"),
     ]
     with pytest.raises(UnknownModelCostError):
         await strategy.decide(agents, "p")
@@ -299,7 +299,7 @@ async def test_cost_aware_resolver_chain_override_used():
         return 0.01
 
     strategy = CostAwareStrategy(resolvers=[tracking_resolver])
-    agents = [_fake("a", model_name="x"), _fake("b", model_name="y")]
+    agents = [_fake("a", model_identifier="x"), _fake("b", model_identifier="y")]
     await strategy.decide(agents, "p")
     assert calls == ["x", "y"]
 
@@ -314,9 +314,9 @@ async def test_chain_narrows_across_stages():
     cost = CostAwareStrategy(resolvers=[_fixed_cost({"cheap": 0.001, "exp": 0.01})])
     chain = ChainStrategy(cap, cost)
     agents = [
-        _fake("a", model_name="exp", tags=("vision",)),
-        _fake("b", model_name="cheap", tags=("vision",)),
-        _fake("c", model_name="cheap", tags=("text",)),
+        _fake("a", model_identifier="exp", tags=("vision",)),
+        _fake("b", model_identifier="cheap", tags=("vision",)),
+        _fake("c", model_identifier="cheap", tags=("text",)),
     ]
     decision = await chain.decide(agents, "p")
     names = [c.agent.name for c in decision.candidates]

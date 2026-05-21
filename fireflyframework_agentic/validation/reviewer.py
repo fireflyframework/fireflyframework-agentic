@@ -311,7 +311,7 @@ class RubricReviewer:
         return self._revision_prompt.format(gaps=gap_text, original_prompt=str(original_prompt))
 
     def _make_default_grader(self, generator: AgentLike) -> AgentLike:
-        model = getattr(generator, "_model_identifier", None)
+        model = getattr(generator, "model_identifier", None)
         return FireflyAgent("rubric-grader", model=model, instructions=_GRADER_SYSTEM_PROMPT)
 
 

@@ -324,11 +324,10 @@ class CostAwareStrategy:
 
     def _agent_cost(self, agent: FireflyAgent[Any, Any]) -> float | None:
         """Compute the synthetic per-call cost for *agent*."""
-        model_name = getattr(agent, "model_name", "") or getattr(agent, "_model_identifier", "")
-        if not model_name:
+        if not agent.model_identifier:
             return None
         ctx = CostContext(
-            model=model_name,
+            model=agent.model_identifier,
             input_tokens=self._sample_input_tokens,
             output_tokens=self._sample_output_tokens,
             cache_creation_tokens=self._sample_cache_creation_tokens,
@@ -354,8 +353,7 @@ class CostAwareStrategy:
             cost = self._agent_cost(agent)
             if cost is None:
                 if self._on_unknown == "raise":
-                    model_name = getattr(agent, "model_name", "") or getattr(agent, "_model_identifier", "")
-                    raise UnknownModelCostError(model_name or "<unknown>")
+                    raise UnknownModelCostError(agent.model_identifier or "<unknown>")
                 unknown.append(agent)
             else:
                 priced.append((agent, cost))
