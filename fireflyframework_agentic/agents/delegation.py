@@ -504,6 +504,17 @@ class WeightedStrategy:
 
     Final candidates are filtered by ``min_score`` and ranked descending.
 
+    .. note::
+        Agents are deduped by Python object identity (``id(agent)``).
+        Every child strategy must return the *same* ``FireflyAgent``
+        instances that were passed in — wrapped, forked, or freshly
+        constructed copies will be treated as different agents and the
+        blend will silently double-count or drop contributions. The
+        agent pool itself must also contain each logical agent only
+        once; a pool with two references to the same object is fine,
+        a pool with two distinct objects representing the same logical
+        agent is not.
+
     Parameters:
         *weighted: ``(strategy, weight)`` pairs, one per child strategy.
         min_score: Drop candidates whose blended score is below this
