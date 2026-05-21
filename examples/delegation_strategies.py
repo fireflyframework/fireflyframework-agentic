@@ -110,12 +110,19 @@ async def main() -> None:
         print(f"  Output   : {result.output[:100]}...\n")
 
     # ── 5. ChainStrategy: capability-filter, then cheapest ──────────────
+    # Strategies run in order, each narrowing the candidate pool:
+    #   1. CapabilityStrategy(required_tag="translation") keeps only agents
+    #      tagged "translation" (here: just the `translator` agent).
+    #   2. CostAwareStrategy ranks the survivors by model price and picks
+    #      the cheapest.
+    # Use chains when one rule isn't enough — e.g. "must be able to do X,
+    # and among those that can, pick the cheapest / fastest / least loaded".
     print("=== Chain Strategy (capability → cost-aware) ===\n")
     chain = ChainStrategy(CapabilityStrategy(required_tag="translation"), CostAwareStrategy())
-    chained = DelegationRouter(agents, chain)
-    decision = await chained.decide("Translate 'Thank you' to Japanese.")
-    print(f"  Survivors after chain: {[c.agent.name for c in decision.candidates]}")
-    print(f"  Chosen: {decision.chosen.name}")
+    router = DelegationRouter(agents, chain)
+    decision = await router.decide("Translate 'Thank you' to Japanese.")
+    print(f"  Survivors after capability filter: {[c.agent.name for c in decision.candidates]}")
+    print(f"  Chosen (cheapest survivor)       : {decision.chosen.name}")
 
 
 if __name__ == "__main__":
