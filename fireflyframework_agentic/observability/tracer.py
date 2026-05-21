@@ -94,6 +94,21 @@ class FireflyTracer:
         ) as span:
             yield span
 
+    def event(self, name: str, **attributes: Any) -> None:
+        """Attach an instantaneous event to the currently active span.
+
+        Use this for zero-duration annotations (e.g. routing decisions,
+        cache hits, retries) instead of opening an empty span. No-op when
+        no span is active.
+        """
+        span = trace.get_current_span()
+        if span is None:
+            return
+        span.add_event(
+            name,
+            attributes={f"firefly.{k}": str(v) for k, v in attributes.items()},
+        )
+
     @staticmethod
     def set_error(span: Span, error: Exception) -> None:
         """Record an exception on the span and set error status."""
