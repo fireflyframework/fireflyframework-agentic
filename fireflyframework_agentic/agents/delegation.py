@@ -88,7 +88,7 @@ class RoutingDecision:
 
     candidates: tuple[Candidate, ...]
     strategy: str
-    metadata: Mapping[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def chosen(self) -> FireflyAgent[Any, Any]:
@@ -584,7 +584,7 @@ class WeightedStrategy:
         )
 
 
-# -- Router ------------------------------------------------------------------
+# -- Helpers -----------------------------------------------------------------
 
 
 def _coerce_otel_value(value: Any) -> Any:
@@ -592,6 +592,8 @@ def _coerce_otel_value(value: Any) -> Any:
 
     OTel accepts ``str``, ``int``, ``float``, ``bool``, and homogeneous
     sequences of those. Anything else is serialised to a JSON string.
+    Nested containers are *not* coerced element-wise — the whole value
+    falls through to ``json.dumps`` once, keeping the helper trivial.
     """
     if isinstance(value, (str, int, float, bool)):
         return value
@@ -601,6 +603,9 @@ def _coerce_otel_value(value: Any) -> Any:
         return json.dumps(value, default=str, sort_keys=True)
     except (TypeError, ValueError):
         return str(value)
+
+
+# -- Router ------------------------------------------------------------------
 
 
 class DelegationRouter:
