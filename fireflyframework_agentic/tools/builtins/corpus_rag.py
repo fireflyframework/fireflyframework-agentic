@@ -472,13 +472,12 @@ async def knowledge_search(corpus_id: str, question: str, top_k: int = 5) -> dic
         "strategy='reasoning': tool-using agent that plans its own retrieval "
         "and can call knowledge_search, sql_query, inspect_table, and a "
         "restricted python_compute sandbox. More LLM turns, more capable on "
-        "multi-step / quantitative questions. The response includes a typed "
-        "ReasoningTrace by default (include_trace=true) — every ActionStep "
-        "carries tool_name + tool_args and can be re-executed manually to "
-        "reproduce the answer. Pass include_trace=false to suppress it "
-        "(smaller payload). The fast path never carries a trace regardless "
-        "of include_trace, so existing fast-path response shapes are "
-        "unchanged."
+        "multi-step / quantitative questions. Pass include_trace=true to "
+        "receive a typed ReasoningTrace alongside the answer — every "
+        "ActionStep carries tool_name + tool_args and can be re-executed "
+        "manually to reproduce the answer. The fast path never carries a "
+        "trace regardless of include_trace, so existing fast-path response "
+        "shapes are unchanged."
     ),
     tags=("rag", "query"),
 )
@@ -487,7 +486,7 @@ async def corpus_query(
     question: str,
     top_k: int = 5,
     strategy: Literal["fast", "reasoning"] = "fast",
-    include_trace: bool = True,
+    include_trace: bool = False,
 ) -> dict[str, Any]:
     await _assert_corpus_exists(corpus_id)
     agent = await _agent_for(corpus_id, strategy=strategy)
