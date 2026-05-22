@@ -763,11 +763,10 @@ async def test_corpus_query_strategy_fast_keeps_legacy_response_shape(
     """Default strategy must not surface reasoning_trace; existing MCP clients
     see the same JSON shape they did before this feature landed.
 
-    Note: as of the include_trace=True default, MCP propagates include_trace
-    to ``agent.query()`` even on the fast path — but the fast path never
-    populates ``Answer.reasoning_trace`` (it stays None), so the serialised
-    payload never carries the field. The legacy response shape is preserved
-    *by construction*, not by suppression at the MCP boundary.
+    The fast path never populates ``Answer.reasoning_trace`` (it stays None),
+    so the serialised payload never carries the field. The legacy response
+    shape is preserved *by construction*, not by suppression at the MCP
+    boundary.
     """
     from fireflyframework_agentic.rag.retrieval.answerer import Answer, CitedSource
     from fireflyframework_agentic.tools.builtins import corpus_rag
@@ -830,14 +829,13 @@ async def test_corpus_query_strategy_reasoning_with_trace(
 
 
 @pytest.mark.asyncio
-async def test_corpus_query_reasoning_returns_trace_by_default(
+async def test_corpus_query_reasoning_omits_trace_by_default(
     configured_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """include_trace defaults to True at the MCP boundary — a caller that
-    asks for the reasoning strategy WITHOUT explicitly passing
-    include_trace must still get the trace in the response. This is the
-    new default and the reason the previous version (default False) often
-    surprised operators who expected the trace to be there.
+    """include_trace defaults to False at the MCP boundary. A caller that
+    asks for the reasoning strategy without explicitly opting in must NOT
+    receive the trace — it can be tens of KB and most callers don't read
+    it. Opt-in is verified by ``test_corpus_query_strategy_reasoning_with_trace``.
     """
     from fireflyframework_agentic.rag.retrieval.answerer import Answer
     from fireflyframework_agentic.reasoning.trace import ActionStep, ReasoningTrace
@@ -853,17 +851,16 @@ async def test_corpus_query_reasoning_returns_trace_by_default(
     trace.add_step(ActionStep(tool_name="sql_query", tool_args={"question": "x"}))
 
     class _StubAgent:
-        async def query(self, question, *, top_k=5, include_trace=True):
-            assert include_trace is True, (
-                "include_trace must default to True on the reasoning path so callers see the trace without opting in"
+        async def query(self, question, *, top_k=5, include_trace=False):
+            assert include_trace is False, (
+                "include_trace must default to False on the reasoning path — opt-in only"
             )
-            return Answer(text="ok", citations=[], cited_sources=[], reasoning_trace=trace)
+            return Answer(text="ok", citations=[], cited_sources=[], reasoning_trace=None)
 
     monkeypatch.setitem(corpus_rag._AGENT_CACHE, ("t1", "reasoning"), _StubAgent())
     # NOTE: no include_trace= kwarg here — relies on the default.
     out = await corpus_query.execute(corpus_id="t1", question="?", strategy="reasoning")
-    assert "reasoning_trace" in out
-    assert out["reasoning_trace"]["steps"][0]["tool_name"] == "sql_query"
+    assert "reasoning_trace" not in out
 
 
 @pytest.mark.asyncio
