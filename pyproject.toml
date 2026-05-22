@@ -25,7 +25,7 @@ classifiers = [
 ]
 keywords = ["genai", "agents", "pydantic-ai", "llm", "reasoning", "observability", "framework"]
 dependencies = [
-    "pydantic-ai>=1.56.0",
+    "pydantic-ai>=1.99.0",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
     "jinja2>=3.1.0",
@@ -180,15 +180,6 @@ Changelog = "https://github.com/fireflyframework/fireflyframework-agentic/blob/m
 [build-system]
 requires = ["uv_build>=0.9.5,<0.12.0"]
 build-backend = "uv_build"
-
-[tool.uv.sources]
-# mistralai is QUARANTINED on PyPI as of 2026-05-12 — the Simple API
-# returns zero published versions, so adding any new dependency breaks
-# ``uv lock`` resolution (pydantic-ai-slim[mistral] transitively wants
-# mistralai>=1.9.11). Pin the source to the upstream GitHub repo until
-# PyPI lifts the quarantine; drop this block when ``pip install mistralai``
-# starts working again.
-mistralai = { git = "https://github.com/mistralai/client-python", tag = "v1.12.4" }
 
 [tool.uv.build-backend]
 module-root = ""
