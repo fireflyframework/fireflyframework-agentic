@@ -852,9 +852,7 @@ async def test_corpus_query_reasoning_omits_trace_by_default(
 
     class _StubAgent:
         async def query(self, question, *, top_k=5, include_trace=False):
-            assert include_trace is False, (
-                "include_trace must default to False on the reasoning path — opt-in only"
-            )
+            assert include_trace is False, "include_trace must default to False on the reasoning path — opt-in only"
             return Answer(text="ok", citations=[], cited_sources=[], reasoning_trace=None)
 
     monkeypatch.setitem(corpus_rag._AGENT_CACHE, ("t1", "reasoning"), _StubAgent())
