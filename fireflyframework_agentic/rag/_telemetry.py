@@ -99,6 +99,21 @@ rerank_fallback = _meter.create_counter(
     unit="1",
 )
 
+# ── Reasoning (tool-using corpus answer agent) ─────────────────────────────
+reasoning_tool_call_duration = _meter.create_histogram(
+    "firefly.rag.reasoning.tool_call_duration",
+    description="Per-tool-call wall-clock duration inside ReasoningAnswerAgent.answer (label: tool_name)",
+    unit="ms",
+)
+reasoning_terminal_state = _meter.create_counter(
+    "firefly.rag.reasoning.terminal_state",
+    description=(
+        "ReasoningAnswerAgent.answer terminal state, labelled by outcome "
+        "(answered | no_info | tool_limit | llm_limit | timeout | error)"
+    ),
+    unit="1",
+)
+
 
 @asynccontextmanager
 async def timed_span(

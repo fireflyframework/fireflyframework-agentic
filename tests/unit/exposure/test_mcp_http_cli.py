@@ -255,3 +255,78 @@ def test_main_does_not_override_existing_env(tmp_path: Path, monkeypatch: pytest
     with patch("fireflyframework_agentic.exposure.mcp.http_cli.asyncio.run", new=_stub_uvicorn_run):
         main()
     assert os.environ.get("FIREFLY_TEST_DOTENV_KEY") == "from_real_env"
+
+
+def test_main_calls_configure_exporters_when_appinsights_connection_string_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression guard: firefly-mcp-http MUST call configure_exporters on
+    startup. Without that call, OTel returns NoOp providers and every
+    metric / span / log line is silently dropped — even with the
+    APPLICATIONINSIGHTS_CONNECTION_STRING env var set.
+
+    We assert the call shape (the connection string from the env reaches
+    configure_exporters as azure_monitor_connection_string) rather than
+    side-effects on the global OTel registry, so the test is independent
+    of OTel SDK version.
+    """
+    monkeypatch.setenv(
+        "APPLICATIONINSIGHTS_CONNECTION_STRING", "InstrumentationKey=abc;IngestionEndpoint=https://example/"
+    )
+    monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+
+    with (
+        patch("fireflyframework_agentic.observability.configure_exporters") as mock_configure,
+        patch("fireflyframework_agentic.exposure.mcp.http_cli.asyncio.run", new=_stub_uvicorn_run),
+    ):
+        main()
+
+    mock_configure.assert_called_once()
+    kwargs = mock_configure.call_args.kwargs
+    assert kwargs.get("azure_monitor_connection_string", "").startswith("InstrumentationKey=abc")
+    assert kwargs.get("otlp_endpoint") is None
+    assert kwargs.get("service_name") == "firefly-mcp-http"
+
+
+def test_main_skips_configure_exporters_when_no_env_var_set(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When neither APPLICATIONINSIGHTS_CONNECTION_STRING nor
+    OTEL_EXPORTER_OTLP_ENDPOINT is set, the helper should not call
+    configure_exporters at all — running with NoOp providers is the
+    documented behaviour (telemetry off, server still works).
+
+    Chdir to an empty tmp_path first so find_dotenv() doesn't walk up to
+    the repo's own .env and silently restore the connection string.
+    """
+    monkeypatch.delenv("APPLICATIONINSIGHTS_CONNECTION_STRING", raising=False)
+    monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("fireflyframework_agentic.observability.configure_exporters") as mock_configure,
+        patch("fireflyframework_agentic.exposure.mcp.http_cli.asyncio.run", new=_stub_uvicorn_run),
+    ):
+        main()
+
+    mock_configure.assert_not_called()
+
+
+def test_main_swallows_exporter_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If configure_exporters raises (e.g. Azure monitor extra not installed,
+    network unreachable, invalid connection string), startup must not
+    abort. Telemetry is best-effort; the server must still serve."""
+    monkeypatch.setenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "InstrumentationKey=bad")
+
+    with (
+        patch(
+            "fireflyframework_agentic.observability.configure_exporters",
+            side_effect=RuntimeError("simulated exporter failure"),
+        ),
+        patch("fireflyframework_agentic.exposure.mcp.http_cli.asyncio.run", new=_stub_uvicorn_run),
+    ):
+        # Must not raise — server keeps coming up.
+        main()

@@ -38,6 +38,46 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
   arguments configure the sample tokens, the resolver chain, and the
   `on_unknown` policy (`"skip"` / `"lowest"` / `"raise"`).
 
+### Added
+
+- **Tool-using corpus answer agent.** `CorpusAgent` gains an
+  `answer_strategy: Literal["fast", "reasoning"] = "fast"` constructor
+  flag. The fast path is unchanged (one-shot expand → retrieve → rerank
+  → answer); the reasoning path delegates the answer phase to a new
+  `ReasoningAnswerAgent` (in `fireflyframework_agentic.rag.retrieval`)
+  that runs a tool-using ReAct loop over four tools:
+  `knowledge_search`, `sql_query`, `inspect_table`, and a restricted
+  Python `python_compute` sandbox. Construction adds three tunables
+  (`max_reasoning_tool_calls`, `max_reasoning_llm_calls`,
+  `reasoning_wall_clock_seconds`). Default behaviour is unchanged.
+- **`Answer.reasoning_trace`** — new optional field of type
+  `ReasoningTrace | None` (default `None`). Populated by
+  `ReasoningAnswerAgent` when `CorpusAgent.query(..., include_trace=True)`
+  is set. Every `ActionStep` carries `tool_name + tool_args` (a plain
+  dict), so a recorded trace is re-executable: see
+  `tests/examples/corpus_search/test_trace_is_replayable.py`.
+- **MCP `corpus_query` tool** gains two optional params, `strategy` and
+  `include_trace`. `include_trace` defaults to `True` — callers that hit
+  the reasoning path receive the typed `ReasoningTrace` in the response
+  without opting in. The fast path never populates a trace regardless of
+  the flag, so the legacy fast-path JSON shape is unchanged. Pass
+  `include_trace=false` to opt out (smaller payload). Process-wide agent
+  cache keys by `(corpus_id, strategy)` so both paths can coexist for the
+  same corpus.
+- **New optional extra `[reasoning-eval]`** pulls in `numpy>=2.0` and
+  `pandas>=2.2` for the `python_compute` sandbox. The sandbox itself is
+  AST-validated (denylist on dunder names, `eval`/`exec`/`compile`/
+  `__import__`/`open`/`input`, attribute access to dunder names like
+  `__class__`/`__bases__`), runs in a worker thread with a 5 s wall-clock
+  timeout, and caps combined stdout + result rendering at 8 KB.
+- **Reasoning telemetry.** Two new OTel instruments: histogram
+  `firefly.rag.reasoning.tool_call_duration` (labelled by `tool_name`)
+  and counter `firefly.rag.reasoning.terminal_state` (labelled by
+  outcome — `answered | no_info | tool_limit | llm_limit | timeout |
+  error`). The existing `firefly.rag.query` span gains a
+  `firefly.rag.answer_strategy` attribute on both fast and reasoning
+  paths.
+
 ### Changed (BREAKING — internal layout)
 
 - **Per-corpus token store is now provider-agnostic in the framework.**

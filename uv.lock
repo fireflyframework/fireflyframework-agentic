@@ -1241,6 +1241,10 @@ queues = [
 rabbitmq = [
     { name = "aio-pika" },
 ]
+reasoning-eval = [
+    { name = "numpy" },
+    { name = "pandas" },
+]
 redis = [
     { name = "redis" },
 ]
@@ -1303,10 +1307,12 @@ requires-dist = [
     { name = "motor", marker = "extra == 'mongodb'", specifier = ">=3.6.0" },
     { name = "msal", marker = "extra == 'azure'", specifier = ">=1.31" },
     { name = "numpy", marker = "extra == 'embeddings'", specifier = ">=1.26.0" },
+    { name = "numpy", marker = "extra == 'reasoning-eval'", specifier = ">=2.0.0" },
     { name = "openai", marker = "extra == 'azure-embeddings'", specifier = ">=1.0.0" },
     { name = "openai", marker = "extra == 'openai-embeddings'", specifier = ">=1.0.0" },
     { name = "opentelemetry-api", specifier = ">=1.29.0" },
     { name = "opentelemetry-sdk", specifier = ">=1.29.0" },
+    { name = "pandas", marker = "extra == 'reasoning-eval'", specifier = ">=2.2.0" },
     { name = "pdfplumber", marker = "extra == 'dev'", specifier = ">=0.11.0" },
     { name = "pinecone", marker = "extra == 'vectorstores-pinecone'", specifier = ">=5.0.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.8.0" },
@@ -1334,7 +1340,7 @@ requires-dist = [
     { name = "voyageai", marker = "extra == 'voyage-embeddings'", specifier = ">=0.3.0" },
     { name = "watchfiles", marker = "extra == 'watch'", specifier = ">=0.24.0" },
 ]
-provides-extras = ["rest", "kafka", "rabbitmq", "redis", "queues", "postgres", "mongodb", "security", "azure", "mcp", "embeddings", "openai-embeddings", "cohere-embeddings", "google-embeddings", "mistral-embeddings", "markitdown", "voyage-embeddings", "azure-embeddings", "bedrock-embeddings", "ollama-embeddings", "corpus-search", "vectorstores-chroma", "vectorstores-sqlite-vec", "vectorstores-pinecone", "vectorstores-qdrant", "watch", "all", "dev"]
+provides-extras = ["rest", "kafka", "rabbitmq", "redis", "queues", "postgres", "mongodb", "security", "azure", "mcp", "embeddings", "openai-embeddings", "cohere-embeddings", "google-embeddings", "mistral-embeddings", "markitdown", "voyage-embeddings", "azure-embeddings", "bedrock-embeddings", "ollama-embeddings", "reasoning-eval", "corpus-search", "vectorstores-chroma", "vectorstores-sqlite-vec", "vectorstores-pinecone", "vectorstores-qdrant", "watch", "all", "dev"]
 
 [[package]]
 name = "flatbuffers"

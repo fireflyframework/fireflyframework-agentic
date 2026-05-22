@@ -1,0 +1,35 @@
+{
+  "question": "What's the coefficient of variation of monthly headcount per BU, and rank BUs most-stable to least-stable?",
+  "decisions": [
+    {
+      "kind": "tool_call",
+      "tool_name": "sql_query",
+      "args": {"question": "All headcount snapshots per business_unit ordered by snapshot_date."},
+      "stub_return": {
+        "outcome": "answered",
+        "attempted_sql": "SELECT business_unit, snapshot_date, headcount FROM headcount_snapshots ORDER BY business_unit, snapshot_date",
+        "result_markdown": "| business_unit | snapshot_date | headcount |\n|---|---|---|\n| Alpha | 2024-03-31 | 42 |\n| Alpha | 2024-06-30 | 45 |\n| Alpha | 2024-09-30 | 48 |\n| Alpha | 2024-12-31 | 50 |\n| Beta | 2024-03-31 | 30 |\n| Beta | 2024-06-30 | 31 |\n| Beta | 2024-09-30 | 29 |\n| Beta | 2024-12-31 | 32 |\n| Gamma | 2024-03-31 | 60 |\n| Gamma | 2024-06-30 | 62 |\n| Gamma | 2024-09-30 | 65 |\n| Gamma | 2024-12-31 | 68 |",
+        "probe_trail": []
+      }
+    },
+    {
+      "kind": "tool_call",
+      "tool_name": "python_compute",
+      "args": {
+        "source": "import statistics\nby_bu = {}\nfor bu, _date, hc in rows:\n    by_bu.setdefault(bu, []).append(hc)\ncv = {bu: statistics.stdev(v) / statistics.mean(v) for bu, v in by_bu.items()}\nranking = sorted(cv, key=cv.get)\nresult = {'cv': {k: round(v, 6) for k, v in cv.items()}, 'ranking_most_to_least_stable': ranking}",
+        "data": {
+          "rows": [
+            ["Alpha", "2024-03-31", 42], ["Alpha", "2024-06-30", 45], ["Alpha", "2024-09-30", 48], ["Alpha", "2024-12-31", 50],
+            ["Beta", "2024-03-31", 30], ["Beta", "2024-06-30", 31], ["Beta", "2024-09-30", 29], ["Beta", "2024-12-31", 32],
+            ["Gamma", "2024-03-31", 60], ["Gamma", "2024-06-30", 62], ["Gamma", "2024-09-30", 65], ["Gamma", "2024-12-31", 68]
+          ]
+        }
+      }
+    },
+    {
+      "kind": "final_answer",
+      "text": "Coefficient of variation per business unit over the four 2024 quarterly headcount snapshots (`headcount_snapshots`): Beta 0.0423, Gamma 0.0549, Alpha 0.0757. Ranked most-stable to least-stable: Beta, Gamma, Alpha.",
+      "citations": []
+    }
+  ]
+}
