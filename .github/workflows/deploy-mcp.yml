@@ -2,7 +2,7 @@ name: deploy-mcp
 
 on:
   push:
-    branches: [pre]
+    branches: [main]
     tags: ["v*"]
     paths-ignore:
       - "docs/**"
@@ -38,7 +38,7 @@ jobs:
             target="${{ inputs.target }}"
           elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             target="prod"
-          elif [[ "${{ github.ref }}" == "refs/heads/pre" ]]; then
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             target="pre"
           else
             echo "Unsupported ref ${{ github.ref }}" >&2
