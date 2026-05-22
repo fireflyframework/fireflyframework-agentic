@@ -116,6 +116,10 @@ bedrock-embeddings = [
 ollama-embeddings = [
     "httpx>=0.28.0",
 ]
+reasoning-eval = [
+    "numpy>=2.0.0",
+    "pandas>=2.2.0",
+]
 corpus-search = [
     "fireflyframework-agentic[markitdown,watch,openai-embeddings,vectorstores-sqlite-vec]",
     # sqlglot parses the user-supplied SELECT in the ``corpus_sql`` MCP tool

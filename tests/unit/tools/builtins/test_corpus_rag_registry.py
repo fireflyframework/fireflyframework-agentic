@@ -185,7 +185,8 @@ async def test_ingest_corpus_filesystem_skips_tabular_files(tmp_path: Path, monk
         async def close(self):
             pass
 
-    monkeypatch.setitem(corpus_rag._AGENT_CACHE, "T", _StubAgent())
+    # _AGENT_CACHE key is (corpus_id, strategy); ingest tools default to "fast".
+    monkeypatch.setitem(corpus_rag._AGENT_CACHE, ("T", "fast"), _StubAgent())
 
     await corpus_rag.ingest_corpus_filesystem.execute(corpus_id="T", root_path=str(drop))
 

@@ -28,7 +28,11 @@ from fireflyframework_agentic.rag.corpus import ChunkHit
 from fireflyframework_agentic.rag.retrieval.sql import EMPTY_SQL_HEADING
 
 if TYPE_CHECKING:
+    from pydantic_ai.models import Model
+
     from fireflyframework_agentic.rag.retrieval.sql import SqlRetrievalOutcome
+
+from fireflyframework_agentic.reasoning.trace import ReasoningTrace  # noqa: E402, F401 — runtime, for Answer field
 
 _NO_INFO_TEXT = "I don't have enough information."
 
@@ -70,7 +74,20 @@ name contains a date-shaped token suggesting historical data (e.g. \
 ``_2020``, ``_q1_2024``, ``snapshot_jan_2023``, ``_old``), warn the user \
 that the answer reflects that snapshot and may not represent current \
 state — a name that is a manager today may be elsewhere or gone in a \
-2020 sheet.\
+2020 sheet.
+
+6. When two or more cited chunks contradict each other on the same fact \
+(e.g., different values for the same metric, different names for the same \
+role, different dates for the same event), you MUST surface the conflict \
+explicitly. State each claim with its citation side by side and name the \
+disagreement — phrasing like 'sources disagree:', 'two sources give \
+different values', or 'I see conflicting information' is appropriate. Do \
+NOT pick one as the answer without a basis grounded in the chunks \
+themselves (e.g., one source explicitly marks itself as superseding the \
+other; or one carries a clear authority signal that the user can verify). \
+If you do pick one, name the basis. The wrong move is to silently choose \
+the first or most confident-sounding source; the user must be able to see \
+the disagreement and decide.\
 """
 
 
@@ -92,11 +109,14 @@ class Answer(BaseModel):
     ``cited_sources`` is enriched by :class:`AnswerAgent` *after* the LLM
     call from the hits passed in — gives the caller chunk_id → source_path
     mapping without forcing the LLM to handle paths in its output schema.
+    ``reasoning_trace`` is populated by ``ReasoningAnswerAgent`` when the
+    caller passes ``include_trace=True``.
     """
 
     text: str
     citations: list[str] = Field(default_factory=list)
     cited_sources: list[CitedSource] = Field(default_factory=list)
+    reasoning_trace: ReasoningTrace | None = None
 
 
 def format_chunks_for_prompt(hits: Sequence[ChunkHit]) -> str:
@@ -148,7 +168,7 @@ class AnswerAgent:
     so callers can present source paths alongside the inline citations.
     """
 
-    def __init__(self, model: str) -> None:
+    def __init__(self, model: str | Model) -> None:
         self._model = model
         self._agent = FireflyAgent(
             name="answer_agent",
