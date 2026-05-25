@@ -335,14 +335,25 @@ class OAuthJWTMiddleware(BaseHTTPMiddleware):
         return token or None
 
     @staticmethod
-    def _extract_tool_name(body: bytes) -> str | None:
+    def _first_json_element(body: bytes) -> Any:
+        """Return the first JSON element of ``body``.
+
+        Shared preamble for the ``_extract_*`` helpers: returns ``None`` for
+        empty bodies or invalid JSON, and unwraps a top-level list to its
+        first element (preserving the original ``IndexError`` on empty
+        lists).
+        """
         if not body:
             return None
         try:
             doc = json.loads(body)
         except json.JSONDecodeError:
             return None
-        first = doc[0] if isinstance(doc, list) else doc
+        return doc[0] if isinstance(doc, list) else doc
+
+    @staticmethod
+    def _extract_tool_name(body: bytes) -> str | None:
+        first = OAuthJWTMiddleware._first_json_element(body)
         params = first.get("params") if isinstance(first, dict) else None
         if isinstance(params, dict):
             name = params.get("name")
@@ -352,13 +363,7 @@ class OAuthJWTMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _extract_method(body: bytes) -> str | None:
-        if not body:
-            return None
-        try:
-            doc = json.loads(body)
-        except json.JSONDecodeError:
-            return None
-        first = doc[0] if isinstance(doc, list) else doc
+        first = OAuthJWTMiddleware._first_json_element(body)
         if isinstance(first, dict):
             value = first.get("method")
             if isinstance(value, str):
@@ -367,13 +372,7 @@ class OAuthJWTMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _extract_corpus_id(body: bytes) -> str | None:
-        if not body:
-            return None
-        try:
-            doc = json.loads(body)
-        except json.JSONDecodeError:
-            return None
-        first = doc[0] if isinstance(doc, list) else doc
+        first = OAuthJWTMiddleware._first_json_element(body)
         params = first.get("params") if isinstance(first, dict) else None
         args = params.get("arguments") if isinstance(params, dict) else None
         if isinstance(args, dict):
