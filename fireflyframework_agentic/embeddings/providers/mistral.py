@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 try:
-    from mistralai.client import Mistral
+    from mistralai import Mistral
 except ImportError:
     Mistral = None  # type: ignore[assignment,misc]
 

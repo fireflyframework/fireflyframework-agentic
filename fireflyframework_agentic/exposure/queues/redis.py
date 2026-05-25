@@ -25,7 +25,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    import redis.asyncio as aioredis
+    import redis.asyncio as aioredis  # pyright: ignore[reportMissingImports]
 else:
     try:
         import redis.asyncio as aioredis  # type: ignore[import-not-found]
