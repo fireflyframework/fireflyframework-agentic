@@ -22,25 +22,30 @@ from __future__ import annotations
 
 import base64
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
-    from fastapi import APIRouter, HTTPException  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - optional dep
-    APIRouter = None  # type: ignore[assignment,misc]
-    HTTPException = None  # type: ignore[assignment,misc]
-
-try:
+if TYPE_CHECKING:
+    from fastapi import APIRouter, HTTPException
     from pydantic_ai.messages import BinaryContent, DocumentUrl, ImageUrl
-except ImportError:  # pragma: no cover - optional dep
-    BinaryContent = None  # type: ignore[assignment,misc]
-    DocumentUrl = None  # type: ignore[assignment,misc]
-    ImageUrl = None  # type: ignore[assignment,misc]
-
-try:
     from starlette.responses import StreamingResponse
-except ImportError:  # pragma: no cover - optional dep
-    StreamingResponse = None  # type: ignore[assignment,misc]
+else:
+    try:
+        from fastapi import APIRouter, HTTPException  # type: ignore[import-not-found]
+    except ImportError:  # pragma: no cover - optional dep
+        APIRouter = None
+        HTTPException = None
+
+    try:
+        from pydantic_ai.messages import BinaryContent, DocumentUrl, ImageUrl
+    except ImportError:  # pragma: no cover - optional dep
+        BinaryContent = None
+        DocumentUrl = None
+        ImageUrl = None
+
+    try:
+        from starlette.responses import StreamingResponse
+    except ImportError:  # pragma: no cover - optional dep
+        StreamingResponse = None
 
 from fireflyframework_agentic.agents.registry import agent_registry
 from fireflyframework_agentic.exposure.rest.schemas import AgentRequest, AgentResponse
@@ -58,7 +63,7 @@ def _resolve_prompt(request: AgentRequest) -> Any:
     if isinstance(request.prompt, str):
         return request.prompt
 
-    if BinaryContent is None:
+    if BinaryContent is None or DocumentUrl is None or ImageUrl is None:
         raise ImportError(
             "pydantic-ai is required for multimodal prompts. "
             "Install it with: pip install fireflyframework-agentic[rest]"
@@ -82,12 +87,15 @@ def _resolve_prompt(request: AgentRequest) -> Any:
 
 def create_agent_router() -> APIRouter:
     """Create a FastAPI router with agent invocation endpoints."""
-    if APIRouter is None:
+    if APIRouter is None or HTTPException is None or StreamingResponse is None:
         raise ImportError(
             "fastapi is required for the REST router. Install it with: pip install fireflyframework-agentic[rest]"
         )
 
     router = APIRouter(prefix="/agents", tags=["agents"])
+    # Local rebindings so type checkers narrow inside nested functions
+    _HTTPException = HTTPException  # noqa: N806 — local alias to narrow Optional
+    _StreamingResponse = StreamingResponse  # noqa: N806 — local alias to narrow Optional
 
     @router.get("/")
     async def list_agents() -> list[dict[str, Any]]:
@@ -96,7 +104,7 @@ def create_agent_router() -> APIRouter:
     @router.post("/{name}/run", response_model=AgentResponse)
     async def run_agent(name: str, request: AgentRequest) -> AgentResponse:
         if not agent_registry.has(name):
-            raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+            raise _HTTPException(status_code=404, detail=f"Agent '{name}' not found")
         agent = agent_registry.get(name)
         try:
             prompt = _resolve_prompt(request)
@@ -116,11 +124,11 @@ def create_agent_router() -> APIRouter:
         streamed in chunks or complete messages. Good for most use cases.
         """
         if not agent_registry.has(name):
-            raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+            raise _HTTPException(status_code=404, detail=f"Agent '{name}' not found")
         agent = agent_registry.get(name)
         prompt = _resolve_prompt(request)
         conv_id = request.conversation_id
-        return StreamingResponse(
+        return _StreamingResponse(
             sse_stream(agent, prompt, deps=request.deps, conversation_id=conv_id),
             media_type="text/event-stream",
         )
@@ -143,11 +151,11 @@ def create_agent_router() -> APIRouter:
                 rapid tokens. Default 0 = no debouncing.
         """
         if not agent_registry.has(name):
-            raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+            raise _HTTPException(status_code=404, detail=f"Agent '{name}' not found")
         agent = agent_registry.get(name)
         prompt = _resolve_prompt(request)
         conv_id = request.conversation_id
-        return StreamingResponse(
+        return _StreamingResponse(
             sse_stream_incremental(
                 agent,
                 prompt,
