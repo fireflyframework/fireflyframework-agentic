@@ -388,7 +388,8 @@ class OAuthJWTMiddleware(BaseHTTPMiddleware):
         framework primitives, which would otherwise pull this middleware
         in when only the stdio transport is used.
         """
-        from fireflyframework_agentic.tools.builtins.corpus_rag import (  # noqa: imports-top — breaks cycle with tools.builtins.corpus_rag
+        # imports-top: lazy import to break cycle with tools.builtins.corpus_rag
+        from fireflyframework_agentic.tools.builtins.corpus_rag import (
             authorised_corpora_var,
         )
 

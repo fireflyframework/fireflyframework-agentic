@@ -45,9 +45,7 @@ class MarkitdownLoader:
     def _md_instance(self) -> Any:
         if self._md is None:
             if MarkItDown is None:
-                raise ImportError(
-                    "markitdown is required for MarkitdownLoader; install with `pip install markitdown`"
-                )
+                raise ImportError("markitdown is required for MarkitdownLoader; install with `pip install markitdown`")
             self._md = MarkItDown()
         return self._md
 

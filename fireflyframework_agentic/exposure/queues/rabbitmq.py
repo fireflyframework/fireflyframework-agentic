@@ -37,8 +37,7 @@ logger = logging.getLogger(__name__)
 def _require_aio_pika() -> None:
     if aio_pika is None:
         raise ImportError(
-            "aio-pika is required for RabbitMQ support. "
-            "Install it with: pip install fireflyframework-agentic[rabbitmq]"
+            "aio-pika is required for RabbitMQ support. Install it with: pip install fireflyframework-agentic[rabbitmq]"
         )
 
 

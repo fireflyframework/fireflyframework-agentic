@@ -88,9 +88,7 @@ class FolderWatcher:
 
     async def watch(self) -> AsyncIterator[Path]:
         if awatch is None or Change is None:
-            raise ImportError(
-                "watchfiles is required for FolderWatcher.watch(); install with `pip install watchfiles`"
-            )
+            raise ImportError("watchfiles is required for FolderWatcher.watch(); install with `pip install watchfiles`")
         async for changes in awatch(str(self.folder), debounce=self.debounce_ms):
             for change, raw_path in changes:
                 if change is Change.deleted:
