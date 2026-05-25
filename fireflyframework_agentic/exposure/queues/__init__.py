@@ -39,7 +39,7 @@ def __getattr__(name: str):
     _redis_names = {"RedisAgentConsumer", "RedisAgentProducer"}
 
     if name in _kafka_names:
-        from fireflyframework_agentic.exposure.queues.kafka import (
+        from fireflyframework_agentic.exposure.queues.kafka import (  # noqa: imports-top — module-level __getattr__ lazy loader
             KafkaAgentConsumer,
             KafkaAgentProducer,
         )
@@ -47,7 +47,7 @@ def __getattr__(name: str):
         return {"KafkaAgentConsumer": KafkaAgentConsumer, "KafkaAgentProducer": KafkaAgentProducer}[name]
 
     if name in _rabbitmq_names:
-        from fireflyframework_agentic.exposure.queues.rabbitmq import (
+        from fireflyframework_agentic.exposure.queues.rabbitmq import (  # noqa: imports-top — module-level __getattr__ lazy loader
             RabbitMQAgentConsumer,
             RabbitMQAgentProducer,
         )
@@ -55,7 +55,7 @@ def __getattr__(name: str):
         return {"RabbitMQAgentConsumer": RabbitMQAgentConsumer, "RabbitMQAgentProducer": RabbitMQAgentProducer}[name]
 
     if name in _redis_names:
-        from fireflyframework_agentic.exposure.queues.redis import (
+        from fireflyframework_agentic.exposure.queues.redis import (  # noqa: imports-top — module-level __getattr__ lazy loader
             RedisAgentConsumer,
             RedisAgentProducer,
         )
