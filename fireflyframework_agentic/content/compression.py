@@ -27,6 +27,11 @@ from typing import Any, Protocol, runtime_checkable
 from fireflyframework_agentic.content.chunking import TextChunker
 from fireflyframework_agentic.types import AgentLike
 
+try:
+    import tiktoken
+except ImportError:  # pragma: no cover - optional dep
+    tiktoken = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 
@@ -55,12 +60,10 @@ class TokenEstimator:
         self._tokens_per_word = tokens_per_word
         self._encoder: Any = None
         if encoding_name:
-            try:
-                import tiktoken
-
-                self._encoder = tiktoken.get_encoding(encoding_name)
-            except ImportError:
+            if tiktoken is None:
                 logger.debug("tiktoken not installed; falling back to heuristic estimation")
+            else:
+                self._encoder = tiktoken.get_encoding(encoding_name)
 
     def estimate(self, text: str) -> int:
         """Return estimated token count for *text*."""

@@ -68,6 +68,8 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from fireflyframework_agentic.model_utils import detect_model_family
+
 logger = logging.getLogger(__name__)
 
 
@@ -229,8 +231,6 @@ class PromptCacheMiddleware:
         model = getattr(context, "model", "")
         if not model:
             return
-
-        from fireflyframework_agentic.model_utils import detect_model_family
 
         family = detect_model_family(model)
         if family == "anthropic":

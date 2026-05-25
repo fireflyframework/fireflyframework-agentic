@@ -27,10 +27,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from fireflyframework_agentic.storage import LocalBackend, StorageBackend
+from fireflyframework_agentic.storage import DatabaseStore, LocalBackend, StorageBackend
 
 if TYPE_CHECKING:
-    from fireflyframework_agentic.storage import DatabaseStore, WriteSession
+    from fireflyframework_agentic.storage import WriteSession
 
 log = logging.getLogger(__name__)
 
@@ -147,8 +147,6 @@ class SqliteCorpus:
     """
 
     def __init__(self, path_or_store: str | Path | DatabaseStore) -> None:
-        from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
-
         if isinstance(path_or_store, DatabaseStore):
             self._store = path_or_store
         else:

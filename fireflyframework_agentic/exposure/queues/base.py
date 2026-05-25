@@ -21,6 +21,8 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
+from fireflyframework_agentic.agents.registry import agent_registry
+
 
 class QueueMessage(BaseModel):
     """A message consumed from or produced to a queue."""
@@ -77,8 +79,6 @@ class BaseQueueConsumer(ABC):
 
     async def _process_message(self, message: QueueMessage) -> str:
         """Route the message to the configured agent and return the response."""
-        from fireflyframework_agentic.agents.registry import agent_registry
-
         agent = agent_registry.get(self._agent_name)
         result = await agent.run(message.body)
         return str(result.output if hasattr(result, "output") else result)

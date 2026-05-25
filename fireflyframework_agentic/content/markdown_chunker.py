@@ -24,6 +24,11 @@ from markdown_it import MarkdownIt
 
 from fireflyframework_agentic.content.chunking import Chunk, TextChunker
 
+try:
+    import tiktoken
+except ImportError:  # pragma: no cover - optional dep
+    tiktoken = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,12 +61,11 @@ def _accurate_token_count(text: str) -> int | None:
     almost always present, but we fall back gracefully if not.
     """
     if not _EncoderCache.loaded:
-        try:
-            import tiktoken
-
-            _EncoderCache.encoder = tiktoken.get_encoding("cl100k_base")
-        except Exception:
-            _EncoderCache.encoder = None
+        if tiktoken is not None:
+            try:
+                _EncoderCache.encoder = tiktoken.get_encoding("cl100k_base")
+            except Exception:
+                _EncoderCache.encoder = None
         _EncoderCache.loaded = True
     if _EncoderCache.encoder is None:
         return None
