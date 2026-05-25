@@ -44,18 +44,27 @@ import logging
 import time
 from typing import Any
 
+from opentelemetry import trace as _trace
+
 from fireflyframework_agentic.agents.middleware import MiddlewareContext
-from fireflyframework_agentic.exceptions import BudgetExceededError
+from fireflyframework_agentic.exceptions import BudgetExceededError, OutputReviewError
+from fireflyframework_agentic.explainability.trace_recorder import (
+    default_trace_recorder,
+)
 from fireflyframework_agentic.observability.budget import (
     BudgetGate,
     BudgetMode,
     BudgetRule,
     ScopeContext,
 )
+from fireflyframework_agentic.observability.events import default_events
+from fireflyframework_agentic.observability.metrics import default_metrics
 from fireflyframework_agentic.observability.usage import (
     UsageRecord,
     default_usage_tracker,
 )
+from fireflyframework_agentic.security.output_guard import OutputGuard
+from fireflyframework_agentic.security.prompt_guard import PromptGuard
 
 logger = logging.getLogger(__name__)
 
@@ -199,8 +208,6 @@ class PromptGuardMiddleware:
         if guard is not None:
             self._guard = guard
         else:
-            from fireflyframework_agentic.security.prompt_guard import PromptGuard
-
             self._guard = PromptGuard(sanitise=sanitise)
         self._sanitise = sanitise
 
@@ -316,8 +323,6 @@ class ObservabilityMiddleware:
 
     async def before_run(self, context: MiddlewareContext) -> None:
         """Open an OTel span and emit the agent-started event."""
-        from opentelemetry import trace as _trace
-
         tracer = _trace.get_tracer("fireflyframework_agentic")
         span = tracer.start_span(
             f"agent.{context.agent_name}",
@@ -328,8 +333,6 @@ class ObservabilityMiddleware:
         )
         context.metadata["_otel_span"] = span
         context.metadata["_obs_t0"] = time.monotonic()
-
-        from fireflyframework_agentic.observability.events import default_events
 
         default_events.agent_started(context.agent_name)
 
@@ -349,8 +352,6 @@ class ObservabilityMiddleware:
         usage = result.usage() if callable(getattr(result, "usage", None)) else None
         if usage is not None:
             tokens = getattr(usage, "total_tokens", 0) or 0
-
-        from fireflyframework_agentic.observability.metrics import default_metrics
 
         default_metrics.record_latency(
             elapsed_ms,
@@ -390,10 +391,6 @@ class ExplainabilityMiddleware:
     def _get_recorder(self) -> Any:
         if self._recorder is not None:
             return self._recorder
-        from fireflyframework_agentic.explainability.trace_recorder import (
-            default_trace_recorder,
-        )
-
         return default_trace_recorder
 
     async def before_run(self, context: MiddlewareContext) -> None:
@@ -479,8 +476,6 @@ class OutputGuardMiddleware:
         if guard is not None:
             self._guard = guard
         else:
-            from fireflyframework_agentic.security.output_guard import OutputGuard
-
             self._guard = OutputGuard(sanitise=sanitise)
         self._sanitise = sanitise
         self._block_categories = block_categories
@@ -550,16 +545,12 @@ class ValidationMiddleware:
 
         parsed, parse_errors = self._reviewer._parse_output(raw)
         if parse_errors:
-            from fireflyframework_agentic.exceptions import OutputReviewError
-
             raise OutputReviewError(f"Output validation failed: {parse_errors}")
 
         validated = parsed if parsed is not None else raw
         report = self._reviewer._validate_output(validated)
         if report is not None and not report.valid:
             rule_errors = [r.message for r in report.errors if r.message]
-            from fireflyframework_agentic.exceptions import OutputReviewError
-
             raise OutputReviewError(f"Validation rules failed: {rule_errors}")
 
         return result
