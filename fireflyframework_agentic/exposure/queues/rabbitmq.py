@@ -21,12 +21,15 @@ Requires the ``aio-pika`` optional dependency (install via
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-try:
-    import aio_pika  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - optional dep
-    aio_pika = None  # type: ignore[assignment]
+if TYPE_CHECKING:
+    import aio_pika
+else:
+    try:
+        import aio_pika  # type: ignore[import-not-found]
+    except ImportError:  # pragma: no cover - optional dep
+        aio_pika = None
 
 from fireflyframework_agentic.exposure.queues.base import BaseQueueConsumer, QueueMessage
 from fireflyframework_agentic.observability.tracer import extract_trace_context, trace_context_scope
@@ -34,11 +37,9 @@ from fireflyframework_agentic.observability.tracer import extract_trace_context,
 logger = logging.getLogger(__name__)
 
 
-def _require_aio_pika() -> None:
-    if aio_pika is None:
-        raise ImportError(
-            "aio-pika is required for RabbitMQ support. Install it with: pip install fireflyframework-agentic[rabbitmq]"
-        )
+_AIO_PIKA_IMPORT_ERROR = (
+    "aio-pika is required for RabbitMQ support. Install it with: pip install fireflyframework-agentic[rabbitmq]"
+)
 
 
 class RabbitMQAgentConsumer(BaseQueueConsumer):
@@ -64,7 +65,8 @@ class RabbitMQAgentConsumer(BaseQueueConsumer):
 
     async def start(self) -> None:
         """Connect to RabbitMQ and begin consuming."""
-        _require_aio_pika()
+        if aio_pika is None:
+            raise ImportError(_AIO_PIKA_IMPORT_ERROR)
 
         self._connection = await aio_pika.connect_robust(self._url)
         channel = await self._connection.channel()
@@ -125,7 +127,8 @@ class RabbitMQAgentProducer:
 
     async def start(self) -> None:
         """Open a connection and channel."""
-        _require_aio_pika()
+        if aio_pika is None:
+            raise ImportError(_AIO_PIKA_IMPORT_ERROR)
 
         self._connection = await aio_pika.connect_robust(self._url)
         self._channel = await self._connection.channel()
@@ -133,7 +136,8 @@ class RabbitMQAgentProducer:
 
     async def publish(self, message: QueueMessage) -> None:
         """Publish *message* to the configured exchange."""
-        _require_aio_pika()
+        if aio_pika is None:
+            raise ImportError(_AIO_PIKA_IMPORT_ERROR)
 
         if self._channel is None:
             await self.start()
