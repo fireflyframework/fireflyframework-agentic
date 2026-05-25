@@ -24,6 +24,13 @@ import time
 from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 
+try:
+    from opentelemetry import trace as otel_trace
+except ImportError:  # pragma: no cover - optional dep
+    otel_trace = None  # type: ignore[assignment]
+
+from fireflyframework_agentic.config import get_config
+from fireflyframework_agentic.observability.usage import default_usage_tracker
 from fireflyframework_agentic.pipeline.context import PipelineContext
 from fireflyframework_agentic.pipeline.dag import DAG, FailureStrategy
 from fireflyframework_agentic.pipeline.result import (
@@ -342,13 +349,12 @@ class PipelineEngine:
     def _start_otel_span(name: str, **attributes: Any) -> Any:
         """Start an OTel span if observability is enabled, else return *None*."""
         try:
-            from fireflyframework_agentic.config import get_config
-
             if not get_config().observability_enabled:
                 return None
-            from opentelemetry import trace
+            if otel_trace is None:
+                return None
 
-            return trace.get_tracer("fireflyframework_agentic").start_span(
+            return otel_trace.get_tracer("fireflyframework_agentic").start_span(
                 name,
                 attributes={f"firefly.{k}": str(v) for k, v in attributes.items()},
             )
@@ -359,12 +365,8 @@ class PipelineEngine:
     def _aggregate_usage(correlation_id: str) -> Any:
         """Aggregate usage records for the given correlation ID."""
         try:
-            from fireflyframework_agentic.config import get_config
-
             if not get_config().cost_tracking_enabled:
                 return None
-
-            from fireflyframework_agentic.observability.usage import default_usage_tracker
 
             summary = default_usage_tracker.get_summary_for_correlation(correlation_id)
             return summary if summary.record_count > 0 else None

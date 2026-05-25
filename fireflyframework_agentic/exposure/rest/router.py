@@ -20,11 +20,27 @@ agent: ``POST /agents/{name}/run`` and ``GET /agents``.
 
 from __future__ import annotations
 
+import base64
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from fastapi import APIRouter  # type: ignore[import-not-found]
+try:
+    from fastapi import APIRouter, HTTPException  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - optional dep
+    APIRouter = None  # type: ignore[assignment,misc]
+    HTTPException = None  # type: ignore[assignment,misc]
+
+try:
+    from pydantic_ai.messages import BinaryContent, DocumentUrl, ImageUrl
+except ImportError:  # pragma: no cover - optional dep
+    BinaryContent = None  # type: ignore[assignment,misc]
+    DocumentUrl = None  # type: ignore[assignment,misc]
+    ImageUrl = None  # type: ignore[assignment,misc]
+
+try:
+    from starlette.responses import StreamingResponse
+except ImportError:  # pragma: no cover - optional dep
+    StreamingResponse = None  # type: ignore[assignment,misc]
 
 from fireflyframework_agentic.agents.registry import agent_registry
 from fireflyframework_agentic.exposure.rest.schemas import AgentRequest, AgentResponse
@@ -42,7 +58,11 @@ def _resolve_prompt(request: AgentRequest) -> Any:
     if isinstance(request.prompt, str):
         return request.prompt
 
-    from pydantic_ai.messages import BinaryContent, DocumentUrl, ImageUrl
+    if BinaryContent is None:
+        raise ImportError(
+            "pydantic-ai is required for multimodal prompts. "
+            "Install it with: pip install fireflyframework-agentic[rest]"
+        )
 
     parts: list[Any] = []
     for part in request.prompt:
@@ -53,8 +73,6 @@ def _resolve_prompt(request: AgentRequest) -> Any:
         elif part.type == "document_url":
             parts.append(DocumentUrl(url=part.content))
         elif part.type == "binary" and part.media_type:
-            import base64
-
             data = base64.b64decode(part.content)
             parts.append(BinaryContent(data=data, media_type=part.media_type))
         else:
@@ -64,7 +82,11 @@ def _resolve_prompt(request: AgentRequest) -> Any:
 
 def create_agent_router() -> APIRouter:
     """Create a FastAPI router with agent invocation endpoints."""
-    from fastapi import APIRouter, HTTPException  # type: ignore[import-not-found]
+    if APIRouter is None:
+        raise ImportError(
+            "fastapi is required for the REST router. "
+            "Install it with: pip install fireflyframework-agentic[rest]"
+        )
 
     router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -94,8 +116,6 @@ def create_agent_router() -> APIRouter:
         This endpoint uses buffered streaming where the model's output is
         streamed in chunks or complete messages. Good for most use cases.
         """
-        from starlette.responses import StreamingResponse
-
         if not agent_registry.has(name):
             raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
         agent = agent_registry.get(name)
@@ -123,8 +143,6 @@ def create_agent_router() -> APIRouter:
             debounce_ms: Optional debounce delay in milliseconds to batch
                 rapid tokens. Default 0 = no debouncing.
         """
-        from starlette.responses import StreamingResponse
-
         if not agent_registry.has(name):
             raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
         agent = agent_registry.get(name)
