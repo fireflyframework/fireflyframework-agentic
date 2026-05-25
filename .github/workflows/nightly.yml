@@ -3,7 +3,12 @@ name: Nightly
 on:
   schedule:
     - cron: "0 3 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      pytest_workers:
+        description: 'pytest-xdist workers (0 = serial, default). Try 2, 4, or "auto".'
+        required: false
+        default: '0'
 
 jobs:
   test:
@@ -57,7 +62,15 @@ jobs:
             env_name="${secret//-/_}"
             echo "$env_name=$value" >> "$GITHUB_ENV"
           done
-      - run: uv run pytest --cov --cov-report=term-missing --durations=50
+      - name: Run tests
+        run: |
+          WORKERS="${{ inputs.pytest_workers || '0' }}"
+          if [ "$WORKERS" != "0" ]; then
+            XDIST_ARGS="-n $WORKERS --dist loadfile"
+          else
+            XDIST_ARGS=""
+          fi
+          uv run pytest $XDIST_ARGS --cov --cov-report=term-missing --durations=50
 
   report-failure:
     name: Report failure

@@ -9,6 +9,11 @@ on:
       - 'LICENSE'
       - '.gitignore'
   workflow_dispatch:
+    inputs:
+      pytest_workers:
+        description: 'pytest-xdist workers (0 = serial, default). Try 2, 4, or "auto".'
+        required: false
+        default: '0'
 
 permissions:
   contents: read
@@ -73,7 +78,15 @@ jobs:
         with:
           python-version: '3.13'
       - run: uv sync --extra dev --extra azure --extra mcp --extra rest --extra corpus-search
-      - run: uv run pytest -m "not nightly"
+      - name: Run tests
+        run: |
+          WORKERS="${{ inputs.pytest_workers || '0' }}"
+          if [ "$WORKERS" != "0" ]; then
+            XDIST_ARGS="-n $WORKERS --dist loadfile"
+          else
+            XDIST_ARGS=""
+          fi
+          uv run pytest $XDIST_ARGS -m "not nightly"
 
   build:
     name: Build Package
