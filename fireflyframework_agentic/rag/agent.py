@@ -297,10 +297,6 @@ class CorpusAgent:
         # reasoning branch can pass it in.
         if self._answerer is None:
             if self._answer_strategy == "reasoning":
-                from fireflyframework_agentic.rag.retrieval.reasoning_answerer import (
-                    ReasoningAnswerAgent,
-                )
-
                 assert self._schema_registry is not None
                 self._answerer = ReasoningAnswerAgent(
                     model=self._answer_model,
