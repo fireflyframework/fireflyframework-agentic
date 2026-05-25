@@ -48,10 +48,18 @@ Example:
 from __future__ import annotations
 
 import functools
+import inspect
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
+
+try:
+    import jwt
+except ImportError:  # pragma: no cover - optional dep
+    jwt = None  # type: ignore[assignment]
+
+from fireflyframework_agentic.config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -140,12 +148,10 @@ class RBACManager:
         Raises:
             ImportError: If PyJWT is not installed.
         """
-        try:
-            import jwt
-        except ImportError as exc:
+        if jwt is None:
             raise ImportError(
                 "JWT support requires 'pyjwt'. Install with: pip install fireflyframework-agentic[security]"
-            ) from exc
+            )
 
         if self._jwt_secret is None:
             raise ValueError("RBACManager has no jwt_secret; cannot create_token")
@@ -184,12 +190,10 @@ class RBACManager:
             ValueError: If token is invalid or expired.
             ImportError: If PyJWT is not installed.
         """
-        try:
-            import jwt
-        except ImportError as exc:
+        if jwt is None:
             raise ImportError(
                 "JWT support requires 'pyjwt'. Install with: pip install fireflyframework-agentic[security]"
-            ) from exc
+            )
 
         if self._jwt_secret is None:
             raise ValueError("RBACManager has no jwt_secret; cannot validate HS256 tokens")
@@ -346,10 +350,8 @@ def require_permission(
                 )
 
             # Extract token from args/kwargs using signature binding
-            import inspect as _inspect
-
             try:
-                sig = _inspect.signature(func)
+                sig = inspect.signature(func)
                 bound = sig.bind(*args, **kwargs)
                 bound.apply_defaults()
                 token = bound.arguments.get(token_param)
@@ -391,10 +393,8 @@ def require_permission(
                 )
 
             # Extract token from args/kwargs
-            import inspect as _inspect
-
             try:
-                sig = _inspect.signature(func)
+                sig = inspect.signature(func)
                 bound = sig.bind(*args, **kwargs)
                 bound.apply_defaults()
                 token = bound.arguments.get(token_param)
@@ -425,8 +425,6 @@ def require_permission(
             return func(*args, **kwargs)
 
         # Return appropriate wrapper based on function type
-        import inspect
-
         if inspect.iscoroutinefunction(func):
             return async_wrapper
         return sync_wrapper
@@ -437,8 +435,6 @@ def require_permission(
 def _get_default_rbac() -> RBACManager | None:
     """Get the default RBAC manager from configuration."""
     try:
-        from fireflyframework_agentic.config import get_config
-
         cfg = get_config()
         if not cfg.rbac_enabled or not cfg.rbac_jwt_secret:
             return None
