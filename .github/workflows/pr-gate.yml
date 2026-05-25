@@ -19,7 +19,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # For workflow_dispatch include run_id so manual A/B runs on the same ref
+  # don't cancel each other. PR pushes keep the cancel-previous behaviour.
+  group: ci-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || '' }}
   cancel-in-progress: true
 
 jobs:
