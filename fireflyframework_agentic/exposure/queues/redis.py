@@ -20,12 +20,27 @@ Requires the ``redis`` optional dependency (install via
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
+try:
+    import redis.asyncio as aioredis  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - optional dep
+    aioredis = None  # type: ignore[assignment]
+
 from fireflyframework_agentic.exposure.queues.base import BaseQueueConsumer, QueueMessage
+from fireflyframework_agentic.observability.tracer import extract_trace_context, trace_context_scope
 
 logger = logging.getLogger(__name__)
+
+
+def _require_redis() -> None:
+    if aioredis is None:
+        raise ImportError(
+            "redis[hiredis] is required for Redis support. "
+            "Install it with: pip install fireflyframework-agentic[redis]"
+        )
 
 
 class RedisAgentConsumer(BaseQueueConsumer):
@@ -51,13 +66,7 @@ class RedisAgentConsumer(BaseQueueConsumer):
 
     async def start(self) -> None:
         """Connect to Redis and begin subscribing."""
-        try:
-            import redis.asyncio as aioredis  # type: ignore[import-not-found]
-        except ImportError as _err:
-            raise ImportError(
-                "redis[hiredis] is required for Redis support. "
-                "Install it with: pip install fireflyframework-agentic[redis]"
-            ) from _err
+        _require_redis()
 
         self._client = aioredis.from_url(self._url)
         pubsub = self._client.pubsub()
@@ -74,10 +83,6 @@ class RedisAgentConsumer(BaseQueueConsumer):
 
                     # Try to parse as JSON to extract trace context
                     # If not JSON, treat as plain text
-                    import json
-
-                    from fireflyframework_agentic.observability.tracer import extract_trace_context, trace_context_scope
-
                     span_context = None
                     try:
                         data = json.loads(body)
@@ -132,13 +137,7 @@ class RedisAgentProducer:
 
     async def start(self) -> None:
         """Open a Redis connection."""
-        try:
-            import redis.asyncio as aioredis  # type: ignore[import-not-found]
-        except ImportError as _err:
-            raise ImportError(
-                "redis[hiredis] is required for Redis support. "
-                "Install it with: pip install fireflyframework-agentic[redis]"
-            ) from _err
+        _require_redis()
 
         self._client = aioredis.from_url(self._url)
         logger.info("Redis producer started for channel '%s'", self._channel)
