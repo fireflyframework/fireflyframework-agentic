@@ -23,8 +23,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
@@ -72,7 +70,7 @@ jobs:
         with:
           python-version: '3.13'
       - run: uv sync --extra dev --extra azure --extra mcp --extra rest --extra corpus-search
-      - run: uv run pytest -m "not nightly" --cov --cov-report=term-missing
+      - run: uv run pytest -m "not nightly"
 
   build:
     name: Build Package
