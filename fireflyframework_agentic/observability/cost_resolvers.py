@@ -49,11 +49,14 @@ turns unresolved costs into :class:`UnknownModelCostError` instead.
 
 from __future__ import annotations
 
+import functools
 import logging
+import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+import yaml
 from genai_prices import Usage as _GenAIUsage  # type: ignore[import-untyped]
 from genai_prices import calc_price  # type: ignore[import-untyped]
 
@@ -61,6 +64,8 @@ from fireflyframework_agentic.config import get_config
 from fireflyframework_agentic.observability.metrics import default_metrics
 
 logger = logging.getLogger(__name__)
+
+OVERRIDES_PATH_ENV = "FIREFLY_AGENTIC_COST_OVERRIDES_PATH"
 
 
 class UnknownModelCostError(RuntimeError):
@@ -155,7 +160,76 @@ def genai_prices_cost(ctx: CostContext) -> float | None:
     return float(result.total_price)
 
 
-DEFAULT_RESOLVERS: tuple[CostFn, ...] = (provider_reported_cost, genai_prices_cost)
+@functools.lru_cache(maxsize=1)
+def _load_overrides() -> dict[str, dict[str, float]]:
+    """Load the local price-overrides YAML once per process.
+
+    Reads the path from ``FIREFLY_AGENTIC_COST_OVERRIDES_PATH``. Returns
+    ``{}`` if the env var is unset, the file is missing, or the file is
+    malformed (with a WARNING in the malformed case). No hot reload.
+
+    Expected schema::
+
+        models:
+          "openai:some-new-model":
+            input_per_1k: 0.005
+            output_per_1k: 0.015
+    """
+    path = os.environ.get(OVERRIDES_PATH_ENV)
+    if not path:
+        return {}
+    if not os.path.isfile(path):
+        logger.warning("Cost overrides file not found at '%s'; ignoring", path)
+        return {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        logger.warning("Failed to load cost overrides from '%s': %s", path, exc)
+        return {}
+    if not isinstance(data, Mapping):
+        logger.warning("Cost overrides at '%s' is not a mapping; ignoring", path)
+        return {}
+    models = data.get("models")
+    if not isinstance(models, Mapping):
+        logger.warning("Cost overrides at '%s' missing 'models' mapping; ignoring", path)
+        return {}
+    out: dict[str, dict[str, float]] = {}
+    for key, entry in models.items():
+        if not isinstance(key, str) or not isinstance(entry, Mapping):
+            logger.warning("Skipping malformed override entry for key %r", key)
+            continue
+        try:
+            out[key] = {
+                "input_per_1k": float(entry.get("input_per_1k", 0.0) or 0.0),
+                "output_per_1k": float(entry.get("output_per_1k", 0.0) or 0.0),
+            }
+        except (TypeError, ValueError):
+            logger.warning("Skipping override entry with non-numeric rates: %r", key)
+    return out
+
+
+def overrides_cost(ctx: CostContext) -> float | None:
+    """Terminal fallback: price ``ctx.model`` from the local overrides file.
+
+    Returns ``None`` (no-op) when the env var is unset, the file is missing
+    or malformed, or the model is not present. Same per-1k contract as the
+    rest of the chain — total USD cost is returned.
+    """
+    overrides = _load_overrides()
+    entry = overrides.get(ctx.model)
+    if entry is None:
+        return None
+    input_rate = entry.get("input_per_1k", 0.0)
+    output_rate = entry.get("output_per_1k", 0.0)
+    # Cache and reasoning tokens are folded into input/output respectively,
+    # mirroring genai_prices_cost's contract.
+    input_total = ctx.input_tokens + ctx.cache_creation_tokens + ctx.cache_read_tokens
+    output_total = ctx.output_tokens + ctx.reasoning_tokens
+    return (input_total * input_rate + output_total * output_rate) / 1000.0
+
+
+DEFAULT_RESOLVERS: tuple[CostFn, ...] = (provider_reported_cost, genai_prices_cost, overrides_cost)
 
 
 def _strict_mode_from_config() -> bool:

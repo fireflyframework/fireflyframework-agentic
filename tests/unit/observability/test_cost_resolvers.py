@@ -8,10 +8,19 @@ from fireflyframework_agentic.observability.cost_resolvers import (
     DEFAULT_RESOLVERS,
     CostContext,
     UnknownModelCostError,
+    _load_overrides,
     genai_prices_cost,
+    overrides_cost,
     provider_reported_cost,
     resolve_cost,
 )
+
+
+@pytest.fixture(autouse=False)
+def _clear_overrides_cache():
+    _load_overrides.cache_clear()
+    yield
+    _load_overrides.cache_clear()
 
 
 def test_cost_context_defaults() -> None:
@@ -239,4 +248,140 @@ def test_resolve_cost_default_chain_used_when_none() -> None:
 
 def test_default_resolvers_is_tuple() -> None:
     assert isinstance(DEFAULT_RESOLVERS, tuple)
-    assert len(DEFAULT_RESOLVERS) == 2
+    assert len(DEFAULT_RESOLVERS) == 3
+
+
+# -- overrides_cost ----------------------------------------------------------
+
+
+def test_overrides_env_unset_is_noop(monkeypatch: pytest.MonkeyPatch, _clear_overrides_cache: None) -> None:
+    monkeypatch.delenv("FIREFLY_AGENTIC_COST_OVERRIDES_PATH", raising=False)
+    ctx = CostContext(model="openai:any", input_tokens=1000, output_tokens=500)
+    assert overrides_cost(ctx) is None
+
+
+def test_overrides_missing_file_warns_and_noops(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    caplog: pytest.LogCaptureFixture,
+    _clear_overrides_cache: None,
+) -> None:
+    missing = tmp_path / "does-not-exist.yaml"
+    monkeypatch.setenv("FIREFLY_AGENTIC_COST_OVERRIDES_PATH", str(missing))
+    with caplog.at_level("WARNING"):
+        assert overrides_cost(CostContext(model="x", input_tokens=1, output_tokens=1)) is None
+    assert any("not found" in r.message for r in caplog.records)
+
+
+def test_overrides_malformed_yaml_warns_and_noops(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    caplog: pytest.LogCaptureFixture,
+    _clear_overrides_cache: None,
+) -> None:
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("models:\n  : : :\n  - not a mapping\n", encoding="utf-8")
+    monkeypatch.setenv("FIREFLY_AGENTIC_COST_OVERRIDES_PATH", str(bad))
+    with caplog.at_level("WARNING"):
+        assert overrides_cost(CostContext(model="x", input_tokens=1, output_tokens=1)) is None
+    assert any("Failed to load" in r.message or "ignoring" in r.message for r in caplog.records)
+
+
+def test_overrides_valid_file_prices_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, _clear_overrides_cache: None
+) -> None:
+    f = tmp_path / "prices.yaml"
+    f.write_text(
+        'models:\n  "openai:some-new-model":\n    input_per_1k: 0.005\n    output_per_1k: 0.015\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FIREFLY_AGENTIC_COST_OVERRIDES_PATH", str(f))
+    ctx = CostContext(model="openai:some-new-model", input_tokens=1000, output_tokens=500)
+    # 1000 * 0.005 / 1000 + 500 * 0.015 / 1000 = 0.005 + 0.0075 = 0.0125
+    assert overrides_cost(ctx) == pytest.approx(0.0125)
+
+
+def test_overrides_model_absent_returns_none(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, _clear_overrides_cache: None
+) -> None:
+    f = tmp_path / "prices.yaml"
+    f.write_text('models:\n  "openai:other":\n    input_per_1k: 1.0\n', encoding="utf-8")
+    monkeypatch.setenv("FIREFLY_AGENTIC_COST_OVERRIDES_PATH", str(f))
+    assert overrides_cost(CostContext(model="openai:missing", input_tokens=1, output_tokens=1)) is None
+
+
+def test_overrides_folds_cache_and_reasoning_tokens(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, _clear_overrides_cache: None
+) -> None:
+    f = tmp_path / "prices.yaml"
+    f.write_text(
+        'models:\n  "anthropic:custom":\n    input_per_1k: 1.0\n    output_per_1k: 2.0\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FIREFLY_AGENTIC_COST_OVERRIDES_PATH", str(f))
+    ctx = CostContext(
+        model="anthropic:custom",
+        input_tokens=100,
+        output_tokens=50,
+        cache_creation_tokens=1000,
+        cache_read_tokens=5000,
+        reasoning_tokens=200,
+    )
+    # input_total = 100 + 1000 + 5000 = 6100; * 1.0 / 1000 = 6.1
+    # output_total = 50 + 200 = 250; * 2.0 / 1000 = 0.5
+    assert overrides_cost(ctx) == pytest.approx(6.6)
+
+
+def test_overrides_is_terminal_does_not_shadow_upstream(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, _clear_overrides_cache: None
+) -> None:
+    """Default chain order: provider_reported > genai_prices > overrides.
+
+    A provider-reported cost must win even when overrides has an entry.
+    """
+    f = tmp_path / "prices.yaml"
+    f.write_text(
+        'models:\n  "openrouter:x":\n    input_per_1k: 99.0\n    output_per_1k: 99.0\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FIREFLY_AGENTIC_COST_OVERRIDES_PATH", str(f))
+    ctx = CostContext(
+        model="openrouter:x",
+        input_tokens=1,
+        output_tokens=1,
+        provider_payload={"usage": {"cost": 0.42}},
+    )
+    assert resolve_cost(ctx) == 0.42
+
+
+def test_overrides_in_chain_used_when_upstream_misses(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, _clear_overrides_cache: None
+) -> None:
+    f = tmp_path / "prices.yaml"
+    f.write_text(
+        'models:\n  "vendor:new-model":\n    input_per_1k: 0.001\n    output_per_1k: 0.002\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FIREFLY_AGENTIC_COST_OVERRIDES_PATH", str(f))
+    with patch(
+        "fireflyframework_agentic.observability.cost_resolvers.calc_price",
+        side_effect=LookupError("not found"),
+    ):
+        ctx = CostContext(model="vendor:new-model", input_tokens=1000, output_tokens=1000)
+        # 1000 * 0.001 / 1000 + 1000 * 0.002 / 1000 = 0.003
+        assert resolve_cost(ctx) == pytest.approx(0.003)
+
+
+def test_overrides_unknown_model_falls_through_to_strict(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, _clear_overrides_cache: None
+) -> None:
+    f = tmp_path / "prices.yaml"
+    f.write_text('models:\n  "other:x":\n    input_per_1k: 1.0\n', encoding="utf-8")
+    monkeypatch.setenv("FIREFLY_AGENTIC_COST_OVERRIDES_PATH", str(f))
+    with patch(
+        "fireflyframework_agentic.observability.cost_resolvers.calc_price",
+        side_effect=LookupError("not found"),
+    ):
+        ctx = CostContext(model="unknown:zzz", input_tokens=1, output_tokens=1)
+        with pytest.raises(UnknownModelCostError):
+            resolve_cost(ctx, strict=True)

@@ -39,6 +39,7 @@ dependencies = [
     # override=False), so Azure / Container Apps deploys see no change. The
     # alternative — guarding the import — adds noise the reviewer flagged.
     "python-dotenv>=1.0.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

@@ -26,6 +26,7 @@ from fireflyframework_agentic.observability.cost_resolvers import (
     CostContext,
     UnknownModelCostError,
     genai_prices_cost,
+    overrides_cost,
     provider_reported_cost,
     resolve_cost,
 )
@@ -87,6 +88,7 @@ __all__ = [
     "genai_prices_cost",
     "inject_trace_context",
     "metered",
+    "overrides_cost",
     "provider_reported_cost",
     "resolve_cost",
     "trace_context_scope",
