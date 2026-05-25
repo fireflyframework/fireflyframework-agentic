@@ -30,10 +30,17 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 from collections.abc import Callable
 from typing import Any
 
+try:
+    from pydantic_ai import Agent as PydanticAgent
+except ImportError:  # pragma: no cover - optional dep
+    PydanticAgent = None  # type: ignore[assignment,misc]
+
+from fireflyframework_agentic.config import get_config
 from fireflyframework_agentic.memory.types import ConversationTurn
 
 logger = logging.getLogger(__name__)
@@ -75,8 +82,6 @@ def create_llm_summarizer(
             loop = None
 
         if loop is not None and loop.is_running():
-            import concurrent.futures
-
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 return pool.submit(asyncio.run, _async_summarize(turns)).result()
         return asyncio.run(_async_summarize(turns))
@@ -87,12 +92,14 @@ def create_llm_summarizer(
         prompt = template.format(turns_text=turns_text)
 
         try:
-            from pydantic_ai import Agent as PydanticAgent
+            if PydanticAgent is None:
+                raise ImportError(
+                    "pydantic-ai is required for LLM summarization. "
+                    "Install it with: pip install fireflyframework-agentic[agents]"
+                )
 
             resolved_model = model
             if resolved_model is None:
-                from fireflyframework_agentic.config import get_config
-
                 resolved_model = get_config().default_model
 
             agent = PydanticAgent(resolved_model, output_type=str)
