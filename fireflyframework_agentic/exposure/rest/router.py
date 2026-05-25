@@ -84,8 +84,7 @@ def create_agent_router() -> APIRouter:
     """Create a FastAPI router with agent invocation endpoints."""
     if APIRouter is None:
         raise ImportError(
-            "fastapi is required for the REST router. "
-            "Install it with: pip install fireflyframework-agentic[rest]"
+            "fastapi is required for the REST router. Install it with: pip install fireflyframework-agentic[rest]"
         )
 
     router = APIRouter(prefix="/agents", tags=["agents"])

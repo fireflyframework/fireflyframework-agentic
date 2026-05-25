@@ -60,8 +60,7 @@ def create_websocket_router() -> APIRouter:
     """Create a FastAPI router with the agent WebSocket endpoint."""
     if APIRouter is None:
         raise ImportError(
-            "WebSocket support requires 'fastapi'. "
-            "Install with: pip install fireflyframework-agentic[rest]"
+            "WebSocket support requires 'fastapi'. Install with: pip install fireflyframework-agentic[rest]"
         )
 
     router = APIRouter(tags=["websocket"])

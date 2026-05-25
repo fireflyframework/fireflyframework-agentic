@@ -140,8 +140,7 @@ def _filter_schema_for_path(schema: TargetSchema, path: Path) -> TargetSchema | 
         try:
             if openpyxl is None:
                 raise ImportError(
-                    "openpyxl is required for Excel ingestion. "
-                    "Install with: pip install fireflyframework-agentic[rag]"
+                    "openpyxl is required for Excel ingestion. Install with: pip install fireflyframework-agentic[rag]"
                 )
 
             wb = openpyxl.load_workbook(path, read_only=True, data_only=True)

@@ -38,8 +38,7 @@ logger = logging.getLogger(__name__)
 def _require_redis() -> None:
     if aioredis is None:
         raise ImportError(
-            "redis[hiredis] is required for Redis support. "
-            "Install it with: pip install fireflyframework-agentic[redis]"
+            "redis[hiredis] is required for Redis support. Install it with: pip install fireflyframework-agentic[redis]"
         )
 
 
