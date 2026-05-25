@@ -19,6 +19,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+try:
+    from markitdown import MarkItDown
+except ImportError:  # pragma: no cover - optional dep
+    MarkItDown = None  # type: ignore[assignment,misc]
+
 
 @dataclass(slots=True)
 class Document:
@@ -39,8 +44,10 @@ class MarkitdownLoader:
 
     def _md_instance(self) -> Any:
         if self._md is None:
-            from markitdown import MarkItDown
-
+            if MarkItDown is None:
+                raise ImportError(
+                    "markitdown is required for MarkitdownLoader; install with `pip install markitdown`"
+                )
             self._md = MarkItDown()
         return self._md
 

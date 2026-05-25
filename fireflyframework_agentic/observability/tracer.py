@@ -29,7 +29,7 @@ from contextvars import ContextVar
 from typing import Any
 
 from opentelemetry import trace
-from opentelemetry.trace import Span, SpanContext, StatusCode, TraceFlags, Tracer
+from opentelemetry.trace import Span, SpanContext, StatusCode, TraceFlags, Tracer, TraceState
 
 _TRACER_NAME = "fireflyframework_agentic"
 
@@ -237,8 +237,6 @@ def extract_trace_context(headers: dict[str, str]) -> SpanContext | None:
         trace_flags = TraceFlags(int(flags_hex, 16))
 
         # Parse tracestate if present
-        from opentelemetry.trace import TraceState
-
         tracestate_header = headers_lower.get("tracestate")
         trace_state = TraceState.from_header([tracestate_header]) if tracestate_header else None
 

@@ -38,6 +38,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import re
 import sys
 from datetime import UTC, datetime
 from typing import Any
@@ -144,8 +145,6 @@ class ColoredFormatter(logging.Formatter):
     @staticmethod
     def _colorise_message(msg: str) -> str:
         """Apply colour to known symbols, agent names, and timing values."""
-        import re
-
         # Colour leading symbols (▸ ✓ ✗)
         for sym, col in _SYMBOL_COLORS.items():
             if msg.startswith(sym):

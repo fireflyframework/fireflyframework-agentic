@@ -29,6 +29,7 @@ Usage example::
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from typing import Any
 
@@ -143,8 +144,6 @@ class PipelineBuilder:
             return AgentStep(step)
         # Async callable
         if callable(step):
-            import asyncio
-
             if asyncio.iscoroutinefunction(step):
                 return CallableStep(step)
         raise TypeError(
