@@ -21,13 +21,16 @@ Requires the ``aiokafka`` optional dependency (install via
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
-    from aiokafka import AIOKafkaConsumer, AIOKafkaProducer  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - optional dep
-    AIOKafkaConsumer = None  # type: ignore[assignment,misc]
-    AIOKafkaProducer = None  # type: ignore[assignment,misc]
+if TYPE_CHECKING:
+    from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
+else:
+    try:
+        from aiokafka import AIOKafkaConsumer, AIOKafkaProducer  # type: ignore[import-not-found]
+    except ImportError:  # pragma: no cover - optional dep
+        AIOKafkaConsumer = None
+        AIOKafkaProducer = None
 
 from fireflyframework_agentic.exposure.queues.base import BaseQueueConsumer, QueueMessage
 from fireflyframework_agentic.observability.tracer import extract_trace_context, trace_context_scope
@@ -35,11 +38,9 @@ from fireflyframework_agentic.observability.tracer import extract_trace_context,
 logger = logging.getLogger(__name__)
 
 
-def _require_aiokafka() -> None:
-    if AIOKafkaConsumer is None:
-        raise ImportError(
-            "aiokafka is required for Kafka support. Install it with: pip install fireflyframework-agentic[kafka]"
-        )
+_AIOKAFKA_IMPORT_ERROR = (
+    "aiokafka is required for Kafka support. Install it with: pip install fireflyframework-agentic[kafka]"
+)
 
 
 class KafkaAgentConsumer(BaseQueueConsumer):
@@ -68,7 +69,8 @@ class KafkaAgentConsumer(BaseQueueConsumer):
 
     async def start(self) -> None:
         """Connect to Kafka and begin consuming."""
-        _require_aiokafka()
+        if AIOKafkaConsumer is None:
+            raise ImportError(_AIOKAFKA_IMPORT_ERROR)
 
         self._consumer = AIOKafkaConsumer(
             self._topic,
@@ -128,7 +130,8 @@ class KafkaAgentProducer:
 
     async def start(self) -> None:
         """Connect the underlying Kafka producer."""
-        _require_aiokafka()
+        if AIOKafkaProducer is None:
+            raise ImportError(_AIOKAFKA_IMPORT_ERROR)
 
         self._producer = AIOKafkaProducer(
             bootstrap_servers=self._bootstrap_servers,
