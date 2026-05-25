@@ -16,6 +16,39 @@ We trust our own model, not an attacker. See spec
 from __future__ import annotations
 
 import ast
+import builtins as _builtins
+import calendar
+import collections
+import dataclasses
+import datetime as _dt
+import decimal
+import enum
+import fractions
+import functools
+import io
+import itertools
+import json as _json
+import math
+import operator
+import random
+import re
+import statistics
+import string
+import textwrap
+import threading
+import unicodedata
+from contextlib import redirect_stdout
+from typing import Any
+
+try:
+    import numpy as _numpy_mod
+except ImportError:  # pragma: no cover - optional dep
+    _numpy_mod = None  # type: ignore[assignment]
+
+try:
+    import pandas as _pandas_mod
+except ImportError:  # pragma: no cover - optional dep
+    _pandas_mod = None  # type: ignore[assignment]
 
 WHITELISTED_MODULES: frozenset[str] = frozenset(
     {
@@ -188,13 +221,6 @@ def validate_source(source: str) -> None:
                 raise PythonComputeError(f"from-import of '{node.module}' is not allowed")
 
 
-import builtins as _builtins  # noqa: E402
-import io  # noqa: E402
-import random  # noqa: E402
-import threading  # noqa: E402
-from contextlib import redirect_stdout  # noqa: E402
-from typing import Any  # noqa: E402
-
 # Sandbox-boundary aliases. These two Python builtins are exactly the
 # call sites we want a security reviewer to read: a compiled AST that has
 # already passed validate_source().
@@ -256,24 +282,6 @@ def _build_namespace(data: dict[str, Any] | None) -> dict[str, Any]:
     safe_builtins["__import__"] = _builtins.__import__
     ns: dict[str, Any] = {"__builtins__": safe_builtins}
 
-    import calendar
-    import collections
-    import dataclasses
-    import datetime as _dt
-    import decimal
-    import enum
-    import fractions
-    import functools
-    import itertools
-    import json as _json
-    import math
-    import operator
-    import re
-    import statistics
-    import string
-    import textwrap
-    import unicodedata
-
     ns.update(
         {
             "math": math,
@@ -298,20 +306,14 @@ def _build_namespace(data: dict[str, Any] | None) -> dict[str, Any]:
         }
     )
 
-    try:
-        import numpy as _np
-
-        ns["np"] = _np
-        ns["numpy"] = _np
-    except ImportError as exc:
-        raise RuntimeError("install fireflyframework-agentic[reasoning-eval] to use python_compute") from exc
-    try:
-        import pandas as _pd
-
-        ns["pd"] = _pd
-        ns["pandas"] = _pd
-    except ImportError as exc:
-        raise RuntimeError("install fireflyframework-agentic[reasoning-eval] to use python_compute") from exc
+    if _numpy_mod is None:
+        raise RuntimeError("install fireflyframework-agentic[reasoning-eval] to use python_compute")
+    ns["np"] = _numpy_mod
+    ns["numpy"] = _numpy_mod
+    if _pandas_mod is None:
+        raise RuntimeError("install fireflyframework-agentic[reasoning-eval] to use python_compute")
+    ns["pd"] = _pandas_mod
+    ns["pandas"] = _pandas_mod
 
     if data:
         ns.update(data)
@@ -342,25 +344,11 @@ def _render(value: Any) -> str:
     that hands ``_render`` a value directly) still degrades gracefully to
     ``repr`` instead of crashing.
     """
-    try:
-        import pandas as pd
-
-        if isinstance(value, pd.DataFrame):
-            return _df_to_markdown(value)
-    except ImportError:
-        # pandas not installed (no [reasoning-eval] extra); fall through
-        # to the numpy probe and then the ``repr`` fallback.
-        pass
-    try:
-        import numpy as np
-
-        if isinstance(value, np.ndarray):
-            with np.printoptions(threshold=200, edgeitems=3):
-                return repr(value)
-    except ImportError:
-        # numpy not installed either; ``repr`` below handles every other
-        # value type, so this is the right place to give up.
-        pass
+    if _pandas_mod is not None and isinstance(value, _pandas_mod.DataFrame):
+        return _df_to_markdown(value)
+    if _numpy_mod is not None and isinstance(value, _numpy_mod.ndarray):
+        with _numpy_mod.printoptions(threshold=200, edgeitems=3):
+            return repr(value)
     return repr(value)
 
 

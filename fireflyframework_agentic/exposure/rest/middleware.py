@@ -22,14 +22,34 @@ import time
 import uuid
 from typing import Any
 
+try:
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse, Response
+except ImportError:  # pragma: no cover - optional dep
+    BaseHTTPMiddleware = None  # type: ignore[assignment,misc]
+    Request = None  # type: ignore[assignment,misc]
+    Response = None  # type: ignore[assignment,misc]
+    JSONResponse = None  # type: ignore[assignment,misc]
+
+try:
+    from fastapi.middleware.cors import CORSMiddleware  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - optional dep
+    CORSMiddleware = None  # type: ignore[assignment,misc]
+
+from fireflyframework_agentic.observability.tracer import (
+    extract_trace_context,
+    inject_trace_context,
+    trace_context_scope,
+)
+
 logger = logging.getLogger(__name__)
 
 
 def add_request_id_middleware(app: Any) -> None:
     """Add middleware that injects a unique ``X-Request-ID`` header."""
-    from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.requests import Request
-    from starlette.responses import Response
+    if BaseHTTPMiddleware is None:
+        raise ImportError("starlette is required for add_request_id_middleware")
 
     class RequestIDMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next: Any) -> Response:
@@ -64,7 +84,8 @@ def add_cors_middleware(
         allow_origins: List of allowed origin URLs. Defaults to [] (no origins allowed).
         allow_methods: List of allowed HTTP methods. Defaults to standard methods.
     """
-    from fastapi.middleware.cors import CORSMiddleware  # type: ignore[import-not-found]
+    if CORSMiddleware is None:
+        raise ImportError("fastapi is required for add_cors_middleware")
 
     # Secure default: no origins allowed
     if allow_origins is None:
@@ -146,9 +167,8 @@ def add_auth_middleware(
         api_key_header: Header name for API keys.
         exclude_paths: URL paths excluded from auth (e.g. ``["/health"]``).
     """
-    from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.requests import Request
-    from starlette.responses import JSONResponse, Response
+    if BaseHTTPMiddleware is None:
+        raise ImportError("starlette is required for add_auth_middleware")
 
     _api_keys = set(api_keys or [])
     _bearer_tokens = set(bearer_tokens or [])
@@ -201,9 +221,8 @@ def add_rate_limit_middleware(
         key_func: Optional callable ``(Request) -> str`` for the rate key.
             Defaults to the client's IP address.
     """
-    from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.requests import Request
-    from starlette.responses import JSONResponse, Response
+    if BaseHTTPMiddleware is None:
+        raise ImportError("starlette is required for add_rate_limit_middleware")
 
     limiter = RateLimiter(max_requests=max_requests, window_seconds=window_seconds)
 
@@ -248,15 +267,8 @@ def add_trace_propagation_middleware(app: Any) -> None:
         - :func:`~fireflyframework_agentic.observability.tracer.extract_trace_context`
         - :func:`~fireflyframework_agentic.observability.tracer.inject_trace_context`
     """
-    from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.requests import Request
-    from starlette.responses import Response
-
-    from fireflyframework_agentic.observability.tracer import (
-        extract_trace_context,
-        inject_trace_context,
-        trace_context_scope,
-    )
+    if BaseHTTPMiddleware is None:
+        raise ImportError("starlette is required for add_trace_propagation_middleware")
 
     class TracePropagationMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next: Any) -> Response:

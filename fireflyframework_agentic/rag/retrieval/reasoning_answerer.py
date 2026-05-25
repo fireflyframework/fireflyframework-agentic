@@ -19,13 +19,47 @@ See spec ``docs/superpowers/specs/2026-05-14-tool-using-corpus-agent-design.md``
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
+import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from fireflyframework_agentic.rag._telemetry import reasoning_tool_call_duration
+from pydantic_ai.messages import (
+    SystemPromptPart,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
+from pydantic_ai.usage import UsageLimits
+
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.rag._telemetry import (
+    reasoning_terminal_state,
+    reasoning_tool_call_duration,
+)
+from fireflyframework_agentic.rag.retrieval._python_compute import run_python_compute
+from fireflyframework_agentic.rag.retrieval.answerer import (
+    Answer,
+    AnswerAgent,
+    _build_cited_sources,
+)
+from fireflyframework_agentic.rag.retrieval.sql import (
+    _build_inspect_tool,
+    _build_schema_context,
+)
+from fireflyframework_agentic.rag.retrieval.sql import (
+    _LoopContext as _SqlLoopContext,
+)
+from fireflyframework_agentic.reasoning.trace import (
+    ActionStep,
+    ObservationStep,
+    ReasoningTrace,
+    ThoughtStep,
+)
 
 if TYPE_CHECKING:
     from fireflyframework_agentic.rag.agent import CorpusAgent
@@ -147,13 +181,6 @@ def _build_inspect_table_tool():
     captures each ``inspect_table`` call as its own :class:`ActionStep`.
     """
 
-    from fireflyframework_agentic.rag.retrieval.sql import (
-        _build_inspect_tool,
-    )
-    from fireflyframework_agentic.rag.retrieval.sql import (
-        _LoopContext as _SqlLoopContext,
-    )
-
     async def inspect_table(
         table: str,
         column: str,
@@ -186,14 +213,11 @@ def _build_python_compute_tool():
     Runs the sandbox in the event loop's default executor so the worker thread
     inside :func:`run_python_compute` doesn't block other tool calls.
     """
-    import asyncio as _asyncio
-
-    from fireflyframework_agentic.rag.retrieval._python_compute import run_python_compute
 
     async def python_compute(source: str, data: dict[str, Any] | None = None) -> str:
         ctx = _CURRENT_CTX.get()
         assert ctx is not None, "python_compute called outside answer()"
-        loop = _asyncio.get_running_loop()
+        loop = asyncio.get_running_loop()
         t0 = time.monotonic()
         try:
             return await loop.run_in_executor(None, run_python_compute, source, data)
@@ -227,21 +251,6 @@ def _trace_from_messages(messages, *, pattern_name: str):
     - ``ToolCallPart`` → :class:`ActionStep` (tool_name + tool_args lossless)
     - ``ToolReturnPart`` → :class:`ObservationStep` (content truncated to 2 KB)
     """
-    from pydantic_ai.messages import (
-        SystemPromptPart,
-        TextPart,
-        ToolCallPart,
-        ToolReturnPart,
-        UserPromptPart,
-    )
-
-    from fireflyframework_agentic.reasoning.trace import (
-        ActionStep,
-        ObservationStep,
-        ReasoningTrace,
-        ThoughtStep,
-    )
-
     trace = ReasoningTrace(pattern_name=pattern_name)
     for msg in messages:
         for part in getattr(msg, "parts", []):
@@ -341,9 +350,6 @@ class ReasoningAnswerAgent:
         max_llm_calls: int = 10,
         wall_clock_seconds: float = 120.0,
     ) -> None:
-        from fireflyframework_agentic.agents import FireflyAgent
-        from fireflyframework_agentic.rag.retrieval.answerer import Answer, AnswerAgent
-
         self._model = model
         self._corpus_agent = corpus_agent
         self._structured_retriever = structured_retriever
@@ -381,18 +387,6 @@ class ReasoningAnswerAgent:
         self._fallback_answerer = AnswerAgent(model=model)
 
     async def answer(self, question: str, *, include_trace: bool = False):
-        import asyncio
-        import logging
-
-        from pydantic_ai.usage import UsageLimits
-
-        from fireflyframework_agentic.rag._telemetry import reasoning_terminal_state
-        from fireflyframework_agentic.rag.retrieval.answerer import (
-            Answer,
-            _build_cited_sources,
-        )
-        from fireflyframework_agentic.rag.retrieval.sql import _build_schema_context
-
         log = logging.getLogger(__name__)
 
         schemas = await self._schema_registry.list_schemas()
