@@ -41,20 +41,28 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from fastapi import APIRouter  # type: ignore[import-not-found]
+try:
+    from fastapi import APIRouter, WebSocket, WebSocketDisconnect  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - optional dep
+    APIRouter = None  # type: ignore[assignment,misc]
+    WebSocket = None  # type: ignore[assignment,misc]
+    WebSocketDisconnect = None  # type: ignore[assignment,misc]
+
+from fireflyframework_agentic.agents.registry import agent_registry
+from fireflyframework_agentic.memory.manager import MemoryManager
 
 logger = logging.getLogger(__name__)
 
 
 def create_websocket_router() -> APIRouter:
     """Create a FastAPI router with the agent WebSocket endpoint."""
-    from fastapi import APIRouter, WebSocket, WebSocketDisconnect  # type: ignore[import-not-found]
-
-    from fireflyframework_agentic.agents.registry import agent_registry
-    from fireflyframework_agentic.memory.manager import MemoryManager
+    if APIRouter is None:
+        raise ImportError(
+            "WebSocket support requires 'fastapi'. "
+            "Install with: pip install fireflyframework-agentic[rest]"
+        )
 
     router = APIRouter(tags=["websocket"])
     _ws_memory = MemoryManager(working_scope_id="ws")

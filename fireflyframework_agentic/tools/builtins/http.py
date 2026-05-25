@@ -22,19 +22,22 @@ Connection pooling significantly improves performance by reusing TCP connections
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import logging
 import urllib.request
+import warnings
 from collections.abc import Sequence
 from typing import Any
+
+try:
+    import httpx
+except ImportError:  # pragma: no cover - optional dep
+    httpx = None  # type: ignore[assignment]
 
 from fireflyframework_agentic.tools.base import BaseTool, GuardProtocol, ParameterSpec
 
 logger = logging.getLogger(__name__)
 
-# Check if httpx is available for connection pooling
-
-HTTPX_AVAILABLE = importlib.util.find_spec("httpx") is not None
+HTTPX_AVAILABLE = httpx is not None
 
 
 class HttpTool(BaseTool):
@@ -92,13 +95,12 @@ class HttpTool(BaseTool):
 
         # Create httpx client with connection pooling
         if self._use_pool:
-            import httpx as _httpx  # already verified available via HTTPX_AVAILABLE
-
-            limits = _httpx.Limits(
+            assert httpx is not None  # guaranteed by HTTPX_AVAILABLE
+            limits = httpx.Limits(
                 max_connections=pool_size,
                 max_keepalive_connections=pool_max_keepalive,
             )
-            self._client: Any = _httpx.AsyncClient(
+            self._client: Any = httpx.AsyncClient(
                 timeout=timeout,
                 limits=limits,
                 follow_redirects=True,
@@ -116,8 +118,6 @@ class HttpTool(BaseTool):
     def __del__(self) -> None:
         """Warn if the client was not explicitly closed."""
         if self._client is not None:
-            import warnings
-
             warnings.warn(
                 f"Unclosed {self.__class__.__name__!r}. Call 'await tool.close()' to release connections.",
                 ResourceWarning,
