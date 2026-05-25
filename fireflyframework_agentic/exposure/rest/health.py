@@ -21,13 +21,13 @@ from typing import TYPE_CHECKING
 from fireflyframework_agentic.agents.registry import agent_registry
 from fireflyframework_agentic.exposure.rest.schemas import HealthResponse
 
-try:
-    from fastapi import APIRouter  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - optional dep
-    APIRouter = None  # type: ignore[assignment,misc]
-
 if TYPE_CHECKING:
-    from fastapi import APIRouter as _APIRouterType  # type: ignore[import-not-found]  # noqa: F401
+    from fastapi import APIRouter
+else:
+    try:
+        from fastapi import APIRouter  # type: ignore[import-not-found]
+    except ImportError:  # pragma: no cover - optional dep
+        APIRouter = None
 
 
 def create_health_router() -> APIRouter:

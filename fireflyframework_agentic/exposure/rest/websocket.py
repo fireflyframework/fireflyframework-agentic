@@ -41,14 +41,17 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
-    from fastapi import APIRouter, WebSocket, WebSocketDisconnect  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - optional dep
-    APIRouter = None  # type: ignore[assignment,misc]
-    WebSocket = None  # type: ignore[assignment,misc]
-    WebSocketDisconnect = None  # type: ignore[assignment,misc]
+if TYPE_CHECKING:
+    from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+else:
+    try:
+        from fastapi import APIRouter, WebSocket, WebSocketDisconnect  # type: ignore[import-not-found]
+    except ImportError:  # pragma: no cover - optional dep
+        APIRouter = None
+        WebSocket = None
+        WebSocketDisconnect = None
 
 from fireflyframework_agentic.agents.registry import agent_registry
 from fireflyframework_agentic.memory.manager import MemoryManager
@@ -58,11 +61,12 @@ logger = logging.getLogger(__name__)
 
 def create_websocket_router() -> APIRouter:
     """Create a FastAPI router with the agent WebSocket endpoint."""
-    if APIRouter is None:
+    if APIRouter is None or WebSocketDisconnect is None:
         raise ImportError(
             "WebSocket support requires 'fastapi'. Install with: pip install fireflyframework-agentic[rest]"
         )
 
+    _WebSocketDisconnect = WebSocketDisconnect  # noqa: N806 — local alias to narrow Optional for `except` clause
     router = APIRouter(tags=["websocket"])
     _ws_memory = MemoryManager(working_scope_id="ws")
 
@@ -146,7 +150,7 @@ def create_websocket_router() -> APIRouter:
                     logger.exception("WebSocket agent error for '%s'", name)
                     await _send_error(websocket, str(exc))
 
-        except WebSocketDisconnect:
+        except _WebSocketDisconnect:
             logger.debug("WebSocket client disconnected from agent '%s'", name)
 
     return router

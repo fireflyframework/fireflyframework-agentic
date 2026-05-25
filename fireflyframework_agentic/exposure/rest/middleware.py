@@ -20,22 +20,28 @@ import hmac
 import logging
 import time
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
+if TYPE_CHECKING:
+    from fastapi.middleware.cors import CORSMiddleware
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.requests import Request
     from starlette.responses import JSONResponse, Response
-except ImportError:  # pragma: no cover - optional dep
-    BaseHTTPMiddleware = None  # type: ignore[assignment,misc]
-    Request = None  # type: ignore[assignment,misc]
-    Response = None  # type: ignore[assignment,misc]
-    JSONResponse = None  # type: ignore[assignment,misc]
+else:
+    try:
+        from starlette.middleware.base import BaseHTTPMiddleware
+        from starlette.requests import Request
+        from starlette.responses import JSONResponse, Response
+    except ImportError:  # pragma: no cover - optional dep
+        BaseHTTPMiddleware = None
+        Request = None
+        Response = None
+        JSONResponse = None
 
-try:
-    from fastapi.middleware.cors import CORSMiddleware  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - optional dep
-    CORSMiddleware = None  # type: ignore[assignment,misc]
+    try:
+        from fastapi.middleware.cors import CORSMiddleware  # type: ignore[import-not-found]
+    except ImportError:  # pragma: no cover - optional dep
+        CORSMiddleware = None
 
 from fireflyframework_agentic.observability.tracer import (
     extract_trace_context,
@@ -167,9 +173,10 @@ def add_auth_middleware(
         api_key_header: Header name for API keys.
         exclude_paths: URL paths excluded from auth (e.g. ``["/health"]``).
     """
-    if BaseHTTPMiddleware is None:
+    if BaseHTTPMiddleware is None or JSONResponse is None:
         raise ImportError("starlette is required for add_auth_middleware")
 
+    _JSONResponse = JSONResponse  # noqa: N806 — local rebinding to narrow Optional for nested class
     _api_keys = set(api_keys or [])
     _bearer_tokens = set(bearer_tokens or [])
     _exclude = set(exclude_paths or ["/health", "/health/ready", "/health/live", "/docs", "/openapi.json"])
@@ -197,7 +204,7 @@ def add_auth_middleware(
             if not _api_keys and not _bearer_tokens:
                 return await call_next(request)
 
-            return JSONResponse(
+            return _JSONResponse(
                 {"detail": "Unauthorized"},
                 status_code=401,
             )
@@ -221,16 +228,17 @@ def add_rate_limit_middleware(
         key_func: Optional callable ``(Request) -> str`` for the rate key.
             Defaults to the client's IP address.
     """
-    if BaseHTTPMiddleware is None:
+    if BaseHTTPMiddleware is None or JSONResponse is None:
         raise ImportError("starlette is required for add_rate_limit_middleware")
 
+    _JSONResponse = JSONResponse  # noqa: N806 — local rebinding to narrow Optional for nested class
     limiter = RateLimiter(max_requests=max_requests, window_seconds=window_seconds)
 
     class RateLimitMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next: Any) -> Response:
             rk = key_func(request) if key_func is not None else (request.client.host if request.client else "unknown")
             if not limiter.is_allowed(rk):
-                return JSONResponse(
+                return _JSONResponse(
                     {"detail": "Rate limit exceeded"},
                     status_code=429,
                 )
