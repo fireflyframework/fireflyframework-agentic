@@ -20,6 +20,7 @@ the ingress layer.
 from __future__ import annotations
 
 import asyncio
+import importlib
 import logging
 import os
 from typing import Any
@@ -28,7 +29,12 @@ import uvicorn
 from dotenv import find_dotenv, load_dotenv
 from fastapi import FastAPI
 
+from fireflyframework_agentic.exposure.mcp.auth import (
+    OAuthJWTMiddleware,
+    add_oauth_metadata_routes,
+)
 from fireflyframework_agentic.exposure.mcp.server import create_mcp_app
+from fireflyframework_agentic.observability import configure_exporters
 from fireflyframework_agentic.tools.builtins import corpus_rag  # noqa: F401 — registers tools
 
 log = logging.getLogger(__name__)
@@ -81,11 +87,6 @@ def _install_oauth_auth(app: FastAPI) -> None:
     different IdP set the vars to their own factories and the framework
     needs no Azure / Entra deps to run.
     """
-    from fireflyframework_agentic.exposure.mcp.auth import (
-        OAuthJWTMiddleware,
-        add_oauth_metadata_routes,
-    )
-
     verifier_spec = os.environ.get(
         "FIREFLY_MCP_VERIFIER_FACTORY",
         "examples.corpus_search.azure_security:build_entra_verifier",
@@ -123,8 +124,6 @@ def _resolve_factory(spec: str):
     attribute cannot be imported / found — the alternative (a confusing
     ImportError at first request) makes ops debugging much harder.
     """
-    import importlib
-
     module_path, _, attr = spec.partition(":")
     if not module_path or not attr:
         raise RuntimeError(f"Factory spec must look like 'pkg.mod:callable', got {spec!r}")
@@ -194,8 +193,6 @@ def _configure_telemetry() -> None:
     warning but do not abort startup (telemetry is best-effort; the server
     must still serve requests if Application Insights is unreachable).
     """
-    from fireflyframework_agentic.observability import configure_exporters
-
     appinsights_cs = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING")
     otlp_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
     if not appinsights_cs and not otlp_endpoint:
