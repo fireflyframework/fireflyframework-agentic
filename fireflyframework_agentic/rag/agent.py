@@ -280,11 +280,13 @@ class CorpusAgent:
                 embedder=self._embedder,
             )
         if self._structured_retriever is None:
-            # TODO: this assumes LocalBackend semantics where
-            # self.root / "corpus.sqlite" is the canonical post-write file.
-            # Under AzureBlobBackend the canonical data lives in the blob;
-            # reads should route through _db_store.ensure_fresh().
-            self._structured_retriever = StructuredRetriever(self.root / "corpus.sqlite", sql_model=self._sql_model)
+            # Route through _db_store.ensure_fresh() so cloud backends
+            # (e.g. AzureBlobBackend) materialize a local copy of the
+            # sqlite file before StructuredRetriever opens it. On
+            # LocalBackend this is a near no-op and returns the same
+            # path as self.root / "corpus.sqlite".
+            sqlite_path, _generation = await self._db_store.ensure_fresh()
+            self._structured_retriever = StructuredRetriever(sqlite_path, sql_model=self._sql_model)
         # Answerer must be constructed AFTER structured_retriever so the
         # reasoning branch can pass it in.
         if self._answerer is None:
@@ -542,13 +544,19 @@ class CorpusAgent:
                 try:
                     local_path = await source.fetch(raw)
                 except Exception as exc:  # noqa: BLE001 — per-file isolation
-                    # TODO: also record this failure in the IngestLedger so the file
-                    # is replayable next run. Today the in-memory IngestionResult is
-                    # only surfaced through the returned IngestSummary; the cursor
-                    # advances past the file because the iterator drained, so a
-                    # failed fetch is effectively dropped from operational replay.
-                    # Tracked as part of Task 5 / follow-up.
+                    # The cursor advances past this file because the iterator
+                    # drained, so we persist the failure to the ledger to keep
+                    # it observable for retries / audits. content_hash is empty
+                    # because the fetch never produced bytes; should_skip() will
+                    # not match this row against any real hash, so a future run
+                    # that successfully fetches the same source will re-ingest.
                     log.warning("fetch failed for %s: %s", raw.source_id, exc)
+                    await self._ledger.upsert(
+                        doc_id=raw.source_id,
+                        source_path=raw.source_id,
+                        content_hash="",
+                        status="failed",
+                    )
                     results.append(
                         IngestionResult(
                             doc_id=raw.source_id,
