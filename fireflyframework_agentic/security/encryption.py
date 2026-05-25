@@ -55,16 +55,21 @@ from __future__ import annotations
 import base64
 import logging
 import os
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-try:
+if TYPE_CHECKING:
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-except ImportError:  # pragma: no cover - optional dep
-    hashes = None  # type: ignore[assignment]
-    AESGCM = None  # type: ignore[assignment,misc]
-    PBKDF2HMAC = None  # type: ignore[assignment,misc]
+else:
+    try:
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    except ImportError:  # pragma: no cover - optional dep
+        hashes = None
+        AESGCM = None
+        PBKDF2HMAC = None
 
 from fireflyframework_agentic.config import get_config
 from fireflyframework_agentic.memory.types import MemoryEntry
@@ -134,7 +139,7 @@ class AESEncryptionProvider:
     """
 
     def __init__(self, key: str | bytes) -> None:
-        if AESGCM is None:
+        if AESGCM is None or PBKDF2HMAC is None or hashes is None:
             raise ImportError(
                 "Encryption support requires 'cryptography'. Install with: pip install fireflyframework-agentic[security]"
             )
