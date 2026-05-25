@@ -37,10 +37,27 @@ from pydantic import BaseModel, ValidationError
 from pydantic_ai import Agent as PydanticAgent
 from pydantic_ai.models import Model
 
-from fireflyframework_agentic.exceptions import BudgetExceededError, ReasoningError, ReasoningStepLimitError
+from fireflyframework_agentic.config import get_config
+from fireflyframework_agentic.exceptions import (
+    BudgetExceededError,
+    OutputReviewError,
+    ReasoningError,
+    ReasoningStepLimitError,
+)
+from fireflyframework_agentic.memory.manager import MemoryManager
 from fireflyframework_agentic.observability.budget import ScopeContext
 from fireflyframework_agentic.observability.usage import default_usage_tracker
 from fireflyframework_agentic.prompts.template import Prompt, PromptTemplate
+from fireflyframework_agentic.reasoning.models import (
+    BranchEvaluation,
+    BranchList,
+    GoalDecompositionResult,
+    GoalPhase,
+    PlanStepDef,
+    ReasoningPlan,
+    ReasoningThought,
+    ReflectionVerdict,
+)
 from fireflyframework_agentic.reasoning.trace import (
     ReasoningResult,
     ReasoningStep,
@@ -49,7 +66,6 @@ from fireflyframework_agentic.reasoning.trace import (
 from fireflyframework_agentic.types import AgentLike, UserContent
 
 if TYPE_CHECKING:
-    from fireflyframework_agentic.memory.manager import MemoryManager
     from fireflyframework_agentic.validation.reviewer import OutputReviewer
 
 logger = logging.getLogger(__name__)
@@ -238,16 +254,6 @@ class AbstractReasoningPattern(ABC):
             pass
 
         # Type-specific text fallbacks
-        from fireflyframework_agentic.reasoning.models import (
-            BranchEvaluation,
-            GoalDecompositionResult,
-            GoalPhase,
-            PlanStepDef,
-            ReasoningPlan,
-            ReasoningThought,
-            ReflectionVerdict,
-        )
-
         if output_type is ReasoningThought:
             return ReasoningThought(content=raw_str)  # type: ignore[return-value]
         if output_type is ReflectionVerdict:
@@ -266,8 +272,6 @@ class AbstractReasoningPattern(ABC):
             lines = [ln.strip() for ln in raw_str.strip().split("\n") if ln.strip()]
             phases = [GoalPhase(name=ln) for ln in lines]
             return GoalDecompositionResult(goal="", phases=phases)  # type: ignore[return-value]
-
-        from fireflyframework_agentic.reasoning.models import BranchList
 
         if output_type is BranchList:
             branches = [b.strip() for b in raw_str.split("---") if b.strip()]
@@ -288,8 +292,6 @@ class AbstractReasoningPattern(ABC):
         If *memory* is not a ``MemoryManager`` (or is ``None``), returns
         ``None`` and memory integration is disabled.
         """
-        from fireflyframework_agentic.memory.manager import MemoryManager
-
         if isinstance(memory, MemoryManager):
             return memory.fork(working_scope_id=f"reasoning:{pattern_name}")
         return None
@@ -451,8 +453,6 @@ class AbstractReasoningPattern(ABC):
         If review fails after all retries, the original output is returned
         with a warning logged (non-fatal by default).
         """
-        from fireflyframework_agentic.exceptions import OutputReviewError
-
         reviewer = self._reviewer
         if reviewer is None:
             return output
@@ -478,8 +478,6 @@ class AbstractReasoningPattern(ABC):
     ) -> None:
         """Record usage from an ephemeral agent result."""
         try:
-            from fireflyframework_agentic.config import get_config
-
             cfg = get_config()
             if not cfg.cost_tracking_enabled:
                 return
