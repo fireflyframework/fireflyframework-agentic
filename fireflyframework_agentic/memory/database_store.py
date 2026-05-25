@@ -53,6 +53,16 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any
 
+try:
+    import asyncpg  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - optional dep
+    asyncpg = None  # type: ignore[assignment]
+
+try:
+    from motor.motor_asyncio import AsyncIOMotorClient  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - optional dep
+    AsyncIOMotorClient = None  # type: ignore[assignment,misc]
+
 from fireflyframework_agentic.exceptions import DatabaseConnectionError, DatabaseStoreError
 from fireflyframework_agentic.memory.types import MemoryEntry
 
@@ -130,13 +140,11 @@ class PostgreSQLStore:
         if self._initialized:
             return
 
-        try:
-            import asyncpg  # type: ignore[import-not-found]
-        except ImportError as exc:
+        if asyncpg is None:
             raise DatabaseStoreError(
                 "PostgreSQL support requires 'asyncpg' and 'sqlalchemy'. "
                 "Install with: pip install fireflyframework-agentic[postgres]"
-            ) from exc
+            )
 
         try:
             self._pool = await asyncpg.create_pool(
@@ -423,13 +431,11 @@ class MongoDBStore:
         if self._initialized:
             return
 
-        try:
-            from motor.motor_asyncio import AsyncIOMotorClient  # type: ignore[import-not-found]
-        except ImportError as exc:
+        if AsyncIOMotorClient is None:
             raise DatabaseStoreError(
                 "MongoDB support requires 'motor' and 'pymongo'. "
                 "Install with: pip install fireflyframework-agentic[mongodb]"
-            ) from exc
+            )
 
         try:
             self._client = AsyncIOMotorClient(self._url, maxPoolSize=self._pool_size)
