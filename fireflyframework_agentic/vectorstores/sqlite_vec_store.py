@@ -32,11 +32,13 @@ except ImportError:
         raise ImportError("sqlite-vec is not installed")
 
 
+from fireflyframework_agentic.exceptions import VectorStoreError
+from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
 from fireflyframework_agentic.vectorstores.base import BaseVectorStore
 from fireflyframework_agentic.vectorstores.types import SearchFilter, SearchResult, VectorDocument
 
 if TYPE_CHECKING:
-    from fireflyframework_agentic.storage import DatabaseStore, WriteSession
+    from fireflyframework_agentic.storage import WriteSession
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +66,6 @@ class SqliteVecVectorStore(BaseVectorStore):
             raise TypeError("SqliteVecVectorStore requires path_or_store or db_path")
         target = path_or_store if path_or_store is not None else db_path
         assert target is not None  # guaranteed by the TypeError check above
-
-        from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
 
         if isinstance(target, DatabaseStore):
             self._store = target
@@ -134,8 +134,6 @@ class SqliteVecVectorStore(BaseVectorStore):
     ) -> None:
         """Override of BaseVectorStore.upsert to accept a shared
         DatabaseStore write session for coordinated batches."""
-        from fireflyframework_agentic.exceptions import VectorStoreError
-
         needs_embedding = [d for d in documents if d.embedding is None]
         if needs_embedding:
             if self._embedder is None:
@@ -160,8 +158,6 @@ class SqliteVecVectorStore(BaseVectorStore):
         *,
         session: WriteSession | None = None,
     ) -> None:
-        from fireflyframework_agentic.exceptions import VectorStoreError
-
         try:
             await self._delete(ids, namespace, session=session)
         except VectorStoreError:
