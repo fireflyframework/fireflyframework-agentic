@@ -177,6 +177,10 @@ def resolve_cost(
     When ``strict`` is ``True`` (or unset and
     ``FIREFLY_AGENTIC_COST_STRICT`` / ``config.cost_strict`` is true),
     raise :class:`UnknownModelCostError` instead of returning ``None``.
+
+    To override or extend pricing, compose your own resolver chain by
+    prepending a custom ``CostFn`` to ``DEFAULT_RESOLVERS``. See
+    ``examples/cost_tracking.py`` for the canonical pattern.
     """
     chain = resolvers if resolvers is not None else DEFAULT_RESOLVERS
     for fn in chain:
