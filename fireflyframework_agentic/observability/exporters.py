@@ -235,7 +235,7 @@ def configure_exporters(
 
     # ── OTLP exporters (Jaeger, Tempo, ADOT, generic collectors) ──────────
     if otlp_endpoint:
-        if OTLPSpanExporter is None:
+        if OTLPSpanExporter is None or OTLPMetricExporter is None or OTLPLogExporter is None:
             logger.warning(
                 "opentelemetry-exporter-otlp-proto-grpc is not installed; "
                 "OTLP export disabled. Install the package to enable it."
@@ -253,7 +253,7 @@ def configure_exporters(
 
     # ── Azure Monitor / Application Insights ──────────────────────────────
     if azure_monitor_connection_string:
-        if AzureMonitorTraceExporter is None:
+        if AzureMonitorTraceExporter is None or AzureMonitorMetricExporter is None or AzureMonitorLogExporter is None:
             logger.warning(
                 "azure-monitor-opentelemetry-exporter is not installed; "
                 "AppInsights export disabled. Install with the [azure] extra."
