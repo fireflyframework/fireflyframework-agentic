@@ -135,11 +135,10 @@ async def test_real_llm_reasoning_trace_shape(qid: str, question: str, tmp_path:
             f"{[s.tool_args.get('source', '') for s in code_steps]}"
         )
 
-    if qid == "q5_operating_efficiency_2024q3":
-        # Methodology surfacing is preferred but not required: real models
-        # sometimes proceed directly to SQL/inspect_table. If knowledge_search
-        # is used, it must precede sql_query.
-        if "knowledge_search" in names:
-            assert names.index("knowledge_search") < names.index("sql_query"), (
-                f"[{qid}] knowledge_search must precede sql_query: {names}"
-            )
+    # Methodology surfacing is preferred but not required: real models
+    # sometimes proceed directly to SQL/inspect_table. If knowledge_search
+    # is used, it must precede sql_query.
+    if qid == "q5_operating_efficiency_2024q3" and "knowledge_search" in names:
+        assert names.index("knowledge_search") < names.index("sql_query"), (
+            f"[{qid}] knowledge_search must precede sql_query: {names}"
+        )
