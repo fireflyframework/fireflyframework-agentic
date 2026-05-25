@@ -24,7 +24,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
+    from aiokafka import AIOKafkaConsumer, AIOKafkaProducer  # pyright: ignore[reportMissingImports]
 else:
     try:
         from aiokafka import AIOKafkaConsumer, AIOKafkaProducer  # type: ignore[import-not-found]

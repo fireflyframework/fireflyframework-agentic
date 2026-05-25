@@ -24,7 +24,7 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
-    import aio_pika
+    import aio_pika  # pyright: ignore[reportMissingImports]
 else:
     try:
         import aio_pika  # type: ignore[import-not-found]
