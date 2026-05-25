@@ -25,14 +25,14 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
+from fireflyframework_agentic.config import get_config
+
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def _lifespan(app: Any) -> AsyncIterator[None]:
     """FastAPI lifespan: plugin discovery, warmup, OTel, and shutdown."""
-    from fireflyframework_agentic.config import get_config
-
     cfg = get_config()
 
     # -- Startup -----------------------------------------------------------
@@ -113,8 +113,6 @@ def create_agentic_app(
         add_rate_limit_middleware(app, **rl_kwargs)
 
     # Auto-wire auth middleware from config
-    from fireflyframework_agentic.config import get_config
-
     cfg = get_config()
     if cfg.auth_api_keys or cfg.auth_bearer_tokens:
         from fireflyframework_agentic.exposure.rest.middleware import add_auth_middleware
