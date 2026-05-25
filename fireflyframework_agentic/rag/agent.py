@@ -280,11 +280,13 @@ class CorpusAgent:
                 embedder=self._embedder,
             )
         if self._structured_retriever is None:
-            # TODO: this assumes LocalBackend semantics where
-            # self.root / "corpus.sqlite" is the canonical post-write file.
-            # Under AzureBlobBackend the canonical data lives in the blob;
-            # reads should route through _db_store.ensure_fresh().
-            self._structured_retriever = StructuredRetriever(self.root / "corpus.sqlite", sql_model=self._sql_model)
+            # Route through _db_store.ensure_fresh() so cloud backends
+            # (e.g. AzureBlobBackend) materialize a local copy of the
+            # sqlite file before StructuredRetriever opens it. On
+            # LocalBackend this is a near no-op and returns the same
+            # path as self.root / "corpus.sqlite".
+            sqlite_path, _generation = await self._db_store.ensure_fresh()
+            self._structured_retriever = StructuredRetriever(sqlite_path, sql_model=self._sql_model)
         # Answerer must be constructed AFTER structured_retriever so the
         # reasoning branch can pass it in.
         if self._answerer is None:
