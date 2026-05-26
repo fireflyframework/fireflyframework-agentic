@@ -36,7 +36,7 @@ def __getattr__(name: str):
     _rest_names = {"create_agentic_app", "AgentRequest", "AgentResponse", "HealthResponse"}
     if name in _rest_names:
         # imports-top: optional dep (fastapi) loaded on demand inside __getattr__
-        from fireflyframework_agentic.exposure.rest import (
+        from fireflyframework_agentic.exposure.rest import (  # noqa: PLC0415 — optional dep loaded on demand
             AgentRequest,
             AgentResponse,
             HealthResponse,
