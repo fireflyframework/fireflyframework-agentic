@@ -26,12 +26,11 @@ from typing import Any
 from pydantic_ai.models import Model
 
 from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.tools.builtins.text_tool import TextTool
 
 
 def _default_summarizer_tools() -> list[Any]:
     """Lazily instantiate built-in tools useful for summarization."""
-    from fireflyframework_agentic.tools.builtins.text_tool import TextTool
-
     return [TextTool()]
 
 

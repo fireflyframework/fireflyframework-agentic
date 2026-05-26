@@ -55,8 +55,23 @@ from __future__ import annotations
 import base64
 import logging
 import os
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+if TYPE_CHECKING:
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+else:
+    try:
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    except ImportError:  # pragma: no cover - optional dep
+        hashes = None
+        AESGCM = None
+        PBKDF2HMAC = None
+
+from fireflyframework_agentic.config import get_config
 from fireflyframework_agentic.memory.types import MemoryEntry
 
 logger = logging.getLogger(__name__)
@@ -124,14 +139,10 @@ class AESEncryptionProvider:
     """
 
     def __init__(self, key: str | bytes) -> None:
-        try:
-            from cryptography.hazmat.primitives import hashes
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-            from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-        except ImportError as exc:
+        if AESGCM is None or PBKDF2HMAC is None or hashes is None:
             raise ImportError(
                 "Encryption support requires 'cryptography'. Install with: pip install fireflyframework-agentic[security]"
-            ) from exc
+            )
 
         # Store raw key bytes for per-call salt derivation
         self._raw_key = key.encode("utf-8") if isinstance(key, str) else key
@@ -332,8 +343,6 @@ def create_encryption_provider_from_config() -> EncryptionProvider | None:
     Returns:
         EncryptionProvider instance if encryption is enabled, None otherwise.
     """
-    from fireflyframework_agentic.config import get_config
-
     cfg = get_config()
 
     if not cfg.encryption_enabled or not cfg.encryption_key:

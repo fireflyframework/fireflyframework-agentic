@@ -19,6 +19,12 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    from watchfiles import Change, awatch
+except ImportError:  # pragma: no cover - optional dep
+    Change = None  # type: ignore[assignment,misc]
+    awatch = None  # type: ignore[assignment]
+
 
 @dataclass
 class FolderWatcher:
@@ -81,8 +87,8 @@ class FolderWatcher:
         return False
 
     async def watch(self) -> AsyncIterator[Path]:
-        from watchfiles import Change, awatch
-
+        if awatch is None or Change is None:
+            raise ImportError("watchfiles is required for FolderWatcher.watch(); install with `pip install watchfiles`")
         async for changes in awatch(str(self.folder), debounce=self.debounce_ms):
             for change, raw_path in changes:
                 if change is Change.deleted:

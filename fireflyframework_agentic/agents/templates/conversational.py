@@ -26,6 +26,9 @@ from typing import TYPE_CHECKING, Any
 from pydantic_ai.models import Model
 
 from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.tools.builtins.calculator_tool import CalculatorTool
+from fireflyframework_agentic.tools.builtins.datetime_tool import DateTimeTool
+from fireflyframework_agentic.tools.builtins.text_tool import TextTool
 
 if TYPE_CHECKING:
     from fireflyframework_agentic.memory.manager import MemoryManager
@@ -33,10 +36,6 @@ if TYPE_CHECKING:
 
 def _default_conversational_tools() -> list[Any]:
     """Lazily instantiate built-in tools useful for conversation."""
-    from fireflyframework_agentic.tools.builtins.calculator_tool import CalculatorTool
-    from fireflyframework_agentic.tools.builtins.datetime_tool import DateTimeTool
-    from fireflyframework_agentic.tools.builtins.text_tool import TextTool
-
     return [DateTimeTool(), CalculatorTool(), TextTool()]
 
 

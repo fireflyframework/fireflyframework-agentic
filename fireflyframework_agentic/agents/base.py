@@ -24,7 +24,9 @@ lifecycle hooks, and sensible defaults drawn from
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
+import re
 import time
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Generic, cast
@@ -34,15 +36,30 @@ from pydantic_ai import Tool as PydanticTool
 from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
 
+from fireflyframework_agentic.agents.builtin_middleware import (
+    LoggingMiddleware,
+    ObservabilityMiddleware,
+)
+from fireflyframework_agentic.agents.context import AgentContext as _AgentContext
+from fireflyframework_agentic.agents.middleware import MiddlewareChain, MiddlewareContext
+from fireflyframework_agentic.agents.registry import agent_registry
 from fireflyframework_agentic.config import get_config
-from fireflyframework_agentic.exceptions import BudgetExceededError
+from fireflyframework_agentic.exceptions import BudgetExceededError, RateLimitError
+from fireflyframework_agentic.model_utils import get_model_identifier
 from fireflyframework_agentic.observability.budget import ScopeContext
+from fireflyframework_agentic.observability.quota import (
+    AdaptiveBackoff,
+    default_quota_manager,
+)
 from fireflyframework_agentic.observability.usage import default_usage_tracker
+from fireflyframework_agentic.reasoning.trace import ReasoningResult
+from fireflyframework_agentic.tools.base import BaseTool
+from fireflyframework_agentic.tools.toolkit import ToolKit
 from fireflyframework_agentic.types import AgentDepsT, Metadata, OutputT, UserContent
 
 if TYPE_CHECKING:
     from fireflyframework_agentic.agents.context import AgentContext
-    from fireflyframework_agentic.agents.middleware import AgentMiddleware, MiddlewareChain
+    from fireflyframework_agentic.agents.middleware import AgentMiddleware
     from fireflyframework_agentic.memory.manager import MemoryManager
 
 logger = logging.getLogger(__name__)
@@ -61,8 +78,6 @@ def _run_sync_coro(coro: Any) -> Any:
         return asyncio.run(coro)
 
     # A loop is running (e.g. Jupyter, nested async).  Run in a new thread.
-    import concurrent.futures
-
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         return pool.submit(asyncio.run, coro).result()
 
@@ -140,13 +155,9 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         resolved_retries = retries if retries is not None else cfg.max_retries
 
         # Keep the original model identifier for cost tracking.
-        from fireflyframework_agentic.model_utils import get_model_identifier
-
         self.model_identifier: str = get_model_identifier(resolved_model)
 
         self._memory = memory
-
-        from fireflyframework_agentic.agents.middleware import MiddlewareChain
 
         self._middleware = MiddlewareChain(self._build_middleware(middleware, default_middleware=default_middleware))
 
@@ -166,8 +177,6 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         )
 
         if auto_register:
-            from fireflyframework_agentic.agents.registry import agent_registry
-
             agent_registry.register(self)
             logger.debug("Auto-registered agent '%s' v%s", name, version)
 
@@ -241,9 +250,6 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
 
         Delegates to ``pydantic_ai.Agent.run``.
         """
-        from fireflyframework_agentic.agents.context import AgentContext as _AgentContext
-        from fireflyframework_agentic.agents.middleware import MiddlewareContext
-
         if context is None:
             context = _AgentContext()
 
@@ -287,9 +293,6 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         **kwargs: Any,
     ) -> Any:
         """Run the agent synchronously.  Delegates to ``pydantic_ai.Agent.run_sync``."""
-        from fireflyframework_agentic.agents.context import AgentContext as _AgentContext
-        from fireflyframework_agentic.agents.middleware import MiddlewareContext
-
         if context is None:
             context = _AgentContext()
 
@@ -344,9 +347,6 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
                 - "buffered" (default): Stream in chunks/messages (backward compatible)
                 - "incremental": True token-by-token streaming with minimal latency
         """
-        from fireflyframework_agentic.agents.context import AgentContext as _AgentContext
-        from fireflyframework_agentic.agents.middleware import MiddlewareContext
-
         if streaming_mode not in ("buffered", "incremental"):
             raise ValueError(f"Invalid streaming_mode: {streaming_mode!r}. Expected 'buffered' or 'incremental'.")
 
@@ -498,10 +498,6 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         Returns:
             A :class:`ReasoningResult` produced by the pattern.
         """
-        from fireflyframework_agentic.agents.context import AgentContext as _AgentContext
-        from fireflyframework_agentic.agents.middleware import MiddlewareContext
-        from fireflyframework_agentic.reasoning.trace import ReasoningResult
-
         if context is None:
             context = _AgentContext()
 
@@ -562,8 +558,6 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         - Bedrock ``ThrottlingException`` / ``TooManyRequestsException``
         - String patterns as a fallback
         """
-        from fireflyframework_agentic.exceptions import RateLimitError
-
         if isinstance(exc, RateLimitError):
             return True
         if hasattr(exc, "status_code") and getattr(exc, "status_code", None) == 429:
@@ -594,13 +588,6 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         instance on the default :class:`QuotaManager` when quota is enabled,
         or creates a standalone backoff otherwise.
         """
-        import re
-
-        from fireflyframework_agentic.observability.quota import (
-            AdaptiveBackoff,
-            default_quota_manager,
-        )
-
         cfg = get_config()
         max_retries = cfg.rate_limit_max_retries
         max_delay = cfg.rate_limit_max_delay
@@ -665,11 +652,6 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         :class:`ObservabilityMiddleware` to the chain unless the user
         already supplied one.
         """
-        from fireflyframework_agentic.agents.builtin_middleware import (
-            LoggingMiddleware,
-            ObservabilityMiddleware,
-        )
-
         chain: list[Any] = []
         user_mw = list(user_middleware or [])
 
@@ -701,9 +683,6 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         * Everything else (plain functions, ``pydantic_ai.Tool`` objects) is
           passed through unchanged.
         """
-        from fireflyframework_agentic.tools.base import BaseTool
-        from fireflyframework_agentic.tools.toolkit import ToolKit
-
         resolved: list[Any] = []
         for item in tools:
             if isinstance(item, ToolKit):

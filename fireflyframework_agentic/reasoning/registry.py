@@ -21,6 +21,12 @@ import threading
 from typing import Any
 
 from fireflyframework_agentic.exceptions import ReasoningPatternNotFoundError
+from fireflyframework_agentic.reasoning.chain_of_thought import ChainOfThoughtPattern
+from fireflyframework_agentic.reasoning.goal_decomposition import GoalDecompositionPattern
+from fireflyframework_agentic.reasoning.plan_and_execute import PlanAndExecutePattern
+from fireflyframework_agentic.reasoning.react import ReActPattern
+from fireflyframework_agentic.reasoning.reflexion import ReflexionPattern
+from fireflyframework_agentic.reasoning.tree_of_thoughts import TreeOfThoughtsPattern
 
 logger = logging.getLogger(__name__)
 
@@ -74,13 +80,6 @@ reasoning_registry = ReasoningPatternRegistry()
 def _auto_register_builtins() -> None:
     """Lazily register the six built-in reasoning patterns."""
     try:
-        from fireflyframework_agentic.reasoning.chain_of_thought import ChainOfThoughtPattern
-        from fireflyframework_agentic.reasoning.goal_decomposition import GoalDecompositionPattern
-        from fireflyframework_agentic.reasoning.plan_and_execute import PlanAndExecutePattern
-        from fireflyframework_agentic.reasoning.react import ReActPattern
-        from fireflyframework_agentic.reasoning.reflexion import ReflexionPattern
-        from fireflyframework_agentic.reasoning.tree_of_thoughts import TreeOfThoughtsPattern
-
         for name, cls in [
             ("react", ReActPattern),
             ("chain_of_thought", ChainOfThoughtPattern),

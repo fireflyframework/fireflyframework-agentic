@@ -276,7 +276,7 @@ def test_main_calls_configure_exporters_when_appinsights_connection_string_set(
     monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
 
     with (
-        patch("fireflyframework_agentic.observability.configure_exporters") as mock_configure,
+        patch("fireflyframework_agentic.exposure.mcp.http_cli.configure_exporters") as mock_configure,
         patch("fireflyframework_agentic.exposure.mcp.http_cli.asyncio.run", new=_stub_uvicorn_run),
     ):
         main()

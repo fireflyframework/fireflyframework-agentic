@@ -21,11 +21,13 @@ integration tests with real databases.
 
 from __future__ import annotations
 
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from fireflyframework_agentic.exceptions import DatabaseConnectionError, DatabaseStoreError
+from fireflyframework_agentic.memory import database_store
 from fireflyframework_agentic.memory.types import MemoryEntry, MemoryScope
 
 
@@ -62,13 +64,21 @@ def mock_motor_client():
 
 @pytest.fixture(autouse=True)
 def _ensure_motor_mockable(monkeypatch):
-    """Ensure motor module is importable (mocked) so patch() targets resolve."""
-    import sys
+    """Ensure motor module is importable (mocked) so patch() targets resolve.
 
+    The database_store module imports AsyncIOMotorClient at load time. If
+    motor is not installed, the module attribute is None. We inject a mock
+    AsyncIOMotorClient directly onto the loaded database_store module so
+    that patch("fireflyframework_agentic.memory.database_store.
+    AsyncIOMotorClient") works.
+    """
     if "motor" not in sys.modules:
         mock_motor = MagicMock()
         monkeypatch.setitem(sys.modules, "motor", mock_motor)
         monkeypatch.setitem(sys.modules, "motor.motor_asyncio", mock_motor.motor_asyncio)
+
+    mock_client_class = MagicMock()
+    monkeypatch.setattr(database_store, "AsyncIOMotorClient", mock_client_class, raising=False)
 
 
 @pytest.mark.asyncio
@@ -82,7 +92,7 @@ class TestMongoDBStore:
         store = MongoDBStore(url="mongodb://test")
 
         with (
-            patch.dict("sys.modules", {"motor.motor_asyncio": None}),
+            patch("fireflyframework_agentic.memory.database_store.AsyncIOMotorClient", None),
             pytest.raises(DatabaseStoreError, match="MongoDB support requires"),
         ):
             await store.initialize()
@@ -93,7 +103,7 @@ class TestMongoDBStore:
 
         store = MongoDBStore(url="mongodb://invalid:27017/")
 
-        with patch("motor.motor_asyncio.AsyncIOMotorClient") as mock_client_class:
+        with patch("fireflyframework_agentic.memory.database_store.AsyncIOMotorClient") as mock_client_class:
             client = MagicMock()
             client.admin.command = AsyncMock(side_effect=Exception("Connection refused"))
             mock_client_class.return_value = client
@@ -108,7 +118,7 @@ class TestMongoDBStore:
         client, db, collection, _ = mock_motor_client
         store = MongoDBStore(url="mongodb://test")
 
-        with patch("motor.motor_asyncio.AsyncIOMotorClient", return_value=client):
+        with patch("fireflyframework_agentic.memory.database_store.AsyncIOMotorClient", return_value=client):
             await store.initialize()
 
             # Verify indexes were created
@@ -121,7 +131,7 @@ class TestMongoDBStore:
         client, db, collection, _ = mock_motor_client
         store = MongoDBStore(url="mongodb://test")
 
-        with patch("motor.motor_asyncio.AsyncIOMotorClient", return_value=client):
+        with patch("fireflyframework_agentic.memory.database_store.AsyncIOMotorClient", return_value=client):
             await store.initialize()
 
             entry = MemoryEntry(
@@ -147,7 +157,7 @@ class TestMongoDBStore:
         entry = MemoryEntry(key="test", content="data")
         cursor.to_list.return_value = [entry.model_dump(mode="json")]
 
-        with patch("motor.motor_asyncio.AsyncIOMotorClient", return_value=client):
+        with patch("fireflyframework_agentic.memory.database_store.AsyncIOMotorClient", return_value=client):
             await store.initialize()
 
             results = await store.async_load("test_namespace")
@@ -163,7 +173,7 @@ class TestMongoDBStore:
         client, db, collection, cursor = mock_motor_client
         store = MongoDBStore(url="mongodb://test")
 
-        with patch("motor.motor_asyncio.AsyncIOMotorClient", return_value=client):
+        with patch("fireflyframework_agentic.memory.database_store.AsyncIOMotorClient", return_value=client):
             await store.initialize()
 
             await store.async_load("test_namespace")
@@ -184,7 +194,7 @@ class TestMongoDBStore:
         entry = MemoryEntry(key="specific_key", content="specific data")
         collection.find_one.return_value = entry.model_dump(mode="json")
 
-        with patch("motor.motor_asyncio.AsyncIOMotorClient", return_value=client):
+        with patch("fireflyframework_agentic.memory.database_store.AsyncIOMotorClient", return_value=client):
             await store.initialize()
 
             result = await store.async_load_by_key("test_namespace", "specific_key")
@@ -202,7 +212,7 @@ class TestMongoDBStore:
 
         collection.find_one.return_value = None
 
-        with patch("motor.motor_asyncio.AsyncIOMotorClient", return_value=client):
+        with patch("fireflyframework_agentic.memory.database_store.AsyncIOMotorClient", return_value=client):
             await store.initialize()
 
             result = await store.async_load_by_key("test_namespace", "nonexistent")
@@ -216,7 +226,7 @@ class TestMongoDBStore:
         client, db, collection, _ = mock_motor_client
         store = MongoDBStore(url="mongodb://test")
 
-        with patch("motor.motor_asyncio.AsyncIOMotorClient", return_value=client):
+        with patch("fireflyframework_agentic.memory.database_store.AsyncIOMotorClient", return_value=client):
             await store.initialize()
 
             await store.async_delete("test_namespace", "entry_123")
@@ -235,7 +245,7 @@ class TestMongoDBStore:
         client, db, collection, _ = mock_motor_client
         store = MongoDBStore(url="mongodb://test")
 
-        with patch("motor.motor_asyncio.AsyncIOMotorClient", return_value=client):
+        with patch("fireflyframework_agentic.memory.database_store.AsyncIOMotorClient", return_value=client):
             await store.initialize()
 
             await store.async_clear("test_namespace")
@@ -257,7 +267,7 @@ class TestMongoDBStore:
         result_mock.deleted_count = 7
         collection.delete_many.return_value = result_mock
 
-        with patch("motor.motor_asyncio.AsyncIOMotorClient", return_value=client):
+        with patch("fireflyframework_agentic.memory.database_store.AsyncIOMotorClient", return_value=client):
             await store.initialize()
 
             count = await store.cleanup_expired()
@@ -274,7 +284,7 @@ class TestMongoDBStore:
         client, _, _, _ = mock_motor_client
         store = MongoDBStore(url="mongodb://test")
 
-        with patch("motor.motor_asyncio.AsyncIOMotorClient", return_value=client):
+        with patch("fireflyframework_agentic.memory.database_store.AsyncIOMotorClient", return_value=client):
             await store.initialize()
 
             await store.close()
@@ -293,7 +303,7 @@ class TestMongoDBStore:
         client, db, collection, cursor = mock_motor_client
         store = MongoDBStore(url="mongodb://test")
 
-        with patch("motor.motor_asyncio.AsyncIOMotorClient", return_value=client):
+        with patch("fireflyframework_agentic.memory.database_store.AsyncIOMotorClient", return_value=client):
             await store.initialize()
 
             # Test async save (sync wrappers delegate to these)

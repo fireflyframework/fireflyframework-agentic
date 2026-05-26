@@ -25,7 +25,25 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
+try:
+    from fastapi import FastAPI  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - optional dep
+    FastAPI = None  # type: ignore[assignment,misc]
+
+from fireflyframework_agentic.agents.lifecycle import agent_lifecycle
 from fireflyframework_agentic.config import get_config
+from fireflyframework_agentic.exposure.rest.health import create_health_router
+from fireflyframework_agentic.exposure.rest.middleware import (
+    add_auth_middleware,
+    add_cors_middleware,
+    add_rate_limit_middleware,
+    add_request_id_middleware,
+)
+from fireflyframework_agentic.exposure.rest.router import create_agent_router
+from fireflyframework_agentic.exposure.rest.websocket import create_websocket_router
+from fireflyframework_agentic.observability.exporters import configure_exporters
+from fireflyframework_agentic.plugin import PluginDiscovery
+from fireflyframework_agentic.reasoning.prompts import register_reasoning_prompts
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +55,6 @@ async def _lifespan(app: Any) -> AsyncIterator[None]:
 
     # -- Startup -----------------------------------------------------------
     if cfg.plugin_auto_discover:
-        from fireflyframework_agentic.plugin import PluginDiscovery
-
         result = PluginDiscovery.discover_all()
         logger.info(
             "Plugins: %d loaded, %d failed",
@@ -46,15 +62,10 @@ async def _lifespan(app: Any) -> AsyncIterator[None]:
             len(result.failed),
         )
 
-    from fireflyframework_agentic.agents.lifecycle import agent_lifecycle
-    from fireflyframework_agentic.reasoning.prompts import register_reasoning_prompts
-
     register_reasoning_prompts()
     await agent_lifecycle.run_warmup()
 
     if cfg.observability_enabled:
-        from fireflyframework_agentic.observability.exporters import configure_exporters
-
         configure_exporters(
             otlp_endpoint=cfg.otlp_endpoint,
             console=cfg.otlp_endpoint is None,
@@ -88,18 +99,8 @@ def create_agentic_app(
     Returns:
         A configured :class:`fastapi.FastAPI` instance.
     """
-    # Lazy imports — FastAPI and its dependencies are optional extras.
-    # Importing inside the factory ensures the core framework can be used
-    # without installing the [rest] extra.
-    from fastapi import FastAPI  # type: ignore[import-not-found]
-
-    from fireflyframework_agentic.exposure.rest.health import create_health_router
-    from fireflyframework_agentic.exposure.rest.middleware import (
-        add_cors_middleware,
-        add_rate_limit_middleware,
-        add_request_id_middleware,
-    )
-    from fireflyframework_agentic.exposure.rest.router import create_agent_router
+    if FastAPI is None:
+        raise ImportError("fastapi is required for create_agentic_app")
 
     app = FastAPI(title=title, version=version, lifespan=_lifespan)
 
@@ -115,8 +116,6 @@ def create_agentic_app(
     # Auto-wire auth middleware from config
     cfg = get_config()
     if cfg.auth_api_keys or cfg.auth_bearer_tokens:
-        from fireflyframework_agentic.exposure.rest.middleware import add_auth_middleware
-
         add_auth_middleware(
             app,
             api_keys=cfg.auth_api_keys,
@@ -128,8 +127,6 @@ def create_agentic_app(
     app.include_router(create_agent_router())
 
     # WebSocket
-    from fireflyframework_agentic.exposure.rest.websocket import create_websocket_router
-
     app.include_router(create_websocket_router())
 
     return app

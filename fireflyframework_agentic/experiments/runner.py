@@ -24,6 +24,7 @@ import logging
 import time
 from typing import Any
 
+from fireflyframework_agentic.agents.context import AgentContext
 from fireflyframework_agentic.experiments.experiment import Experiment
 from fireflyframework_agentic.experiments.tracker import ExperimentTracker, VariantResult
 
@@ -60,8 +61,6 @@ class ExperimentRunner:
         Returns:
             A list of :class:`VariantResult` objects.
         """
-        from fireflyframework_agentic.agents.context import AgentContext
-
         if context is None:
             context = AgentContext()
         context.experiment_id = experiment.name

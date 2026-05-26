@@ -30,6 +30,7 @@ import logging
 import socket
 import uuid
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
 
 from opentelemetry import _logs as otel_logs
 from opentelemetry import metrics as otel_metrics
@@ -58,6 +59,39 @@ from opentelemetry.sdk.trace.export import (
     SimpleSpanProcessor,
 )
 
+try:
+    from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (  # type: ignore[import-not-found]
+        OTLPLogExporter,
+    )
+    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (  # type: ignore[import-not-found]
+        OTLPMetricExporter,
+    )
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # type: ignore[import-not-found]
+        OTLPSpanExporter,
+    )
+except ImportError:  # pragma: no cover - optional dep
+    OTLPLogExporter = None  # type: ignore[assignment,misc]
+    OTLPMetricExporter = None  # type: ignore[assignment,misc]
+    OTLPSpanExporter = None  # type: ignore[assignment,misc]
+
+try:
+    from azure.monitor.opentelemetry.exporter import (  # type: ignore[import-not-found]
+        AzureMonitorLogExporter,
+        AzureMonitorMetricExporter,
+        AzureMonitorTraceExporter,
+    )
+except ImportError:  # pragma: no cover - optional dep
+    AzureMonitorLogExporter = None  # type: ignore[assignment,misc]
+    AzureMonitorMetricExporter = None  # type: ignore[assignment,misc]
+    AzureMonitorTraceExporter = None  # type: ignore[assignment,misc]
+
+try:
+    from azure.monitor.opentelemetry.exporter._quickpulse._live_metrics import (  # type: ignore[import-not-found]
+        enable_live_metrics,
+    )
+except ImportError:  # pragma: no cover - optional dep
+    enable_live_metrics = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 _FIREFLY_LOGGER_NAME = "fireflyframework_agentic"
@@ -69,8 +103,6 @@ def _service_version() -> str:
     installed (e.g. running from a source checkout without ``uv sync``).
     """
     try:
-        from importlib.metadata import PackageNotFoundError, version
-
         return version("fireflyframework-agentic")
     except PackageNotFoundError:
         return "unknown"
@@ -203,17 +235,7 @@ def configure_exporters(
 
     # ── OTLP exporters (Jaeger, Tempo, ADOT, generic collectors) ──────────
     if otlp_endpoint:
-        try:
-            from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (  # type: ignore[import-not-found]
-                OTLPLogExporter,
-            )
-            from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (  # type: ignore[import-not-found]
-                OTLPMetricExporter,
-            )
-            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # type: ignore[import-not-found]
-                OTLPSpanExporter,
-            )
-        except ImportError:
+        if OTLPSpanExporter is None or OTLPMetricExporter is None or OTLPLogExporter is None:
             logger.warning(
                 "opentelemetry-exporter-otlp-proto-grpc is not installed; "
                 "OTLP export disabled. Install the package to enable it."
@@ -231,13 +253,7 @@ def configure_exporters(
 
     # ── Azure Monitor / Application Insights ──────────────────────────────
     if azure_monitor_connection_string:
-        try:
-            from azure.monitor.opentelemetry.exporter import (  # type: ignore[import-not-found]
-                AzureMonitorLogExporter,
-                AzureMonitorMetricExporter,
-                AzureMonitorTraceExporter,
-            )
-        except ImportError:
+        if AzureMonitorTraceExporter is None or AzureMonitorMetricExporter is None or AzureMonitorLogExporter is None:
             logger.warning(
                 "azure-monitor-opentelemetry-exporter is not installed; "
                 "AppInsights export disabled. Install with the [azure] extra."
@@ -278,18 +294,13 @@ def configure_exporters(
                 # underscore prefix means the API may break across versions;
                 # ImportError is the most likely failure (module renamed); any
                 # other exception is unexpected and worth surfacing distinctly.
-                try:
-                    from azure.monitor.opentelemetry.exporter._quickpulse._live_metrics import (  # type: ignore[import-not-found]
-                        enable_live_metrics,
-                    )
-                except ImportError as exc:
+                if enable_live_metrics is None:
                     logger.warning(
                         "Azure Monitor exporters attached but Live Metrics opt-in skipped: "
-                        "private _quickpulse API not importable (%s). Likely a SDK version "
+                        "private _quickpulse API not importable. Likely a SDK version "
                         "mismatch; pin azure-monitor-opentelemetry-exporter or fall back to "
                         "the azure-monitor-opentelemetry distro. The Live Metrics blade "
-                        "will stay empty; standard tables still receive data.",
-                        type(exc).__name__,
+                        "will stay empty; standard tables still receive data."
                     )
                 else:
                     try:
