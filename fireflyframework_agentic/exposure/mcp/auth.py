@@ -389,7 +389,7 @@ class OAuthJWTMiddleware(BaseHTTPMiddleware):
         in when only the stdio transport is used.
         """
         # imports-top: lazy import to break cycle with tools.builtins.corpus_rag
-        from fireflyframework_agentic.tools.builtins.corpus_rag import (
+        from fireflyframework_agentic.tools.builtins.corpus_rag import (  # noqa: PLC0415 — lazy import to break import cycle
             authorised_corpora_var,
         )
 
