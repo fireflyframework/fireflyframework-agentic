@@ -197,6 +197,9 @@ ignore = ["E501", "TC001", "TC002", "TC003", "UP040", "UP046", "B008"]
 # Tests use inline imports for fixture isolation and to control import timing
 # around mocks of optional dependencies (asyncpg, motor, qdrant, pinecone, ...).
 "tests/**" = ["PLC0415"]
+# Examples demonstrate runtime/lazy imports for didactic reasons and to keep
+# each demo function self-contained when read in isolation.
+"examples/**" = ["PLC0415"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["fireflyframework_agentic"]
