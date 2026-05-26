@@ -87,7 +87,9 @@ class TestPostgreSQLStore:
 
         store = PostgreSQLStore(url="postgresql://invalid:5432/db")
 
-        with patch("fireflyframework_agentic.memory.database_store.asyncpg.create_pool", new_callable=AsyncMock) as mock_create_pool:
+        with patch(
+            "fireflyframework_agentic.memory.database_store.asyncpg.create_pool", new_callable=AsyncMock
+        ) as mock_create_pool:
             mock_create_pool.side_effect = Exception("Connection refused")
 
             with pytest.raises(DatabaseConnectionError, match="Failed to connect"):
@@ -100,7 +102,11 @@ class TestPostgreSQLStore:
         pool, connection = mock_asyncpg_pool
         store = PostgreSQLStore(url="postgresql://test", schema_name="test_schema")
 
-        with patch("fireflyframework_agentic.memory.database_store.asyncpg.create_pool", new_callable=AsyncMock, return_value=pool):
+        with patch(
+            "fireflyframework_agentic.memory.database_store.asyncpg.create_pool",
+            new_callable=AsyncMock,
+            return_value=pool,
+        ):
             await store.initialize()
 
             # Verify schema and table creation
@@ -116,7 +122,11 @@ class TestPostgreSQLStore:
         pool, connection = mock_asyncpg_pool
         store = PostgreSQLStore(url="postgresql://test")
 
-        with patch("fireflyframework_agentic.memory.database_store.asyncpg.create_pool", new_callable=AsyncMock, return_value=pool):
+        with patch(
+            "fireflyframework_agentic.memory.database_store.asyncpg.create_pool",
+            new_callable=AsyncMock,
+            return_value=pool,
+        ):
             await store.initialize()
 
             entry = MemoryEntry(
@@ -144,7 +154,11 @@ class TestPostgreSQLStore:
         entry = MemoryEntry(key="test", content="data")
         connection.fetch.return_value = [{"content": entry.model_dump_json()}]
 
-        with patch("fireflyframework_agentic.memory.database_store.asyncpg.create_pool", new_callable=AsyncMock, return_value=pool):
+        with patch(
+            "fireflyframework_agentic.memory.database_store.asyncpg.create_pool",
+            new_callable=AsyncMock,
+            return_value=pool,
+        ):
             await store.initialize()
 
             results = await store.async_load("test_namespace")
@@ -163,7 +177,11 @@ class TestPostgreSQLStore:
         entry = MemoryEntry(key="specific_key", content="specific data")
         connection.fetchrow.return_value = {"content": entry.model_dump_json()}
 
-        with patch("fireflyframework_agentic.memory.database_store.asyncpg.create_pool", new_callable=AsyncMock, return_value=pool):
+        with patch(
+            "fireflyframework_agentic.memory.database_store.asyncpg.create_pool",
+            new_callable=AsyncMock,
+            return_value=pool,
+        ):
             await store.initialize()
 
             result = await store.async_load_by_key("test_namespace", "specific_key")
@@ -181,7 +199,11 @@ class TestPostgreSQLStore:
 
         connection.fetchrow.return_value = None
 
-        with patch("fireflyframework_agentic.memory.database_store.asyncpg.create_pool", new_callable=AsyncMock, return_value=pool):
+        with patch(
+            "fireflyframework_agentic.memory.database_store.asyncpg.create_pool",
+            new_callable=AsyncMock,
+            return_value=pool,
+        ):
             await store.initialize()
 
             result = await store.async_load_by_key("test_namespace", "nonexistent")
@@ -195,7 +217,11 @@ class TestPostgreSQLStore:
         pool, connection = mock_asyncpg_pool
         store = PostgreSQLStore(url="postgresql://test")
 
-        with patch("fireflyframework_agentic.memory.database_store.asyncpg.create_pool", new_callable=AsyncMock, return_value=pool):
+        with patch(
+            "fireflyframework_agentic.memory.database_store.asyncpg.create_pool",
+            new_callable=AsyncMock,
+            return_value=pool,
+        ):
             await store.initialize()
 
             await store.async_delete("test_namespace", "entry_123")
@@ -213,7 +239,11 @@ class TestPostgreSQLStore:
         pool, connection = mock_asyncpg_pool
         store = PostgreSQLStore(url="postgresql://test")
 
-        with patch("fireflyframework_agentic.memory.database_store.asyncpg.create_pool", new_callable=AsyncMock, return_value=pool):
+        with patch(
+            "fireflyframework_agentic.memory.database_store.asyncpg.create_pool",
+            new_callable=AsyncMock,
+            return_value=pool,
+        ):
             await store.initialize()
 
             await store.async_clear("test_namespace")
@@ -232,7 +262,11 @@ class TestPostgreSQLStore:
 
         connection.execute.return_value = "DELETE 5"
 
-        with patch("fireflyframework_agentic.memory.database_store.asyncpg.create_pool", new_callable=AsyncMock, return_value=pool):
+        with patch(
+            "fireflyframework_agentic.memory.database_store.asyncpg.create_pool",
+            new_callable=AsyncMock,
+            return_value=pool,
+        ):
             await store.initialize()
 
             count = await store.cleanup_expired()
@@ -249,7 +283,11 @@ class TestPostgreSQLStore:
         pool, _ = mock_asyncpg_pool
         store = PostgreSQLStore(url="postgresql://test")
 
-        with patch("fireflyframework_agentic.memory.database_store.asyncpg.create_pool", new_callable=AsyncMock, return_value=pool):
+        with patch(
+            "fireflyframework_agentic.memory.database_store.asyncpg.create_pool",
+            new_callable=AsyncMock,
+            return_value=pool,
+        ):
             await store.initialize()
 
             await store.close()
@@ -268,7 +306,11 @@ class TestPostgreSQLStore:
         pool, connection = mock_asyncpg_pool
         store = PostgreSQLStore(url="postgresql://test")
 
-        with patch("fireflyframework_agentic.memory.database_store.asyncpg.create_pool", new_callable=AsyncMock, return_value=pool):
+        with patch(
+            "fireflyframework_agentic.memory.database_store.asyncpg.create_pool",
+            new_callable=AsyncMock,
+            return_value=pool,
+        ):
             await store.initialize()
 
             # Test async save (sync wrappers delegate to these)
