@@ -18,17 +18,22 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from fastapi import APIRouter  # type: ignore[import-not-found]
-
 from fireflyframework_agentic.agents.registry import agent_registry
 from fireflyframework_agentic.exposure.rest.schemas import HealthResponse
+
+if TYPE_CHECKING:
+    from fastapi import APIRouter
+else:
+    try:
+        from fastapi import APIRouter  # type: ignore[import-not-found]
+    except ImportError:  # pragma: no cover - optional dep
+        APIRouter = None
 
 
 def create_health_router() -> APIRouter:
     """Create a FastAPI router with health check endpoints."""
-    from fastapi import APIRouter  # type: ignore[import-not-found]
-
+    if APIRouter is None:
+        raise ImportError("fastapi is required for REST exposure; install with `pip install fastapi`")
     router = APIRouter(tags=["health"])
 
     @router.get("/health", response_model=HealthResponse)

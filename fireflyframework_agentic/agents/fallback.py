@@ -37,6 +37,8 @@ from typing import Any
 
 from pydantic_ai.models import Model
 
+from fireflyframework_agentic.model_utils import get_model_identifier
+
 logger = logging.getLogger(__name__)
 
 
@@ -125,8 +127,6 @@ async def run_with_fallback(
     Raises:
         The last exception encountered if all models fail.
     """
-    from fireflyframework_agentic.model_utils import get_model_identifier
-
     fallback.reset()
     original_model = agent.agent.model
     original_identifier = agent.model_identifier

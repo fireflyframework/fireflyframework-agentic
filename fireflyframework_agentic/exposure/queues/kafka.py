@@ -21,11 +21,26 @@ Requires the ``aiokafka`` optional dependency (install via
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from aiokafka import AIOKafkaConsumer, AIOKafkaProducer  # pyright: ignore[reportMissingImports]
+else:
+    try:
+        from aiokafka import AIOKafkaConsumer, AIOKafkaProducer  # type: ignore[import-not-found]
+    except ImportError:  # pragma: no cover - optional dep
+        AIOKafkaConsumer = None
+        AIOKafkaProducer = None
 
 from fireflyframework_agentic.exposure.queues.base import BaseQueueConsumer, QueueMessage
+from fireflyframework_agentic.observability.tracer import extract_trace_context, trace_context_scope
 
 logger = logging.getLogger(__name__)
+
+
+_AIOKAFKA_IMPORT_ERROR = (
+    "aiokafka is required for Kafka support. Install it with: pip install fireflyframework-agentic[kafka]"
+)
 
 
 class KafkaAgentConsumer(BaseQueueConsumer):
@@ -54,12 +69,8 @@ class KafkaAgentConsumer(BaseQueueConsumer):
 
     async def start(self) -> None:
         """Connect to Kafka and begin consuming."""
-        try:
-            from aiokafka import AIOKafkaConsumer  # type: ignore[import-not-found]
-        except ImportError as _err:
-            raise ImportError(
-                "aiokafka is required for Kafka support. Install it with: pip install fireflyframework-agentic[kafka]"
-            ) from _err
+        if AIOKafkaConsumer is None:
+            raise ImportError(_AIOKAFKA_IMPORT_ERROR)
 
         self._consumer = AIOKafkaConsumer(
             self._topic,
@@ -73,8 +84,6 @@ class KafkaAgentConsumer(BaseQueueConsumer):
         try:
             async for msg in self._consumer:
                 # Extract trace context from message headers for distributed tracing
-                from fireflyframework_agentic.observability.tracer import extract_trace_context, trace_context_scope
-
                 headers = {k: v.decode("utf-8") if isinstance(v, bytes) else v for k, v in (msg.headers or [])}
                 span_context = extract_trace_context(headers)
 
@@ -121,12 +130,8 @@ class KafkaAgentProducer:
 
     async def start(self) -> None:
         """Connect the underlying Kafka producer."""
-        try:
-            from aiokafka import AIOKafkaProducer  # type: ignore[import-not-found]
-        except ImportError as _err:
-            raise ImportError(
-                "aiokafka is required for Kafka support. Install it with: pip install fireflyframework-agentic[kafka]"
-            ) from _err
+        if AIOKafkaProducer is None:
+            raise ImportError(_AIOKAFKA_IMPORT_ERROR)
 
         self._producer = AIOKafkaProducer(
             bootstrap_servers=self._bootstrap_servers,

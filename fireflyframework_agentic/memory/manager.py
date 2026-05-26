@@ -22,13 +22,17 @@ pipeline steps, and reasoning patterns.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from pydantic_ai.messages import ModelMessage
 
+from fireflyframework_agentic.config import get_config
 from fireflyframework_agentic.memory.conversation import ConversationMemory
-from fireflyframework_agentic.memory.store import InMemoryStore, MemoryStore
+from fireflyframework_agentic.memory.database_store import MongoDBStore, PostgreSQLStore
+from fireflyframework_agentic.memory.store import FileStore, InMemoryStore, MemoryStore
 from fireflyframework_agentic.memory.working import WorkingMemory
 
 logger = logging.getLogger(__name__)
@@ -86,10 +90,6 @@ class MemoryManager:
             ``pip install fireflyframework-agentic[postgres]`` or
             ``pip install fireflyframework-agentic[mongodb]``
         """
-        import asyncio
-        from concurrent.futures import ThreadPoolExecutor
-
-        from fireflyframework_agentic.config import get_config
 
         def _run_sync(coro: Any) -> Any:
             """Run *coro* synchronously, safe even when an event loop is already running."""
@@ -109,13 +109,9 @@ class MemoryManager:
 
         store: MemoryStore
         if cfg.memory_backend == "file":
-            from fireflyframework_agentic.memory.store import FileStore
-
             store = FileStore(base_dir=cfg.memory_file_dir)
 
         elif cfg.memory_backend == "postgres":
-            from fireflyframework_agentic.memory.database_store import PostgreSQLStore
-
             if cfg.memory_postgres_url is None:
                 raise ValueError(
                     "memory_postgres_url must be set when using postgres backend. "
@@ -133,8 +129,6 @@ class MemoryManager:
             logger.info("PostgreSQL memory backend initialized")
 
         elif cfg.memory_backend == "mongodb":
-            from fireflyframework_agentic.memory.database_store import MongoDBStore
-
             if cfg.memory_mongodb_url is None:
                 raise ValueError(
                     "memory_mongodb_url must be set when using mongodb backend. "

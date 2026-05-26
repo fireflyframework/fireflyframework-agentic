@@ -22,6 +22,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
@@ -124,9 +126,6 @@ def add_oauth_metadata_routes(app: FastAPI, metadata: OAuthMetadata) -> None:
         client sent must be allowed on that App Registration's platform
         config — otherwise Entra rejects at the authorize step.
         """
-        import os
-        import time
-
         public_client = os.environ.get(
             "FIREFLY_MCP_ENTRA_PUBLIC_CLIENT_ID",
             os.environ.get("AZURE_CLIENT_ID", ""),
@@ -389,7 +388,8 @@ class OAuthJWTMiddleware(BaseHTTPMiddleware):
         framework primitives, which would otherwise pull this middleware
         in when only the stdio transport is used.
         """
-        from fireflyframework_agentic.tools.builtins.corpus_rag import (
+        # imports-top: lazy import to break cycle with tools.builtins.corpus_rag
+        from fireflyframework_agentic.tools.builtins.corpus_rag import (  # noqa: PLC0415 — lazy import to break import cycle
             authorised_corpora_var,
         )
 

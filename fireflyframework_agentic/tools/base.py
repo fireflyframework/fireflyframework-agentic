@@ -38,6 +38,11 @@ from typing import Annotated, Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
+try:
+    from pydantic_ai import ModelRetry  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - optional dep
+    ModelRetry = None  # type: ignore[assignment,misc]
+
 from fireflyframework_agentic.exceptions import ToolError, ToolTimeoutError
 
 logger = logging.getLogger(__name__)
@@ -51,9 +56,7 @@ def _is_model_retry(exc: BaseException) -> bool:
     nothing can be a ``ModelRetry``, so the helper just returns False
     and the legacy wrap-as-``ToolError`` behaviour stays intact.
     """
-    try:
-        from pydantic_ai import ModelRetry  # type: ignore[import-not-found]
-    except Exception:  # pragma: no cover - pydantic-ai unavailable
+    if ModelRetry is None:
         return False
     return isinstance(exc, ModelRetry)
 

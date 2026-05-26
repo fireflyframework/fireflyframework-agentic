@@ -35,7 +35,8 @@ def __getattr__(name: str):
     """Lazy-load REST symbols so the package works without FastAPI installed."""
     _rest_names = {"create_agentic_app", "AgentRequest", "AgentResponse", "HealthResponse"}
     if name in _rest_names:
-        from fireflyframework_agentic.exposure.rest import (
+        # imports-top: optional dep (fastapi) loaded on demand inside __getattr__
+        from fireflyframework_agentic.exposure.rest import (  # noqa: PLC0415 — optional dep loaded on demand
             AgentRequest,
             AgentResponse,
             HealthResponse,

@@ -21,10 +21,12 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
-if TYPE_CHECKING:
-    from fireflyframework_agentic.storage import DatabaseStore
+try:
+    import openpyxl
+except ImportError:  # pragma: no cover - optional dep
+    openpyxl = None  # type: ignore[assignment]
 
 from fireflyframework_agentic.content.loaders import MarkitdownLoader
 from fireflyframework_agentic.content.markdown_chunker import MarkdownChunker
@@ -59,8 +61,10 @@ from fireflyframework_agentic.rag.ingest.unstructured_pipeline import (
 from fireflyframework_agentic.rag.retrieval.answerer import Answer, AnswerAgent
 from fireflyframework_agentic.rag.retrieval.expander import QueryExpander
 from fireflyframework_agentic.rag.retrieval.hybrid import HybridRetriever
+from fireflyframework_agentic.rag.retrieval.reasoning_answerer import ReasoningAnswerAgent
 from fireflyframework_agentic.rag.retrieval.reranker import HaikuReranker
 from fireflyframework_agentic.rag.retrieval.sql import StructuredRetriever
+from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
 from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
 
 log = logging.getLogger(__name__)
@@ -134,7 +138,10 @@ def _filter_schema_for_path(schema: TargetSchema, path: Path) -> TargetSchema | 
     suffix = path.suffix.lower()
     if suffix in (".xls", ".xlsx"):
         try:
-            import openpyxl  # noqa: PLC0415
+            if openpyxl is None:
+                raise ImportError(
+                    "openpyxl is required for Excel ingestion. Install with: pip install fireflyframework-agentic[rag]"
+                )
 
             wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
             wanted = {_normalize_sheet_name(s) for s in wb.sheetnames}
@@ -210,8 +217,6 @@ class CorpusAgent:
         self.root.mkdir(parents=True, exist_ok=True)
 
         if db_store is None:
-            from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
-
             db_store = DatabaseStore(
                 LocalBackend(self.root / "corpus.sqlite"),
                 store_id=f"corpus_search:{self.root.resolve()}",
@@ -291,10 +296,6 @@ class CorpusAgent:
         # reasoning branch can pass it in.
         if self._answerer is None:
             if self._answer_strategy == "reasoning":
-                from fireflyframework_agentic.rag.retrieval.reasoning_answerer import (
-                    ReasoningAnswerAgent,
-                )
-
                 assert self._schema_registry is not None
                 self._answerer = ReasoningAnswerAgent(
                     model=self._answer_model,

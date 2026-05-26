@@ -29,6 +29,7 @@ Usage example::
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from typing import Any
 
@@ -142,11 +143,8 @@ class PipelineBuilder:
         if hasattr(step, "run") and callable(step.run):
             return AgentStep(step)
         # Async callable
-        if callable(step):
-            import asyncio
-
-            if asyncio.iscoroutinefunction(step):
-                return CallableStep(step)
+        if callable(step) and asyncio.iscoroutinefunction(step):
+            return CallableStep(step)
         raise TypeError(
             f"Cannot resolve {type(step).__name__} as a pipeline step. Must be StepExecutor, agent-like, or async callable."
         )

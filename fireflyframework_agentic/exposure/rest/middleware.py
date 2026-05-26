@@ -20,16 +20,42 @@ import hmac
 import logging
 import time
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from fastapi.middleware.cors import CORSMiddleware
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse, Response
+else:
+    try:
+        from starlette.middleware.base import BaseHTTPMiddleware
+        from starlette.requests import Request
+        from starlette.responses import JSONResponse, Response
+    except ImportError:  # pragma: no cover - optional dep
+        BaseHTTPMiddleware = None
+        Request = None
+        Response = None
+        JSONResponse = None
+
+    try:
+        from fastapi.middleware.cors import CORSMiddleware  # type: ignore[import-not-found]
+    except ImportError:  # pragma: no cover - optional dep
+        CORSMiddleware = None
+
+from fireflyframework_agentic.observability.tracer import (
+    extract_trace_context,
+    inject_trace_context,
+    trace_context_scope,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def add_request_id_middleware(app: Any) -> None:
     """Add middleware that injects a unique ``X-Request-ID`` header."""
-    from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.requests import Request
-    from starlette.responses import Response
+    if BaseHTTPMiddleware is None:
+        raise ImportError("starlette is required for add_request_id_middleware")
 
     class RequestIDMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next: Any) -> Response:
@@ -64,7 +90,8 @@ def add_cors_middleware(
         allow_origins: List of allowed origin URLs. Defaults to [] (no origins allowed).
         allow_methods: List of allowed HTTP methods. Defaults to standard methods.
     """
-    from fastapi.middleware.cors import CORSMiddleware  # type: ignore[import-not-found]
+    if CORSMiddleware is None:
+        raise ImportError("fastapi is required for add_cors_middleware")
 
     # Secure default: no origins allowed
     if allow_origins is None:
@@ -146,10 +173,10 @@ def add_auth_middleware(
         api_key_header: Header name for API keys.
         exclude_paths: URL paths excluded from auth (e.g. ``["/health"]``).
     """
-    from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.requests import Request
-    from starlette.responses import JSONResponse, Response
+    if BaseHTTPMiddleware is None or JSONResponse is None:
+        raise ImportError("starlette is required for add_auth_middleware")
 
+    _JSONResponse = JSONResponse  # noqa: N806 — local rebinding to narrow Optional for nested class
     _api_keys = set(api_keys or [])
     _bearer_tokens = set(bearer_tokens or [])
     _exclude = set(exclude_paths or ["/health", "/health/ready", "/health/live", "/docs", "/openapi.json"])
@@ -177,7 +204,7 @@ def add_auth_middleware(
             if not _api_keys and not _bearer_tokens:
                 return await call_next(request)
 
-            return JSONResponse(
+            return _JSONResponse(
                 {"detail": "Unauthorized"},
                 status_code=401,
             )
@@ -201,17 +228,17 @@ def add_rate_limit_middleware(
         key_func: Optional callable ``(Request) -> str`` for the rate key.
             Defaults to the client's IP address.
     """
-    from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.requests import Request
-    from starlette.responses import JSONResponse, Response
+    if BaseHTTPMiddleware is None or JSONResponse is None:
+        raise ImportError("starlette is required for add_rate_limit_middleware")
 
+    _JSONResponse = JSONResponse  # noqa: N806 — local rebinding to narrow Optional for nested class
     limiter = RateLimiter(max_requests=max_requests, window_seconds=window_seconds)
 
     class RateLimitMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next: Any) -> Response:
             rk = key_func(request) if key_func is not None else (request.client.host if request.client else "unknown")
             if not limiter.is_allowed(rk):
-                return JSONResponse(
+                return _JSONResponse(
                     {"detail": "Rate limit exceeded"},
                     status_code=429,
                 )
@@ -248,15 +275,8 @@ def add_trace_propagation_middleware(app: Any) -> None:
         - :func:`~fireflyframework_agentic.observability.tracer.extract_trace_context`
         - :func:`~fireflyframework_agentic.observability.tracer.inject_trace_context`
     """
-    from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.requests import Request
-    from starlette.responses import Response
-
-    from fireflyframework_agentic.observability.tracer import (
-        extract_trace_context,
-        inject_trace_context,
-        trace_context_scope,
-    )
+    if BaseHTTPMiddleware is None:
+        raise ImportError("starlette is required for add_trace_propagation_middleware")
 
     class TracePropagationMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next: Any) -> Response:
