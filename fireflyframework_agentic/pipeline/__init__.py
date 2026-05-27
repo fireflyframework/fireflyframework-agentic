@@ -39,7 +39,12 @@ from fireflyframework_agentic.pipeline.dag import DAG, DAGEdge, DAGNode, Failure
 from fireflyframework_agentic.pipeline.engine import PipelineEngine, PipelineEventHandler
 from fireflyframework_agentic.pipeline.reducers import append, extend, merge_dict, replace
 from fireflyframework_agentic.pipeline.result import ExecutionTraceEntry, NodeResult, PipelineResult
-from fireflyframework_agentic.pipeline.state_pipeline import StatePipeline, StatePipelineResult
+from fireflyframework_agentic.pipeline.state_pipeline import (
+    RecursionLimitError,
+    Send,
+    StatePipeline,
+    StatePipelineResult,
+)
 from fireflyframework_agentic.pipeline.steps import (
     AgentStep,
     BatchLLMStep,
@@ -76,6 +81,8 @@ __all__ = [
     "PipelineEventHandler",
     "PipelineResult",
     "ReasoningStep",
+    "RecursionLimitError",
+    "Send",
     "RetrievalStep",
     "StatePipeline",
     "StatePipelineResult",
