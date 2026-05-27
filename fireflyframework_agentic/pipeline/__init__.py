@@ -28,6 +28,15 @@ Two builder modes exist:
   via :class:`Checkpointer` enables resume after failure and mid-pipeline start.
 """
 
+from fireflyframework_agentic.pipeline.audit import (
+    AuditEntry,
+    AuditLog,
+    FileAuditLog,
+    LoggingAuditLog,
+    OtelAuditLog,
+    PostgresAuditLog,
+    QueryableAuditLog,
+)
 from fireflyframework_agentic.pipeline.builder import PipelineBuilder
 from fireflyframework_agentic.pipeline.checkpoint import (
     Checkpointer,
@@ -46,6 +55,7 @@ from fireflyframework_agentic.pipeline.engine import (
 from fireflyframework_agentic.pipeline.reducers import append, extend, merge_dict, replace
 from fireflyframework_agentic.pipeline.result import ExecutionTraceEntry, NodeResult, PipelineResult
 from fireflyframework_agentic.pipeline.state_pipeline import (
+    Pause,
     RecursionLimitError,
     Send,
     StatePipeline,
@@ -67,6 +77,8 @@ from fireflyframework_agentic.pipeline.steps import (
 __all__ = [
     "DAG",
     "AgentStep",
+    "AuditEntry",
+    "AuditLog",
     "BatchLLMStep",
     "BranchStep",
     "CallableStep",
@@ -79,14 +91,20 @@ __all__ = [
     "FailureStrategy",
     "FanInStep",
     "FanOutStep",
+    "FileAuditLog",
     "FileCheckpointer",
+    "LoggingAuditLog",
     "NodeResult",
-    "PostgresCheckpointer",
+    "OtelAuditLog",
+    "Pause",
     "PipelineBuilder",
     "PipelineContext",
     "PipelineEngine",
     "PipelineEventHandler",
     "PipelineResult",
+    "PostgresAuditLog",
+    "PostgresCheckpointer",
+    "QueryableAuditLog",
     "ReasoningStep",
     "RecursionLimitError",
     "RedisCheckpointer",

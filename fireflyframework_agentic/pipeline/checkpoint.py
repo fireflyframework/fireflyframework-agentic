@@ -51,7 +51,13 @@ except ImportError:  # pragma: no cover - optional dep
 
 
 class CheckpointRecord(BaseModel):
-    """One saved checkpoint."""
+    """One saved checkpoint.
+
+    ``paused`` and ``pause_reason`` are set when a node returns
+    :class:`fireflyframework_agentic.pipeline.state_pipeline.Pause`. Default
+    to ``False`` / ``None`` so existing records from earlier phases load
+    cleanly under the new schema.
+    """
 
     pipeline_name: str
     run_id: str
@@ -59,6 +65,8 @@ class CheckpointRecord(BaseModel):
     sequence: int
     state: dict[str, Any]
     completed_nodes: list[str]
+    paused: bool = False
+    pause_reason: str | None = None
 
 
 @runtime_checkable
