@@ -101,6 +101,11 @@ class StatePipelineEventHandler(Protocol):
         """Called when a node raises an exception."""
         ...
 
+    async def on_node_pause(self, pipeline_name: str, run_id: str, node_id: str, reason: str) -> None:
+        """Called when a node returns :class:`Pause`, halting the pipeline
+        until an external ``invoke(run_id=..., approve_pause=True)`` resumes it."""
+        ...
+
     async def on_pipeline_complete(self, pipeline_name: str, run_id: str, success: bool, duration_ms: float) -> None:
         """Called once when ``invoke`` returns."""
         ...

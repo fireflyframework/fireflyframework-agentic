@@ -31,11 +31,13 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, get_type_hints
 
 from pydantic import BaseModel
 
 from fireflyframework_agentic.exceptions import PipelineError
+from fireflyframework_agentic.pipeline.audit import AuditEntry, AuditLog, AuditStatus
 from fireflyframework_agentic.pipeline.checkpoint import Checkpointer, CheckpointRecord
 from fireflyframework_agentic.pipeline.dag import DAG, _mermaid_id
 from fireflyframework_agentic.pipeline.engine import start_otel_span
@@ -72,6 +74,31 @@ class RecursionLimitError(Exception):
 
 
 @dataclass
+class Pause:
+    """Human-in-the-loop sentinel returned by a node to halt the pipeline.
+
+    A node returns ``Pause(reason="...")`` when external approval (a human,
+    another system, a wall-clock event) is required before the pipeline may
+    continue. The pipeline then:
+
+    1. Writes a checkpoint with ``paused=True`` and the reason set.
+    2. Emits ``on_node_pause`` on the configured event handler.
+    3. Returns a :class:`StatePipelineResult` with ``paused=True`` and
+       ``success=False`` — the run is not finished, but it did not fail either.
+
+    To resume after approval::
+
+        result = await pipeline.invoke(run_id=paused_run_id, approve_pause=True)
+
+    Without ``approve_pause=True``, resuming a paused run raises
+    :class:`PipelineError`. The successor of the paused node runs next —
+    the pause node itself is not re-executed.
+    """
+
+    reason: str
+
+
+@dataclass
 class BranchSpec:
     """Internal: registered branch from one source node."""
 
@@ -91,6 +118,10 @@ class StatePipelineResult:
         success: True iff all attempted nodes completed without error.
         error: Last error message if ``success`` is False.
         failed_node: Node ID that failed, if any.
+        paused: True if the run halted on a :class:`Pause` sentinel; resume
+            via ``invoke(run_id=..., approve_pause=True)``.
+        paused_node: Node that returned ``Pause`` if ``paused`` is True.
+        pause_reason: Reason string the paused node passed to ``Pause(...)``.
     """
 
     state: Any
@@ -99,6 +130,9 @@ class StatePipelineResult:
     success: bool
     error: str | None = None
     failed_node: str | None = None
+    paused: bool = False
+    paused_node: str | None = None
+    pause_reason: str | None = None
 
 
 def discover_reducers(state_schema: type) -> dict[str, Reducer]:
@@ -157,6 +191,7 @@ class StatePipeline:
         checkpointer: Checkpointer | None = None,
         recursion_limit: int = 25,
         event_handler: StatePipelineEventHandler | None = None,
+        audit_log: AuditLog | None = None,
     ) -> None:
         self._name = name
         self._dag = dag
@@ -166,8 +201,51 @@ class StatePipeline:
         self._checkpointer = checkpointer
         self._recursion_limit = recursion_limit
         self._event_handler = event_handler
+        self._audit_log = audit_log
         self._reducers = discover_reducers(state_schema)
         self._validate()
+
+    def _audit(
+        self,
+        *,
+        run_id: str,
+        node_id: str,
+        sequence: int,
+        visit: int,
+        started_at: datetime,
+        completed_at: datetime,
+        latency_ms: float,
+        status: AuditStatus,
+        inputs_snapshot: dict[str, Any],
+        outputs_snapshot: dict[str, Any],
+        error_message: str | None = None,
+        pause_reason: str | None = None,
+    ) -> None:
+        """Construct and write an :class:`AuditEntry`. No-op if no audit log is configured.
+
+        Audit-write failures are non-fatal — logged and swallowed.
+        """
+        if self._audit_log is None:
+            return
+        entry = AuditEntry(
+            pipeline_name=self._name,
+            run_id=run_id,
+            node_id=node_id,
+            sequence=sequence,
+            visit=visit,
+            started_at=started_at,
+            completed_at=completed_at,
+            latency_ms=latency_ms,
+            status=status,
+            inputs_snapshot=inputs_snapshot,
+            outputs_snapshot=outputs_snapshot,
+            error_message=error_message,
+            pause_reason=pause_reason,
+        )
+        try:
+            self._audit_log.record(entry)
+        except Exception:
+            logger.exception("Audit log write failed for run '%s' at '%s'", run_id, node_id)
 
     async def _finalize_run(
         self,
@@ -335,6 +413,7 @@ class StatePipeline:
         *,
         run_id: str | None = None,
         start_at: str | Callable[..., Any] | None = None,
+        approve_pause: bool = False,
     ) -> StatePipelineResult:
         """Run the pipeline.
 
@@ -353,9 +432,15 @@ class StatePipeline:
             record = self._checkpointer.load_latest(self._name, run_id)
             if record is None:
                 raise PipelineError(f"No checkpoint found for run_id='{run_id}'")
+            # A paused run requires explicit approval before continuing.
+            if record.paused and not approve_pause:
+                raise PipelineError(
+                    f"Run '{run_id}' is paused at node '{record.node_id}' "
+                    f"(reason: {record.pause_reason!r}). Pass approve_pause=True to resume."
+                )
             state = self._state_schema.model_validate(record.state)
             resumed_completed = list(record.completed_nodes)
-            # Resume at the successor of the last completed node.
+            # Resume at the successor of the last completed (or paused) node.
             last = record.node_id
             next_node = self._next_step(last, state)
             # Resume can't seamlessly continue mid-fan-out yet; treat fan-out as terminal here.
@@ -460,6 +545,8 @@ class StatePipeline:
             fn = self._node_fns[node_id]
             node_span = start_otel_span(f"pipeline.state.node.{node_id}", node=node_id, visit=visit_n)
             await self._emit("on_node_start", self._name, run_id, node_id, visit_n)
+            inputs_snapshot = state.model_dump(mode="json")
+            started_at = datetime.now(UTC)
             t0 = time.perf_counter()
             try:
                 update = await fn(state)
@@ -474,6 +561,19 @@ class StatePipeline:
                 if node_span is not None:
                     with contextlib.suppress(Exception):
                         node_span.end()
+                self._audit(
+                    run_id=run_id,
+                    node_id=node_id,
+                    sequence=sequence + 1,
+                    visit=visit_n,
+                    started_at=started_at,
+                    completed_at=datetime.now(UTC),
+                    latency_ms=(time.perf_counter() - t0) * 1000,
+                    status="error",
+                    inputs_snapshot=inputs_snapshot,
+                    outputs_snapshot={},
+                    error_message=str(exc),
+                )
                 return await self._finalize_run(
                     StatePipelineResult(
                         state=state,
@@ -488,9 +588,56 @@ class StatePipeline:
                     run_id,
                 )
             elapsed = (time.perf_counter() - t0) * 1000
+            completed_at = datetime.now(UTC)
             if node_span is not None:
                 with contextlib.suppress(Exception):
                     node_span.end()
+
+            # HITL: a node returning Pause halts the pipeline and writes a
+            # paused checkpoint. Approval comes via invoke(approve_pause=True).
+            if isinstance(update, Pause):
+                pause_reason = update.reason
+                await self._emit("on_node_pause", self._name, run_id, node_id, pause_reason)
+                completed.append(node_id)
+                sequence += 1
+                self._save_checkpoint(
+                    run_id,
+                    node_id,
+                    sequence,
+                    state,
+                    completed,
+                    paused=True,
+                    pause_reason=pause_reason,
+                )
+                self._audit(
+                    run_id=run_id,
+                    node_id=node_id,
+                    sequence=sequence,
+                    visit=visit_n,
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    latency_ms=elapsed,
+                    status="paused",
+                    inputs_snapshot=inputs_snapshot,
+                    outputs_snapshot=state.model_dump(mode="json"),
+                    pause_reason=pause_reason,
+                )
+                logger.info("Pipeline '%s' paused at node '%s': %s", self._name, node_id, pause_reason)
+                return await self._finalize_run(
+                    StatePipelineResult(
+                        state=state,
+                        run_id=run_id,
+                        completed_nodes=completed,
+                        success=False,
+                        paused=True,
+                        paused_node=node_id,
+                        pause_reason=pause_reason,
+                    ),
+                    pipeline_span,
+                    pipeline_start_time,
+                    run_id,
+                )
+
             await self._emit("on_node_complete", self._name, run_id, node_id, elapsed)
             logger.debug("Pipeline '%s' node '%s' completed in %.1fms", self._name, node_id, elapsed)
 
@@ -500,6 +647,18 @@ class StatePipeline:
             completed.append(node_id)
             sequence += 1
             self._save_checkpoint(run_id, node_id, sequence, state, completed)
+            self._audit(
+                run_id=run_id,
+                node_id=node_id,
+                sequence=sequence,
+                visit=visit_n,
+                started_at=started_at,
+                completed_at=completed_at,
+                latency_ms=elapsed,
+                status="success",
+                inputs_snapshot=inputs_snapshot,
+                outputs_snapshot=state.model_dump(mode="json"),
+            )
 
             try:
                 next_step = self._next_step(node_id, state)
@@ -604,6 +763,9 @@ class StatePipeline:
         sequence: int,
         state: BaseModel,
         completed: list[str],
+        *,
+        paused: bool = False,
+        pause_reason: str | None = None,
     ) -> None:
         """Persist state via the configured checkpointer (no-op if absent)."""
         if self._checkpointer is None:
@@ -617,6 +779,8 @@ class StatePipeline:
                     sequence=sequence,
                     state=state.model_dump(),
                     completed_nodes=list(completed),
+                    paused=paused,
+                    pause_reason=pause_reason,
                 )
             )
         except Exception:
