@@ -36,13 +36,34 @@ from pydantic import BaseModel
 
 from fireflyframework_agentic.exceptions import PipelineError
 from fireflyframework_agentic.pipeline.checkpoint import Checkpointer, CheckpointRecord
-from fireflyframework_agentic.pipeline.dag import DAG
+from fireflyframework_agentic.pipeline.dag import DAG, _mermaid_id
 from fireflyframework_agentic.pipeline.reducers import Reducer, replace
 
 logger = logging.getLogger(__name__)
 
 StateNodeFn = Callable[[Any], Awaitable[dict[str, Any] | None]]
-RouterFn = Callable[[Any], str]
+# A router may return: a node id (str), a Send, or a list[Send] for fan-out.
+RouterFn = Callable[[Any], "str | Send | list[Send]"]
+
+
+@dataclass
+class Send:
+    """Runtime fan-out dispatch: run ``target`` with ``payload`` merged into state.
+
+    Routers can return a single ``Send`` or a list of ``Send`` to dispatch multiple
+    target invocations concurrently. Each Send's payload is applied to a *copy*
+    of the current state before its target runs; the target's return is then
+    merged back into shared state via reducers.
+
+    Replaces the legacy ``FanOutStep`` pattern with a first-class primitive.
+    """
+
+    target: str
+    payload: dict[str, Any]
+
+
+class RecursionLimitError(Exception):
+    """Raised when a node is visited more times than ``recursion_limit`` permits."""
 
 
 @dataclass
@@ -129,6 +150,7 @@ class StatePipeline:
         node_fns: dict[str, StateNodeFn],
         branches: dict[str, BranchSpec],
         checkpointer: Checkpointer | None = None,
+        recursion_limit: int = 25,
     ) -> None:
         self._name = name
         self._dag = dag
@@ -136,6 +158,7 @@ class StatePipeline:
         self._node_fns = node_fns
         self._branches = branches
         self._checkpointer = checkpointer
+        self._recursion_limit = recursion_limit
         self._reducers = discover_reducers(state_schema)
         self._validate()
 
@@ -146,6 +169,35 @@ class StatePipeline:
     @property
     def dag(self) -> DAG:
         return self._dag
+
+    def to_mermaid(self) -> str:
+        """Render the pipeline as a Mermaid flowchart, including branch edges.
+
+        Branches that omit an explicit mapping are rendered as a dashed edge
+        labelled ``router`` because the targets are decided at runtime.
+        """
+        lines = ["flowchart TD"]
+        for node_id in self._dag.nodes:
+            lines.append(f"    {_mermaid_id(node_id)}[{node_id}]")
+        # Explicit edges (including branch mappings, which were materialized).
+        rendered: set[tuple[str, str]] = set()
+        for edge in self._dag.edges:
+            key = (edge.source, edge.target)
+            rendered.add(key)
+            label = None
+            spec = self._branches.get(edge.source)
+            if spec and spec.mapping:
+                for lbl, tgt in spec.mapping.items():
+                    if tgt == edge.target:
+                        label = lbl
+                        break
+            arrow = f"-->|{label}|" if label else "-->"
+            lines.append(f"    {_mermaid_id(edge.source)} {arrow} {_mermaid_id(edge.target)}")
+        # Dynamic branches (no mapping): show as a dashed self-edge stub.
+        for source, spec in self._branches.items():
+            if spec.mapping is None and not self._dag.successors(source):
+                lines.append(f"    {_mermaid_id(source)} -.->|router| {_mermaid_id(source)}_router((dynamic))")
+        return "\n".join(lines)
 
     def _validate(self) -> None:
         # Every node must have a registered fn.
@@ -174,28 +226,17 @@ class StatePipeline:
             raise PipelineError("Pipeline has no nodes")
         return order[0]
 
-    def _next_node(self, current: str, state: BaseModel) -> str | None:
-        """Decide which successor runs next given the current state.
+    def _next_step(self, current: str, state: BaseModel) -> str | list[Send] | None:
+        """Decide what runs next given the current state.
 
-        For non-branching nodes: pick the unique successor (or None at terminus).
-        For branching nodes: run the router and resolve via mapping if present.
+        Returns:
+            * A node id (str) for a single deterministic step.
+            * A list of :class:`Send` for runtime fan-out — workers run concurrently.
+            * ``None`` when the pipeline reaches a terminus.
         """
         if current in self._branches:
-            spec = self._branches[current]
-            label = spec.router(state)
-            if spec.mapping is not None:
-                if label not in spec.mapping:
-                    raise PipelineError(
-                        f"Router for '{current}' returned label '{label}' not in mapping {list(spec.mapping)}"
-                    )
-                return spec.mapping[label]
-            # Mapping omitted: router returns target node id directly.
-            if label not in self._dag.nodes:
-                raise PipelineError(
-                    f"Router for '{current}' returned '{label}' "
-                    f"which is not a registered node id; pass an explicit mapping if you want labels."
-                )
-            return label
+            decision = self._branches[current].router(state)
+            return self._resolve_router_decision(current, decision)
 
         successors = self._dag.successors(current)
         if not successors:
@@ -206,6 +247,52 @@ class StatePipeline:
                 f"Register a branch router or remove the extra edges."
             )
         return successors[0]
+
+    def _resolve_router_decision(self, current: str, decision: str | Send | list[Send]) -> str | list[Send] | None:
+        """Translate a router's return value into a concrete next-step instruction."""
+        # Fan-out: list of Send dispatches.
+        if isinstance(decision, list):
+            if not decision:
+                return None
+            for s in decision:
+                if not isinstance(s, Send):
+                    raise PipelineError(
+                        f"Router for '{current}' returned a list containing non-Send "
+                        f"element {s!r}; expected list[Send]."
+                    )
+                if s.target not in self._dag.nodes:
+                    raise PipelineError(f"Router for '{current}' fans out to unknown target '{s.target}'")
+            return decision
+
+        if isinstance(decision, Send):
+            if decision.target not in self._dag.nodes:
+                raise PipelineError(f"Router for '{current}' dispatched to unknown target '{decision.target}'")
+            return [decision]
+
+        # String label.
+        spec = self._branches[current]
+        if spec.mapping is not None:
+            if decision not in spec.mapping:
+                raise PipelineError(
+                    f"Router for '{current}' returned label '{decision}' not in mapping {list(spec.mapping)}"
+                )
+            return spec.mapping[decision]
+        if decision not in self._dag.nodes:
+            raise PipelineError(
+                f"Router for '{current}' returned '{decision}' "
+                f"which is not a registered node id; pass an explicit mapping if you want labels."
+            )
+        return decision
+
+    def _common_successor(self, node_ids: list[str]) -> str | None:
+        """Return the node all ``node_ids`` share as their unique successor, or None."""
+        successor_sets = [set(self._dag.successors(nid)) for nid in node_ids]
+        if not successor_sets or any(len(s) != 1 for s in successor_sets):
+            return None
+        common = successor_sets[0]
+        for s in successor_sets[1:]:
+            common = common & s
+        return next(iter(common)) if len(common) == 1 else None
 
     async def invoke(
         self,
@@ -235,7 +322,13 @@ class StatePipeline:
             resumed_completed = list(record.completed_nodes)
             # Resume at the successor of the last completed node.
             last = record.node_id
-            next_node = self._next_node(last, state)
+            next_node = self._next_step(last, state)
+            # Resume can't seamlessly continue mid-fan-out yet; treat fan-out as terminal here.
+            if isinstance(next_node, list):
+                raise PipelineError(
+                    "Resume across a fan-out (Send) is not supported in Phase 2; "
+                    "the run finished by reaching a fan-out node."
+                )
             if next_node is None:
                 return StatePipelineResult(
                     state=state,
@@ -266,9 +359,58 @@ class StatePipeline:
         assert state is not None  # narrowed by the branches above
         completed: list[str] = list(resumed_completed)
         sequence = len(completed)
+        visit_counts: dict[str, int] = {}
 
-        while current_node is not None:
-            fn = self._node_fns[current_node]
+        next_step: str | list[Send] | None = current_node
+        last_node_id: str | None = current_node
+
+        while next_step is not None:
+            # --- fan-out branch (list[Send]) ---------------------------------
+            if isinstance(next_step, list):
+                try:
+                    state, sequence = await self._run_fanout(
+                        sends=next_step,
+                        state=state,
+                        completed=completed,
+                        run_id=run_id,
+                        sequence=sequence,
+                        visit_counts=visit_counts,
+                    )
+                except _NodeFailureError as fail:
+                    return StatePipelineResult(
+                        state=state,
+                        run_id=run_id,
+                        completed_nodes=completed,
+                        success=False,
+                        error=fail.message,
+                        failed_node=fail.node_id,
+                    )
+                last_node_id = next_step[-1].target
+                # After fan-out, continue from the workers' shared successor (if any).
+                worker_ids = [s.target for s in next_step]
+                shared = self._common_successor(worker_ids)
+                next_step = shared
+                continue
+
+            # --- single-node step --------------------------------------------
+            node_id = next_step
+            visit_counts[node_id] = visit_counts.get(node_id, 0) + 1
+            if visit_counts[node_id] > self._recursion_limit:
+                msg = (
+                    f"Recursion limit ({self._recursion_limit}) exceeded at node '{node_id}'. "
+                    f"Raise recursion_limit= or fix the routing logic."
+                )
+                logger.error(msg)
+                return StatePipelineResult(
+                    state=state,
+                    run_id=run_id,
+                    completed_nodes=completed,
+                    success=False,
+                    error=msg,
+                    failed_node=node_id,
+                )
+
+            fn = self._node_fns[node_id]
             t0 = time.perf_counter()
             try:
                 update = await fn(state)
@@ -277,7 +419,7 @@ class StatePipeline:
                     "State pipeline '%s' run '%s' failed at node '%s'",
                     self._name,
                     run_id,
-                    current_node,
+                    node_id,
                 )
                 return StatePipelineResult(
                     state=state,
@@ -285,35 +427,21 @@ class StatePipeline:
                     completed_nodes=completed,
                     success=False,
                     error=str(exc),
-                    failed_node=current_node,
+                    failed_node=node_id,
                 )
             elapsed = (time.perf_counter() - t0) * 1000
-            logger.debug("Pipeline '%s' node '%s' completed in %.1fms", self._name, current_node, elapsed)
+            logger.debug("Pipeline '%s' node '%s' completed in %.1fms", self._name, node_id, elapsed)
 
             if update:
                 state = apply_update(state, update, self._reducers)
 
-            completed.append(current_node)
+            completed.append(node_id)
             sequence += 1
-
-            if self._checkpointer is not None:
-                try:
-                    self._checkpointer.save(
-                        CheckpointRecord(
-                            pipeline_name=self._name,
-                            run_id=run_id,
-                            node_id=current_node,
-                            sequence=sequence,
-                            state=state.model_dump(),
-                            completed_nodes=list(completed),
-                        )
-                    )
-                except Exception:
-                    # Checkpoint failure is non-fatal — log and continue.
-                    logger.exception("Checkpoint save failed for run '%s' at '%s'", run_id, current_node)
+            self._save_checkpoint(run_id, node_id, sequence, state, completed)
+            last_node_id = node_id
 
             try:
-                current_node = self._next_node(current_node, state)
+                next_step = self._next_step(node_id, state)
             except PipelineError as exc:
                 return StatePipelineResult(
                     state=state,
@@ -321,7 +449,7 @@ class StatePipeline:
                     completed_nodes=completed,
                     success=False,
                     error=str(exc),
-                    failed_node=completed[-1] if completed else None,
+                    failed_node=last_node_id,
                 )
 
         return StatePipelineResult(
@@ -330,6 +458,89 @@ class StatePipeline:
             completed_nodes=completed,
             success=True,
         )
+
+    async def _run_fanout(
+        self,
+        *,
+        sends: list[Send],
+        state: BaseModel,
+        completed: list[str],
+        run_id: str,
+        sequence: int,
+        visit_counts: dict[str, int],
+    ) -> tuple[BaseModel, int]:
+        """Run all ``Send`` dispatches concurrently. Each task gets its own state
+        copy with the Send's payload merged in; results are reduced into shared state.
+        """
+        for send in sends:
+            visit_counts[send.target] = visit_counts.get(send.target, 0) + 1
+            if visit_counts[send.target] > self._recursion_limit:
+                raise _NodeFailureError(
+                    node_id=send.target,
+                    message=(
+                        f"Recursion limit ({self._recursion_limit}) exceeded at node '{send.target}' during fan-out."
+                    ),
+                )
+
+        async def _run_one(send: Send) -> tuple[Send, dict[str, Any] | None]:
+            task_state = apply_update(state, send.payload, self._reducers)
+            fn = self._node_fns[send.target]
+            return send, await fn(task_state)
+
+        try:
+            results = await asyncio.gather(*(_run_one(s) for s in sends))
+        except Exception as exc:
+            # Best-effort: report the first failing target as the failure point.
+            raise _NodeFailureError(
+                node_id=sends[0].target,
+                message=f"Fan-out failure: {exc}",
+            ) from exc
+
+        new_state = state
+        for send, update in results:
+            if update:
+                new_state = apply_update(new_state, update, self._reducers)
+            completed.append(send.target)
+            sequence += 1
+            self._save_checkpoint(run_id, send.target, sequence, new_state, completed)
+
+        return new_state, sequence
+
+    def _save_checkpoint(
+        self,
+        run_id: str,
+        node_id: str,
+        sequence: int,
+        state: BaseModel,
+        completed: list[str],
+    ) -> None:
+        """Persist state via the configured checkpointer (no-op if absent)."""
+        if self._checkpointer is None:
+            return
+        try:
+            self._checkpointer.save(
+                CheckpointRecord(
+                    pipeline_name=self._name,
+                    run_id=run_id,
+                    node_id=node_id,
+                    sequence=sequence,
+                    state=state.model_dump(),
+                    completed_nodes=list(completed),
+                )
+            )
+        except Exception:
+            logger.exception("Checkpoint save failed for run '%s' at '%s'", run_id, node_id)
+
+
+@dataclass
+class _NodeFailureError(Exception):
+    """Internal sentinel used to bubble fan-out failures out to the main loop."""
+
+    node_id: str
+    message: str
+
+    def __str__(self) -> str:
+        return self.message
 
 
 def _resolve_node_id(ref: str | Callable[..., Any]) -> str:
