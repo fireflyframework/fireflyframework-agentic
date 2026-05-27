@@ -33,6 +33,8 @@ from fireflyframework_agentic.pipeline.checkpoint import (
     Checkpointer,
     CheckpointRecord,
     FileCheckpointer,
+    PostgresCheckpointer,
+    RedisCheckpointer,
 )
 from fireflyframework_agentic.pipeline.context import PipelineContext
 from fireflyframework_agentic.pipeline.dag import DAG, DAGEdge, DAGNode, FailureStrategy
@@ -75,6 +77,7 @@ __all__ = [
     "FanOutStep",
     "FileCheckpointer",
     "NodeResult",
+    "PostgresCheckpointer",
     "PipelineBuilder",
     "PipelineContext",
     "PipelineEngine",
@@ -82,8 +85,9 @@ __all__ = [
     "PipelineResult",
     "ReasoningStep",
     "RecursionLimitError",
-    "Send",
+    "RedisCheckpointer",
     "RetrievalStep",
+    "Send",
     "StatePipeline",
     "StatePipelineResult",
     "StepExecutor",
