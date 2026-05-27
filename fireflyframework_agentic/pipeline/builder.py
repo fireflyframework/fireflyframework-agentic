@@ -14,61 +14,158 @@
 
 """Fluent builder API for constructing pipeline DAGs.
 
-Usage example::
+Two modes:
 
-    pipeline = (
-        PipelineBuilder("idp-pipeline")
-        .add_node("split", splitter_step)
-        .add_node("classify", classifier_step)
-        .add_node("extract", extractor_step)
-        .add_edge("split", "classify")
-        .add_edge("classify", "extract")
-        .build()
-    )
+1. **Port-based** (legacy, parallel-friendly): nodes are added by string id,
+   data flows over edge ports, executed by :class:`PipelineEngine`. Use this
+   for ETL-shaped DAGs with independent parallel steps::
+
+       pipeline = (
+           PipelineBuilder("idp")
+           .add_node("split", splitter)
+           .add_node("classify", classifier)
+           .add_edge("split", "classify")
+           .build()
+       )
+
+2. **State-based**: configure ``state=SomeModel`` and nodes become
+   ``async (state) -> dict`` functions over a typed shared state. Branching
+   is one ``.branch(source, router)`` call. Function references can be used
+   as node ids. Optional checkpointing supports resume after failure and
+   mid-pipeline start. Produces a :class:`StatePipeline`::
+
+       pipeline = (
+           PipelineBuilder("agent", state=AgentState, checkpointer=FileCheckpointer("./ckpt"))
+           .add_node(classify)
+           .add_node(answer)
+           .add_node(escalate)
+           .branch(classify, route)
+           .build()
+       )
 """
 
 from __future__ import annotations
 
-import asyncio
+import inspect
 from collections.abc import Callable
 from typing import Any
 
+from pydantic import BaseModel
+
+from fireflyframework_agentic.exceptions import PipelineError
+from fireflyframework_agentic.pipeline.checkpoint import Checkpointer
 from fireflyframework_agentic.pipeline.dag import DAG, DAGEdge, DAGNode, FailureStrategy
 from fireflyframework_agentic.pipeline.engine import PipelineEngine
+from fireflyframework_agentic.pipeline.state_pipeline import (
+    BranchSpec,
+    RouterFn,
+    StateNodeFn,
+    StatePipeline,
+    coerce_state_node_fn,
+)
 from fireflyframework_agentic.pipeline.steps import AgentStep, CallableStep, StepExecutor
 
 
 class PipelineBuilder:
-    """Fluent builder for constructing a :class:`DAG` and :class:`PipelineEngine`.
+    """Fluent builder for pipelines.
 
     Parameters:
         name: Human-readable name for the pipeline.
+        state: Optional Pydantic model class for typed shared state.
+            When set, the builder produces a :class:`StatePipeline` and nodes
+            are expected to be ``async (state) -> dict | None``.
+        checkpointer: Optional :class:`Checkpointer` for state-based pipelines.
+            Ignored when ``state`` is not set.
     """
 
-    def __init__(self, name: str = "pipeline") -> None:
+    def __init__(
+        self,
+        name: str = "pipeline",
+        *,
+        state: type[BaseModel] | None = None,
+        checkpointer: Checkpointer | None = None,
+    ) -> None:
         self._dag = DAG(name=name)
+        self._name = name
+        self._state_schema = state
+        self._checkpointer = checkpointer
         self._pending_nodes: list[DAGNode] = []
         self._pending_edges: list[DAGEdge] = []
+        # State-based mode bookkeeping. Keyed by node id.
+        self._state_node_fns: dict[str, StateNodeFn] = {}
+        self._branches: dict[str, BranchSpec] = {}
 
     def add_node(
         self,
-        node_id: str,
-        step: Any,
+        node_id_or_fn: str | Callable[..., Any],
+        step: Any = None,
         *,
         condition: Callable[..., bool] | None = None,
         retry_max: int = 0,
         timeout_seconds: float = 0,
         failure_strategy: FailureStrategy = FailureStrategy.SKIP_DOWNSTREAM,
     ) -> PipelineBuilder:
-        """Add a node to the pipeline.
+        """Add a node.
 
-        *step* can be:
-        - A :class:`StepExecutor` (AgentStep, CallableStep, etc.)
-        - A :class:`FireflyAgent` (auto-wrapped in :class:`AgentStep`)
-        - An async callable (auto-wrapped in :class:`CallableStep`)
+        Two signatures:
 
-        Returns *self* for chaining.
+        * ``add_node(fn)`` — state-based mode. ``fn`` is a callable; the node
+          id is taken from ``fn.__name__``. Requires the builder was constructed
+          with ``state=...``.
+        * ``add_node(node_id, step)`` — legacy port-based mode. ``step`` is a
+          :class:`StepExecutor`, an agent-like, or an async callable.
         """
+        if step is None and callable(node_id_or_fn) and not isinstance(node_id_or_fn, str):
+            # State-based: derive id from function name.
+            if self._state_schema is None:
+                raise PipelineError(
+                    "Function-reference add_node(fn) requires PipelineBuilder(state=...). "
+                    "Use add_node('id', step) for port-based pipelines."
+                )
+            fn = node_id_or_fn
+            node_id = getattr(fn, "__name__", None) or repr(fn)
+            self._state_node_fns[node_id] = coerce_state_node_fn(fn)
+            self._pending_nodes.append(
+                DAGNode(
+                    node_id=node_id,
+                    step=_StateNodePlaceholder(),  # never executed; engine path is unused for state pipelines
+                    condition=condition,
+                    retry_max=retry_max,
+                    timeout_seconds=timeout_seconds,
+                    failure_strategy=failure_strategy,
+                )
+            )
+            return self
+
+        if not isinstance(node_id_or_fn, str):
+            raise PipelineError("add_node(node_id, step) expects a string node id when a step is provided.")
+        node_id = node_id_or_fn
+
+        if self._state_schema is not None and step is not None:
+            # State-based pipeline: accept a callable, or an agent-like object
+            # exposing async ``run(state)``. ``coerce_state_node_fn`` handles both.
+            run_method = getattr(step, "run", None)
+            if not callable(step) and not callable(run_method):
+                raise PipelineError(
+                    f"State pipeline node '{node_id}' must be a callable or expose async run(state); "
+                    f"got {type(step).__name__}"
+                )
+            self._state_node_fns[node_id] = coerce_state_node_fn(step)
+            self._pending_nodes.append(
+                DAGNode(
+                    node_id=node_id,
+                    step=_StateNodePlaceholder(),
+                    condition=condition,
+                    retry_max=retry_max,
+                    timeout_seconds=timeout_seconds,
+                    failure_strategy=failure_strategy,
+                )
+            )
+            return self
+
+        if step is None:
+            raise PipelineError(f"add_node('{node_id}', step=...) requires a step.")
+
         executor = self._resolve_step(step)
         self._pending_nodes.append(
             DAGNode(
@@ -84,46 +181,88 @@ class PipelineBuilder:
 
     def add_edge(
         self,
-        source: str,
-        target: str,
+        source: str | Callable[..., Any],
+        target: str | Callable[..., Any],
         *,
         output_key: str = "output",
         input_key: str = "input",
     ) -> PipelineBuilder:
         """Add a directed edge from *source* to *target*.
 
-        Returns *self* for chaining.
+        Both endpoints may be node ids (str) or function references (in which
+        case ``fn.__name__`` is used).
         """
         self._pending_edges.append(
             DAGEdge(
-                source=source,
-                target=target,
+                source=_id(source),
+                target=_id(target),
                 output_key=output_key,
                 input_key=input_key,
             )
         )
         return self
 
-    def chain(self, *node_ids: str) -> PipelineBuilder:
-        """Connect nodes in sequence: A -> B -> C -> ...
-
-        All referenced nodes must already have been added via :meth:`add_node`.
-        Returns *self* for chaining.
-        """
-        for i in range(len(node_ids) - 1):
-            self.add_edge(node_ids[i], node_ids[i + 1])
+    def chain(self, *nodes: str | Callable[..., Any]) -> PipelineBuilder:
+        """Connect nodes in sequence: A -> B -> C -> ..."""
+        ids = [_id(n) for n in nodes]
+        for i in range(len(ids) - 1):
+            self.add_edge(ids[i], ids[i + 1])
         return self
 
-    def build(self) -> PipelineEngine:
-        """Build the DAG, validate it, and return a :class:`PipelineEngine`.
+    def branch(
+        self,
+        source: str | Callable[..., Any],
+        router: RouterFn,
+        mapping: dict[str, str | Callable[..., Any]] | None = None,
+    ) -> PipelineBuilder:
+        """Register a router on ``source``.
 
-        Raises:
-            PipelineError: If the graph is invalid (cycles, missing nodes).
+        ``router`` is a synchronous ``(state) -> str`` callable. Behaviour:
+
+        * If ``mapping`` is None, the router must return the **id of an
+          existing node** that will run next.
+        * If ``mapping`` is provided, the router returns an abstract label
+          that is looked up in ``mapping`` to find the target node id.
+
+        State-based pipelines only.
+        """
+        if self._state_schema is None:
+            raise PipelineError(".branch(...) requires PipelineBuilder(state=...)")
+        source_id = _id(source)
+        resolved_mapping: dict[str, str] | None = None
+        if mapping is not None:
+            resolved_mapping = {label: _id(target) for label, target in mapping.items()}
+            # Materialize each label's edge into the DAG so topology is inspectable.
+            for target_id in resolved_mapping.values():
+                self._pending_edges.append(DAGEdge(source=source_id, target=target_id))
+        else:
+            # No mapping: we don't know targets at build time; edges will
+            # be missing from the DAG. That's fine for the StatePipeline
+            # executor (it consults the router), but visualisation will be
+            # incomplete. Materialize edges lazily when the router fires.
+            pass
+        self._branches[source_id] = BranchSpec(source=source_id, router=router, mapping=resolved_mapping)
+        return self
+
+    def build(self) -> PipelineEngine | StatePipeline:
+        """Build the DAG and return either a :class:`PipelineEngine`
+        (legacy port-based) or :class:`StatePipeline` (when ``state=`` is set).
         """
         for node in self._pending_nodes:
             self._dag.add_node(node)
         for edge in self._pending_edges:
             self._dag.add_edge(edge)
+
+        if self._state_schema is not None:
+            return StatePipeline(
+                name=self._name,
+                dag=self._dag,
+                state_schema=self._state_schema,
+                node_fns=self._state_node_fns,
+                branches=self._branches,
+                checkpointer=self._checkpointer,
+            )
+
         return PipelineEngine(self._dag)
 
     def build_dag(self) -> DAG:
@@ -139,12 +278,29 @@ class PipelineBuilder:
         """Wrap non-executor objects in the appropriate step type."""
         if isinstance(step, StepExecutor):
             return step
-        # Duck-type check for agent-like objects
         if hasattr(step, "run") and callable(step.run):
             return AgentStep(step)
-        # Async callable
-        if callable(step) and asyncio.iscoroutinefunction(step):
+        if callable(step) and inspect.iscoroutinefunction(step):
             return CallableStep(step)
         raise TypeError(
-            f"Cannot resolve {type(step).__name__} as a pipeline step. Must be StepExecutor, agent-like, or async callable."
+            f"Cannot resolve {type(step).__name__} as a pipeline step. "
+            f"Must be StepExecutor, agent-like, or async callable."
         )
+
+
+def _id(ref: str | Callable[..., Any]) -> str:
+    """Coerce a string id or function reference into a node id string."""
+    if isinstance(ref, str):
+        return ref
+    name = getattr(ref, "__name__", None)
+    if not name:
+        raise PipelineError(f"Cannot derive node id from {ref!r}")
+    return name
+
+
+class _StateNodePlaceholder:
+    """Sentinel step kept in the DAG so topology is intact. Never executed —
+    state pipelines bypass :class:`PipelineEngine` entirely."""
+
+    async def execute(self, *_args: Any, **_kwargs: Any) -> Any:
+        raise PipelineError("_StateNodePlaceholder.execute called — state pipelines should not use PipelineEngine.")

@@ -17,13 +17,29 @@
 This package provides a Directed Acyclic Graph (DAG) execution engine that
 wires agents, reasoning patterns, validation, and tools into production
 pipelines where independent stages execute concurrently.
+
+Two builder modes exist:
+
+* **Port-based** (legacy, parallel): :class:`PipelineEngine` executes a DAG
+  whose nodes communicate via ``output_key``/``input_key`` edge ports.
+* **State-based**: configure ``PipelineBuilder(state=SomeModel)`` and nodes
+  become ``async (state) -> dict`` functions over a typed shared state.
+  Branching is one ``.branch(source, router)`` call. Optional checkpointing
+  via :class:`Checkpointer` enables resume after failure and mid-pipeline start.
 """
 
 from fireflyframework_agentic.pipeline.builder import PipelineBuilder
+from fireflyframework_agentic.pipeline.checkpoint import (
+    Checkpointer,
+    CheckpointRecord,
+    FileCheckpointer,
+)
 from fireflyframework_agentic.pipeline.context import PipelineContext
 from fireflyframework_agentic.pipeline.dag import DAG, DAGEdge, DAGNode, FailureStrategy
 from fireflyframework_agentic.pipeline.engine import PipelineEngine, PipelineEventHandler
+from fireflyframework_agentic.pipeline.reducers import append, extend, merge_dict, replace
 from fireflyframework_agentic.pipeline.result import ExecutionTraceEntry, NodeResult, PipelineResult
+from fireflyframework_agentic.pipeline.state_pipeline import StatePipeline, StatePipelineResult
 from fireflyframework_agentic.pipeline.steps import (
     AgentStep,
     BatchLLMStep,
@@ -38,11 +54,13 @@ from fireflyframework_agentic.pipeline.steps import (
 )
 
 __all__ = [
+    "DAG",
     "AgentStep",
     "BatchLLMStep",
     "BranchStep",
     "CallableStep",
-    "DAG",
+    "CheckpointRecord",
+    "Checkpointer",
     "DAGEdge",
     "DAGNode",
     "EmbeddingStep",
@@ -50,6 +68,7 @@ __all__ = [
     "FailureStrategy",
     "FanInStep",
     "FanOutStep",
+    "FileCheckpointer",
     "NodeResult",
     "PipelineBuilder",
     "PipelineContext",
@@ -58,5 +77,11 @@ __all__ = [
     "PipelineResult",
     "ReasoningStep",
     "RetrievalStep",
+    "StatePipeline",
+    "StatePipelineResult",
     "StepExecutor",
+    "append",
+    "extend",
+    "merge_dict",
+    "replace",
 ]
