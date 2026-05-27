@@ -15,12 +15,14 @@
 """Directed Acyclic Graph (DAG) model for pipeline topology.
 
 :class:`DAG` holds :class:`DAGNode` and :class:`DAGEdge` objects, validates
-acyclicity, computes topological sort, and identifies independent execution
-levels for parallel scheduling.
+acyclicity (unless ``allow_cycles=True``), computes topological sort, and
+identifies independent execution levels for parallel scheduling. Also renders
+itself as Mermaid or JSON for inspection / docs / Studio.
 """
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict, deque
 from collections.abc import Callable
 from enum import StrEnum
@@ -98,8 +100,9 @@ class DAG:
         name: A human-readable name for the pipeline.
     """
 
-    def __init__(self, name: str = "pipeline") -> None:
+    def __init__(self, name: str = "pipeline", *, allow_cycles: bool = False) -> None:
         self._name = name
+        self._allow_cycles = allow_cycles
         self._nodes: dict[str, DAGNode] = {}
         self._edges: list[DAGEdge] = []
         # Adjacency and reverse adjacency for topo-sort
@@ -136,9 +139,9 @@ class DAG:
         self._edges.append(edge)
         self._adj[edge.source].append(edge.target)
         self._in_degree[edge.target] = self._in_degree.get(edge.target, 0) + 1
-        # Incremental cycle check
-        if self._has_cycle():
-            # Rollback
+        # Cycle check is skipped when the DAG was constructed with allow_cycles=True
+        # (state-based pipelines opt into this for ReAct-style loops).
+        if not self._allow_cycles and self._has_cycle():
             self._edges.pop()
             self._adj[edge.source].pop()
             self._in_degree[edge.target] -= 1
@@ -236,5 +239,62 @@ class DAG:
                     queue.append(neighbour)
         return count != len(self._nodes)
 
+    def is_cyclic(self) -> bool:
+        """True if the graph contains at least one cycle."""
+        return self._has_cycle()
+
+    # -- Export ------------------------------------------------------------
+
+    def to_mermaid(self) -> str:
+        """Render the topology as a Mermaid flowchart.
+
+        Edges with ``input_key`` other than the default ``"input"`` are
+        labelled with that key so port wiring is visible.
+        """
+        lines = ["flowchart TD"]
+        for node_id in self._nodes:
+            lines.append(f"    {_mermaid_id(node_id)}[{node_id}]")
+        for edge in self._edges:
+            label = edge.input_key if edge.input_key and edge.input_key != "input" else None
+            arrow = f"-->|{label}|" if label else "-->"
+            lines.append(f"    {_mermaid_id(edge.source)} {arrow} {_mermaid_id(edge.target)}")
+        return "\n".join(lines)
+
+    def to_json(self) -> str:
+        """Render the topology as a JSON document.
+
+        Schema::
+
+            {"name": str, "nodes": [str], "edges": [{"source", "target", "output_key", "input_key"}]}
+        """
+        doc = {
+            "name": self._name,
+            "nodes": list(self._nodes.keys()),
+            "edges": [
+                {
+                    "source": e.source,
+                    "target": e.target,
+                    "output_key": e.output_key,
+                    "input_key": e.input_key,
+                }
+                for e in self._edges
+            ],
+        }
+        return json.dumps(doc, indent=2)
+
     def __repr__(self) -> str:
         return f"DAG(name={self._name!r}, nodes={len(self._nodes)}, edges={len(self._edges)})"
+
+
+def _mermaid_id(node_id: str) -> str:
+    """Sanitize a node id for use as a Mermaid identifier."""
+    out = []
+    for ch in node_id:
+        if ch.isalnum() or ch == "_":
+            out.append(ch)
+        else:
+            out.append("_")
+    sanitized = "".join(out)
+    if sanitized and sanitized[0].isdigit():
+        sanitized = "n_" + sanitized
+    return sanitized or "anon"
