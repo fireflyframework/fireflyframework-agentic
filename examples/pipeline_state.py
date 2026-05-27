@@ -51,7 +51,9 @@ from typing import Annotated
 from pydantic import BaseModel
 
 from fireflyframework_agentic.pipeline import (
+    FileAuditLog,
     FileCheckpointer,
+    Pause,
     PipelineBuilder,
     PostgresCheckpointer,
     Send,
@@ -171,6 +173,9 @@ class ProgressHandler:
 
     async def on_node_error(self, pipeline_name: str, run_id: str, node_id: str, error: str) -> None:
         print(f"    ✗ {node_id}: {error}")
+
+    async def on_node_pause(self, pipeline_name: str, run_id: str, node_id: str, reason: str) -> None:
+        print(f"    ⏸ {node_id} paused: {reason}")
 
     async def on_pipeline_complete(self, pipeline_name: str, run_id: str, success: bool, duration_ms: float) -> None:
         status = "OK" if success else "FAILED"
@@ -299,11 +304,75 @@ async def run_software_factory_postgres() -> None:
     print(f"              eval:      {second.state.evaluation}\n")
 
 
+class HitlState(BaseModel):
+    """State threaded through a deploy pipeline gated by human approval."""
+
+    target_env: str
+    artifact: str | None = None
+    deployed_to: str | None = None
+
+
+async def build_artifact(state: HitlState) -> dict:
+    return {"artifact": f"build-{state.target_env}.tar.gz"}
+
+
+async def await_approval(state: HitlState) -> Pause:
+    return Pause(reason=f"awaiting human approval to deploy {state.artifact} to {state.target_env}")
+
+
+async def deploy_artifact(state: HitlState) -> dict:
+    return {"deployed_to": f"https://{state.target_env}.example.com"}
+
+
+async def run_hitl_with_audit() -> None:
+    print("=== 5. Human-in-the-loop deploy gate with audit log ===\n")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        ckpt = FileCheckpointer(root / "ckpt")
+        audit = FileAuditLog(root / "audit")
+        pipeline = (
+            PipelineBuilder(
+                "hitl-deploy",
+                state=HitlState,
+                checkpointer=ckpt,
+                audit_log=audit,
+            )
+            .add_node(build_artifact)
+            .add_node(await_approval)
+            .add_node(deploy_artifact)
+            .chain(build_artifact, await_approval, deploy_artifact)
+            .build()
+        )
+
+        # First run halts at the approval gate.
+        first = await pipeline.invoke(HitlState(target_env="prod"))
+        print(f"  first run:  paused={first.paused}, paused_node={first.paused_node}")
+        print(f"              reason: {first.pause_reason}")
+        print(f"              run_id: {first.run_id}\n")
+
+        # ...time passes; a human reviews and approves...
+        print("  (human reviews and approves)\n")
+
+        # Resume with explicit approval.
+        done = await pipeline.invoke(run_id=first.run_id, approve_pause=True)
+        print(f"  resumed:    success={done.success}, deployed_to={done.state.deployed_to}")
+        print(f"              completed: {done.completed_nodes}\n")
+
+        # Audit log captures every node visit with its status.
+        entries = audit.list_entries("hitl-deploy", first.run_id)
+        print("  audit trail:")
+        for e in entries:
+            extra = f" reason={e.pause_reason!r}" if e.pause_reason else ""
+            print(f"    seq={e.sequence} node={e.node_id} status={e.status}{extra}")
+
+
 async def main() -> None:
     await run_branching()
     await run_software_factory()
     await run_map_reduce()
     await run_software_factory_postgres()
+    await run_hitl_with_audit()
 
 
 if __name__ == "__main__":

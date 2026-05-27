@@ -320,6 +320,69 @@ In parallel, the pipeline emits OTel spans automatically when
 
 Handler exceptions are swallowed — observability never breaks business logic.
 
+### Human-in-the-loop (Pause)
+
+Any node may return ``Pause(reason="...")`` instead of a state update to halt
+the pipeline cleanly. The current state is checkpointed with a paused marker;
+``invoke`` returns with ``result.paused=True`` and ``result.success=False``.
+
+```python
+from fireflyframework_agentic.pipeline import Pause
+
+async def await_deploy_approval(state: DeployState) -> Pause:
+    return Pause(reason="awaiting human approval to deploy to production")
+```
+
+To resume after the external approval comes in, call ``invoke`` with the same
+``run_id`` and ``approve_pause=True``. Without ``approve_pause=True``, the
+resume raises a ``PipelineError`` — the pause is sticky until explicitly
+released. The successor of the paused node runs next; the pause node itself
+is not re-executed.
+
+```python
+first = await pipeline.invoke(DeployState(...))
+assert first.paused
+# ...later, after approval...
+done = await pipeline.invoke(run_id=first.run_id, approve_pause=True)
+assert done.success
+```
+
+The configured ``StatePipelineEventHandler`` receives an ``on_node_pause``
+callback when this happens (the callback is optional — partial handlers
+without it continue to work).
+
+### Audit Log
+
+Distinct from the ``Checkpointer`` (which stores the *latest* state for
+crash recovery), an ``AuditLog`` is an append-only record of *every* node
+visit for compliance, debugging, and replay. Wire one in via the
+``audit_log`` kwarg:
+
+```python
+from fireflyframework_agentic.pipeline import (
+    PipelineBuilder, FileAuditLog, PostgresAuditLog, LoggingAuditLog, OtelAuditLog,
+)
+
+PipelineBuilder("agent", state=AgentState, audit_log=FileAuditLog("./audit"))
+```
+
+Four backends ship, each conforming to the ``AuditLog`` Protocol:
+
+| Backend | Use when | Read API | Trace-correlated | Install |
+|---|---|---|---|---|
+| ``FileAuditLog`` | Dev / single-host | yes | no | (default) |
+| ``PostgresAuditLog`` | Compliance, retention, cross-run queries | yes | no | ``[postgres]`` |
+| ``LoggingAuditLog`` | Generic log stacks (Splunk-HEC, Loki, JSON-logging) | no (write-only) | no | (default — stdlib) |
+| ``OtelAuditLog`` | OTel-native stacks (Application Insights, Datadog APM, OTel Collector) | no (write-only) | **yes** | ``opentelemetry-sdk`` |
+
+``FileAuditLog`` and ``PostgresAuditLog`` also implement
+``QueryableAuditLog`` with ``list_entries(pipeline_name, run_id)``. The
+write-only backends delegate query/search to the user's existing
+observability stack.
+
+Audit-log write failures are non-fatal — logged but never abort the
+pipeline.
+
 ### Mermaid Export
 
 `StatePipeline.to_mermaid()` and `DAG.to_mermaid()` render the topology as a
