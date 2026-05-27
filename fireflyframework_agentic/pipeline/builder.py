@@ -53,6 +53,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from fireflyframework_agentic.exceptions import PipelineError
+from fireflyframework_agentic.pipeline.audit import AuditLog
 from fireflyframework_agentic.pipeline.checkpoint import Checkpointer
 from fireflyframework_agentic.pipeline.dag import DAG, DAGEdge, DAGNode, FailureStrategy
 from fireflyframework_agentic.pipeline.engine import PipelineEngine, StatePipelineEventHandler
@@ -87,6 +88,7 @@ class PipelineBuilder:
         checkpointer: Checkpointer | None = None,
         recursion_limit: int = 25,
         event_handler: StatePipelineEventHandler | None = None,
+        audit_log: AuditLog | None = None,
     ) -> None:
         # State pipelines may use cyclic graphs (ReAct loops, retry-with-critique).
         # The legacy port-based path keeps acyclicity as an invariant.
@@ -96,6 +98,7 @@ class PipelineBuilder:
         self._checkpointer = checkpointer
         self._recursion_limit = recursion_limit
         self._event_handler = event_handler
+        self._audit_log = audit_log
         self._pending_nodes: list[DAGNode] = []
         self._pending_edges: list[DAGEdge] = []
         # State-based mode bookkeeping. Keyed by node id.
@@ -270,6 +273,7 @@ class PipelineBuilder:
                 checkpointer=self._checkpointer,
                 recursion_limit=self._recursion_limit,
                 event_handler=self._event_handler,
+                audit_log=self._audit_log,
             )
 
         return PipelineEngine(self._dag)
