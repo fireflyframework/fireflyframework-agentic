@@ -267,6 +267,59 @@ When all worker targets share a common successor, the engine continues there
 once the fan-out completes; the aggregator runs once with all results in
 shared state.
 
+### Observability
+
+State pipelines emit lifecycle callbacks and OTel spans so ops can see what
+an agent workflow is doing in real time.
+
+`StatePipelineEventHandler` mirrors the legacy `PipelineEventHandler` but
+every callback carries the `run_id` (so events can be correlated across
+resumes) and `on_node_start` carries a per-node visit counter (so cyclic
+graphs and `Send` fan-outs are distinguishable). Implement any subset of
+methods; missing ones are no-ops.
+
+```python
+from fireflyframework_agentic.pipeline import PipelineBuilder, StatePipelineEventHandler
+
+
+class ProgressHandler:
+    async def on_pipeline_start(self, name, run_id):
+        print(f"▶ [{name}] run {run_id} starting")
+
+    async def on_node_start(self, name, run_id, node_id, visit):
+        print(f"  ▶ {node_id} (visit #{visit})")
+
+    async def on_node_complete(self, name, run_id, node_id, latency_ms):
+        print(f"  ✔ {node_id} ({latency_ms:.0f}ms)")
+
+    async def on_node_error(self, name, run_id, node_id, error):
+        print(f"  ✗ {node_id}: {error}")
+
+    async def on_pipeline_complete(self, name, run_id, success, duration_ms):
+        status = "OK" if success else "FAILED"
+        print(f"═ [{name}] {status} in {duration_ms:.0f}ms")
+
+
+pipeline = (
+    PipelineBuilder("agent", state=AgentState, event_handler=ProgressHandler())
+    .add_node(classify).add_node(answer).add_node(escalate)
+    .branch(classify, route)
+    .build()
+)
+```
+
+In parallel, the pipeline emits OTel spans automatically when
+`observability_enabled` is True and `opentelemetry` is installed:
+
+- One pipeline-level span `pipeline.state.<name>` around each `invoke`,
+  attributes `firefly.pipeline`, `firefly.run_id`.
+- One per-node span `pipeline.state.node.<node_id>` for each `fn(state)`
+  call, parented under the pipeline span, attributes `firefly.node`,
+  `firefly.visit`.
+- For `Send` fan-out: one per-Send span as a sibling under the pipeline span.
+
+Handler exceptions are swallowed — observability never breaks business logic.
+
 ### Mermaid Export
 
 `StatePipeline.to_mermaid()` and `DAG.to_mermaid()` render the topology as a
