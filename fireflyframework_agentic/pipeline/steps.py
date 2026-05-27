@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import warnings
 from collections.abc import Callable, Coroutine
 from typing import Any, Protocol, runtime_checkable
 
@@ -148,6 +149,12 @@ class BranchStep:
     """
 
     def __init__(self, router: Callable[[dict[str, Any]], str]) -> None:
+        warnings.warn(
+            "BranchStep is deprecated; use PipelineBuilder(state=...).branch(source, router) "
+            "for first-class declarative branching.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._router = router
 
     async def execute(self, context: PipelineContext, inputs: dict[str, Any]) -> Any:
@@ -162,6 +169,12 @@ class FanOutStep:
     """
 
     def __init__(self, split_fn: Callable[[Any], list[Any]]) -> None:
+        warnings.warn(
+            "FanOutStep is deprecated; use PipelineBuilder(state=...) with a router returning "
+            "list[Send(target, payload)] for first-class runtime fan-out.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._split_fn = split_fn
 
     async def execute(self, context: PipelineContext, inputs: dict[str, Any]) -> Any:

@@ -59,6 +59,7 @@ from fireflyframework_agentic.pipeline.engine import PipelineEngine
 from fireflyframework_agentic.pipeline.state_pipeline import (
     BranchSpec,
     RouterFn,
+    Send,  # noqa: F401  re-exported via pipeline/__init__.py
     StateNodeFn,
     StatePipeline,
     coerce_state_node_fn,
@@ -84,11 +85,15 @@ class PipelineBuilder:
         *,
         state: type[BaseModel] | None = None,
         checkpointer: Checkpointer | None = None,
+        recursion_limit: int = 25,
     ) -> None:
-        self._dag = DAG(name=name)
+        # State pipelines may use cyclic graphs (ReAct loops, retry-with-critique).
+        # The legacy port-based path keeps acyclicity as an invariant.
+        self._dag = DAG(name=name, allow_cycles=state is not None)
         self._name = name
         self._state_schema = state
         self._checkpointer = checkpointer
+        self._recursion_limit = recursion_limit
         self._pending_nodes: list[DAGNode] = []
         self._pending_edges: list[DAGEdge] = []
         # State-based mode bookkeeping. Keyed by node id.
@@ -261,6 +266,7 @@ class PipelineBuilder:
                 node_fns=self._state_node_fns,
                 branches=self._branches,
                 checkpointer=self._checkpointer,
+                recursion_limit=self._recursion_limit,
             )
 
         return PipelineEngine(self._dag)
