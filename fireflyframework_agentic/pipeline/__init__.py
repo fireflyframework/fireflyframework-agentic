@@ -38,7 +38,11 @@ from fireflyframework_agentic.pipeline.checkpoint import (
 )
 from fireflyframework_agentic.pipeline.context import PipelineContext
 from fireflyframework_agentic.pipeline.dag import DAG, DAGEdge, DAGNode, FailureStrategy
-from fireflyframework_agentic.pipeline.engine import PipelineEngine, PipelineEventHandler
+from fireflyframework_agentic.pipeline.engine import (
+    PipelineEngine,
+    PipelineEventHandler,
+    StatePipelineEventHandler,
+)
 from fireflyframework_agentic.pipeline.reducers import append, extend, merge_dict, replace
 from fireflyframework_agentic.pipeline.result import ExecutionTraceEntry, NodeResult, PipelineResult
 from fireflyframework_agentic.pipeline.state_pipeline import (
@@ -89,6 +93,7 @@ __all__ = [
     "RetrievalStep",
     "Send",
     "StatePipeline",
+    "StatePipelineEventHandler",
     "StatePipelineResult",
     "StepExecutor",
     "append",
