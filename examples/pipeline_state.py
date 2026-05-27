@@ -163,24 +163,16 @@ class ProgressHandler:
     async def on_pipeline_start(self, pipeline_name: str, run_id: str) -> None:
         print(f"  ▶ [{pipeline_name}] run {run_id[:8]}… starting")
 
-    async def on_node_start(
-        self, pipeline_name: str, run_id: str, node_id: str, visit: int
-    ) -> None:
+    async def on_node_start(self, pipeline_name: str, run_id: str, node_id: str, visit: int) -> None:
         print(f"    ▶ {node_id} (visit #{visit})")
 
-    async def on_node_complete(
-        self, pipeline_name: str, run_id: str, node_id: str, latency_ms: float
-    ) -> None:
+    async def on_node_complete(self, pipeline_name: str, run_id: str, node_id: str, latency_ms: float) -> None:
         print(f"    ✔ {node_id} ({latency_ms:.0f}ms)")
 
-    async def on_node_error(
-        self, pipeline_name: str, run_id: str, node_id: str, error: str
-    ) -> None:
+    async def on_node_error(self, pipeline_name: str, run_id: str, node_id: str, error: str) -> None:
         print(f"    ✗ {node_id}: {error}")
 
-    async def on_pipeline_complete(
-        self, pipeline_name: str, run_id: str, success: bool, duration_ms: float
-    ) -> None:
+    async def on_pipeline_complete(self, pipeline_name: str, run_id: str, success: bool, duration_ms: float) -> None:
         status = "OK" if success else "FAILED"
         print(f"  ═ [{pipeline_name}] {status} in {duration_ms:.0f}ms")
 
