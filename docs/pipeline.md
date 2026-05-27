@@ -180,12 +180,18 @@ Custom reducers are any callable `(current, update) -> merged`.
 
 ### Checkpoint + Resume
 
-Pass a `Checkpointer` to persist state after each successful node. The
-filesystem implementation ships in the package; Redis/Postgres backends are
-straightforward to plug in via the `Checkpointer` Protocol.
+Pass a `Checkpointer` to persist state after each successful node. Three
+backends ship out of the box, all conforming to the same `Checkpointer`
+Protocol so they're swappable without code changes.
+
+| Backend | Use when | Trade-off | Install |
+|---|---|---|---|
+| `FileCheckpointer` | Dev, single-host, ephemeral | No cross-process / cross-host sharing | (default — no extra) |
+| `RedisCheckpointer` | Multi-worker, sub-day-scale runs | TTL eviction; not durable forever | `pip install fireflyframework-agentic[redis]` |
+| `PostgresCheckpointer` | Long-lived runs, compliance, audit-friendly | Operational overhead of a DB | `pip install fireflyframework-agentic[postgres]` |
 
 ```python
-from fireflyframework_agentic.pipeline import FileCheckpointer
+from fireflyframework_agentic.pipeline import FileCheckpointer  # or Redis / Postgres
 
 pipeline = (
     PipelineBuilder("software-factory", state=BuildState,
@@ -206,6 +212,21 @@ result = await pipeline.invoke(run_id=result.run_id)
 
 # Or jump into a specific node with explicit state
 result = await pipeline.invoke(state=loaded_state, start_at=deployer)
+```
+
+Swapping backends is a one-line change. Redis uses a TTL on each checkpoint
+key (default 30 days) plus a sorted-set index of run IDs; Postgres uses a
+single `firefly_checkpoints` table created idempotently on first save:
+
+```python
+from fireflyframework_agentic.pipeline import RedisCheckpointer, PostgresCheckpointer
+
+# Either a URL/DSN (backend constructs its own client) or a pre-built client
+# (lets you share a connection pool across many pipelines).
+checkpointer = RedisCheckpointer(url="redis://localhost:6379/0", ttl_seconds=86400 * 30)
+checkpointer = RedisCheckpointer(client=my_existing_redis)
+checkpointer = PostgresCheckpointer(dsn="postgresql://user:pw@host/db")
+checkpointer = PostgresCheckpointer(connection=my_existing_psycopg_connection)
 ```
 
 ### Cycles and `recursion_limit`

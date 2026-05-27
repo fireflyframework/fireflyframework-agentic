@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import tempfile
 from pathlib import Path
 from typing import Annotated
@@ -52,6 +53,7 @@ from pydantic import BaseModel
 from fireflyframework_agentic.pipeline import (
     FileCheckpointer,
     PipelineBuilder,
+    PostgresCheckpointer,
     Send,
     extend,
 )
@@ -232,10 +234,45 @@ async def run_map_reduce() -> None:
 # =============================================================================
 
 
+async def run_software_factory_postgres() -> None:
+    """Optional: the same software-factory scenario backed by Postgres.
+
+    Runs only when the ``PG_DSN`` env var is set (e.g.
+    ``PG_DSN=postgresql://user:pw@localhost/firefly``). Requires the
+    ``postgres`` extra: ``pip install fireflyframework-agentic[postgres]``.
+    """
+    dsn = os.environ.get("PG_DSN")
+    if not dsn:
+        return
+
+    print("=== 4. Software factory with PostgresCheckpointer ===\n")
+
+    # Reset the deployer flag so this scenario starts clean.
+    _deployer_failed_once["flag"] = False
+
+    checkpointer = PostgresCheckpointer(dsn=dsn)
+    pipeline = (
+        PipelineBuilder("software-factory-pg", state=BuildState, checkpointer=checkpointer)
+        .add_node(architect)
+        .add_node(python_dev)
+        .add_node(deployer)
+        .add_node(evaluator)
+        .chain(architect, python_dev, deployer, evaluator)
+        .build()
+    )
+    first = await pipeline.invoke(BuildState(requirements="postgres-backed deploy"))
+    print(f"  first run:  success={first.success}, failed_node={first.failed_node}")
+    print(f"              run_id:    {first.run_id}\n")
+    second = await pipeline.invoke(run_id=first.run_id)
+    print(f"  resumed:    success={second.success}")
+    print(f"              eval:      {second.state.evaluation}\n")
+
+
 async def main() -> None:
     await run_branching()
     await run_software_factory()
     await run_map_reduce()
+    await run_software_factory_postgres()
 
 
 if __name__ == "__main__":
