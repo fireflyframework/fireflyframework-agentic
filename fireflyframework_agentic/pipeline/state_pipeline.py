@@ -180,10 +180,7 @@ class StatePipeline:
         for node_id in self._dag.nodes:
             lines.append(f"    {_mermaid_id(node_id)}[{node_id}]")
         # Explicit edges (including branch mappings, which were materialized).
-        rendered: set[tuple[str, str]] = set()
         for edge in self._dag.edges:
-            key = (edge.source, edge.target)
-            rendered.add(key)
             label = None
             spec = self._branches.get(edge.source)
             if spec and spec.mapping:
@@ -286,13 +283,11 @@ class StatePipeline:
 
     def _common_successor(self, node_ids: list[str]) -> str | None:
         """Return the node all ``node_ids`` share as their unique successor, or None."""
-        successor_sets = [set(self._dag.successors(nid)) for nid in node_ids]
-        if not successor_sets or any(len(s) != 1 for s in successor_sets):
+        successors = [self._dag.successors(nid) for nid in node_ids]
+        if not successors or any(len(s) != 1 for s in successors):
             return None
-        common = successor_sets[0]
-        for s in successor_sets[1:]:
-            common = common & s
-        return next(iter(common)) if len(common) == 1 else None
+        first = successors[0][0]
+        return first if all(s[0] == first for s in successors[1:]) else None
 
     async def invoke(
         self,
@@ -362,7 +357,6 @@ class StatePipeline:
         visit_counts: dict[str, int] = {}
 
         next_step: str | list[Send] | None = current_node
-        last_node_id: str | None = current_node
 
         while next_step is not None:
             # --- fan-out branch (list[Send]) ---------------------------------
@@ -385,11 +379,8 @@ class StatePipeline:
                         error=fail.message,
                         failed_node=fail.node_id,
                     )
-                last_node_id = next_step[-1].target
                 # After fan-out, continue from the workers' shared successor (if any).
-                worker_ids = [s.target for s in next_step]
-                shared = self._common_successor(worker_ids)
-                next_step = shared
+                next_step = self._common_successor([s.target for s in next_step])
                 continue
 
             # --- single-node step --------------------------------------------
@@ -438,7 +429,6 @@ class StatePipeline:
             completed.append(node_id)
             sequence += 1
             self._save_checkpoint(run_id, node_id, sequence, state, completed)
-            last_node_id = node_id
 
             try:
                 next_step = self._next_step(node_id, state)
@@ -449,7 +439,7 @@ class StatePipeline:
                     completed_nodes=completed,
                     success=False,
                     error=str(exc),
-                    failed_node=last_node_id,
+                    failed_node=node_id,
                 )
 
         return StatePipelineResult(
@@ -532,15 +522,13 @@ class StatePipeline:
             logger.exception("Checkpoint save failed for run '%s' at '%s'", run_id, node_id)
 
 
-@dataclass
 class _NodeFailureError(Exception):
     """Internal sentinel used to bubble fan-out failures out to the main loop."""
 
-    node_id: str
-    message: str
-
-    def __str__(self) -> str:
-        return self.message
+    def __init__(self, node_id: str, message: str) -> None:
+        super().__init__(message)
+        self.node_id = node_id
+        self.message = message
 
 
 def _resolve_node_id(ref: str | Callable[..., Any]) -> str:
