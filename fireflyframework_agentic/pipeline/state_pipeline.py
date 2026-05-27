@@ -24,19 +24,24 @@ to provide. Port-based parallel DAGs continue to use :class:`PipelineEngine`.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import logging
 import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, get_type_hints
+from typing import TYPE_CHECKING, Any, get_type_hints
 
 from pydantic import BaseModel
 
 from fireflyframework_agentic.exceptions import PipelineError
 from fireflyframework_agentic.pipeline.checkpoint import Checkpointer, CheckpointRecord
 from fireflyframework_agentic.pipeline.dag import DAG, _mermaid_id
+from fireflyframework_agentic.pipeline.engine import start_otel_span
+
+if TYPE_CHECKING:
+    from fireflyframework_agentic.pipeline.engine import StatePipelineEventHandler
 from fireflyframework_agentic.pipeline.reducers import Reducer, replace
 
 logger = logging.getLogger(__name__)
@@ -151,6 +156,7 @@ class StatePipeline:
         branches: dict[str, BranchSpec],
         checkpointer: Checkpointer | None = None,
         recursion_limit: int = 25,
+        event_handler: StatePipelineEventHandler | None = None,
     ) -> None:
         self._name = name
         self._dag = dag
@@ -159,8 +165,42 @@ class StatePipeline:
         self._branches = branches
         self._checkpointer = checkpointer
         self._recursion_limit = recursion_limit
+        self._event_handler = event_handler
         self._reducers = discover_reducers(state_schema)
         self._validate()
+
+    async def _finalize_run(
+        self,
+        result: StatePipelineResult,
+        span: Any,
+        start_time: float,
+        run_id: str,
+    ) -> StatePipelineResult:
+        """Close the pipeline-level span and emit ``on_pipeline_complete``.
+
+        Every return path in :meth:`invoke` after the observability boundary
+        flows through this helper.
+        """
+        if span is not None:
+            with contextlib.suppress(Exception):
+                span.end()
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        await self._emit("on_pipeline_complete", self._name, run_id, result.success, duration_ms)
+        return result
+
+    async def _emit(self, method: str, *args: Any) -> None:
+        """Invoke ``method`` on the configured event handler if it exists.
+
+        Missing methods are no-ops; raised exceptions are swallowed so
+        observability never breaks business logic.
+        """
+        if self._event_handler is None:
+            return
+        fn = getattr(self._event_handler, method, None)
+        if fn is None:
+            return
+        with contextlib.suppress(Exception):
+            await fn(*args)
 
     @property
     def name(self) -> str:
@@ -358,6 +398,11 @@ class StatePipeline:
 
         next_step: str | list[Send] | None = current_node
 
+        # ---- pipeline-level observability boundary -------------------------
+        pipeline_start_time = time.perf_counter()
+        pipeline_span = start_otel_span(f"pipeline.state.{self._name}", pipeline=self._name, run_id=run_id)
+        await self._emit("on_pipeline_start", self._name, run_id)
+
         while next_step is not None:
             # --- fan-out branch (list[Send]) ---------------------------------
             if isinstance(next_step, list):
@@ -371,13 +416,18 @@ class StatePipeline:
                         visit_counts=visit_counts,
                     )
                 except _NodeFailureError as fail:
-                    return StatePipelineResult(
-                        state=state,
-                        run_id=run_id,
-                        completed_nodes=completed,
-                        success=False,
-                        error=fail.message,
-                        failed_node=fail.node_id,
+                    return await self._finalize_run(
+                        StatePipelineResult(
+                            state=state,
+                            run_id=run_id,
+                            completed_nodes=completed,
+                            success=False,
+                            error=fail.message,
+                            failed_node=fail.node_id,
+                        ),
+                        pipeline_span,
+                        pipeline_start_time,
+                        run_id,
                     )
                 # After fan-out, continue from the workers' shared successor (if any).
                 next_step = self._common_successor([s.target for s in next_step])
@@ -386,22 +436,30 @@ class StatePipeline:
             # --- single-node step --------------------------------------------
             node_id = next_step
             visit_counts[node_id] = visit_counts.get(node_id, 0) + 1
-            if visit_counts[node_id] > self._recursion_limit:
+            visit_n = visit_counts[node_id]
+            if visit_n > self._recursion_limit:
                 msg = (
                     f"Recursion limit ({self._recursion_limit}) exceeded at node '{node_id}'. "
                     f"Raise recursion_limit= or fix the routing logic."
                 )
                 logger.error(msg)
-                return StatePipelineResult(
-                    state=state,
-                    run_id=run_id,
-                    completed_nodes=completed,
-                    success=False,
-                    error=msg,
-                    failed_node=node_id,
+                return await self._finalize_run(
+                    StatePipelineResult(
+                        state=state,
+                        run_id=run_id,
+                        completed_nodes=completed,
+                        success=False,
+                        error=msg,
+                        failed_node=node_id,
+                    ),
+                    pipeline_span,
+                    pipeline_start_time,
+                    run_id,
                 )
 
             fn = self._node_fns[node_id]
+            node_span = start_otel_span(f"pipeline.state.node.{node_id}", node=node_id, visit=visit_n)
+            await self._emit("on_node_start", self._name, run_id, node_id, visit_n)
             t0 = time.perf_counter()
             try:
                 update = await fn(state)
@@ -412,15 +470,28 @@ class StatePipeline:
                     run_id,
                     node_id,
                 )
-                return StatePipelineResult(
-                    state=state,
-                    run_id=run_id,
-                    completed_nodes=completed,
-                    success=False,
-                    error=str(exc),
-                    failed_node=node_id,
+                await self._emit("on_node_error", self._name, run_id, node_id, str(exc))
+                if node_span is not None:
+                    with contextlib.suppress(Exception):
+                        node_span.end()
+                return await self._finalize_run(
+                    StatePipelineResult(
+                        state=state,
+                        run_id=run_id,
+                        completed_nodes=completed,
+                        success=False,
+                        error=str(exc),
+                        failed_node=node_id,
+                    ),
+                    pipeline_span,
+                    pipeline_start_time,
+                    run_id,
                 )
             elapsed = (time.perf_counter() - t0) * 1000
+            if node_span is not None:
+                with contextlib.suppress(Exception):
+                    node_span.end()
+            await self._emit("on_node_complete", self._name, run_id, node_id, elapsed)
             logger.debug("Pipeline '%s' node '%s' completed in %.1fms", self._name, node_id, elapsed)
 
             if update:
@@ -433,20 +504,30 @@ class StatePipeline:
             try:
                 next_step = self._next_step(node_id, state)
             except PipelineError as exc:
-                return StatePipelineResult(
-                    state=state,
-                    run_id=run_id,
-                    completed_nodes=completed,
-                    success=False,
-                    error=str(exc),
-                    failed_node=node_id,
+                return await self._finalize_run(
+                    StatePipelineResult(
+                        state=state,
+                        run_id=run_id,
+                        completed_nodes=completed,
+                        success=False,
+                        error=str(exc),
+                        failed_node=node_id,
+                    ),
+                    pipeline_span,
+                    pipeline_start_time,
+                    run_id,
                 )
 
-        return StatePipelineResult(
-            state=state,
-            run_id=run_id,
-            completed_nodes=completed,
-            success=True,
+        return await self._finalize_run(
+            StatePipelineResult(
+                state=state,
+                run_id=run_id,
+                completed_nodes=completed,
+                success=True,
+            ),
+            pipeline_span,
+            pipeline_start_time,
+            run_id,
         )
 
     async def _run_fanout(
@@ -462,8 +543,12 @@ class StatePipeline:
         """Run all ``Send`` dispatches concurrently. Each task gets its own state
         copy with the Send's payload merged in; results are reduced into shared state.
         """
+        # Snapshot each Send's visit number BEFORE dispatch so the worker's
+        # closure captures its own visit, not the final post-increment value.
+        sends_with_visits: list[tuple[Send, int]] = []
         for send in sends:
             visit_counts[send.target] = visit_counts.get(send.target, 0) + 1
+            sends_with_visits.append((send, visit_counts[send.target]))
             if visit_counts[send.target] > self._recursion_limit:
                 raise _NodeFailureError(
                     node_id=send.target,
@@ -472,13 +557,29 @@ class StatePipeline:
                     ),
                 )
 
-        async def _run_one(send: Send) -> tuple[Send, dict[str, Any] | None]:
+        async def _run_one(send: Send, visit_n: int) -> tuple[Send, dict[str, Any] | None]:
+            await self._emit("on_node_start", self._name, run_id, send.target, visit_n)
+            node_span = start_otel_span(f"pipeline.state.node.{send.target}", node=send.target, visit=visit_n)
             task_state = apply_update(state, send.payload, self._reducers)
             fn = self._node_fns[send.target]
-            return send, await fn(task_state)
+            t0 = time.perf_counter()
+            try:
+                update = await fn(task_state)
+            except Exception as exc:
+                await self._emit("on_node_error", self._name, run_id, send.target, str(exc))
+                if node_span is not None:
+                    with contextlib.suppress(Exception):
+                        node_span.end()
+                raise
+            elapsed = (time.perf_counter() - t0) * 1000
+            if node_span is not None:
+                with contextlib.suppress(Exception):
+                    node_span.end()
+            await self._emit("on_node_complete", self._name, run_id, send.target, elapsed)
+            return send, update
 
         try:
-            results = await asyncio.gather(*(_run_one(s) for s in sends))
+            results = await asyncio.gather(*(_run_one(s, v) for s, v in sends_with_visits))
         except Exception as exc:
             # Best-effort: report the first failing target as the failure point.
             raise _NodeFailureError(

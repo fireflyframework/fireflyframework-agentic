@@ -71,6 +71,60 @@ class PipelineEventHandler(Protocol):
         ...
 
 
+@runtime_checkable
+class StatePipelineEventHandler(Protocol):
+    """Protocol for state-pipeline progress callbacks.
+
+    Mirrors :class:`PipelineEventHandler` but every callback carries the
+    ``run_id`` so ops can correlate events across resumes, and
+    ``on_node_start`` carries a ``visit`` counter so cyclic graphs are
+    distinguishable per iteration. There is no ``on_node_skip`` — state
+    pipelines abort on failure rather than skipping downstream nodes.
+
+    Implement any subset of methods; missing ones are no-ops.
+    """
+
+    async def on_pipeline_start(self, pipeline_name: str, run_id: str) -> None:
+        """Called once when ``invoke`` begins."""
+        ...
+
+    async def on_node_start(self, pipeline_name: str, run_id: str, node_id: str, visit: int) -> None:
+        """Called each time a node is about to run. ``visit`` starts at 1
+        and increments per re-entry (cycles, Send fan-out)."""
+        ...
+
+    async def on_node_complete(self, pipeline_name: str, run_id: str, node_id: str, latency_ms: float) -> None:
+        """Called when a node completes successfully."""
+        ...
+
+    async def on_node_error(self, pipeline_name: str, run_id: str, node_id: str, error: str) -> None:
+        """Called when a node raises an exception."""
+        ...
+
+    async def on_pipeline_complete(self, pipeline_name: str, run_id: str, success: bool, duration_ms: float) -> None:
+        """Called once when ``invoke`` returns."""
+        ...
+
+
+def start_otel_span(name: str, **attributes: Any) -> Any:
+    """Start an OTel span if observability is enabled, else return ``None``.
+
+    Module-level helper shared by :class:`PipelineEngine` and
+    :class:`fireflyframework_agentic.pipeline.state_pipeline.StatePipeline`.
+    """
+    try:
+        if not get_config().observability_enabled:
+            return None
+        if otel_trace is None:
+            return None
+        return otel_trace.get_tracer("fireflyframework_agentic").start_span(
+            name,
+            attributes={f"firefly.{k}": str(v) for k, v in attributes.items()},
+        )
+    except Exception:  # noqa: BLE001
+        return None
+
+
 class PipelineEngine:
     """Executes a :class:`DAG` by computing topological levels and running
     nodes within each level concurrently.
@@ -347,19 +401,8 @@ class PipelineEngine:
 
     @staticmethod
     def _start_otel_span(name: str, **attributes: Any) -> Any:
-        """Start an OTel span if observability is enabled, else return *None*."""
-        try:
-            if not get_config().observability_enabled:
-                return None
-            if otel_trace is None:
-                return None
-
-            return otel_trace.get_tracer("fireflyframework_agentic").start_span(
-                name,
-                attributes={f"firefly.{k}": str(v) for k, v in attributes.items()},
-            )
-        except Exception:  # noqa: BLE001
-            return None
+        """Backwards-compatible wrapper around the module-level :func:`start_otel_span`."""
+        return start_otel_span(name, **attributes)
 
     @staticmethod
     def _aggregate_usage(correlation_id: str) -> Any:

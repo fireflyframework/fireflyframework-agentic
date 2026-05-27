@@ -152,13 +152,52 @@ async def evaluator(state: BuildState) -> dict:
     return {"evaluation": f"PASS — deployed at {state.deploy_url}"}
 
 
-async def run_software_factory() -> None:
-    print("=== 2. Software factory with checkpoint/resume ===\n")
+class ProgressHandler:
+    """Prints live progress for the software-factory scenario.
 
+    Implements only a subset of :class:`StatePipelineEventHandler` — missing
+    methods are no-ops, which is fine because the pipeline tolerates partial
+    handlers.
+    """
+
+    async def on_pipeline_start(self, pipeline_name: str, run_id: str) -> None:
+        print(f"  ▶ [{pipeline_name}] run {run_id[:8]}… starting")
+
+    async def on_node_start(
+        self, pipeline_name: str, run_id: str, node_id: str, visit: int
+    ) -> None:
+        print(f"    ▶ {node_id} (visit #{visit})")
+
+    async def on_node_complete(
+        self, pipeline_name: str, run_id: str, node_id: str, latency_ms: float
+    ) -> None:
+        print(f"    ✔ {node_id} ({latency_ms:.0f}ms)")
+
+    async def on_node_error(
+        self, pipeline_name: str, run_id: str, node_id: str, error: str
+    ) -> None:
+        print(f"    ✗ {node_id}: {error}")
+
+    async def on_pipeline_complete(
+        self, pipeline_name: str, run_id: str, success: bool, duration_ms: float
+    ) -> None:
+        status = "OK" if success else "FAILED"
+        print(f"  ═ [{pipeline_name}] {status} in {duration_ms:.0f}ms")
+
+
+async def run_software_factory() -> None:
+    print("=== 2. Software factory with checkpoint/resume + live progress ===\n")
+
+    handler = ProgressHandler()
     with tempfile.TemporaryDirectory() as tmp:
         ckpt = FileCheckpointer(Path(tmp))
         pipeline = (
-            PipelineBuilder("software-factory", state=BuildState, checkpointer=ckpt)
+            PipelineBuilder(
+                "software-factory",
+                state=BuildState,
+                checkpointer=ckpt,
+                event_handler=handler,
+            )
             .add_node(architect)
             .add_node(python_dev)
             .add_node(deployer)
