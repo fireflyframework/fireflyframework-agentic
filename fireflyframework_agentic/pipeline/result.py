@@ -82,6 +82,11 @@ class PipelineResult(BaseModel):
     # Final shared state for pipelines configured with state_schema. None
     # when the engine had no state overlay.
     final_state: Any = None
+    # HITL: a node returned :class:`Pause` and the run halted cleanly.
+    # Resume via ``engine.run(run_id=..., approve_pause=True)``.
+    paused: bool = False
+    paused_node: str | None = None
+    pause_reason: str | None = None
 
     @property
     def failed_nodes(self) -> list[str]:
