@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import logging
 import random
 import time
@@ -47,72 +48,83 @@ logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
-class PipelineEventHandler(Protocol):
-    """Protocol for pipeline progress callbacks.
+class EventHandler(Protocol):
+    """Unified pipeline event handler. Used by :class:`PipelineEngine` and
+    :class:`fireflyframework_agentic.pipeline.state_pipeline.StatePipeline`.
 
-    Implement any subset of these methods to receive notifications
-    when pipeline nodes start, complete, or fail.
+    Implement any subset of these methods; missing ones are no-ops. Exceptions
+    raised in callbacks are swallowed by the engine so observability never
+    breaks business logic.
+
+    The engine dispatches events by parameter name. If your method signature
+    omits a parameter — e.g. legacy implementations that don't accept
+    ``run_id`` or ``visit`` — the engine simply drops it from the call.
+    That keeps legacy :class:`PipelineEventHandler` /
+    :class:`StatePipelineEventHandler` implementations working during the
+    transition to this unified shape.
+
+    Parameter conventions:
+
+    * ``pipeline_name`` — DAG name, always present.
+    * ``run_id`` — opaque identifier for a single invocation; lets ops
+      correlate events across resumes and across multiple parallel runs.
+    * ``visit`` — re-entry counter on cyclic graphs and fan-out. Starts at
+      1 and increments each time a node is re-entered.
+    * ``latency_ms`` — node wall-clock time, captured at the engine level.
+    * ``reason`` — human-readable string; for skips and pauses.
     """
 
-    async def on_node_start(self, node_id: str, pipeline_name: str) -> None:
-        """Called when a node begins execution."""
-        ...
+    async def on_pipeline_start(self, pipeline_name: str, run_id: str) -> None: ...
 
-    async def on_node_complete(self, node_id: str, pipeline_name: str, latency_ms: float) -> None:
-        """Called when a node completes successfully."""
-        ...
+    async def on_node_start(self, pipeline_name: str, run_id: str, node_id: str, visit: int) -> None: ...
 
-    async def on_node_error(self, node_id: str, pipeline_name: str, error: str) -> None:
-        """Called when a node fails (after all retries exhausted)."""
-        ...
+    async def on_node_complete(self, pipeline_name: str, run_id: str, node_id: str, latency_ms: float) -> None: ...
 
-    async def on_node_skip(self, node_id: str, pipeline_name: str, reason: str) -> None:
-        """Called when a node is skipped."""
-        ...
+    async def on_node_error(self, pipeline_name: str, run_id: str, node_id: str, error: str) -> None: ...
 
-    async def on_pipeline_complete(self, pipeline_name: str, success: bool, duration_ms: float) -> None:
-        """Called when the entire pipeline finishes."""
-        ...
+    async def on_node_skip(self, pipeline_name: str, run_id: str, node_id: str, reason: str) -> None: ...
+
+    async def on_node_pause(self, pipeline_name: str, run_id: str, node_id: str, reason: str) -> None: ...
+
+    async def on_pipeline_complete(
+        self, pipeline_name: str, run_id: str, success: bool, duration_ms: float
+    ) -> None: ...
+
+
+@runtime_checkable
+class PipelineEventHandler(Protocol):
+    """Legacy port-based event handler protocol. Use :class:`EventHandler`.
+
+    Kept for backward compatibility. The engine inspects each callback's
+    signature and only passes parameters the method declares — so existing
+    implementations of this protocol continue to work unchanged. New code
+    should implement :class:`EventHandler` so it receives ``run_id`` and
+    ``visit`` too.
+    """
+
+    async def on_node_start(self, node_id: str, pipeline_name: str) -> None: ...
+    async def on_node_complete(self, node_id: str, pipeline_name: str, latency_ms: float) -> None: ...
+    async def on_node_error(self, node_id: str, pipeline_name: str, error: str) -> None: ...
+    async def on_node_skip(self, node_id: str, pipeline_name: str, reason: str) -> None: ...
+    async def on_pipeline_complete(self, pipeline_name: str, success: bool, duration_ms: float) -> None: ...
 
 
 @runtime_checkable
 class StatePipelineEventHandler(Protocol):
-    """Protocol for state-pipeline progress callbacks.
+    """Legacy state-pipeline event handler protocol. Use :class:`EventHandler`.
 
-    Mirrors :class:`PipelineEventHandler` but every callback carries the
-    ``run_id`` so ops can correlate events across resumes, and
-    ``on_node_start`` carries a ``visit`` counter so cyclic graphs are
-    distinguishable per iteration. There is no ``on_node_skip`` — state
-    pipelines abort on failure rather than skipping downstream nodes.
-
-    Implement any subset of methods; missing ones are no-ops.
+    Same shape as :class:`EventHandler` minus ``on_node_skip``. Kept for
+    backward compatibility; new code should implement :class:`EventHandler`.
     """
 
-    async def on_pipeline_start(self, pipeline_name: str, run_id: str) -> None:
-        """Called once when ``invoke`` begins."""
-        ...
-
-    async def on_node_start(self, pipeline_name: str, run_id: str, node_id: str, visit: int) -> None:
-        """Called each time a node is about to run. ``visit`` starts at 1
-        and increments per re-entry (cycles, Send fan-out)."""
-        ...
-
-    async def on_node_complete(self, pipeline_name: str, run_id: str, node_id: str, latency_ms: float) -> None:
-        """Called when a node completes successfully."""
-        ...
-
-    async def on_node_error(self, pipeline_name: str, run_id: str, node_id: str, error: str) -> None:
-        """Called when a node raises an exception."""
-        ...
-
-    async def on_node_pause(self, pipeline_name: str, run_id: str, node_id: str, reason: str) -> None:
-        """Called when a node returns :class:`Pause`, halting the pipeline
-        until an external ``invoke(run_id=..., approve_pause=True)`` resumes it."""
-        ...
-
-    async def on_pipeline_complete(self, pipeline_name: str, run_id: str, success: bool, duration_ms: float) -> None:
-        """Called once when ``invoke`` returns."""
-        ...
+    async def on_pipeline_start(self, pipeline_name: str, run_id: str) -> None: ...
+    async def on_node_start(self, pipeline_name: str, run_id: str, node_id: str, visit: int) -> None: ...
+    async def on_node_complete(self, pipeline_name: str, run_id: str, node_id: str, latency_ms: float) -> None: ...
+    async def on_node_error(self, pipeline_name: str, run_id: str, node_id: str, error: str) -> None: ...
+    async def on_node_pause(self, pipeline_name: str, run_id: str, node_id: str, reason: str) -> None: ...
+    async def on_pipeline_complete(
+        self, pipeline_name: str, run_id: str, success: bool, duration_ms: float
+    ) -> None: ...
 
 
 def _serialize_value(value: Any) -> Any:
@@ -168,7 +180,7 @@ class PipelineEngine:
         self,
         dag: DAG,
         *,
-        event_handler: PipelineEventHandler | None = None,
+        event_handler: EventHandler | PipelineEventHandler | None = None,
         checkpointer: Checkpointer | None = None,
         audit_log: AuditLog | None = None,
     ) -> None:
@@ -176,6 +188,43 @@ class PipelineEngine:
         self._event_handler = event_handler
         self._checkpointer = checkpointer
         self._audit_log = audit_log
+        # Per-method signature cache for legacy-vs-unified dispatch.
+        self._handler_params: dict[str, set[str]] = {}
+
+    async def _dispatch(self, method_name: str, /, **kwargs: Any) -> None:
+        """Invoke ``event_handler.method_name`` with the subset of ``kwargs``
+        the method's signature actually declares.
+
+        Lets the engine emit events using the unified :class:`EventHandler`
+        convention while still supporting legacy
+        :class:`PipelineEventHandler` implementations whose methods don't
+        accept ``run_id`` or ``visit``. Missing methods and raised
+        exceptions are silently swallowed — observability never breaks the
+        pipeline.
+        """
+        if self._event_handler is None:
+            return
+        method = getattr(self._event_handler, method_name, None)
+        if method is None:
+            return
+        if method_name not in self._handler_params:
+            try:
+                params = inspect.signature(method).parameters
+                self._handler_params[method_name] = {
+                    name
+                    for name, p in params.items()
+                    if p.kind
+                    in (
+                        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                        inspect.Parameter.KEYWORD_ONLY,
+                    )
+                }
+            except (TypeError, ValueError):
+                self._handler_params[method_name] = set(kwargs)
+        accepted = self._handler_params[method_name]
+        call_kwargs = {k: v for k, v in kwargs.items() if k in accepted}
+        with contextlib.suppress(Exception):
+            await method(**call_kwargs)
 
     async def run(
         self,
@@ -216,11 +265,12 @@ class PipelineEngine:
         if run_id is None:
             run_id = uuid.uuid4().hex[:12]
 
-        # Observability: pipeline-level span
+        # Observability: pipeline-level span + start event
         _pipeline_span = self._start_otel_span(
             f"pipeline.{self._dag.name}",
             pipeline=self._dag.name,
         )
+        await self._dispatch("on_pipeline_start", pipeline_name=self._dag.name, run_id=run_id)
 
         # Topological levels ensure that all upstream dependencies of a node
         # complete before the node itself executes.  Nodes within the same
@@ -261,7 +311,14 @@ class PipelineEngine:
                         gathered = self._gather_inputs(nid, context)
                         inputs_by_node[nid] = gathered
                         task = asyncio.create_task(
-                            self._execute_node(nid, context, trace_entries, failed_nodes, inputs=gathered),
+                            self._execute_node(
+                                nid,
+                                context,
+                                trace_entries,
+                                failed_nodes,
+                                inputs=gathered,
+                                run_id=run_id,
+                            ),
                         )
                         running[nid] = task
                         pending.discard(nid)
@@ -294,7 +351,7 @@ class PipelineEngine:
                 context.set_node_result(node_id, nr)
 
                 # Emit event callbacks
-                await self._emit_node_result(nr)
+                await self._emit_node_result(nr, run_id)
 
                 # Persist lifecycle: audit every executed visit; checkpoint only
                 # successful completions (failed nodes must re-run on resume).
@@ -345,13 +402,13 @@ class PipelineEngine:
         success = all(r.success or r.skipped for r in all_results.values())
 
         # Emit pipeline complete event
-        if self._event_handler is not None and hasattr(self._event_handler, "on_pipeline_complete"):
-            with contextlib.suppress(Exception):
-                await self._event_handler.on_pipeline_complete(
-                    self._dag.name,
-                    success,
-                    pipeline_elapsed,
-                )
+        await self._dispatch(
+            "on_pipeline_complete",
+            pipeline_name=self._dag.name,
+            run_id=run_id,
+            success=success,
+            duration_ms=pipeline_elapsed,
+        )
 
         # Aggregate usage across all nodes for this pipeline run
         usage_summary = self._aggregate_usage(context.correlation_id)
@@ -378,6 +435,7 @@ class PipelineEngine:
         failed_nodes: set[str] | None = None,
         *,
         inputs: dict[str, Any] | None = None,
+        run_id: str = "",
     ) -> NodeResult:
         """Execute a single node with retries and condition gating.
 
@@ -411,10 +469,14 @@ class PipelineEngine:
             node=node_id,
         )
 
-        # Emit node start event
-        if self._event_handler is not None and hasattr(self._event_handler, "on_node_start"):
-            with contextlib.suppress(Exception):
-                await self._event_handler.on_node_start(node_id, self._dag.name)
+        # Emit node start event (visit=1; cycles arrive in a later layer)
+        await self._dispatch(
+            "on_node_start",
+            pipeline_name=self._dag.name,
+            run_id=run_id,
+            node_id=node_id,
+            visit=1,
+        )
 
         max_retries = node.retry_max
         backoff_factor = node.backoff_factor
@@ -506,31 +568,21 @@ class PipelineEngine:
         except Exception:  # noqa: BLE001
             return None
 
-    async def _emit_node_result(self, nr: NodeResult) -> None:
-        """Emit event handler callbacks for a completed node."""
+    async def _emit_node_result(self, nr: NodeResult, run_id: str) -> None:
+        """Emit handler callbacks for a completed node via :meth:`_dispatch`."""
         if self._event_handler is None:
             return
-        try:
-            if nr.skipped and hasattr(self._event_handler, "on_node_skip"):
-                await self._event_handler.on_node_skip(
-                    nr.node_id,
-                    self._dag.name,
-                    nr.error or "skipped",
-                )
-            elif nr.success and hasattr(self._event_handler, "on_node_complete"):
-                await self._event_handler.on_node_complete(
-                    nr.node_id,
-                    self._dag.name,
-                    nr.latency_ms or 0.0,
-                )
-            elif not nr.success and hasattr(self._event_handler, "on_node_error"):
-                await self._event_handler.on_node_error(
-                    nr.node_id,
-                    self._dag.name,
-                    nr.error or "unknown",
-                )
-        except Exception:  # noqa: BLE001
-            pass
+        common = {
+            "pipeline_name": self._dag.name,
+            "run_id": run_id,
+            "node_id": nr.node_id,
+        }
+        if nr.skipped:
+            await self._dispatch("on_node_skip", reason=nr.error or "skipped", **common)
+        elif nr.success:
+            await self._dispatch("on_node_complete", latency_ms=nr.latency_ms or 0.0, **common)
+        else:
+            await self._dispatch("on_node_error", error=nr.error or "unknown", **common)
 
     def _load_for_resume(self, run_id: str) -> tuple[PipelineContext, set[str], int]:
         """Rebuild context + completed-set from the latest checkpoint."""
