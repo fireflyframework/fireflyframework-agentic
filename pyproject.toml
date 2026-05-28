@@ -62,9 +62,6 @@ queues = [
 postgres = [
     "asyncpg>=0.30.0",
     "sqlalchemy>=2.0.0",
-    # psycopg drives the sync-Protocol PostgresCheckpointer; asyncpg above
-    # drives the async memory store. Both ship under the same extra.
-    "psycopg[binary]>=3.2.0,<4",
 ]
 mongodb = [
     "motor>=3.6.0",

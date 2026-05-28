@@ -56,6 +56,8 @@ If `OPENAI_API_KEY` is not set, each script will prompt you interactively.
 ## Pipeline Examples
 
 - **`pipeline_branching.py`** — `BranchStep` for conditional routing in a DAG, `PipelineEventHandler` for live progress, and `DAGNode.backoff_factor` for exponential retry backoff. **No API key required.**
+- **`pipeline_state.py`** — Three short scenarios with the state-based `PipelineBuilder` (`state=` mode): sentiment branching with `.branch()`, map-reduce with `Send` fan-out, and a HITL deploy gate using `Pause` plus `FileAuditLog`. **No API key required.**
+- **`software_factory/`** — Self-contained example package showing a state-mode agentic SDLC pipeline (`architect → codegen → builder → qa → stable_release`) with the QA feedback loop (`recursion_limit=3`), checkpoint + resume on a transient `builder` failure, and a `StatePipelineEventHandler` printing progress. Includes plug-and-play `Checkpointer` Protocol implementations for Postgres and Redis under `checkpointers/`, and a `QueryableAuditLog` Postgres template under `audit/`. **No API key required.**
 
 ## Complex Examples
 

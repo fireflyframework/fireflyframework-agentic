@@ -12,25 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""State-based PipelineBuilder: branching, checkpoint/resume, and Send fan-out.
+"""State-based PipelineBuilder quick-start: branching, Send fan-out, HITL Pause.
 
-Three scenarios:
+Three short scenarios in one file:
 
-1. **Branching** — same sentiment-classification workflow as
-   ``examples/pipeline_branching.py``, but written with the state-mode API
-   (one shared ``State`` model, ``async (state) -> dict`` nodes, one
-   ``.branch(source, router)`` call instead of ``BranchStep`` + per-node
-   ``condition`` lambdas).
+1. **Branching** — sentiment-classification workflow with one ``.branch(...)``
+   call (vs ``BranchStep`` + per-node ``condition`` lambdas in port-based mode).
 
-2. **Software factory with checkpoint/resume** — a four-agent pipeline
-   (architect → python_dev → deployer → evaluator) where the deployer fails
-   on its first attempt. The pipeline checkpoints after each successful node,
-   and a second ``invoke(run_id=...)`` resumes from the failed node instead
-   of re-running the earlier agents.
+2. **Map-reduce via ``Send``** — a planner dispatches one ``Send`` per work
+   item; workers run concurrently; an aggregator runs once with all results
+   merged via the ``extend`` reducer.
 
-3. **Map-reduce via ``Send``** — a planner dispatches one ``Send`` per work
-   item to the same worker node, the workers run concurrently, and an
-   aggregator runs once with all results in shared state.
+3. **HITL Pause + audit log** — a deploy gate that returns ``Pause(...)`` to
+   wait for human approval; resume with ``approve_pause=True``; a
+   ``FileAuditLog`` captures every node visit with its status.
+
+For the deeper software-factory walkthrough (QA feedback loop, checkpoint +
+resume, Postgres / Redis checkpointer templates), see the self-contained
+example package ``examples/software_factory/``.
 
 Usage::
 
@@ -43,7 +42,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import tempfile
 from pathlib import Path
 from typing import Annotated
@@ -55,13 +53,12 @@ from fireflyframework_agentic.pipeline import (
     FileCheckpointer,
     Pause,
     PipelineBuilder,
-    PostgresCheckpointer,
     Send,
     extend,
 )
 
-# Quiet the pipeline's own logger.exception() when we deliberately fail
-# the deployer in scenario 2 — the failure is the demo, not a bug.
+# Quiet the pipeline's own logger.exception() when we deliberately exercise
+# a node failure — the failure is part of the demo, not a bug.
 logging.getLogger("fireflyframework_agentic.pipeline").setLevel(logging.CRITICAL)
 
 
@@ -117,107 +114,11 @@ async def run_branching() -> None:
 
 
 # =============================================================================
-# Scenario 2 — Software factory with checkpoint/resume
-# =============================================================================
-
-
-class BuildState(BaseModel):
-    """State threaded through a four-agent software-factory pipeline."""
-
-    requirements: str
-    spec: str | None = None
-    code: str | None = None
-    deploy_url: str | None = None
-    evaluation: str | None = None
-
-
-# A flag so the deployer fails the first time and succeeds the second.
-_deployer_failed_once = {"flag": False}
-
-
-async def architect(state: BuildState) -> dict:
-    return {"spec": f"Architecture for: {state.requirements}"}
-
-
-async def python_dev(state: BuildState) -> dict:
-    return {"code": f"# code implementing\n# {state.spec}"}
-
-
-async def deployer(state: BuildState) -> dict:
-    if not _deployer_failed_once["flag"]:
-        _deployer_failed_once["flag"] = True
-        raise RuntimeError("network blip — try again")
-    return {"deploy_url": "https://factory-app.example.com"}
-
-
-async def evaluator(state: BuildState) -> dict:
-    return {"evaluation": f"PASS — deployed at {state.deploy_url}"}
-
-
-class ProgressHandler:
-    """Prints live progress for the software-factory scenario.
-
-    Implements only a subset of :class:`StatePipelineEventHandler` — missing
-    methods are no-ops, which is fine because the pipeline tolerates partial
-    handlers.
-    """
-
-    async def on_pipeline_start(self, pipeline_name: str, run_id: str) -> None:
-        print(f"  ▶ [{pipeline_name}] run {run_id[:8]}… starting")
-
-    async def on_node_start(self, pipeline_name: str, run_id: str, node_id: str, visit: int) -> None:
-        print(f"    ▶ {node_id} (visit #{visit})")
-
-    async def on_node_complete(self, pipeline_name: str, run_id: str, node_id: str, latency_ms: float) -> None:
-        print(f"    ✔ {node_id} ({latency_ms:.0f}ms)")
-
-    async def on_node_error(self, pipeline_name: str, run_id: str, node_id: str, error: str) -> None:
-        print(f"    ✗ {node_id}: {error}")
-
-    async def on_node_pause(self, pipeline_name: str, run_id: str, node_id: str, reason: str) -> None:
-        print(f"    ⏸ {node_id} paused: {reason}")
-
-    async def on_pipeline_complete(self, pipeline_name: str, run_id: str, success: bool, duration_ms: float) -> None:
-        status = "OK" if success else "FAILED"
-        print(f"  ═ [{pipeline_name}] {status} in {duration_ms:.0f}ms")
-
-
-async def run_software_factory() -> None:
-    print("=== 2. Software factory with checkpoint/resume + live progress ===\n")
-
-    handler = ProgressHandler()
-    with tempfile.TemporaryDirectory() as tmp:
-        ckpt = FileCheckpointer(Path(tmp))
-        pipeline = (
-            PipelineBuilder(
-                "software-factory",
-                state=BuildState,
-                checkpointer=ckpt,
-                event_handler=handler,
-            )
-            .add_node(architect)
-            .add_node(python_dev)
-            .add_node(deployer)
-            .add_node(evaluator)
-            .chain(architect, python_dev, deployer, evaluator)
-            .build()
-        )
-
-        # First run — deployer fails after architect + python_dev complete.
-        first = await pipeline.invoke(BuildState(requirements="User-management service"))
-        print(f"  first run:  success={first.success}, failed_node={first.failed_node}")
-        print(f"              completed: {first.completed_nodes}")
-        print(f"              run_id:    {first.run_id}\n")
-
-        # Resume — picks up at deployer, skips architect + python_dev.
-        second = await pipeline.invoke(run_id=first.run_id)
-        print(f"  resumed:    success={second.success}")
-        print(f"              completed: {second.completed_nodes}")
-        print(f"              eval:      {second.state.evaluation}\n")
-
-
-# =============================================================================
-# Scenario 3 — Map-reduce via Send
+# Scenario 2 — Map-reduce via Send
+#
+# (The software-factory scenario that used to live here has its own folder
+# now: ``examples/software_factory/``. It exercises the QA feedback loop,
+# checkpoint + resume, and includes plug-and-play Postgres / Redis templates.)
 # =============================================================================
 
 
@@ -250,7 +151,7 @@ def dispatch(state: MapReduceState) -> list[Send]:
 
 
 async def run_map_reduce() -> None:
-    print("=== 3. Map-reduce via Send ===\n")
+    print("=== 2. Map-reduce via Send ===\n")
 
     pipeline = (
         PipelineBuilder("mapreduce", state=MapReduceState)
@@ -268,40 +169,6 @@ async def run_map_reduce() -> None:
 # =============================================================================
 # Entrypoint
 # =============================================================================
-
-
-async def run_software_factory_postgres() -> None:
-    """Optional: the same software-factory scenario backed by Postgres.
-
-    Runs only when the ``PG_DSN`` env var is set (e.g.
-    ``PG_DSN=postgresql://user:pw@localhost/firefly``). Requires the
-    ``postgres`` extra: ``pip install fireflyframework-agentic[postgres]``.
-    """
-    dsn = os.environ.get("PG_DSN")
-    if not dsn:
-        return
-
-    print("=== 4. Software factory with PostgresCheckpointer ===\n")
-
-    # Reset the deployer flag so this scenario starts clean.
-    _deployer_failed_once["flag"] = False
-
-    checkpointer = PostgresCheckpointer(dsn=dsn)
-    pipeline = (
-        PipelineBuilder("software-factory-pg", state=BuildState, checkpointer=checkpointer)
-        .add_node(architect)
-        .add_node(python_dev)
-        .add_node(deployer)
-        .add_node(evaluator)
-        .chain(architect, python_dev, deployer, evaluator)
-        .build()
-    )
-    first = await pipeline.invoke(BuildState(requirements="postgres-backed deploy"))
-    print(f"  first run:  success={first.success}, failed_node={first.failed_node}")
-    print(f"              run_id:    {first.run_id}\n")
-    second = await pipeline.invoke(run_id=first.run_id)
-    print(f"  resumed:    success={second.success}")
-    print(f"              eval:      {second.state.evaluation}\n")
 
 
 class HitlState(BaseModel):
@@ -325,7 +192,7 @@ async def deploy_artifact(state: HitlState) -> dict:
 
 
 async def run_hitl_with_audit() -> None:
-    print("=== 5. Human-in-the-loop deploy gate with audit log ===\n")
+    print("=== 3. Human-in-the-loop deploy gate with audit log ===\n")
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -369,9 +236,7 @@ async def run_hitl_with_audit() -> None:
 
 async def main() -> None:
     await run_branching()
-    await run_software_factory()
     await run_map_reduce()
-    await run_software_factory_postgres()
     await run_hitl_with_audit()
 
 
