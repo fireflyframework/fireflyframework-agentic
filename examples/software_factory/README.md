@@ -130,8 +130,8 @@ software_factory/
 ├── checkpointers/
 │   ├── postgres.py        # Checkpointer Protocol impl (psycopg)
 │   └── redis.py           # Checkpointer Protocol impl (redis-py)
-├── audit/
-│   └── postgres.py        # QueryableAuditLog Protocol impl (psycopg)
-└── tests/
-    └── test_pipeline.py   # end-to-end smoke test
+└── audit/
+    └── postgres.py        # QueryableAuditLog Protocol impl (psycopg)
 ```
+
+The end-to-end smoke test lives at `tests/examples/software_factory/test_pipeline.py` — same shape as the other example tests in this repo.
