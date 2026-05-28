@@ -18,22 +18,20 @@ Distinct from :mod:`fireflyframework_agentic.pipeline.checkpoint` — the
 checkpointer stores the *latest* state for crash recovery; the audit log
 stores *every* node visit for compliance, debugging, and replay.
 
-Four backends ship:
+Three backends ship in the framework:
 
 * :class:`FileAuditLog` — one JSONL file per ``(pipeline_name, run_id)``.
-  Best for dev / single-host audit trails.
-* :class:`PostgresAuditLog` — single ``firefly_audit`` table; reuses the
-  ``psycopg`` connection from the ``postgres`` optional extra (same dep
-  added in Phase 3a for ``PostgresCheckpointer``).
+  Best for dev / single-host audit trails. Implements :class:`QueryableAuditLog`.
 * :class:`LoggingAuditLog` — stdlib ``logging``; pairs with whatever log
   aggregation pipeline (Splunk-HEC, Loki, Datadog, OTel-LoggingHandler-bridge)
-  the host application already runs. No new optional dep.
+  the host application already runs. Write-only.
 * :class:`OtelAuditLog` — direct OTel logs API; attaches trace correlation
   (``trace_id``/``span_id``) automatically. Best for OTel-native stacks
-  (Application Insights, Datadog APM, OTel-Collector).
+  (Application Insights, Datadog APM, OTel-Collector). Write-only.
 
-File and Postgres also implement :class:`QueryableAuditLog` (``list_entries``);
-Logging and OTel are write-only — query your observability stack instead.
+For a Postgres-backed queryable audit log, see the plug-and-play template at
+``examples/software_factory/audit/postgres.py`` — a ~80 LOC class implementing
+:class:`QueryableAuditLog` against a caller-supplied ``psycopg.Connection``.
 """
 
 from __future__ import annotations
@@ -45,8 +43,6 @@ from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel
-
-from fireflyframework_agentic.pipeline._psycopg_backend import PsycopgBackend
 
 try:
     from opentelemetry._logs import LogRecord as _OtelLogRecord  # type: ignore[import-not-found]
@@ -139,105 +135,6 @@ class FileAuditLog:
                 if not line:
                     continue
                 entries.append(AuditEntry.model_validate(json.loads(line)))
-        return entries
-
-
-class PostgresAuditLog(PsycopgBackend):
-    """Postgres-backed audit log. Single table created on first ``record`` call.
-
-    Reuses ``psycopg`` from the ``postgres`` optional extra. ``dsn`` or a
-    pre-built ``connection`` is required, mirroring :class:`PostgresCheckpointer`'s
-    API for consistency.
-    """
-
-    _DDL = """
-        CREATE TABLE IF NOT EXISTS {table} (
-            pipeline_name    TEXT  NOT NULL,
-            run_id           TEXT  NOT NULL,
-            sequence         INT   NOT NULL,
-            visit            INT   NOT NULL,
-            node_id          TEXT  NOT NULL,
-            started_at       TIMESTAMPTZ NOT NULL,
-            completed_at     TIMESTAMPTZ NOT NULL,
-            latency_ms       DOUBLE PRECISION NOT NULL,
-            status           TEXT  NOT NULL,
-            inputs_snapshot  JSONB NOT NULL,
-            outputs_snapshot JSONB NOT NULL,
-            error_message    TEXT,
-            pause_reason     TEXT,
-            PRIMARY KEY (pipeline_name, run_id, sequence)
-        );
-        CREATE INDEX IF NOT EXISTS {table}_run_idx
-            ON {table} (pipeline_name, run_id);
-    """
-
-    def __init__(
-        self,
-        *,
-        dsn: str | None = None,
-        connection: Any = None,
-        table_name: str = "firefly_audit",
-    ) -> None:
-        super().__init__(kind="PostgresAuditLog", dsn=dsn, connection=connection, table_name=table_name)
-
-    def record(self, entry: AuditEntry) -> None:
-        self._ensure_table()
-        sql = (
-            f"INSERT INTO {self._table} "
-            "(pipeline_name, run_id, sequence, visit, node_id, started_at, completed_at, "
-            "latency_ms, status, inputs_snapshot, outputs_snapshot, error_message, pause_reason) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
-            "ON CONFLICT (pipeline_name, run_id, sequence) DO NOTHING"
-        )
-        with self._conn.cursor() as cur:
-            cur.execute(
-                sql,
-                (
-                    entry.pipeline_name,
-                    entry.run_id,
-                    entry.sequence,
-                    entry.visit,
-                    entry.node_id,
-                    entry.started_at,
-                    entry.completed_at,
-                    entry.latency_ms,
-                    entry.status,
-                    json.dumps(entry.inputs_snapshot),
-                    json.dumps(entry.outputs_snapshot),
-                    entry.error_message,
-                    entry.pause_reason,
-                ),
-            )
-
-    def list_entries(self, pipeline_name: str, run_id: str) -> list[AuditEntry]:
-        self._ensure_table()
-        sql = (
-            f"SELECT pipeline_name, run_id, sequence, visit, node_id, started_at, completed_at, "
-            f"latency_ms, status, inputs_snapshot, outputs_snapshot, error_message, pause_reason "
-            f"FROM {self._table} WHERE pipeline_name = %s AND run_id = %s ORDER BY sequence"
-        )
-        with self._conn.cursor() as cur:
-            cur.execute(sql, (pipeline_name, run_id))
-            rows = cur.fetchall()
-        entries: list[AuditEntry] = []
-        for row in rows:
-            entries.append(
-                AuditEntry(
-                    pipeline_name=row[0],
-                    run_id=row[1],
-                    sequence=row[2],
-                    visit=row[3],
-                    node_id=row[4],
-                    started_at=row[5],
-                    completed_at=row[6],
-                    latency_ms=row[7],
-                    status=row[8],
-                    inputs_snapshot=json.loads(row[9]) if isinstance(row[9], str) else row[9],
-                    outputs_snapshot=json.loads(row[10]) if isinstance(row[10], str) else row[10],
-                    error_message=row[11],
-                    pause_reason=row[12],
-                )
-            )
         return entries
 
 
