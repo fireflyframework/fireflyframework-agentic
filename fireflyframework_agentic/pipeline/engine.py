@@ -172,6 +172,20 @@ class Send:
     payload: dict[str, Any]
 
 
+def _resolve_node_id(ref: Any) -> str:
+    """Turn either a string node id or a function reference into a node id.
+
+    Function references use ``fn.__name__``. Anything else raises
+    :class:`PipelineError`.
+    """
+    if isinstance(ref, str):
+        return ref
+    name = getattr(ref, "__name__", None)
+    if not name:
+        raise PipelineError(f"Cannot derive node id from {ref!r}")
+    return name
+
+
 def _is_send_payload(value: Any) -> bool:
     """True when a node's return value is a single :class:`Send` or a
     non-empty ``list[Send]``. Drives the runtime fan-out branch in
@@ -300,6 +314,7 @@ class PipelineEngine:
         state: BaseModel | None = None,
         run_id: str | None = None,
         approve_pause: bool = False,
+        start_at: str | Any = None,
     ) -> PipelineResult:
         """Execute the pipeline.
 
@@ -345,6 +360,15 @@ class PipelineEngine:
             pre_completed = set()
             sequence_start = 0
             all_results = {}
+            # Mid-pipeline start: pretend everything not reachable from
+            # `start_at` already ran. The scheduler then starts at start_at
+            # because its upstream nodes appear "completed".
+            if start_at is not None:
+                start_id = _resolve_node_id(start_at)
+                if start_id not in self._dag.nodes:
+                    raise PipelineError(f"start_at='{start_id}' not in DAG")
+                forward = {start_id} | self._dag.transitive_successors(start_id)
+                pre_completed = {nid for nid in self._dag.nodes if nid not in forward}
 
         if run_id is None:
             run_id = uuid.uuid4().hex[:12]
