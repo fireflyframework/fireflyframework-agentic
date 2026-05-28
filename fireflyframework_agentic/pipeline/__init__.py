@@ -34,7 +34,6 @@ from fireflyframework_agentic.pipeline.audit import (
     FileAuditLog,
     LoggingAuditLog,
     OtelAuditLog,
-    PostgresAuditLog,
     QueryableAuditLog,
 )
 from fireflyframework_agentic.pipeline.builder import PipelineBuilder
@@ -42,8 +41,6 @@ from fireflyframework_agentic.pipeline.checkpoint import (
     Checkpointer,
     CheckpointRecord,
     FileCheckpointer,
-    PostgresCheckpointer,
-    RedisCheckpointer,
 )
 from fireflyframework_agentic.pipeline.context import PipelineContext
 from fireflyframework_agentic.pipeline.dag import DAG, DAGEdge, DAGNode, FailureStrategy
@@ -102,12 +99,9 @@ __all__ = [
     "PipelineEngine",
     "PipelineEventHandler",
     "PipelineResult",
-    "PostgresAuditLog",
-    "PostgresCheckpointer",
     "QueryableAuditLog",
     "ReasoningStep",
     "RecursionLimitError",
-    "RedisCheckpointer",
     "RetrievalStep",
     "Send",
     "StatePipeline",

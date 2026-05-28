@@ -3,7 +3,12 @@
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 
-"""Phase-3c audit-log tests — File / Postgres / Logging / OTel backends + pipeline wiring."""
+"""Audit-log tests — File / Logging / OTel backends + pipeline wiring.
+
+PostgresAuditLog used to live in the framework and was tested here with mocks;
+it moved to ``examples/software_factory/audit/postgres.py`` as a plug-and-play
+template.
+"""
 
 from __future__ import annotations
 
@@ -17,7 +22,6 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import BaseModel
 
-import fireflyframework_agentic.pipeline._psycopg_backend as psycopg_backend_module
 import fireflyframework_agentic.pipeline.audit as audit_module
 from fireflyframework_agentic.pipeline import (
     AuditEntry,
@@ -26,7 +30,6 @@ from fireflyframework_agentic.pipeline import (
     OtelAuditLog,
     Pause,
     PipelineBuilder,
-    PostgresAuditLog,
 )
 
 
@@ -79,15 +82,13 @@ def test_file_audit_log_unknown_run_returns_empty(tmp_path: Path) -> None:
 
 
 # =============================================================================
-# PostgresAuditLog
+# Optional-dep stubs for OTel
 # =============================================================================
 
 
 @pytest.fixture(autouse=True)
 def _stub_optional_deps(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Stub _psycopg and OTel symbols so backends can be constructed with mocks."""
-    if psycopg_backend_module._psycopg is None:
-        monkeypatch.setattr(psycopg_backend_module, "_psycopg", MagicMock(name="psycopg_stub"))
+    """Stub OTel symbols so OtelAuditLog can be constructed with mocks."""
     if audit_module._otel_get_logger is None:
         monkeypatch.setattr(audit_module, "_otel_get_logger", MagicMock(name="otel_logger_factory"))
         monkeypatch.setattr(audit_module, "_OtelLogRecord", MagicMock(name="LogRecord"))
@@ -97,107 +98,6 @@ def _stub_optional_deps(monkeypatch: pytest.MonkeyPatch) -> None:
         sev.INFO = MagicMock(name="INFO")
         sev.INFO.name = "INFO"
         monkeypatch.setattr(audit_module, "_OtelSeverityNumber", sev)
-
-
-def test_postgres_audit_missing_dep_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(psycopg_backend_module, "_psycopg", None)
-    with pytest.raises(ImportError, match=r"\[postgres\]"):
-        PostgresAuditLog(dsn="postgresql://x")
-
-
-def _pg_conn_mock() -> tuple[MagicMock, dict]:
-    """MagicMock connection backed by an in-memory dict keyed by (pipeline,run,seq)."""
-    store: dict[tuple[str, str, int], dict[str, Any]] = {}
-    ddl_calls: list[str] = []
-    conn = MagicMock(name="psycopg.Connection")
-
-    def make_cursor() -> MagicMock:
-        cur = MagicMock()
-        cur.__enter__ = MagicMock(return_value=cur)
-        cur.__exit__ = MagicMock(return_value=None)
-        cur._last_one = None
-        cur._last_all = []
-
-        def fake_execute(sql: str, params: tuple | None = None) -> None:
-            s = sql.strip().lower()
-            if s.startswith("create table"):
-                ddl_calls.append(sql)
-                return
-            if s.startswith("insert into"):
-                assert params is not None
-                key = (params[0], params[1], params[2])
-                store[key] = {
-                    "pipeline_name": params[0],
-                    "run_id": params[1],
-                    "sequence": params[2],
-                    "visit": params[3],
-                    "node_id": params[4],
-                    "started_at": params[5],
-                    "completed_at": params[6],
-                    "latency_ms": params[7],
-                    "status": params[8],
-                    "inputs_snapshot": json.loads(params[9]) if isinstance(params[9], str) else params[9],
-                    "outputs_snapshot": json.loads(params[10]) if isinstance(params[10], str) else params[10],
-                    "error_message": params[11],
-                    "pause_reason": params[12],
-                }
-                return
-            if s.startswith("select"):
-                assert params is not None
-                rows = [v for k, v in store.items() if k[0] == params[0] and k[1] == params[1]]
-                rows.sort(key=lambda r: r["sequence"])
-                cur._last_all = [
-                    (
-                        r["pipeline_name"],
-                        r["run_id"],
-                        r["sequence"],
-                        r["visit"],
-                        r["node_id"],
-                        r["started_at"],
-                        r["completed_at"],
-                        r["latency_ms"],
-                        r["status"],
-                        r["inputs_snapshot"],
-                        r["outputs_snapshot"],
-                        r["error_message"],
-                        r["pause_reason"],
-                    )
-                    for r in rows
-                ]
-                return
-            raise AssertionError(f"unexpected SQL: {sql}")
-
-        cur.execute.side_effect = fake_execute
-        cur.fetchone.side_effect = lambda: cur._last_one
-        cur.fetchall.side_effect = lambda: cur._last_all
-        return cur
-
-    conn.cursor.side_effect = make_cursor
-    conn._ddl_calls = ddl_calls
-    return conn, store
-
-
-def test_postgres_audit_ddl_once_then_inserts() -> None:
-    conn, store = _pg_conn_mock()
-    log = PostgresAuditLog(connection=conn)
-    for seq in (1, 2, 3):
-        log.record(_entry(sequence=seq, node_id=f"n{seq}"))
-    assert len(conn._ddl_calls) == 1
-    assert len(store) == 3
-
-
-def test_postgres_audit_list_entries_orders_by_sequence() -> None:
-    conn, _ = _pg_conn_mock()
-    log = PostgresAuditLog(connection=conn)
-    for seq in (3, 1, 2):
-        log.record(_entry(sequence=seq, node_id=f"n{seq}"))
-    entries = log.list_entries("p", "r")
-    assert [e.sequence for e in entries] == [1, 2, 3]
-
-
-def test_postgres_audit_rejects_bad_table_name() -> None:
-    with pytest.raises(ValueError, match="Invalid table_name"):
-        PostgresAuditLog(connection=MagicMock(), table_name="bad; DROP TABLE")
 
 
 # =============================================================================
