@@ -649,6 +649,7 @@ class StatePipeline:
             success = result.success if result is not None else False
             await self._emit("on_pipeline_complete", self._name, run_id, success, duration_ms)
 
+        assert result is not None  # set in try-block before reaching here
         return result
 
     async def _run_fanout(
