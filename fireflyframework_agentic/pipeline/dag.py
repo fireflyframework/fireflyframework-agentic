@@ -166,7 +166,16 @@ class DAG:
     # -- Query -------------------------------------------------------------
 
     def topological_sort(self) -> list[str]:
-        """Return node IDs in topological order (Kahn's algorithm)."""
+        """Return node IDs in topological order (Kahn's algorithm).
+
+        Raises :class:`PipelineError` if the DAG contains a cycle. Cyclic
+        graphs have no topological order; the caller should branch on
+        :meth:`is_cyclic` first (or use the engine's cycle-aware scheduler).
+        """
+        if self._has_cycle():
+            raise PipelineError(
+                "topological_sort() is not defined on cyclic graphs; use is_cyclic() to branch before calling."
+            )
         in_deg = dict(self._in_degree)
         for nid in self._nodes:
             in_deg.setdefault(nid, 0)
@@ -181,16 +190,19 @@ class DAG:
                 if in_deg[neighbour] == 0:
                     queue.append(neighbour)
 
-        if len(order) != len(self._nodes):
-            raise PipelineError("DAG contains a cycle (should not reach here)")
         return order
 
     def execution_levels(self) -> list[list[str]]:
         """Group nodes into levels for parallel execution.
 
         Nodes at the same level have no inter-dependencies and can be
-        executed concurrently.
+        executed concurrently. Raises :class:`PipelineError` on cyclic
+        DAGs — levels are undefined when cycles exist.
         """
+        if self._has_cycle():
+            raise PipelineError(
+                "execution_levels() is not defined on cyclic graphs; use is_cyclic() to branch before calling."
+            )
         in_deg = dict(self._in_degree)
         for nid in self._nodes:
             in_deg.setdefault(nid, 0)
