@@ -40,7 +40,7 @@ from fireflyframework_agentic.exceptions import PipelineError
 from fireflyframework_agentic.pipeline.audit import AuditEntry, AuditLog, AuditStatus
 from fireflyframework_agentic.pipeline.checkpoint import Checkpointer, CheckpointRecord
 from fireflyframework_agentic.pipeline.dag import DAG, _mermaid_id
-from fireflyframework_agentic.pipeline.engine import start_otel_span
+from fireflyframework_agentic.pipeline.engine import Pause, Send, start_otel_span
 from fireflyframework_agentic.pipeline.reducers import apply_update, discover_reducers
 
 if TYPE_CHECKING:
@@ -53,49 +53,8 @@ StateNodeFn = Callable[[Any], Awaitable[dict[str, Any] | None]]
 RouterFn = Callable[[Any], "str | Send | list[Send]"]
 
 
-@dataclass
-class Send:
-    """Runtime fan-out dispatch: run ``target`` with ``payload`` merged into state.
-
-    Routers can return a single ``Send`` or a list of ``Send`` to dispatch multiple
-    target invocations concurrently. Each Send's payload is applied to a *copy*
-    of the current state before its target runs; the target's return is then
-    merged back into shared state via reducers.
-
-    Replaces the legacy ``FanOutStep`` pattern with a first-class primitive.
-    """
-
-    target: str
-    payload: dict[str, Any]
-
-
 class RecursionLimitError(Exception):
     """Raised when a node is visited more times than ``recursion_limit`` permits."""
-
-
-@dataclass
-class Pause:
-    """Human-in-the-loop sentinel returned by a node to halt the pipeline.
-
-    A node returns ``Pause(reason="...")`` when external approval (a human,
-    another system, a wall-clock event) is required before the pipeline may
-    continue. The pipeline then:
-
-    1. Writes a checkpoint with ``paused=True`` and the reason set.
-    2. Emits ``on_node_pause`` on the configured event handler.
-    3. Returns a :class:`StatePipelineResult` with ``paused=True`` and
-       ``success=False`` — the run is not finished, but it did not fail either.
-
-    To resume after approval::
-
-        result = await pipeline.invoke(run_id=paused_run_id, approve_pause=True)
-
-    Without ``approve_pause=True``, resuming a paused run raises
-    :class:`PipelineError`. The successor of the paused node runs next —
-    the pause node itself is not re-executed.
-    """
-
-    reason: str
 
 
 @dataclass
