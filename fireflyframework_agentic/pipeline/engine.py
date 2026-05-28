@@ -193,9 +193,7 @@ def _is_send_payload(value: Any) -> bool:
     """
     if isinstance(value, Send):
         return True
-    if isinstance(value, list) and value and all(isinstance(s, Send) for s in value):
-        return True
-    return False
+    return isinstance(value, list) and bool(value) and all(isinstance(s, Send) for s in value)
 
 
 def _serialize_value(value: Any) -> Any:
