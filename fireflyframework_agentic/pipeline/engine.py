@@ -23,9 +23,10 @@ import logging
 import random
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 try:
     from opentelemetry import trace as otel_trace
@@ -40,7 +41,7 @@ from fireflyframework_agentic.observability.usage import default_usage_tracker
 from fireflyframework_agentic.pipeline.audit import AuditEntry, AuditLog, AuditStatus
 from fireflyframework_agentic.pipeline.checkpoint import Checkpointer, CheckpointRecord
 from fireflyframework_agentic.pipeline.context import PipelineContext
-from fireflyframework_agentic.pipeline.dag import DAG, FailureStrategy
+from fireflyframework_agentic.pipeline.dag import DAG, FailureStrategy, _mermaid_id
 from fireflyframework_agentic.pipeline.reducers import Reducer, apply_update, discover_reducers
 from fireflyframework_agentic.pipeline.result import (
     ExecutionTraceEntry,
@@ -53,8 +54,7 @@ logger = logging.getLogger(__name__)
 
 @runtime_checkable
 class EventHandler(Protocol):
-    """Unified pipeline event handler. Used by :class:`PipelineEngine` and
-    :class:`fireflyframework_agentic.pipeline.state_pipeline.StatePipeline`.
+    """Pipeline event handler used by :class:`PipelineEngine`.
 
     Implement any subset of these methods; missing ones are no-ops. Exceptions
     raised in callbacks are swallowed by the engine so observability never
@@ -63,9 +63,8 @@ class EventHandler(Protocol):
     The engine dispatches events by parameter name. If your method signature
     omits a parameter — e.g. legacy implementations that don't accept
     ``run_id`` or ``visit`` — the engine simply drops it from the call.
-    That keeps legacy :class:`PipelineEventHandler` /
-    :class:`StatePipelineEventHandler` implementations working during the
-    transition to this unified shape.
+    That keeps the legacy :class:`PipelineEventHandler` shape working
+    transparently alongside this unified one.
 
     Parameter conventions:
 
@@ -113,22 +112,11 @@ class PipelineEventHandler(Protocol):
     async def on_pipeline_complete(self, pipeline_name: str, success: bool, duration_ms: float) -> None: ...
 
 
-@runtime_checkable
-class StatePipelineEventHandler(Protocol):
-    """Legacy state-pipeline event handler protocol. Use :class:`EventHandler`.
-
-    Same shape as :class:`EventHandler` minus ``on_node_skip``. Kept for
-    backward compatibility; new code should implement :class:`EventHandler`.
-    """
-
-    async def on_pipeline_start(self, pipeline_name: str, run_id: str) -> None: ...
-    async def on_node_start(self, pipeline_name: str, run_id: str, node_id: str, visit: int) -> None: ...
-    async def on_node_complete(self, pipeline_name: str, run_id: str, node_id: str, latency_ms: float) -> None: ...
-    async def on_node_error(self, pipeline_name: str, run_id: str, node_id: str, error: str) -> None: ...
-    async def on_node_pause(self, pipeline_name: str, run_id: str, node_id: str, reason: str) -> None: ...
-    async def on_pipeline_complete(
-        self, pipeline_name: str, run_id: str, success: bool, duration_ms: float
-    ) -> None: ...
+RouterFn = Callable[[Any], "str | Send | list[Send]"]
+"""Signature for a runtime branch router: receives the current state, returns
+the next-step instruction — either a target node id, a single Send, or a
+list of Sends for fan-out.
+"""
 
 
 @dataclass
@@ -222,7 +210,7 @@ def start_otel_span(name: str, **attributes: Any) -> Any:
     """Start an OTel span if observability is enabled, else return ``None``.
 
     Module-level helper shared by :class:`PipelineEngine` and
-    :class:`fireflyframework_agentic.pipeline.state_pipeline.StatePipeline`.
+    :class:`PipelineEngine`.
     """
     try:
         if not get_config().observability_enabled:
@@ -254,6 +242,8 @@ class PipelineEngine:
         audit_log: AuditLog | None = None,
         state_schema: type[BaseModel] | None = None,
         recursion_limit: int = 25,
+        routers: dict[str, RouterFn] | None = None,
+        router_mappings: dict[str, dict[str, str]] | None = None,
     ) -> None:
         self._dag = dag
         self._event_handler = event_handler
@@ -266,8 +256,61 @@ class PipelineEngine:
         self._reducers: dict[str, Reducer] = discover_reducers(state_schema) if state_schema is not None else {}
         # Max visits per node for cycle-aware runs. Matches StatePipeline's default.
         self._recursion_limit = recursion_limit
+        # Optional runtime routers: source_id -> router(state) -> str | Send | list[Send].
+        # When a source node has a router, the cyclic scheduler consults it
+        # instead of (or in addition to) the source's outgoing edges. With
+        # an accompanying mapping the router returns an abstract label that
+        # is looked up in the mapping.
+        self._routers: dict[str, RouterFn] = dict(routers or {})
+        self._router_mappings: dict[str, dict[str, str]] = dict(router_mappings or {})
         # Per-method signature cache for legacy-vs-unified dispatch.
         self._handler_params: dict[str, set[str]] = {}
+
+    def to_mermaid(self) -> str:
+        """Render the pipeline as a Mermaid flowchart, labelling branch edges.
+
+        When the builder called ``.branch(source, router, mapping={...})``
+        the resulting edges carry abstract labels (``yes``/``no``/etc).
+        This view threads those labels back into the diagram so the routing
+        is visible alongside the topology.
+        """
+        lines = ["flowchart TD"]
+        for node_id in self._dag.nodes:
+            lines.append(f"    {_mermaid_id(node_id)}[{node_id}]")
+        for edge in self._dag.edges:
+            label: str | None = None
+            mapping = self._router_mappings.get(edge.source)
+            if mapping:
+                for lbl, tgt in mapping.items():
+                    if tgt == edge.target:
+                        label = lbl
+                        break
+            if label is None and edge.condition is not None:
+                label = "if?"
+            arrow = f"-->|{label}|" if label else "-->"
+            lines.append(f"    {_mermaid_id(edge.source)} {arrow} {_mermaid_id(edge.target)}")
+        return "\n".join(lines)
+
+    async def invoke(
+        self,
+        state: Any = None,
+        *,
+        run_id: str | None = None,
+        start_at: Any = None,
+        approve_pause: bool = False,
+    ) -> PipelineResult:
+        """Shorthand for state-aware runs: ``await pipeline.invoke(state)``.
+
+        Mirrors the legacy ``StatePipeline.invoke`` signature so callers that
+        treat the first positional as the state object keep working. New code
+        should call :meth:`run` directly with explicit kwargs.
+        """
+        return await self.run(
+            state=state,
+            run_id=run_id,
+            start_at=start_at,
+            approve_pause=approve_pause,
+        )
 
     async def _dispatch(self, method_name: str, /, **kwargs: Any) -> None:
         """Invoke ``event_handler.method_name`` with the subset of ``kwargs``
@@ -333,12 +376,24 @@ class PipelineEngine:
         """
         if run_id is not None and context is None and inputs is None and state is None:
             resume_run_id: str = run_id
-            context, pre_completed, sequence_start = self._load_for_resume(resume_run_id, approve_pause=approve_pause)
-            all_results: dict[str, NodeResult] = {
-                nid: nr
-                for nid in pre_completed
-                if (nr := context.get_node_result(nid)) is not None and isinstance(nr, NodeResult)
-            }
+            context, pre_completed_list, sequence_start = self._load_for_resume(
+                resume_run_id, approve_pause=approve_pause
+            )
+            pre_completed = set(pre_completed_list)
+            # Preserve original completion order so PipelineResult.completed_nodes
+            # reflects the run's actual sequence after resume.
+            all_results: dict[str, NodeResult] = {}
+            for nid in pre_completed_list:
+                nr = context.get_node_result(nid)
+                if isinstance(nr, NodeResult):
+                    all_results[nid] = nr
+            # Synthesize trace entries for the pre-completed nodes so the
+            # resumed result's completed_nodes reflects the full history.
+            now = datetime.now(UTC)
+            resume_trace_seed: list[ExecutionTraceEntry] = [
+                ExecutionTraceEntry(node_id=nid, started_at=now, completed_at=now, status="success")
+                for nid in pre_completed_list
+            ]
         else:
             if context is None:
                 context = PipelineContext(inputs=inputs)
@@ -358,6 +413,7 @@ class PipelineEngine:
             pre_completed = set()
             sequence_start = 0
             all_results = {}
+            resume_trace_seed: list[ExecutionTraceEntry] = []
             # Mid-pipeline start: pretend everything not reachable from
             # `start_at` already ran. The scheduler then starts at start_at
             # because its upstream nodes appear "completed".
@@ -372,17 +428,23 @@ class PipelineEngine:
             run_id = uuid.uuid4().hex[:12]
 
         # Observability: pipeline-level span + start event
+        # State-aware runs use the "pipeline.state.*" span prefix to match
+        # the legacy StatePipeline taxonomy that observability dashboards
+        # already key on.
+        span_prefix = "pipeline.state" if self._state_schema is not None else "pipeline"
         _pipeline_span = self._start_otel_span(
-            f"pipeline.{self._dag.name}",
+            f"{span_prefix}.{self._dag.name}",
             pipeline=self._dag.name,
+            run_id=run_id,
         )
         await self._dispatch("on_pipeline_start", pipeline_name=self._dag.name, run_id=run_id)
 
         # Cycle-aware mode: a separate sequential frontier-following scheduler
         # that respects ``recursion_limit``. The topological scheduler below
         # cannot run cyclic graphs because execution_levels()/topological_sort()
-        # are undefined on them.
-        if self._dag.is_cyclic():
+        # are undefined on them. Runtime routers also force this mode because
+        # they make routing a function of state, not topology.
+        if self._dag.is_cyclic() or self._routers:
             return await self._run_cyclic(
                 context=context,
                 run_id=run_id,
@@ -390,13 +452,14 @@ class PipelineEngine:
                 pre_completed=pre_completed,
                 sequence_start=sequence_start,
                 pipeline_span=_pipeline_span,
+                resume_trace_seed=resume_trace_seed,
             )
 
         # Topological levels ensure that all upstream dependencies of a node
         # complete before the node itself executes.  Nodes within the same
         # level are independent and run concurrently via asyncio.gather.
         levels = self._dag.execution_levels()
-        trace_entries: list[ExecutionTraceEntry] = []
+        trace_entries: list[ExecutionTraceEntry] = list(resume_trace_seed)
         pipeline_start = time.perf_counter()
 
         failed_nodes: set[str] = set()
@@ -489,6 +552,15 @@ class PipelineEngine:
                         # them for the audit snapshot.
                         gathered = self._gather_inputs(nid, context)
                         inputs_by_node[nid] = gathered
+                        # Emit start event here (visit=1 in the acyclic scheduler;
+                        # the cyclic scheduler and Send fan-out emit their own).
+                        await self._dispatch(
+                            "on_node_start",
+                            pipeline_name=self._dag.name,
+                            run_id=run_id,
+                            node_id=nid,
+                            visit=1,
+                        )
                         task = asyncio.create_task(
                             self._execute_node(
                                 nid,
@@ -535,6 +607,7 @@ class PipelineEngine:
                 # Persist lifecycle: audit every executed visit; checkpoint only
                 # successful completions (failed nodes must re-run on resume).
                 sequence += 1
+                paused_now = nr.success and isinstance(nr.output, Pause)
                 self._record_audit(
                     run_id=run_id,
                     node_id=node_id,
@@ -542,10 +615,12 @@ class PipelineEngine:
                     nr=nr,
                     inputs_snapshot=inputs_by_node.get(node_id, {}),
                     trace_entries=trace_entries,
+                    status_override="paused" if paused_now else None,
+                    pause_reason=nr.output.reason if paused_now else None,
                 )
                 # HITL: a node returned Pause(reason=...). Halt cleanly, save
                 # a paused checkpoint, and surface the pause in the result.
-                if nr.success and isinstance(nr.output, Pause):
+                if paused_now:
                     pause_reason = nr.output.reason
                     await self._dispatch(
                         "on_node_pause",
@@ -569,7 +644,10 @@ class PipelineEngine:
 
                 # Runtime fan-out: a node returned Send / list[Send].
                 if nr.success and _is_send_payload(nr.output):
-                    sends = nr.output if isinstance(nr.output, list) else [nr.output]
+                    sends: list[Send] = cast(
+                        "list[Send]",
+                        list(nr.output) if isinstance(nr.output, list) else [nr.output],
+                    )
                     ok = await self._run_sends(
                         sends=sends,
                         context=context,
@@ -680,6 +758,7 @@ class PipelineEngine:
         trace_entries: list[ExecutionTraceEntry],
         completed: set[str],
         pending: set[str],
+        visit_counts: dict[str, int] | None = None,
     ) -> bool:
         """Dispatch a list of :class:`Send` workers concurrently.
 
@@ -702,13 +781,13 @@ class PipelineEngine:
                 all_results[send.target] = nr
                 return False
 
-        async def _run_one(send: Send) -> tuple[Send, NodeResult]:
+        async def _run_one(send: Send, visit_n: int) -> tuple[Send, NodeResult]:
             await self._dispatch(
                 "on_node_start",
                 pipeline_name=self._dag.name,
                 run_id=run_id,
                 node_id=send.target,
-                visit=1,
+                visit=visit_n,
             )
             # Per-worker context: own state copy with payload applied so
             # workers don't race on the shared state object.
@@ -727,8 +806,19 @@ class PipelineEngine:
             )
             return send, nr
 
+        # Per-Send visit numbers: increment per dispatched target. The
+        # caller may seed counts (cyclic scheduler tracks them globally);
+        # otherwise each fan-out batch starts at 1.
+        send_visits: list[int] = []
+        running_counts = dict(visit_counts) if visit_counts else {}
+        for send in sends:
+            running_counts[send.target] = running_counts.get(send.target, 0) + 1
+            send_visits.append(running_counts[send.target])
+        if visit_counts is not None:
+            visit_counts.update(running_counts)
+
         try:
-            results = await asyncio.gather(*(_run_one(s) for s in sends))
+            results = await asyncio.gather(*(_run_one(s, v) for s, v in zip(sends, send_visits, strict=True)))
         except Exception as exc:
             logger.exception("Fan-out worker crashed")
             for send in sends:
@@ -759,6 +849,7 @@ class PipelineEngine:
         pre_completed: set[str],
         sequence_start: int,
         pipeline_span: Any,
+        resume_trace_seed: list[ExecutionTraceEntry] | None = None,
     ) -> PipelineResult:
         """Sequential frontier-following scheduler for cyclic DAGs.
 
@@ -768,7 +859,7 @@ class PipelineEngine:
         having multiple alive outgoing edges is currently an error — parallel
         cyclic fan-out is the job of :class:`Send` in a later layer.
         """
-        trace_entries: list[ExecutionTraceEntry] = []
+        trace_entries: list[ExecutionTraceEntry] = list(resume_trace_seed or [])
         pipeline_start = time.perf_counter()
         visit_counts: dict[str, int] = dict.fromkeys(pre_completed, 1)
         sequence = sequence_start
@@ -777,14 +868,53 @@ class PipelineEngine:
         nodes_in_order = list(self._dag.nodes)
         if not nodes_in_order:
             raise PipelineError("Pipeline has no nodes")
-        current: str | None = nodes_in_order[0]
+        next_step: str | list[Send] | None = nodes_in_order[0]
         # Skip past anything already completed during this resumed run.
-        while current is not None and current in pre_completed:
-            current = self._cyclic_next(current, context)
+        while isinstance(next_step, str) and next_step in pre_completed:
+            next_step = self._cyclic_next(next_step, context)
 
-        result: PipelineResult | None = None
+        pending_pause: tuple[str, str] | None = None
         try:
-            while current is not None:
+            while next_step is not None:
+                # --- Fan-out (list[Send]) ---------------------------------
+                if isinstance(next_step, list):
+                    sends = next_step
+                    # Preview the per-target visit numbers to enforce the
+                    # recursion limit; _run_sends does the real increment.
+                    over_limit: str | None = None
+                    preview = dict(visit_counts)
+                    for send in sends:
+                        preview[send.target] = preview.get(send.target, 0) + 1
+                        if preview[send.target] > self._recursion_limit:
+                            over_limit = send.target
+                            break
+                    if over_limit is not None:
+                        msg = (
+                            f"Recursion limit ({self._recursion_limit}) exceeded at node '{over_limit}' during fan-out."
+                        )
+                        logger.error(msg)
+                        all_results[over_limit] = NodeResult(node_id=over_limit, success=False, error=msg)
+                        break
+                    completed_set: set[str] = set(all_results)
+                    pending_set: set[str] = set()
+                    ok = await self._run_sends(
+                        sends=sends,
+                        context=context,
+                        run_id=run_id,
+                        all_results=all_results,
+                        trace_entries=trace_entries,
+                        completed=completed_set,
+                        pending=pending_set,
+                        visit_counts=visit_counts,
+                    )
+                    if not ok:
+                        break
+                    # Continue from the common successor of all workers, if any.
+                    next_step = self._common_successor([s.target for s in sends])
+                    continue
+
+                # --- Single-node step -------------------------------------
+                current = next_step
                 visit_counts[current] = visit_counts.get(current, 0) + 1
                 visit_n = visit_counts[current]
                 if visit_n > self._recursion_limit:
@@ -793,16 +923,17 @@ class PipelineEngine:
                         f"'{current}'. Raise recursion_limit= or fix the routing logic."
                     )
                     logger.error(msg)
-                    nr = NodeResult(node_id=current, success=False, error=msg)
-                    all_results[current] = nr
+                    nr_over = NodeResult(node_id=current, success=False, error=msg)
+                    all_results[current] = nr_over
                     sequence += 1
                     self._record_audit(
                         run_id=run_id,
                         node_id=current,
                         sequence=sequence,
-                        nr=nr,
+                        nr=nr_over,
                         inputs_snapshot={},
                         trace_entries=trace_entries,
+                        visit=visit_n,
                     )
                     break
 
@@ -827,6 +958,7 @@ class PipelineEngine:
                 await self._emit_node_result(nr, run_id)
 
                 sequence += 1
+                paused_now = nr.success and isinstance(nr.output, Pause)
                 self._record_audit(
                     run_id=run_id,
                     node_id=current,
@@ -835,10 +967,42 @@ class PipelineEngine:
                     inputs_snapshot=gathered,
                     trace_entries=trace_entries,
                     visit=visit_n,
+                    status_override="paused" if paused_now else None,
+                    pause_reason=nr.output.reason if paused_now else None,
                 )
 
                 if not nr.success and not nr.skipped:
                     break
+
+                # HITL: node returned Pause — checkpoint paused and halt.
+                if paused_now:
+                    pause_reason = nr.output.reason
+                    await self._dispatch(
+                        "on_node_pause",
+                        pipeline_name=self._dag.name,
+                        run_id=run_id,
+                        node_id=current,
+                        reason=pause_reason,
+                    )
+                    self._save_checkpoint(
+                        run_id=run_id,
+                        node_id=current,
+                        sequence=sequence,
+                        context=context,
+                        all_results=all_results,
+                        paused=True,
+                        pause_reason=pause_reason,
+                    )
+                    pending_pause = (current, pause_reason)
+                    break
+
+                # Fan-out: node returned Send / list[Send].
+                if nr.success and _is_send_payload(nr.output):
+                    next_step = cast(
+                        "list[Send]",
+                        list(nr.output) if isinstance(nr.output, list) else [nr.output],
+                    )
+                    continue
 
                 if not nr.skipped:
                     if self._state_schema is not None and context.state is not None and isinstance(nr.output, dict):
@@ -851,12 +1015,14 @@ class PipelineEngine:
                         all_results=all_results,
                     )
 
-                current = self._cyclic_next(current, context)
+                try:
+                    next_step = self._cyclic_next(current, context)
+                except PipelineError as exc:
+                    all_results[current] = NodeResult(node_id=current, success=False, error=str(exc), output=nr.output)
+                    break
         finally:
             elapsed = (time.perf_counter() - pipeline_start) * 1000
-            success = (
-                result.success if result is not None else all(r.success or r.skipped for r in all_results.values())
-            )
+            success = False if pending_pause is not None else all(r.success or r.skipped for r in all_results.values())
             await self._dispatch(
                 "on_pipeline_complete",
                 pipeline_name=self._dag.name,
@@ -868,26 +1034,43 @@ class PipelineEngine:
                 with contextlib.suppress(Exception):
                     pipeline_span.end()
 
-        final_output = None
+        paused_node = pending_pause[0] if pending_pause else None
+        pause_reason_final = pending_pause[1] if pending_pause else None
         return PipelineResult(
             pipeline_name=self._dag.name,
             outputs=all_results,
-            final_output=final_output,
+            final_output=None,
             execution_trace=trace_entries,
             total_duration_ms=elapsed,
             success=success,
             usage=None,
             run_id=run_id,
             final_state=context.state,
+            paused=pending_pause is not None,
+            paused_node=paused_node,
+            pause_reason=pause_reason_final,
         )
 
-    def _cyclic_next(self, current: str, context: PipelineContext) -> str | None:
-        """Pick the next node by following the unique alive outgoing edge.
+    def _common_successor(self, node_ids: list[str]) -> str | None:
+        """Return the node all ``node_ids`` share as their unique successor, or None."""
+        successors = [self._dag.successors(nid) for nid in node_ids]
+        if not successors or any(len(s) != 1 for s in successors):
+            return None
+        first = successors[0][0]
+        return first if all(s[0] == first for s in successors[1:]) else None
 
-        Returns ``None`` when no outgoing edge is alive (terminus). Raises
-        if more than one is alive — parallel cyclic fan-out lands with
-        :class:`Send` in a later layer.
+    def _cyclic_next(self, current: str, context: PipelineContext) -> str | list[Send] | None:
+        """Pick what runs next from ``current``.
+
+        Priority: a registered router (.branch(...)) wins. Its return value
+        (str, Send, list[Send], or None) is resolved to a concrete target.
+        Otherwise fall back to the unique alive outgoing edge; multiple
+        alive edges with no router raise.
         """
+        # Runtime router takes precedence.
+        if current in self._routers:
+            decision = self._routers[current](context.state)
+            return self._resolve_router_decision(current, decision)
 
         def _alive(edge: Any) -> bool:
             if edge.condition is None:
@@ -904,11 +1087,56 @@ class PipelineEngine:
         if len(alive) > 1:
             raise PipelineError(
                 f"Cyclic node '{current}' has multiple alive outgoing edges "
-                f"({[e.target for e in alive]}). Parallel cyclic fan-out arrives "
-                f"with Send in a later layer; for now, use mutually exclusive "
-                f"edge conditions."
+                f"({[e.target for e in alive]}). Register a .branch(...) "
+                f"router or make the edge conditions mutually exclusive."
             )
         return alive[0].target
+
+    def _resolve_router_decision(self, source: str, decision: Any) -> str | list[Send] | None:
+        """Translate a router's return value into a concrete next-step.
+
+        Accepts:
+        * a string node id (looked up in ``router_mappings`` if registered),
+        * a single :class:`Send` (wrapped into a one-element list),
+        * a ``list[Send]`` (returned as-is after validation),
+        * ``None`` or an empty list (terminus).
+        """
+        if decision is None:
+            return None
+        if isinstance(decision, list):
+            if not decision:
+                return None
+            for s in decision:
+                if not isinstance(s, Send):
+                    raise PipelineError(
+                        f"Router for '{source}' returned a list containing non-Send element {s!r}; expected list[Send]."
+                    )
+                if s.target not in self._dag.nodes:
+                    raise PipelineError(f"Router for '{source}' fans out to unknown target '{s.target}'")
+            return decision
+        if isinstance(decision, Send):
+            if decision.target not in self._dag.nodes:
+                raise PipelineError(f"Router for '{source}' dispatched to unknown target '{decision.target}'")
+            return [decision]
+        if isinstance(decision, str):
+            mapping = self._router_mappings.get(source)
+            if mapping is not None:
+                if decision not in mapping:
+                    raise PipelineError(
+                        f"Router for '{source}' returned label '{decision}' not in mapping {list(mapping)}"
+                    )
+                return mapping[decision]
+            if decision not in self._dag.nodes:
+                raise PipelineError(
+                    f"Router for '{source}' returned '{decision}' "
+                    f"which is not a registered node id; pass an explicit "
+                    f"mapping if you want abstract labels."
+                )
+            return decision
+        raise PipelineError(
+            f"Router for '{source}' returned unsupported type {type(decision).__name__}; "
+            f"expected str, Send, list[Send], or None."
+        )
 
     async def _execute_node(
         self,
@@ -947,19 +1175,16 @@ class PipelineEngine:
         if inputs is None:
             inputs = self._gather_inputs(node_id, context)
 
+        node_prefix = "pipeline.state.node" if self._state_schema is not None else "pipeline.node"
         _node_span = self._start_otel_span(
-            f"pipeline.node.{node_id}",
+            f"{node_prefix}.{node_id}",
             node=node_id,
-        )
-
-        # Emit node start event (visit=1; cycles arrive in a later layer)
-        await self._dispatch(
-            "on_node_start",
-            pipeline_name=self._dag.name,
-            run_id=run_id,
-            node_id=node_id,
             visit=1,
         )
+
+        # Note: on_node_start is now emitted by the caller (run / _run_cyclic /
+        # _run_sends) so the cyclic and fan-out paths can supply the right
+        # ``visit`` number. Emitting here would duplicate the event.
 
         max_retries = node.retry_max
         backoff_factor = node.backoff_factor
@@ -1067,7 +1292,7 @@ class PipelineEngine:
         else:
             await self._dispatch("on_node_error", error=nr.error or "unknown", **common)
 
-    def _load_for_resume(self, run_id: str, *, approve_pause: bool = False) -> tuple[PipelineContext, set[str], int]:
+    def _load_for_resume(self, run_id: str, *, approve_pause: bool = False) -> tuple[PipelineContext, list[str], int]:
         """Rebuild context + completed-set from the latest checkpoint.
 
         Resuming a paused run (checkpoint.paused=True) requires
@@ -1097,7 +1322,7 @@ class PipelineEngine:
                 context.state = self._state_schema.model_validate(saved_state)
             except Exception:
                 logger.warning("Could not restore shared state on resume for run '%s'", run_id)
-        return context, set(record.completed_nodes), record.sequence
+        return context, list(record.completed_nodes), record.sequence
 
     def _save_checkpoint(
         self,
@@ -1149,12 +1374,15 @@ class PipelineEngine:
         inputs_snapshot: dict[str, Any],
         trace_entries: list[ExecutionTraceEntry],
         visit: int = 1,
+        status_override: AuditStatus | None = None,
+        pause_reason: str | None = None,
     ) -> None:
         """Write an audit entry for a node visit. No-op if no audit log.
 
         Skipped nodes are not recorded — they represent work that did NOT
-        happen and would clutter the trail. ``visit`` defaults to 1 for the
-        acyclic scheduler and is supplied by the cyclic scheduler.
+        happen and would clutter the trail. ``status_override`` lets the
+        cyclic scheduler tag a Pause-returning node with ``"paused"``
+        instead of the default ``"success"`` derived from ``nr.success``.
         """
         if self._audit_log is None or nr.skipped:
             return
@@ -1165,7 +1393,10 @@ class PipelineEngine:
                 started_at = te.started_at
                 completed_at = te.completed_at
                 break
-        status: AuditStatus = "success" if nr.success else "error"
+        if status_override is not None:
+            status: AuditStatus = status_override
+        else:
+            status = "success" if nr.success else "error"
         outputs: dict[str, Any] = {"output": _serialize_value(nr.output)} if nr.success else {}
         entry = AuditEntry(
             pipeline_name=self._dag.name,
@@ -1180,6 +1411,7 @@ class PipelineEngine:
             inputs_snapshot={k: _serialize_value(v) for k, v in inputs_snapshot.items()},
             outputs_snapshot=outputs,
             error_message=nr.error if not nr.success else None,
+            pause_reason=pause_reason,
         )
         try:
             self._audit_log.record(entry)
