@@ -161,9 +161,7 @@ async def test_send_dispatches_workers_concurrently():
 
 
 async def test_single_send_is_treated_as_list_of_one():
-    planner = _step_emit_sends(["a"])
-    # Override to emit a single Send (not a list).
-
+    # A planner step that emits one Send directly (not wrapped in a list).
     class _Solo:
         async def execute(self, ctx, inputs):
             return Send(target="a", payload={"items": ["just-a"]})
@@ -196,8 +194,8 @@ async def test_send_to_unknown_target_raises():
 
 
 def test_pause_and_send_reexported_from_pipeline_package():
-    from fireflyframework_agentic.pipeline import Pause as P
-    from fireflyframework_agentic.pipeline import Send as S
+    from fireflyframework_agentic.pipeline import Pause as PausePkg
+    from fireflyframework_agentic.pipeline import Send as SendPkg
 
-    assert P is Pause
-    assert S is Send
+    assert PausePkg is Pause
+    assert SendPkg is Send
