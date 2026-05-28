@@ -38,7 +38,7 @@ class CheckpointRecord(BaseModel):
     """One saved checkpoint.
 
     ``paused`` and ``pause_reason`` are set when a node returns
-    :class:`fireflyframework_agentic.pipeline.state_pipeline.Pause`. Default
+    :class:`fireflyframework_agentic.pipeline.engine.Pause`. Default
     to ``False`` / ``None`` so existing records from earlier phases load
     cleanly under the new schema.
     """
