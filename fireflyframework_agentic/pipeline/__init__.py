@@ -45,6 +45,7 @@ from fireflyframework_agentic.pipeline.checkpoint import (
 from fireflyframework_agentic.pipeline.context import PipelineContext
 from fireflyframework_agentic.pipeline.dag import DAG, DAGEdge, DAGNode, FailureStrategy
 from fireflyframework_agentic.pipeline.engine import (
+    EventHandler,
     PipelineEngine,
     PipelineEventHandler,
     StatePipelineEventHandler,
@@ -86,6 +87,7 @@ __all__ = [
     "EmbeddingStep",
     "ExecutionTraceEntry",
     "FailureStrategy",
+    "EventHandler",
     "FanInStep",
     "FanOutStep",
     "FileAuditLog",
