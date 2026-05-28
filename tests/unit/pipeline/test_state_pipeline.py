@@ -27,7 +27,6 @@ from fireflyframework_agentic.exceptions import PipelineError
 from fireflyframework_agentic.pipeline import (
     FileCheckpointer,
     PipelineBuilder,
-    StatePipeline,
     append,
 )
 
@@ -62,7 +61,6 @@ async def test_linear_pipeline_runs_all_nodes():
         .chain(step_a, step_b, step_c)
         .build()
     )
-    assert isinstance(pipeline, StatePipeline)
     result = await pipeline.invoke(AgentState(messages=["start"]))
     assert result.success
     assert result.completed_nodes == ["step_a", "step_b", "step_c"]

@@ -25,7 +25,6 @@ from fireflyframework_agentic.pipeline import (
     FanOutStep,
     PipelineBuilder,
     Send,
-    StatePipeline,
     extend,
 )
 from fireflyframework_agentic.pipeline.steps import CallableStep
@@ -53,7 +52,6 @@ async def test_simple_cycle_with_exit_router():
         return "done" if state.counter >= 3 else "step"
 
     pipeline = PipelineBuilder("loop", state=LoopState).add_node(step).add_node(done).branch(step, route).build()
-    assert isinstance(pipeline, StatePipeline)
     result = await pipeline.invoke(LoopState())
     assert result.success
     assert result.state.counter == 3
@@ -199,7 +197,6 @@ def test_state_pipeline_to_mermaid_labels_branch_edges():
         .branch(start, route, {"left_path": left, "right_path": right})
         .build()
     )
-    assert isinstance(pipeline, StatePipeline)
     mermaid = pipeline.to_mermaid()
     assert "start -->|left_path| left" in mermaid
     assert "start -->|right_path| right" in mermaid

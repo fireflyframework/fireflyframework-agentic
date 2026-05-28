@@ -5,7 +5,7 @@
 
 """Console progress handler.
 
-Implements (structurally) the framework's :class:`StatePipelineEventHandler`
+Implements (structurally) the framework's :class:`EventHandler`
 Protocol. Prints one line per pipeline / node event so the QA loop and
 checkpoint+resume flow are visible when running the example by hand.
 """
