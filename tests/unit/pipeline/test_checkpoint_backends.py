@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, create_autospec
 import pytest
 from pydantic import BaseModel
 
+import fireflyframework_agentic.pipeline._psycopg_backend as psycopg_backend_module
 import fireflyframework_agentic.pipeline.checkpoint as checkpoint_module
 from fireflyframework_agentic.pipeline import (
     CheckpointRecord,
@@ -39,8 +40,8 @@ def _stub_optional_deps(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     if checkpoint_module._redis is None:
         monkeypatch.setattr(checkpoint_module, "_redis", MagicMock(name="redis_stub"))
-    if checkpoint_module._psycopg is None:
-        monkeypatch.setattr(checkpoint_module, "_psycopg", MagicMock(name="psycopg_stub"))
+    if psycopg_backend_module._psycopg is None:
+        monkeypatch.setattr(psycopg_backend_module, "_psycopg", MagicMock(name="psycopg_stub"))
 
 
 # =============================================================================
@@ -244,7 +245,7 @@ def _postgres_connection_mock() -> tuple[MagicMock, dict[tuple, dict[str, Any]]]
 
 
 def test_postgres_checkpointer_missing_dep_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(checkpoint_module, "_psycopg", None)
+    monkeypatch.setattr(psycopg_backend_module, "_psycopg", None)
     with pytest.raises(ImportError, match=r"\[postgres\]"):
         PostgresCheckpointer(dsn="postgresql://x")
 

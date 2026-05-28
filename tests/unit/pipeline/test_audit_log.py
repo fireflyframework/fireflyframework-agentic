@@ -17,6 +17,7 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import BaseModel
 
+import fireflyframework_agentic.pipeline._psycopg_backend as psycopg_backend_module
 import fireflyframework_agentic.pipeline.audit as audit_module
 from fireflyframework_agentic.pipeline import (
     AuditEntry,
@@ -85,8 +86,8 @@ def test_file_audit_log_unknown_run_returns_empty(tmp_path: Path) -> None:
 @pytest.fixture(autouse=True)
 def _stub_optional_deps(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub _psycopg and OTel symbols so backends can be constructed with mocks."""
-    if audit_module._psycopg is None:
-        monkeypatch.setattr(audit_module, "_psycopg", MagicMock(name="psycopg_stub"))
+    if psycopg_backend_module._psycopg is None:
+        monkeypatch.setattr(psycopg_backend_module, "_psycopg", MagicMock(name="psycopg_stub"))
     if audit_module._otel_get_logger is None:
         monkeypatch.setattr(audit_module, "_otel_get_logger", MagicMock(name="otel_logger_factory"))
         monkeypatch.setattr(audit_module, "_OtelLogRecord", MagicMock(name="LogRecord"))
@@ -99,7 +100,7 @@ def _stub_optional_deps(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_postgres_audit_missing_dep_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(audit_module, "_psycopg", None)
+    monkeypatch.setattr(psycopg_backend_module, "_psycopg", None)
     with pytest.raises(ImportError, match=r"\[postgres\]"):
         PostgresAuditLog(dsn="postgresql://x")
 

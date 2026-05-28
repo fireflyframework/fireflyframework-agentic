@@ -46,10 +46,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
-try:
-    import psycopg as _psycopg  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - optional dep
-    _psycopg = None  # type: ignore[assignment]
+from fireflyframework_agentic.pipeline._psycopg_backend import PsycopgBackend
 
 try:
     from opentelemetry._logs import LogRecord as _OtelLogRecord  # type: ignore[import-not-found]
@@ -145,7 +142,7 @@ class FileAuditLog:
         return entries
 
 
-class PostgresAuditLog:
+class PostgresAuditLog(PsycopgBackend):
     """Postgres-backed audit log. Single table created on first ``record`` call.
 
     Reuses ``psycopg`` from the ``postgres`` optional extra. ``dsn`` or a
@@ -181,25 +178,7 @@ class PostgresAuditLog:
         connection: Any = None,
         table_name: str = "firefly_audit",
     ) -> None:
-        if _psycopg is None:
-            raise ImportError(
-                "PostgresAuditLog requires the 'postgres' extra. "
-                "Install with: pip install fireflyframework-agentic[postgres]"
-            )
-        if (dsn is None) == (connection is None):
-            raise ValueError("PostgresAuditLog needs exactly one of `dsn` or `connection`.")
-        if not table_name.replace("_", "").isalnum():
-            raise ValueError(f"Invalid table_name {table_name!r}: must be alphanumeric/underscore only.")
-        self._conn = connection if connection is not None else _psycopg.connect(dsn, autocommit=True)
-        self._table = table_name
-        self._ddl_applied = False
-
-    def _ensure_table(self) -> None:
-        if self._ddl_applied:
-            return
-        with self._conn.cursor() as cur:
-            cur.execute(self._DDL.format(table=self._table))
-        self._ddl_applied = True
+        super().__init__(kind="PostgresAuditLog", dsn=dsn, connection=connection, table_name=table_name)
 
     def record(self, entry: AuditEntry) -> None:
         self._ensure_table()

@@ -39,15 +39,12 @@ from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
+from fireflyframework_agentic.pipeline._psycopg_backend import PsycopgBackend
+
 try:
     import redis as _redis  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover - optional dep
     _redis = None  # type: ignore[assignment]
-
-try:
-    import psycopg as _psycopg  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - optional dep
-    _psycopg = None  # type: ignore[assignment]
 
 
 class CheckpointRecord(BaseModel):
@@ -194,7 +191,7 @@ class RedisCheckpointer:
         return list(self._client.zrange(self._runs_index_key(pipeline_name), 0, -1))
 
 
-class PostgresCheckpointer:
+class PostgresCheckpointer(PsycopgBackend):
     """Postgres-backed checkpointer.
 
     Uses a single table created on first ``save`` call. The DDL is idempotent
@@ -232,26 +229,7 @@ class PostgresCheckpointer:
         connection: Any = None,
         table_name: str = "firefly_checkpoints",
     ) -> None:
-        if _psycopg is None:
-            raise ImportError(
-                "PostgresCheckpointer requires the 'postgres' extra. "
-                "Install with: pip install fireflyframework-agentic[postgres]"
-            )
-        if (dsn is None) == (connection is None):
-            raise ValueError("PostgresCheckpointer needs exactly one of `dsn` or `connection`.")
-        # Table name is interpolated into DDL — validate it strictly to avoid SQL injection.
-        if not table_name.replace("_", "").isalnum():
-            raise ValueError(f"Invalid table_name {table_name!r}: must be alphanumeric/underscore only.")
-        self._conn = connection if connection is not None else _psycopg.connect(dsn, autocommit=True)
-        self._table = table_name
-        self._ddl_applied = False
-
-    def _ensure_table(self) -> None:
-        if self._ddl_applied:
-            return
-        with self._conn.cursor() as cur:
-            cur.execute(self._DDL.format(table=self._table))
-        self._ddl_applied = True
+        super().__init__(kind="PostgresCheckpointer", dsn=dsn, connection=connection, table_name=table_name)
 
     def save(self, record: CheckpointRecord) -> None:
         self._ensure_table()
