@@ -42,11 +42,17 @@ class PipelineContext:
         metadata: dict[str, Any] | None = None,
         correlation_id: str | None = None,
         memory: MemoryManager | None = None,
+        state: Any = None,
     ) -> None:
         self.inputs = inputs
         self.metadata: dict[str, Any] = metadata or {}
         self.correlation_id = correlation_id or uuid.uuid4().hex
         self.memory: MemoryManager | None = memory
+        # Shared typed state for state-aware pipelines. None for legacy
+        # port-based runs. Engine reassigns after each node's reducer-merged
+        # update — readers within a single in-flight task see the snapshot
+        # they were scheduled with.
+        self.state: Any = state
         self._results: dict[str, Any] = {}  # node_id -> NodeResult
 
     def set_node_result(self, node_id: str, result: Any) -> None:
