@@ -20,7 +20,6 @@ from fireflyframework_agentic.pipeline import (
     CheckpointRecord,
     FileCheckpointer,
     PipelineBuilder,
-    StatePipeline,
 )
 
 # =============================================================================
@@ -113,7 +112,7 @@ class FactoryState(BaseModel):
     evaluation: str | None = None
 
 
-def _build_factory(checkpointer) -> StatePipeline:
+def _build_factory(checkpointer):
     """Construct the canonical 4-step agent pipeline that fails on first deploy."""
     state_flag = {"failed_once": False}
 
@@ -141,7 +140,6 @@ def _build_factory(checkpointer) -> StatePipeline:
         .chain(architect, python_dev, deployer, evaluator)
         .build()
     )
-    assert isinstance(pipeline, StatePipeline)
     return pipeline
 
 

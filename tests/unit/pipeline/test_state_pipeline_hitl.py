@@ -19,7 +19,6 @@ from fireflyframework_agentic.pipeline import (
     FileCheckpointer,
     Pause,
     PipelineBuilder,
-    StatePipeline,
     extend,
 )
 
@@ -62,7 +61,6 @@ async def test_node_returning_pause_halts_pipeline(tmp_path: Path) -> None:
         .chain(architect, gate, deploy)
         .build()
     )
-    assert isinstance(pipeline, StatePipeline)
 
     result = await pipeline.invoke(DeployState(requirements="user-mgmt"))
     assert result.paused is True
