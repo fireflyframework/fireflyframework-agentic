@@ -17,8 +17,6 @@ feedback loop with a hard cap of ``recursion_limit=3``.
 
 from __future__ import annotations
 
-from typing import cast
-
 from examples.software_factory.agents import (
     architect,
     builder,
@@ -31,7 +29,7 @@ from examples.software_factory.state import BuildState
 from fireflyframework_agentic.pipeline import (
     Checkpointer,
     PipelineBuilder,
-    StatePipeline,
+    PipelineEngine,
 )
 
 
@@ -40,7 +38,7 @@ def qa_router(state: BuildState) -> str:
     return "stable_release" if state.qa_status == "pass" else "codegen"
 
 
-def build_pipeline(checkpointer: Checkpointer) -> StatePipeline:
+def build_pipeline(checkpointer: Checkpointer) -> PipelineEngine:
     pipeline = (
         PipelineBuilder(
             "software-factory",
@@ -60,5 +58,4 @@ def build_pipeline(checkpointer: Checkpointer) -> StatePipeline:
         .branch("qa", qa_router)
         .build()
     )
-    # state= was set, so .build() returns a StatePipeline — narrow for the type checker.
-    return cast("StatePipeline", pipeline)
+    return pipeline
