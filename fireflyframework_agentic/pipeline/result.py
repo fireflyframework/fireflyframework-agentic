@@ -68,6 +68,7 @@ class PipelineResult(BaseModel):
         total_duration_ms: End-to-end pipeline execution time.
         success: Whether all nodes completed successfully.
         usage: Aggregated token usage across all pipeline nodes.
+        run_id: Identifier for this run; resume with ``engine.run(run_id=...)``.
     """
 
     pipeline_name: str = ""
@@ -77,6 +78,7 @@ class PipelineResult(BaseModel):
     total_duration_ms: float = 0.0
     success: bool = True
     usage: UsageSummary | None = None
+    run_id: str = ""
 
     @property
     def failed_nodes(self) -> list[str]:
