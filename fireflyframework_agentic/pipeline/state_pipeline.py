@@ -29,6 +29,7 @@ import inspect
 import logging
 import time
 import uuid
+import warnings
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -97,6 +98,30 @@ class StatePipelineResult:
 class StatePipeline:
     """Compiled state-based pipeline. Returned by ``PipelineBuilder.build()``
     when a ``state=`` schema is configured.
+
+    .. deprecated::
+        :class:`StatePipeline` is being subsumed by
+        :class:`fireflyframework_agentic.pipeline.engine.PipelineEngine`
+        configured with ``state_schema=``. The unified engine supports
+        the same features (state overlay, reducers, Pause, Send, cycles,
+        recursion_limit, checkpointing, audit, resume, start_at) and adds
+        true parallelism for state-aware pipelines via the topological
+        scheduler. New code should prefer ``PipelineEngine`` directly:
+
+        .. code-block:: python
+
+            engine = PipelineEngine(
+                dag,
+                state_schema=MyState,
+                checkpointer=cp,
+                audit_log=al,
+                recursion_limit=10,
+            )
+            result = await engine.run(state=MyState(...))
+
+        See issue #245 for the full migration plan. The next layer of
+        unification removes :class:`StatePipeline` after a deprecation
+        cycle.
     """
 
     def __init__(
@@ -112,6 +137,13 @@ class StatePipeline:
         event_handler: StatePipelineEventHandler | None = None,
         audit_log: AuditLog | None = None,
     ) -> None:
+        warnings.warn(
+            "StatePipeline is deprecated; use PipelineEngine(state_schema=...) "
+            "for the unified API. The unified engine supports the same features "
+            "and adds parallel state-aware execution. See issue #245.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._name = name
         self._dag = dag
         self._state_schema = state_schema
