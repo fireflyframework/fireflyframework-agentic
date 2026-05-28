@@ -58,12 +58,28 @@ class DAGEdge(BaseModel):
         target: ID of the downstream node.
         output_key: Which output from the source to pass (default ``"output"``).
         input_key: Which input key on the target receives the value (default ``"input"``).
+        condition: Optional predicate ``(PipelineContext) -> bool`` that gates
+            edge traversal. When False (or when the callable raises), the
+            edge is treated as inactive: it neither delivers a signal to
+            the target nor contributes to scheduling readiness. If every
+            incoming edge of a target is inactive (and all of them are
+            resolved), the target is skipped — the same SKIP_DOWNSTREAM
+            cascade as an upstream failure. ``None`` (default) means
+            "always traverse".
+
+            Conditions live on edges rather than on ``DAGNode`` because
+            branching is a routing decision, not a node-internal predicate.
+            The legacy :attr:`DAGNode.condition` field is preserved for
+            backward compatibility but is the wrong layer.
     """
+
+    model_config = {"arbitrary_types_allowed": True}
 
     source: str
     target: str
     output_key: str = "output"
     input_key: str = "input"
+    condition: Callable[..., bool] | None = None
 
 
 class DAGNode(BaseModel):
@@ -249,13 +265,19 @@ class DAG:
         """Render the topology as a Mermaid flowchart.
 
         Edges with ``input_key`` other than the default ``"input"`` are
-        labelled with that key so port wiring is visible.
+        labelled with that key so port wiring is visible. Conditional
+        edges are prefixed ``if?`` so branches stand out.
         """
         lines = ["flowchart TD"]
         for node_id in self._nodes:
             lines.append(f"    {_mermaid_id(node_id)}[{node_id}]")
         for edge in self._edges:
-            label = edge.input_key if edge.input_key and edge.input_key != "input" else None
+            parts: list[str] = []
+            if edge.condition is not None:
+                parts.append("if?")
+            if edge.input_key and edge.input_key != "input":
+                parts.append(edge.input_key)
+            label = " · ".join(parts) if parts else None
             arrow = f"-->|{label}|" if label else "-->"
             lines.append(f"    {_mermaid_id(edge.source)} {arrow} {_mermaid_id(edge.target)}")
         return "\n".join(lines)
