@@ -296,10 +296,68 @@ class PipelineEngine:
         sequence = sequence_start
         abort = False
 
+        def _edge_alive(edge: Any) -> bool:
+            """An edge is alive if it has no condition, or its condition returns True.
+
+            Raises in the condition itself are treated as False — fail
+            closed so a broken predicate kills the branch instead of
+            silently waking up the wrong target.
+            """
+            if edge.condition is None:
+                return True
+            try:
+                return bool(edge.condition(context))
+            except Exception:
+                return False
+
         def _ready(nid: str) -> bool:
-            """A node is ready when all its upstream deps have completed."""
+            """A node is ready when:
+            (1) every incoming edge's source has completed, AND
+            (2) at least one of those edges is alive (or it has no edges).
+
+            Entry nodes (no incoming) are always ready once scheduled.
+            """
             edges = self._dag.incoming_edges(nid)
-            return all(e.source in completed for e in edges)
+            if not edges:
+                return True
+            if not all(e.source in completed for e in edges):
+                return False
+            return any(_edge_alive(e) for e in edges)
+
+        def _is_dead(nid: str) -> bool:
+            """A node is dead when every incoming edge has resolved but
+            none of them is alive. Cascades via the SKIP_DOWNSTREAM
+            mechanism so transitive successors are skipped without
+            being scheduled.
+            """
+            edges = self._dag.incoming_edges(nid)
+            if not edges:
+                return False
+            if not all(e.source in completed for e in edges):
+                return False
+            return not any(_edge_alive(e) for e in edges)
+
+        async def _record_skip(nid: str) -> None:
+            """Mark a node as skipped without scheduling it. Mirrors the
+            handling of in-flight skips returned by ``_execute_node``.
+            """
+            nonlocal sequence
+            nr = NodeResult(node_id=nid, skipped=True, error="No alive incoming edge")
+            all_results[nid] = nr
+            context.set_node_result(nid, nr)
+            completed.add(nid)
+            failed_nodes.add(nid)
+            failed_nodes.update(self._dag.transitive_successors(nid))
+            await self._emit_node_result(nr, run_id)
+            sequence += 1
+            self._record_audit(
+                run_id=run_id,
+                node_id=nid,
+                sequence=sequence,
+                nr=nr,
+                inputs_snapshot={},
+                trace_entries=trace_entries,
+            )
 
         while pending or running:
             # Schedule all ready nodes that aren't already running.
@@ -382,6 +440,14 @@ class PipelineEngine:
                     elif strategy == FailureStrategy.SKIP_DOWNSTREAM:
                         failed_nodes.add(node_id)
                         failed_nodes.update(self._dag.transitive_successors(node_id))
+
+            # Sweep pending for nodes whose incoming edges have resolved
+            # but none is alive. Mark them skipped and cascade — this is
+            # what makes DAGEdge.condition a usable branching primitive.
+            for nid in list(pending):
+                if _is_dead(nid):
+                    await _record_skip(nid)
+                    pending.discard(nid)
 
             if abort:
                 # Cancel remaining tasks
