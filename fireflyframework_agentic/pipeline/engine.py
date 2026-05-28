@@ -31,6 +31,8 @@ try:
 except ImportError:  # pragma: no cover - optional dep
     otel_trace = None  # type: ignore[assignment]
 
+from pydantic import BaseModel
+
 from fireflyframework_agentic.config import get_config
 from fireflyframework_agentic.exceptions import PipelineError
 from fireflyframework_agentic.observability.usage import default_usage_tracker
@@ -38,6 +40,7 @@ from fireflyframework_agentic.pipeline.audit import AuditEntry, AuditLog, AuditS
 from fireflyframework_agentic.pipeline.checkpoint import Checkpointer, CheckpointRecord
 from fireflyframework_agentic.pipeline.context import PipelineContext
 from fireflyframework_agentic.pipeline.dag import DAG, FailureStrategy
+from fireflyframework_agentic.pipeline.reducers import Reducer, apply_update, discover_reducers
 from fireflyframework_agentic.pipeline.result import (
     ExecutionTraceEntry,
     NodeResult,
@@ -183,11 +186,17 @@ class PipelineEngine:
         event_handler: EventHandler | PipelineEventHandler | None = None,
         checkpointer: Checkpointer | None = None,
         audit_log: AuditLog | None = None,
+        state_schema: type[BaseModel] | None = None,
     ) -> None:
         self._dag = dag
         self._event_handler = event_handler
         self._checkpointer = checkpointer
         self._audit_log = audit_log
+        # Optional shared-state overlay. When set, nodes returning a dict
+        # have it merged into the state via reducers; non-dict returns
+        # continue to flow through edges as port outputs. Both can coexist.
+        self._state_schema = state_schema
+        self._reducers: dict[str, Reducer] = discover_reducers(state_schema) if state_schema is not None else {}
         # Per-method signature cache for legacy-vs-unified dispatch.
         self._handler_params: dict[str, set[str]] = {}
 
@@ -231,6 +240,7 @@ class PipelineEngine:
         context: PipelineContext | None = None,
         *,
         inputs: Any = None,
+        state: BaseModel | None = None,
         run_id: str | None = None,
     ) -> PipelineResult:
         """Execute the pipeline.
@@ -238,16 +248,19 @@ class PipelineEngine:
         Parameters:
             context: Pre-built context, or *None* to create one automatically.
             inputs: Initial inputs (used if *context* is not provided).
+            state: Optional shared state object for engines configured with
+                ``state_schema=``. When omitted, the engine instantiates the
+                schema with its defaults.
             run_id: Identifier for this run. When given alone (no ``context``
                 and no ``inputs``), the engine loads the latest checkpoint for
                 that run and resumes from after the last completed node.
                 Requires a checkpointer to be configured.
 
         Returns:
-            A :class:`PipelineResult` with all node outputs, trace, and
-            ``run_id`` (use to resume later).
+            A :class:`PipelineResult` with all node outputs, trace, ``run_id``
+            (use to resume later), and ``final_state`` for state-aware runs.
         """
-        if run_id is not None and context is None and inputs is None:
+        if run_id is not None and context is None and inputs is None and state is None:
             resume_run_id: str = run_id
             context, pre_completed, sequence_start = self._load_for_resume(resume_run_id)
             all_results: dict[str, NodeResult] = {
@@ -258,6 +271,19 @@ class PipelineEngine:
         else:
             if context is None:
                 context = PipelineContext(inputs=inputs)
+            # Initialize shared state if configured.
+            if self._state_schema is not None and context.state is None:
+                if state is not None:
+                    if not isinstance(state, self._state_schema):
+                        state = self._state_schema.model_validate(state)
+                    context.state = state
+                else:
+                    try:
+                        context.state = self._state_schema()
+                    except Exception as exc:
+                        raise PipelineError(
+                            f"state required for pipeline with state_schema {self._state_schema.__name__}: {exc}"
+                        ) from exc
             pre_completed = set()
             sequence_start = 0
             all_results = {}
@@ -423,6 +449,10 @@ class PipelineEngine:
                     trace_entries=trace_entries,
                 )
                 if nr.success and not nr.skipped:
+                    # State overlay: a dict return from the node is a state
+                    # update; non-dict returns flow through edges as ports.
+                    if self._state_schema is not None and context.state is not None and isinstance(nr.output, dict):
+                        context.state = apply_update(context.state, nr.output, self._reducers)
                     self._save_checkpoint(
                         run_id=run_id,
                         node_id=node_id,
@@ -491,6 +521,7 @@ class PipelineEngine:
             success=success,
             usage=usage_summary,
             run_id=run_id,
+            final_state=context.state,
         )
 
     async def _execute_node(
@@ -663,6 +694,13 @@ class PipelineEngine:
                 context.set_node_result(nid, NodeResult.model_validate(nr_dict))
             except Exception:
                 logger.warning("Could not restore NodeResult for '%s' on resume", nid)
+        # Restore shared state if the run was state-aware.
+        saved_state = record.state.get("shared_state")
+        if self._state_schema is not None and isinstance(saved_state, dict):
+            try:
+                context.state = self._state_schema.model_validate(saved_state)
+            except Exception:
+                logger.warning("Could not restore shared state on resume for run '%s'", run_id)
         return context, set(record.completed_nodes), record.sequence
 
     def _save_checkpoint(
@@ -685,6 +723,7 @@ class PipelineEngine:
         state = {
             "inputs": _serialize_value(context.inputs),
             "results": {nid: all_results[nid].model_dump(mode="json") for nid in completed_successful},
+            "shared_state": _serialize_value(context.state),
         }
         try:
             self._checkpointer.save(

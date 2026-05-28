@@ -32,7 +32,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, get_type_hints
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
@@ -41,10 +41,10 @@ from fireflyframework_agentic.pipeline.audit import AuditEntry, AuditLog, AuditS
 from fireflyframework_agentic.pipeline.checkpoint import Checkpointer, CheckpointRecord
 from fireflyframework_agentic.pipeline.dag import DAG, _mermaid_id
 from fireflyframework_agentic.pipeline.engine import start_otel_span
+from fireflyframework_agentic.pipeline.reducers import apply_update, discover_reducers
 
 if TYPE_CHECKING:
     from fireflyframework_agentic.pipeline.engine import StatePipelineEventHandler
-from fireflyframework_agentic.pipeline.reducers import Reducer, replace
 
 logger = logging.getLogger(__name__)
 
@@ -133,46 +133,6 @@ class StatePipelineResult:
     paused: bool = False
     paused_node: str | None = None
     pause_reason: str | None = None
-
-
-def discover_reducers(state_schema: type) -> dict[str, Reducer]:
-    """Inspect ``Annotated[T, reducer_fn]`` annotations on the schema.
-
-    Only ``Annotated[...]`` metadata is consulted — not generic origins like
-    ``list[...]`` or unions. Fields without an annotated reducer are absent
-    from the returned dict; callers should treat absence as :func:`replace`.
-    """
-    out: dict[str, Reducer] = {}
-    try:
-        hints = get_type_hints(state_schema, include_extras=True)
-    except Exception:
-        return out
-    for field_name, hint in hints.items():
-        # Annotated[...] is the only metadata-bearing form we care about.
-        metadata = getattr(hint, "__metadata__", None)
-        if not metadata:
-            continue
-        for meta in metadata:
-            if callable(meta):
-                out[field_name] = meta
-                break
-    return out
-
-
-def apply_update(state: BaseModel, update: dict[str, Any], reducers: dict[str, Reducer]) -> BaseModel:
-    """Return a new state object with ``update`` merged into ``state`` via reducers."""
-    if not update:
-        return state
-    new_values = state.model_dump()
-    for key, value in update.items():
-        if key not in new_values:
-            # Tolerate unknown keys with a warning rather than failing —
-            # makes incremental schema evolution painless.
-            logger.warning("State update key '%s' not in schema %s; ignored.", key, type(state).__name__)
-            continue
-        reducer = reducers.get(key, replace)
-        new_values[key] = reducer(new_values[key], value)
-    return type(state).model_validate(new_values)
 
 
 class StatePipeline:

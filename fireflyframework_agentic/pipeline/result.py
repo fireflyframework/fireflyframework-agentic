@@ -79,6 +79,9 @@ class PipelineResult(BaseModel):
     success: bool = True
     usage: UsageSummary | None = None
     run_id: str = ""
+    # Final shared state for pipelines configured with state_schema. None
+    # when the engine had no state overlay.
+    final_state: Any = None
 
     @property
     def failed_nodes(self) -> list[str]:

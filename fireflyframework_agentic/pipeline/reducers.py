@@ -30,8 +30,13 @@ Example::
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, get_type_hints
+
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 Reducer = Callable[[Any, Any], Any]
 
@@ -60,3 +65,44 @@ def merge_dict(current: Any, update: Any) -> dict[Any, Any]:
     base = dict(current) if current else {}
     base.update(update or {})
     return base
+
+
+def discover_reducers(state_schema: type) -> dict[str, Reducer]:
+    """Inspect ``Annotated[T, reducer_fn]`` annotations on the schema.
+
+    Only ``Annotated[...]`` metadata is consulted — not generic origins like
+    ``list[...]`` or unions. Fields without an annotated reducer are absent
+    from the returned dict; callers should treat absence as :func:`replace`.
+    """
+    out: dict[str, Reducer] = {}
+    try:
+        hints = get_type_hints(state_schema, include_extras=True)
+    except Exception:
+        return out
+    for field_name, hint in hints.items():
+        metadata = getattr(hint, "__metadata__", None)
+        if not metadata:
+            continue
+        for meta in metadata:
+            if callable(meta):
+                out[field_name] = meta
+                break
+    return out
+
+
+def apply_update(state: BaseModel, update: dict[str, Any], reducers: dict[str, Reducer]) -> BaseModel:
+    """Return a new state object with ``update`` merged into ``state`` via reducers.
+
+    Keys present in ``update`` but missing from the schema are logged and
+    ignored — incremental schema evolution stays painless.
+    """
+    if not update:
+        return state
+    new_values = state.model_dump()
+    for key, value in update.items():
+        if key not in new_values:
+            logger.warning("State update key '%s' not in schema %s; ignored.", key, type(state).__name__)
+            continue
+        reducer = reducers.get(key, replace)
+        new_values[key] = reducer(new_values[key], value)
+    return type(state).model_validate(new_values)
