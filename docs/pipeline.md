@@ -7,6 +7,17 @@ workflows. It supports parallel execution, conditional branching, retries, timeo
 and fan-out/fan-in patterns -- everything needed to model real-world enterprise
 processing pipelines.
 
+`PipelineBuilder` has two modes:
+
+* **Port-based** (legacy, parallel) — nodes communicate via `output_key` /
+  `input_key` edge ports and run concurrently within each topological level.
+  Best for ETL-shaped DAGs. Documented in the bulk of this guide.
+* **State-based** — opt-in via `PipelineBuilder("name", state=SomeModel)`.
+  Nodes become `async (state) -> dict` over a typed shared state. One
+  `.branch(source, router)` call covers conditional routing; `Send(target, payload)`
+  covers runtime fan-out; a `Checkpointer` enables resume after failure. Best for
+  agentic workflows and ReAct-style loops. See [State-Based Pipelines](#state-based-pipelines).
+
 ---
 
 ## Concepts
@@ -88,14 +99,317 @@ The framework provides these built-in executors:
 - **CallableStep** -- Wraps any `async` function `(context, inputs) -> output`.
 - **BatchLLMStep** -- Processes multiple prompts concurrently through an agent for
   cost optimization. See [Batch Processing](#batch-processing-batchllmstep) below.
-- **BranchStep** -- Routes execution to one of several downstream paths based on
-  a predicate (see [Conditional Branching](#conditional-branching-branchstep) below).
-- **FanOutStep** -- Splits input into a list for parallel downstream processing.
+- **BranchStep** _(deprecated)_ -- Routes execution to one of several downstream paths based on
+  a predicate. Use `.branch(...)` in [State-Based Pipelines](#state-based-pipelines) instead.
+- **FanOutStep** _(deprecated)_ -- Splits input into a list for parallel downstream processing.
+  Use `Send` in [State-Based Pipelines](#runtime-fan-out-via-send) instead.
 - **FanInStep** -- Merges outputs from multiple upstream nodes.
 
 ---
 
+## State-Based Pipelines
+
+Set `state=` on `PipelineBuilder` to switch to a declarative API designed for
+agentic workflows. Nodes become `async (state) -> dict | None` functions over
+a typed shared-state object; the engine reduces each node's partial-update
+dict back into the state.
+
+```python
+from typing import Annotated
+from pydantic import BaseModel
+from fireflyframework_agentic.pipeline import PipelineBuilder, append
+
+
+class AgentState(BaseModel):
+    messages: Annotated[list[str], append] = []   # reducer: append
+    intent: str | None = None                     # default reducer: replace
+    answer: str | None = None
+
+
+async def classify(state: AgentState) -> dict:
+    return {"intent": "complaint" if "refund" in state.messages[-1] else "general"}
+
+
+async def answer(state: AgentState) -> dict:
+    return {"answer": "Here is your answer."}
+
+
+async def escalate(state: AgentState) -> dict:
+    return {"answer": "Escalated to human."}
+
+
+def route(state: AgentState) -> str:
+    return "escalate" if state.intent == "complaint" else "answer"
+
+
+pipeline = (
+    PipelineBuilder("support-agent", state=AgentState)
+    .add_node(classify)              # node id derived from fn.__name__
+    .add_node(answer)
+    .add_node(escalate)
+    .branch(classify, route)         # router returns target node id
+    .build()
+)
+result = await pipeline.invoke(AgentState(messages=["I want a refund"]))
+print(result.state.answer)
+```
+
+### Reducers
+
+Reducers are declared as `Annotated[T, reducer_fn]` on the state schema. The
+built-ins live in `fireflyframework_agentic.pipeline.reducers`:
+
+| Reducer       | Semantics                                       |
+|---------------|-------------------------------------------------|
+| `replace`     | Last-write-wins (the default for any field).    |
+| `append`      | Append a single item to a list.                 |
+| `extend`      | Concatenate two iterables.                      |
+| `merge_dict`  | Shallow-merge two dicts; update wins on conflict. |
+
+Custom reducers are any callable `(current, update) -> merged`.
+
+### Branching
+
+`.branch(source, router, mapping=None)` registers a synchronous
+`(state) -> str | Send | list[Send]` router on `source`:
+
+* Returning a node id (string) routes to that node directly.
+* Passing `mapping={"label": target_node, ...}` lets the router return an
+  abstract label instead of a node id.
+* Returning a `Send` or `list[Send]` triggers runtime fan-out (see below).
+
+### Checkpoint + Resume
+
+Pass a `Checkpointer` to persist state after each successful node. Three
+backends ship out of the box, all conforming to the same `Checkpointer`
+Protocol so they're swappable without code changes.
+
+| Backend | Use when | Trade-off | Install |
+|---|---|---|---|
+| `FileCheckpointer` | Dev, single-host, ephemeral | No cross-process / cross-host sharing | (default — no extra) |
+| `RedisCheckpointer` | Multi-worker, sub-day-scale runs | TTL eviction; not durable forever | `pip install fireflyframework-agentic[redis]` |
+| `PostgresCheckpointer` | Long-lived runs, compliance, audit-friendly | Operational overhead of a DB | `pip install fireflyframework-agentic[postgres]` |
+
+```python
+from fireflyframework_agentic.pipeline import FileCheckpointer  # or Redis / Postgres
+
+pipeline = (
+    PipelineBuilder("software-factory", state=BuildState,
+                    checkpointer=FileCheckpointer("./checkpoints"))
+    .add_node(architect)
+    .add_node(python_dev)
+    .add_node(deployer)
+    .add_node(evaluator)
+    .chain(architect, python_dev, deployer, evaluator)
+    .build()
+)
+
+# Fresh run
+result = await pipeline.invoke(BuildState(requirements="user-mgmt service"))
+
+# Resume after crash — picks up at the failed node, skips completed ones
+result = await pipeline.invoke(run_id=result.run_id)
+
+# Or jump into a specific node with explicit state
+result = await pipeline.invoke(state=loaded_state, start_at=deployer)
+```
+
+Swapping backends is a one-line change. Redis uses a TTL on each checkpoint
+key (default 30 days) plus a sorted-set index of run IDs; Postgres uses a
+single `firefly_checkpoints` table created idempotently on first save:
+
+```python
+from fireflyframework_agentic.pipeline import RedisCheckpointer, PostgresCheckpointer
+
+# Either a URL/DSN (backend constructs its own client) or a pre-built client
+# (lets you share a connection pool across many pipelines).
+checkpointer = RedisCheckpointer(url="redis://localhost:6379/0", ttl_seconds=86400 * 30)
+checkpointer = RedisCheckpointer(client=my_existing_redis)
+checkpointer = PostgresCheckpointer(dsn="postgresql://user:pw@host/db")
+checkpointer = PostgresCheckpointer(connection=my_existing_psycopg_connection)
+```
+
+### Cycles and `recursion_limit`
+
+State pipelines permit cycles for ReAct loops and retry-with-critique patterns.
+The builder accepts `recursion_limit` (default 25) as a safety net — a runaway
+loop surfaces as `result.success=False` with a clean error, not an infinite hang.
+
+```python
+def route(state):
+    return "done" if state.counter >= 3 else "step"
+
+PipelineBuilder("loop", state=LoopState, recursion_limit=25)
+    .add_node(step).add_node(done).branch(step, route).build()
+```
+
+### Runtime Fan-Out via `Send`
+
+A router may return `list[Send(target, payload)]` to dispatch multiple
+invocations of the same (or different) workers concurrently. Each Send's
+payload is applied to a copy of the current state before its target runs;
+results reduce back into shared state. Replaces the legacy `FanOutStep`.
+
+```python
+from fireflyframework_agentic.pipeline import Send
+
+def dispatch(state):
+    return [Send("worker", {"item": x}) for x in state.items]
+
+PipelineBuilder("mapreduce", state=MapReduceState)
+    .add_node(planner).add_node(worker).add_node(collect)
+    .add_edge(worker, collect)
+    .branch(planner, dispatch)
+    .build()
+```
+
+When all worker targets share a common successor, the engine continues there
+once the fan-out completes; the aggregator runs once with all results in
+shared state.
+
+### Observability
+
+State pipelines emit lifecycle callbacks and OTel spans so ops can see what
+an agent workflow is doing in real time.
+
+`StatePipelineEventHandler` mirrors the legacy `PipelineEventHandler` but
+every callback carries the `run_id` (so events can be correlated across
+resumes) and `on_node_start` carries a per-node visit counter (so cyclic
+graphs and `Send` fan-outs are distinguishable). Implement any subset of
+methods; missing ones are no-ops.
+
+```python
+from fireflyframework_agentic.pipeline import PipelineBuilder, StatePipelineEventHandler
+
+
+class ProgressHandler:
+    async def on_pipeline_start(self, name, run_id):
+        print(f"▶ [{name}] run {run_id} starting")
+
+    async def on_node_start(self, name, run_id, node_id, visit):
+        print(f"  ▶ {node_id} (visit #{visit})")
+
+    async def on_node_complete(self, name, run_id, node_id, latency_ms):
+        print(f"  ✔ {node_id} ({latency_ms:.0f}ms)")
+
+    async def on_node_error(self, name, run_id, node_id, error):
+        print(f"  ✗ {node_id}: {error}")
+
+    async def on_pipeline_complete(self, name, run_id, success, duration_ms):
+        status = "OK" if success else "FAILED"
+        print(f"═ [{name}] {status} in {duration_ms:.0f}ms")
+
+
+pipeline = (
+    PipelineBuilder("agent", state=AgentState, event_handler=ProgressHandler())
+    .add_node(classify).add_node(answer).add_node(escalate)
+    .branch(classify, route)
+    .build()
+)
+```
+
+In parallel, the pipeline emits OTel spans automatically when
+`observability_enabled` is True and `opentelemetry` is installed:
+
+- One pipeline-level span `pipeline.state.<name>` around each `invoke`,
+  attributes `firefly.pipeline`, `firefly.run_id`.
+- One per-node span `pipeline.state.node.<node_id>` for each `fn(state)`
+  call, parented under the pipeline span, attributes `firefly.node`,
+  `firefly.visit`.
+- For `Send` fan-out: one per-Send span as a sibling under the pipeline span.
+
+Handler exceptions are swallowed — observability never breaks business logic.
+
+### Human-in-the-loop (Pause)
+
+Any node may return ``Pause(reason="...")`` instead of a state update to halt
+the pipeline cleanly. The current state is checkpointed with a paused marker;
+``invoke`` returns with ``result.paused=True`` and ``result.success=False``.
+
+```python
+from fireflyframework_agentic.pipeline import Pause
+
+async def await_deploy_approval(state: DeployState) -> Pause:
+    return Pause(reason="awaiting human approval to deploy to production")
+```
+
+To resume after the external approval comes in, call ``invoke`` with the same
+``run_id`` and ``approve_pause=True``. Without ``approve_pause=True``, the
+resume raises a ``PipelineError`` — the pause is sticky until explicitly
+released. The successor of the paused node runs next; the pause node itself
+is not re-executed.
+
+```python
+first = await pipeline.invoke(DeployState(...))
+assert first.paused
+# ...later, after approval...
+done = await pipeline.invoke(run_id=first.run_id, approve_pause=True)
+assert done.success
+```
+
+The configured ``StatePipelineEventHandler`` receives an ``on_node_pause``
+callback when this happens (the callback is optional — partial handlers
+without it continue to work).
+
+### Audit Log
+
+Distinct from the ``Checkpointer`` (which stores the *latest* state for
+crash recovery), an ``AuditLog`` is an append-only record of *every* node
+visit for compliance, debugging, and replay. Wire one in via the
+``audit_log`` kwarg:
+
+```python
+from fireflyframework_agentic.pipeline import (
+    PipelineBuilder, FileAuditLog, PostgresAuditLog, LoggingAuditLog, OtelAuditLog,
+)
+
+PipelineBuilder("agent", state=AgentState, audit_log=FileAuditLog("./audit"))
+```
+
+Four backends ship, each conforming to the ``AuditLog`` Protocol:
+
+| Backend | Use when | Read API | Trace-correlated | Install |
+|---|---|---|---|---|
+| ``FileAuditLog`` | Dev / single-host | yes | no | (default) |
+| ``PostgresAuditLog`` | Compliance, retention, cross-run queries | yes | no | ``[postgres]`` |
+| ``LoggingAuditLog`` | Generic log stacks (Splunk-HEC, Loki, JSON-logging) | no (write-only) | no | (default — stdlib) |
+| ``OtelAuditLog`` | OTel-native stacks (Application Insights, Datadog APM, OTel Collector) | no (write-only) | **yes** | ``opentelemetry-sdk`` |
+
+``FileAuditLog`` and ``PostgresAuditLog`` also implement
+``QueryableAuditLog`` with ``list_entries(pipeline_name, run_id)``. The
+write-only backends delegate query/search to the user's existing
+observability stack.
+
+Audit-log write failures are non-fatal — logged but never abort the
+pipeline.
+
+### Mermaid Export
+
+`StatePipeline.to_mermaid()` and `DAG.to_mermaid()` render the topology as a
+Mermaid flowchart. Branch edges declared with an explicit mapping show their
+label; dynamic routers are noted as such.
+
+### When to use which mode
+
+| Use port-based when… | Use state-based when… |
+|----------------------|------------------------|
+| Pure ETL: parallel, fan-out/fan-in, no shared state | Agentic workflow: classify → branch → respond / loop / retry |
+| Each step's input is a single value from the previous step | Multiple agents reading/writing different fields of a shared object |
+| You want the engine to run independent nodes concurrently | You want resume-after-failure and start-from-middle semantics |
+| You're happy with `BranchStep` + per-node `condition` lambdas | You want one `.branch(...)` call and inspectable routing |
+
+See [`examples/pipeline_state.py`](../examples/pipeline_state.py) for a
+runnable demo covering branching, software-factory checkpoint/resume, and
+map-reduce fan-out.
+
+---
+
 ## Parallel Execution (Fan-Out / Fan-In)
+
+> **`FanOutStep` is deprecated.** For runtime fan-out (one dispatch per item,
+> arbitrary count), prefer `Send` from [State-Based Pipelines](#runtime-fan-out-via-send).
+> `FanOutStep` still works for now (it emits a `DeprecationWarning` on
+> construction); `FanInStep` is not deprecated.
 
 ```mermaid
 graph TD
@@ -247,6 +561,12 @@ dag.add_node(DAGNode(
 ```
 
 ### Conditional Branching (BranchStep)
+
+> **Deprecated.** Prefer [State-Based Pipelines](#state-based-pipelines) with
+> `.branch(source, router)` — one call instead of `BranchStep` + per-node
+> `condition` lambdas, and the topology becomes inspectable as data.
+> `BranchStep` still works (it emits a `DeprecationWarning` on construction);
+> removal will be tracked in a follow-up issue once internal callers migrate.
 
 `BranchStep` provides router-based conditional branching. The router callable
 receives the node's input and returns a string key. Downstream nodes use
