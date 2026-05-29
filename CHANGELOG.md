@@ -7,6 +7,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.05.29] - 2026-05-29
+
+### Added
+
+- **State-based pipelines, unified on `PipelineEngine`.** `PipelineBuilder`
+  gains an opt-in `state=` mode: pass a Pydantic model
+  (`PipelineBuilder(name, state=SomeModel)`) and nodes become
+  `async (state) -> dict | None` functions over a typed shared state instead
+  of port-wired DAG steps. `add_node(fn)` derives the node id from
+  `fn.__name__`, the first node added is auto-detected as the entry point, and
+  the legacy port-based mode is unchanged. There is a single executor:
+  `PipelineEngine` runs both modes — `PipelineBuilder(state=...)` simply
+  constructs an engine configured with `state_schema`, `recursion_limit`,
+  `audit_log`, `checkpointer`, `event_handler`, and any routers registered via
+  `.branch(...)`. State-mode runs go through a cycle-aware frontier scheduler
+  and execute independent nodes concurrently (#147, #245).
+- **Reducers for merge semantics.** Field-level merge is declared with
+  `Annotated[T, reducer]` on the state model. Four reducers ship from
+  `fireflyframework_agentic.pipeline`: `replace` (default), `append`, `extend`,
+  and `merge_dict`. Each node returns a partial dict and the engine folds it
+  into shared state per the declared reducer, so concurrent fan-out workers
+  accumulate rather than clobber.
+- **Unified branching via `.branch(source, router, mapping=None)`.** One call
+  replaces the legacy `BranchStep`/`FanOutStep` (now soft-deprecated with a
+  `DeprecationWarning`). With no mapping the router returns a target node id
+  directly; with a mapping it returns an abstract label that resolves to a
+  node. `PipelineEngine.to_mermaid()` renders branch-edge labels from the
+  registered mappings, and `DAG.to_mermaid()` / `DAG.to_json()` export any DAG.
+- **Cycles and `Send` fan-out for agentic loops.** State-mode DAGs are built
+  with `allow_cycles=True`, so a node can route back to itself (or an earlier
+  node) for ReAct loops and retry-with-critique. A `recursion_limit` kwarg
+  (default `25`) bounds runaway cycles with a clean failure result via a
+  per-node visit counter. A router may return `list[Send]` (`Send(target,
+  payload)`) for runtime fan-out: each worker runs concurrently over its own
+  payload-merged state copy and the results reduce back into shared state, with
+  per-target visit counters preserved for observability.
+- **Human-in-the-loop pause gates.** A node returning the `Pause(reason=...)`
+  sentinel halts the pipeline cleanly and writes a paused checkpoint
+  (`CheckpointRecord` gains backward-compatible `paused` / `pause_reason`
+  fields). The result carries `paused` / `paused_node` / `pause_reason`, and an
+  event handler can observe `on_node_pause`. Pauses are sticky: resuming
+  requires `invoke(run_id=..., approve_pause=True)`, which restarts from the
+  successor of the paused node; resuming without it raises `PipelineError`.
+- **Checkpoint, resume, and mid-pipeline entry.** `FileCheckpointer` persists
+  state after each successful node; `invoke(run_id=...)` resumes from the latest
+  checkpoint, skipping completed nodes. `invoke(state, start_at=node)` jumps
+  into a pipeline mid-flow with an explicit state — useful for replays and
+  partial reruns.
+- **Pipeline audit log.** New `pipeline/audit.py` exports a split protocol —
+  `AuditLog` (write-only) and `QueryableAuditLog` (adds `list_entries`) — over
+  an `AuditEntry` model, plus three concrete backends that wrap stdlib /
+  framework primitives: `FileAuditLog` (JSONL per pipeline + run id,
+  queryable), `LoggingAuditLog`, and `OtelAuditLog`. Every node visit is
+  recorded with its status, including `paused`.
+- **Unified `EventHandler` protocol and OTel spans.** A single `EventHandler`
+  protocol (with `PipelineEventHandler` as the built-in implementation) covers
+  both pipeline modes. State-mode spans use the `pipeline.state.*` taxonomy so
+  existing observability dashboards keep working.
+- **`examples/software_factory/` example.** A self-contained package that
+  exercises the headline state-mode features end to end: typed state with
+  reducers, router-driven branching with a `qa → codegen` cycle
+  (`recursion_limit=3`), checkpoint/resume on a transient builder failure, and
+  `StatePipelineEventHandler` progress output. It also ships plug-and-play
+  durable backends — `checkpointers/{postgres,redis}.py` and
+  `audit/postgres.py`, each a flat ~50–80 LOC class against a caller-supplied
+  connection — swappable via the `FIREFLY_CKPT` env var.
+
+### Changed
+
+- **Durable checkpointer / audit backends now live in examples, not the
+  framework.** `PostgresCheckpointer`, `RedisCheckpointer`, and
+  `PostgresAuditLog` (and the internal `PsycopgBackend` helper) have been
+  dropped from the framework; the `psycopg[binary]` dependency is removed from
+  the `[postgres]` extra. The `Checkpointer` and `AuditLog` protocols plus the
+  framework-native `FileCheckpointer`, `FileAuditLog`, `LoggingAuditLog`, and
+  `OtelAuditLog` remain. Operators who need a database-backed store implement
+  the protocol against their own connection — see the ~50–80 LOC reference
+  classes under `examples/software_factory/`.
+
+### Fixed
+
+- **`IngestLedger` now records fetch failures.** A failed fetch previously
+  advanced the cursor without writing anything, so files silently disappeared
+  from the ledger. Each failure is now recorded so retries and audits can
+  observe it (#219).
+- **`StructuredRetriever` works on cloud backends.** The retriever was
+  hardcoded to `self.root / "corpus.sqlite"`, which broke on
+  `AzureBlobBackend` where the SQLite database lives in blob storage. It now
+  routes through `_db_store.ensure_fresh()`, materialising a local copy on
+  cloud backends and remaining a no-op on `LocalBackend` (#219).
+
+### Internal
+
+- **Inline imports lifted to module top-level across the codebase** for
+  project-rule compliance, with optional-dependency imports guarded via
+  `TYPE_CHECKING` so pyright narrows correctly without importing at runtime.
+  No behavioural change.
+- **PR-gate CI sped up** with shallow checkout, no coverage on PRs, and a
+  cached `uv` resolver across jobs (#218).
+- **Cost-tracking docs** now point users at `examples/cost_tracking.py` for the
+  cost-resolver override pattern.
+
 ## [26.05.21] - 2026-05-21
 
 ### Changed (BREAKING — delegation routing API)
