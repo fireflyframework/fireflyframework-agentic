@@ -73,6 +73,12 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
   durable backends — `checkpointers/{postgres,redis}.py` and
   `audit/postgres.py`, each a flat ~50–80 LOC class against a caller-supplied
   connection — swappable via the `FIREFLY_CKPT` env var.
+- **Contradiction surfacing in the corpus answerer.** Both the fast-path and
+  reasoning prompts gain a MUST rule: when two or more retrieved chunks
+  disagree on the same fact, the answer must surface the conflict and cite the
+  competing sources rather than silently picking one. Verified against
+  contradicting fixtures (e.g. the same quarter's revenue reported as two
+  different figures).
 
 ### Changed
 
@@ -97,6 +103,19 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
   `AzureBlobBackend` where the SQLite database lives in blob storage. It now
   routes through `_db_store.ensure_fresh()`, materialising a local copy on
   cloud backends and remaining a no-op on `LocalBackend` (#219).
+- **`firefly-mcp-http` now wires OpenTelemetry exporters at startup.** A
+  `_configure_telemetry()` helper runs at the top of `main()`, before any
+  framework code records a measurement, so when
+  `APPLICATIONINSIGHTS_CONNECTION_STRING` is set the metrics and traces
+  actually reach Application Insights. Resolves the operator-reported "App
+  Insights is empty despite the connection string being set".
+
+### Changed (dependencies)
+
+- **`pydantic-ai` upgraded `1.75 → 1.99` and `mistralai` un-pinned.** With
+  `mistralai` back on PyPI (2.4.5), the `[tool.uv.sources]` git workaround is
+  removed and the `pydantic-ai` floor is lifted to `>=1.99.0`. The `Mistral`
+  import now targets the 2.x layout (`mistralai.client`).
 
 ### Internal
 
