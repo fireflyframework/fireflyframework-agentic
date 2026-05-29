@@ -17,12 +17,41 @@
 This package provides a Directed Acyclic Graph (DAG) execution engine that
 wires agents, reasoning patterns, validation, and tools into production
 pipelines where independent stages execute concurrently.
+
+Two builder modes exist:
+
+* **Port-based** (legacy, parallel): :class:`PipelineEngine` executes a DAG
+  whose nodes communicate via ``output_key``/``input_key`` edge ports.
+* **State-based**: configure ``PipelineBuilder(state=SomeModel)`` and nodes
+  become ``async (state) -> dict`` functions over a typed shared state.
+  Branching is one ``.branch(source, router)`` call. Optional checkpointing
+  via :class:`Checkpointer` enables resume after failure and mid-pipeline start.
 """
 
+from fireflyframework_agentic.pipeline.audit import (
+    AuditEntry,
+    AuditLog,
+    FileAuditLog,
+    LoggingAuditLog,
+    OtelAuditLog,
+    QueryableAuditLog,
+)
 from fireflyframework_agentic.pipeline.builder import PipelineBuilder
+from fireflyframework_agentic.pipeline.checkpoint import (
+    Checkpointer,
+    CheckpointRecord,
+    FileCheckpointer,
+)
 from fireflyframework_agentic.pipeline.context import PipelineContext
 from fireflyframework_agentic.pipeline.dag import DAG, DAGEdge, DAGNode, FailureStrategy
-from fireflyframework_agentic.pipeline.engine import PipelineEngine, PipelineEventHandler
+from fireflyframework_agentic.pipeline.engine import (
+    EventHandler,
+    Pause,
+    PipelineEngine,
+    PipelineEventHandler,
+    Send,
+)
+from fireflyframework_agentic.pipeline.reducers import append, extend, merge_dict, replace
 from fireflyframework_agentic.pipeline.result import ExecutionTraceEntry, NodeResult, PipelineResult
 from fireflyframework_agentic.pipeline.steps import (
     AgentStep,
@@ -38,25 +67,41 @@ from fireflyframework_agentic.pipeline.steps import (
 )
 
 __all__ = [
+    "DAG",
     "AgentStep",
+    "AuditEntry",
+    "AuditLog",
     "BatchLLMStep",
     "BranchStep",
     "CallableStep",
-    "DAG",
+    "CheckpointRecord",
+    "Checkpointer",
     "DAGEdge",
     "DAGNode",
     "EmbeddingStep",
     "ExecutionTraceEntry",
     "FailureStrategy",
+    "EventHandler",
     "FanInStep",
     "FanOutStep",
+    "FileAuditLog",
+    "FileCheckpointer",
+    "LoggingAuditLog",
     "NodeResult",
+    "OtelAuditLog",
+    "Pause",
     "PipelineBuilder",
     "PipelineContext",
     "PipelineEngine",
     "PipelineEventHandler",
     "PipelineResult",
+    "QueryableAuditLog",
     "ReasoningStep",
     "RetrievalStep",
+    "Send",
     "StepExecutor",
+    "append",
+    "extend",
+    "merge_dict",
+    "replace",
 ]

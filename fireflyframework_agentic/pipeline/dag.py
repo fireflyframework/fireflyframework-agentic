@@ -15,12 +15,14 @@
 """Directed Acyclic Graph (DAG) model for pipeline topology.
 
 :class:`DAG` holds :class:`DAGNode` and :class:`DAGEdge` objects, validates
-acyclicity, computes topological sort, and identifies independent execution
-levels for parallel scheduling.
+acyclicity (unless ``allow_cycles=True``), computes topological sort, and
+identifies independent execution levels for parallel scheduling. Also renders
+itself as Mermaid or JSON for inspection / docs / Studio.
 """
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict, deque
 from collections.abc import Callable
 from enum import StrEnum
@@ -56,12 +58,28 @@ class DAGEdge(BaseModel):
         target: ID of the downstream node.
         output_key: Which output from the source to pass (default ``"output"``).
         input_key: Which input key on the target receives the value (default ``"input"``).
+        condition: Optional predicate ``(PipelineContext) -> bool`` that gates
+            edge traversal. When False (or when the callable raises), the
+            edge is treated as inactive: it neither delivers a signal to
+            the target nor contributes to scheduling readiness. If every
+            incoming edge of a target is inactive (and all of them are
+            resolved), the target is skipped — the same SKIP_DOWNSTREAM
+            cascade as an upstream failure. ``None`` (default) means
+            "always traverse".
+
+            Conditions live on edges rather than on ``DAGNode`` because
+            branching is a routing decision, not a node-internal predicate.
+            The legacy :attr:`DAGNode.condition` field is preserved for
+            backward compatibility but is the wrong layer.
     """
+
+    model_config = {"arbitrary_types_allowed": True}
 
     source: str
     target: str
     output_key: str = "output"
     input_key: str = "input"
+    condition: Callable[..., bool] | None = None
 
 
 class DAGNode(BaseModel):
@@ -98,8 +116,9 @@ class DAG:
         name: A human-readable name for the pipeline.
     """
 
-    def __init__(self, name: str = "pipeline") -> None:
+    def __init__(self, name: str = "pipeline", *, allow_cycles: bool = False) -> None:
         self._name = name
+        self._allow_cycles = allow_cycles
         self._nodes: dict[str, DAGNode] = {}
         self._edges: list[DAGEdge] = []
         # Adjacency and reverse adjacency for topo-sort
@@ -136,9 +155,9 @@ class DAG:
         self._edges.append(edge)
         self._adj[edge.source].append(edge.target)
         self._in_degree[edge.target] = self._in_degree.get(edge.target, 0) + 1
-        # Incremental cycle check
-        if self._has_cycle():
-            # Rollback
+        # Cycle check is skipped when the DAG was constructed with allow_cycles=True
+        # (state-based pipelines opt into this for ReAct-style loops).
+        if not self._allow_cycles and self._has_cycle():
             self._edges.pop()
             self._adj[edge.source].pop()
             self._in_degree[edge.target] -= 1
@@ -147,7 +166,16 @@ class DAG:
     # -- Query -------------------------------------------------------------
 
     def topological_sort(self) -> list[str]:
-        """Return node IDs in topological order (Kahn's algorithm)."""
+        """Return node IDs in topological order (Kahn's algorithm).
+
+        Raises :class:`PipelineError` if the DAG contains a cycle. Cyclic
+        graphs have no topological order; the caller should branch on
+        :meth:`is_cyclic` first (or use the engine's cycle-aware scheduler).
+        """
+        if self._has_cycle():
+            raise PipelineError(
+                "topological_sort() is not defined on cyclic graphs; use is_cyclic() to branch before calling."
+            )
         in_deg = dict(self._in_degree)
         for nid in self._nodes:
             in_deg.setdefault(nid, 0)
@@ -162,16 +190,19 @@ class DAG:
                 if in_deg[neighbour] == 0:
                     queue.append(neighbour)
 
-        if len(order) != len(self._nodes):
-            raise PipelineError("DAG contains a cycle (should not reach here)")
         return order
 
     def execution_levels(self) -> list[list[str]]:
         """Group nodes into levels for parallel execution.
 
         Nodes at the same level have no inter-dependencies and can be
-        executed concurrently.
+        executed concurrently. Raises :class:`PipelineError` on cyclic
+        DAGs — levels are undefined when cycles exist.
         """
+        if self._has_cycle():
+            raise PipelineError(
+                "execution_levels() is not defined on cyclic graphs; use is_cyclic() to branch before calling."
+            )
         in_deg = dict(self._in_degree)
         for nid in self._nodes:
             in_deg.setdefault(nid, 0)
@@ -236,5 +267,68 @@ class DAG:
                     queue.append(neighbour)
         return count != len(self._nodes)
 
+    def is_cyclic(self) -> bool:
+        """True if the graph contains at least one cycle."""
+        return self._has_cycle()
+
+    # -- Export ------------------------------------------------------------
+
+    def to_mermaid(self) -> str:
+        """Render the topology as a Mermaid flowchart.
+
+        Edges with ``input_key`` other than the default ``"input"`` are
+        labelled with that key so port wiring is visible. Conditional
+        edges are prefixed ``if?`` so branches stand out.
+        """
+        lines = ["flowchart TD"]
+        for node_id in self._nodes:
+            lines.append(f"    {_mermaid_id(node_id)}[{node_id}]")
+        for edge in self._edges:
+            parts: list[str] = []
+            if edge.condition is not None:
+                parts.append("if?")
+            if edge.input_key and edge.input_key != "input":
+                parts.append(edge.input_key)
+            label = " · ".join(parts) if parts else None
+            arrow = f"-->|{label}|" if label else "-->"
+            lines.append(f"    {_mermaid_id(edge.source)} {arrow} {_mermaid_id(edge.target)}")
+        return "\n".join(lines)
+
+    def to_json(self) -> str:
+        """Render the topology as a JSON document.
+
+        Schema::
+
+            {"name": str, "nodes": [str], "edges": [{"source", "target", "output_key", "input_key"}]}
+        """
+        doc = {
+            "name": self._name,
+            "nodes": list(self._nodes.keys()),
+            "edges": [
+                {
+                    "source": e.source,
+                    "target": e.target,
+                    "output_key": e.output_key,
+                    "input_key": e.input_key,
+                }
+                for e in self._edges
+            ],
+        }
+        return json.dumps(doc, indent=2)
+
     def __repr__(self) -> str:
         return f"DAG(name={self._name!r}, nodes={len(self._nodes)}, edges={len(self._edges)})"
+
+
+def _mermaid_id(node_id: str) -> str:
+    """Sanitize a node id for use as a Mermaid identifier."""
+    out = []
+    for ch in node_id:
+        if ch.isalnum() or ch == "_":
+            out.append(ch)
+        else:
+            out.append("_")
+    sanitized = "".join(out)
+    if sanitized and sanitized[0].isdigit():
+        sanitized = "n_" + sanitized
+    return sanitized or "anon"

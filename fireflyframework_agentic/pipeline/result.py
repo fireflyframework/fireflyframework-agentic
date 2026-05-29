@@ -68,6 +68,7 @@ class PipelineResult(BaseModel):
         total_duration_ms: End-to-end pipeline execution time.
         success: Whether all nodes completed successfully.
         usage: Aggregated token usage across all pipeline nodes.
+        run_id: Identifier for this run; resume with ``engine.run(run_id=...)``.
     """
 
     pipeline_name: str = ""
@@ -77,7 +78,49 @@ class PipelineResult(BaseModel):
     total_duration_ms: float = 0.0
     success: bool = True
     usage: UsageSummary | None = None
+    run_id: str = ""
+    # Final shared state for pipelines configured with state_schema. None
+    # when the engine had no state overlay.
+    final_state: Any = None
+    # HITL: a node returned :class:`Pause` and the run halted cleanly.
+    # Resume via ``engine.run(run_id=..., approve_pause=True)``.
+    paused: bool = False
+    paused_node: str | None = None
+    pause_reason: str | None = None
 
     @property
     def failed_nodes(self) -> list[str]:
         return [nid for nid, r in self.outputs.items() if not r.success and not r.skipped]
+
+    # -- State-mode convenience aliases ---------------------------------
+
+    @property
+    def state(self) -> Any:
+        """Final shared state. Alias of :attr:`final_state` for state-aware
+        pipelines built via ``PipelineBuilder(state=...)``."""
+        return self.final_state
+
+    @property
+    def completed_nodes(self) -> list[str]:
+        """IDs of every successful node visit, in completion order.
+
+        Derived from :attr:`execution_trace` so each cyclic re-entry of a
+        node appears as its own entry (matches StatePipeline's semantics).
+        """
+        return [e.node_id for e in self.execution_trace if e.status == "success"]
+
+    @property
+    def failed_node(self) -> str | None:
+        """First node that failed, if any. ``None`` when the run succeeded."""
+        for nid, r in self.outputs.items():
+            if not r.success and not r.skipped:
+                return nid
+        return None
+
+    @property
+    def error(self) -> str | None:
+        """Error message from the first failed node, if any."""
+        for r in self.outputs.values():
+            if not r.success and not r.skipped and r.error:
+                return r.error
+        return None
