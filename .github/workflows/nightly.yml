@@ -11,11 +11,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
-      issues: write
-    env:
-      # Default Azurite dev account; the key is a public well-known constant.
-      AZURITE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -24,39 +19,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - name: Start Azurite
-        # services: doesn't let us override the container CMD with args,
-        # so we start Azurite as a step and pass --skipApiVersionCheck
-        # to keep it compatible across SDK / image version drift.
-        run: |
-          docker run -d --rm \
-            --name azurite \
-            -p 10000:10000 \
-            mcr.microsoft.com/azure-storage/azurite \
-            azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck
-          # Wait for Azurite to be ready before pytest starts.
-          for _ in $(seq 1 30); do
-            if curl -sf http://127.0.0.1:10000/devstoreaccount1?comp=list >/dev/null 2>&1; then
-              echo "Azurite is ready"
-              break
-            fi
-            sleep 1
-          done
-      - run: uv sync --extra dev --extra azure --extra mcp --extra rest --extra corpus-search
-      - name: Azure login (OIDC)
-        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
-        with:
-          client-id: ${{ secrets.AZURE_CI_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Fetch secrets from Key Vault
-        run: |
-          for secret in ANTHROPIC-API-KEY EMBEDDING-BINDING-HOST EMBEDDING-BINDING-API-KEY; do
-            value=$(az keyvault secret show --vault-name kv-firefly-signature --name "$secret" --query value -o tsv)
-            echo "::add-mask::$value"
-            env_name="${secret//-/_}"
-            echo "$env_name=$value" >> "$GITHUB_ENV"
-          done
+      - run: uv sync --extra dev --extra rest --extra binary --extra markitdown --extra vectorstores-sqlite-vec --extra openai-embeddings
       - run: uv run pytest --cov --cov-report=term-missing --durations=50
 
   report-failure:
@@ -152,40 +115,3 @@ jobs:
                 state_reason: 'completed',
               });
             }
-
-  benchmark:
-    name: Benchmark (corpus-search, real mode)
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-        with:
-          enable-cache: true
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.13'
-      - run: uv sync --extra corpus-search
-      - name: Azure login (OIDC)
-        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
-        with:
-          client-id: ${{ secrets.AZURE_CI_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Fetch embedding secrets from Key Vault
-        run: |
-          for secret in EMBEDDING-BINDING-HOST EMBEDDING-BINDING-API-KEY; do
-            value=$(az keyvault secret show --vault-name kv-firefly-signature --name "$secret" --query value -o tsv)
-            echo "::add-mask::$value"
-            env_name="${secret//-/_}"
-            echo "$env_name=$value" >> "$GITHUB_ENV"
-          done
-      - name: Run real-mode benchmark
-        run: |
-          uv run python tests/examples/corpus_search/benchmark/runner.py \
-            --mode real \
-            --json tests/examples/corpus_search/benchmark/runs/nightly_real.json \
-            --baseline tests/examples/corpus_search/benchmark/runs/baseline_real.json \
-            --regression-tolerance 0.02

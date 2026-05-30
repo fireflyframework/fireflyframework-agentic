@@ -6,9 +6,8 @@
 Mirrors the cursor-based contract of remote sources (SharePoint, S3) so a
 single ingest pipeline can serve both local and remote corpora. v1 is
 delta-less: every call to :meth:`list_changed` lists everything under the
-folder. The :class:`fireflyframework_agentic.rag.ingest.ledger.IngestLedger`
-already dedupes by content hash so re-listing is cheap; mtime-based delta
-is a future enhancement.
+folder. Consumers are expected to dedupe by content hash, so re-listing is
+cheap; mtime-based delta is a future enhancement.
 """
 
 from __future__ import annotations
@@ -39,8 +38,8 @@ class LocalFolderSourceConfig(BaseModel):
         description=(
             "Optional callable; when it returns True for a file path, the file is "
             "skipped. Used by callers that route certain extensions to a separate "
-            "pipeline (e.g. CSV / Excel handled by ingest_corpus_structured "
-            "alongside the unstructured walk that uses this source)."
+            "pipeline (e.g. tabular files handled by a dedicated structured ingest "
+            "path alongside the unstructured walk that uses this source)."
         ),
         exclude=True,
     )
