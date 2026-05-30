@@ -16,7 +16,7 @@
 
 :func:`configure_exporters` is the single place vendor knowledge lives. It
 sets up traces, metrics, and logs providers and attaches the exporters chosen
-by which kwargs are passed (console, OTLP, Azure Monitor).
+by which kwargs are passed (console, OTLP).
 
 Application code never imports vendor exporters directly --- it uses
 ``trace.get_tracer(...)``, ``metrics.get_meter(...)``, and Python ``logging``,
@@ -73,24 +73,6 @@ except ImportError:  # pragma: no cover - optional dep
     OTLPLogExporter = None  # type: ignore[assignment,misc]
     OTLPMetricExporter = None  # type: ignore[assignment,misc]
     OTLPSpanExporter = None  # type: ignore[assignment,misc]
-
-try:
-    from azure.monitor.opentelemetry.exporter import (  # type: ignore[import-not-found]
-        AzureMonitorLogExporter,
-        AzureMonitorMetricExporter,
-        AzureMonitorTraceExporter,
-    )
-except ImportError:  # pragma: no cover - optional dep
-    AzureMonitorLogExporter = None  # type: ignore[assignment,misc]
-    AzureMonitorMetricExporter = None  # type: ignore[assignment,misc]
-    AzureMonitorTraceExporter = None  # type: ignore[assignment,misc]
-
-try:
-    from azure.monitor.opentelemetry.exporter._quickpulse._live_metrics import (  # type: ignore[import-not-found]
-        enable_live_metrics,
-    )
-except ImportError:  # pragma: no cover - optional dep
-    enable_live_metrics = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +133,6 @@ def configure_exporters(
     *,
     service_name: str = _FIREFLY_LOGGER_NAME,
     otlp_endpoint: str | None = None,
-    azure_monitor_connection_string: str | None = None,
     console: bool = False,
     metric_export_interval_ms: int = 60_000,
 ) -> ProviderBundle:
@@ -161,9 +142,6 @@ def configure_exporters(
         service_name: OTel ``service.name`` resource attribute.
         otlp_endpoint: When set, attaches gRPC OTLP exporters for traces,
             metrics, and logs. Vendor-neutral path (Jaeger, Tempo, ADOT, ...).
-        azure_monitor_connection_string: When set, attaches Azure Monitor
-            exporters that ship traces/metrics/logs to an Application Insights
-            resource. Requires the ``[azure]`` extra installed.
         console: When *True*, attaches console exporters for all three signal
             types. Useful for local development.
         metric_export_interval_ms: How often the metric reader flushes
@@ -178,17 +156,6 @@ def configure_exporters(
         - **Idempotent**: repeat calls with identical effective configuration
           are a no-op. The kwargs become a signature tuple keyed against
           ``_state.signature``.
-        - **Asymmetric idempotency**: the signature includes the OTLP
-          endpoint as a raw string (different endpoints fully reconfigure)
-          but reduces ``azure_monitor_connection_string`` to a *bool*
-          (truthy → already-configured). This is intentional — Azure
-          connection strings rotate and a re-call with a refreshed
-          string should not double-register exporters; OTLP endpoints
-          do not typically rotate, so a value change there *is* a
-          deliberate reconfiguration request. If you need to swap an
-          Azure connection string at runtime, restart the process.
-        - **Connection strings are never logged.** Success log lines name the
-          exporter only, not the value.
         - A :class:`LoggingHandler` is attached to the
           ``fireflyframework_agentic`` parent logger so both
           ``logger.info(...)`` calls and :class:`FireflyEvents` payloads are
@@ -197,7 +164,6 @@ def configure_exporters(
     signature = (
         service_name,
         otlp_endpoint,
-        bool(azure_monitor_connection_string),
         console,
         metric_export_interval_ms,
     )
@@ -250,71 +216,6 @@ def configure_exporters(
             )
             logger_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter(endpoint=otlp_endpoint)))
             logger.info("OTLP exporters attached: %s", otlp_endpoint)
-
-    # ── Azure Monitor / Application Insights ──────────────────────────────
-    if azure_monitor_connection_string:
-        if AzureMonitorTraceExporter is None or AzureMonitorMetricExporter is None or AzureMonitorLogExporter is None:
-            logger.warning(
-                "azure-monitor-opentelemetry-exporter is not installed; "
-                "AppInsights export disabled. Install with the [azure] extra."
-            )
-        else:
-            cs = azure_monitor_connection_string
-            try:
-                trace_exp = AzureMonitorTraceExporter(connection_string=cs)
-                metric_exp = AzureMonitorMetricExporter(connection_string=cs)
-                log_exp = AzureMonitorLogExporter(connection_string=cs)
-            except ValueError as exc:
-                # Connection string parser raises ValueError on malformed
-                # input (missing/non-UUID instrumentation key, bad ingestion
-                # endpoint URL, etc.). Log a generic warning — never include
-                # the connection string itself, since a misformatted string
-                # may still contain a real secret prefix.
-                logger.warning(
-                    "Azure Monitor connection string is malformed: %s. AppInsights export disabled for this run.",
-                    type(exc).__name__,
-                )
-            else:
-                tracer_provider.add_span_processor(BatchSpanProcessor(trace_exp))
-                metric_readers.append(
-                    PeriodicExportingMetricReader(
-                        metric_exp,
-                        export_interval_millis=metric_export_interval_ms,
-                    )
-                )
-                logger_provider.add_log_record_processor(BatchLogRecordProcessor(log_exp))
-
-                # Live Metrics (Quickpulse) is a separate stream from the
-                # standard exporters above and is what populates the Live
-                # Metrics blade in the AppInsights portal. The raw
-                # azure-monitor-opentelemetry-exporter package does not enable
-                # it by default — only the higher-level
-                # ``azure-monitor-opentelemetry`` distro does. Reach into the
-                # exporter's private ``_quickpulse`` module to opt in. The
-                # underscore prefix means the API may break across versions;
-                # ImportError is the most likely failure (module renamed); any
-                # other exception is unexpected and worth surfacing distinctly.
-                if enable_live_metrics is None:
-                    logger.warning(
-                        "Azure Monitor exporters attached but Live Metrics opt-in skipped: "
-                        "private _quickpulse API not importable. Likely a SDK version "
-                        "mismatch; pin azure-monitor-opentelemetry-exporter or fall back to "
-                        "the azure-monitor-opentelemetry distro. The Live Metrics blade "
-                        "will stay empty; standard tables still receive data."
-                    )
-                else:
-                    try:
-                        enable_live_metrics(connection_string=cs, resource=resource)
-                        logger.info(
-                            "Azure Monitor exporters attached (with Live Metrics) — "
-                            "verify in the Live Metrics blade ~30s after the next request"
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning(
-                            "Azure Monitor exporters attached but Live Metrics startup raised "
-                            "%s. Standard tables still receive data.",
-                            type(exc).__name__,
-                        )
 
     # MeterProvider takes its readers up front, not via add_*().
     meter_provider = MeterProvider(resource=resource, metric_readers=metric_readers)

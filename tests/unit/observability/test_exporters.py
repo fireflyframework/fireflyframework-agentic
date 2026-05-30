@@ -103,22 +103,6 @@ def test_changing_signature_replaces_logging_handler():
     assert second_handler in firefly_logger.handlers
 
 
-def test_connection_string_never_appears_in_log_output(caplog):
-    # Sentinel must include a UUID-shaped instrumentation key so the Azure
-    # ConnectionStringParser (when the SDK is installed) accepts it and we
-    # exercise the full attach path. The leak check below catches any log
-    # line that contains the sentinel substring.
-    sentinel = "InstrumentationKey=11111111-2222-3333-4444-DONOTLEAKME12;IngestionEndpoint=https://example.invalid/"
-    with caplog.at_level(logging.DEBUG, logger="fireflyframework_agentic.observability.exporters"):
-        configure_exporters(
-            service_name="test",
-            azure_monitor_connection_string=sentinel,
-        )
-    for record in caplog.records:
-        assert sentinel not in record.getMessage()
-        assert "DONOTLEAKME" not in record.getMessage()
-
-
 def test_otlp_missing_dependency_warns_does_not_raise(caplog):
     # In the test environment opentelemetry-exporter-otlp-proto-grpc may
     # not be installed; configuring with otlp must degrade gracefully.
@@ -128,27 +112,3 @@ def test_otlp_missing_dependency_warns_does_not_raise(caplog):
             otlp_endpoint="http://localhost:4317",
         )
     assert bundle is not None  # graceful degradation, not an exception
-
-
-def test_azure_malformed_conn_string_warns_does_not_raise(caplog):
-    # A non-UUID instrumentation key trips the SDK's ConnectionStringParser
-    # which raises ValueError. configure_exporters must catch that and log a
-    # generic warning that does NOT include the conn string. Requires the
-    # [azure] extra; without it the function takes the ImportError branch
-    # and emits a different warning.
-    try:
-        import azure.monitor.opentelemetry.exporter  # noqa: F401
-    except ImportError:
-        pytest.skip("azure-monitor-opentelemetry-exporter not installed")
-
-    with caplog.at_level(logging.WARNING):
-        bundle = configure_exporters(
-            service_name="test",
-            azure_monitor_connection_string="InstrumentationKey=not-a-uuid",
-        )
-    assert bundle is not None
-    warning_messages = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
-    # At least one warning was emitted, and none of them contain the bad value.
-    assert any("malformed" in m.lower() for m in warning_messages)
-    for m in warning_messages:
-        assert "not-a-uuid" not in m

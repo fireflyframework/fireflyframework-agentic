@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.05.30] - 2026-05-31
+
+### Added
+
+- **`fireflyframework_agentic.content.binary`** — a host-agnostic binary
+  normalisation stack that turns uploaded files (PDF, Office, images,
+  archives, emails) into consumer-ready `BinaryArtifact` rows for document
+  loaders or multimodal LLMs. Plain classes + a `BinaryConfig` DTO (no DI
+  framework), pluggable `OfficeConverter` (Gotenberg / LibreOffice / NoOp)
+  via `build_office_converter`. New optional extra `[binary]`
+  (pypdf, Pillow, pillow-heif, cairosvg, py7zr, extract-msg). This unifies
+  the normalizers previously duplicated in the flycanon and flydocs services.
+
+### Removed (BREAKING)
+
+- **RAG subsystem** — deleted `fireflyframework_agentic.rag` (CorpusAgent,
+  SqliteCorpus, StoredChunk, ChunkHit, HybridRetriever, reciprocal_rank_fusion,
+  ingest/retrieval pipelines) and `tools.builtins.corpus_rag`. Consumers that
+  used the corpus dataclasses / hybrid retriever should vendor them (flycanon
+  now owns its `StoredChunk`/`ChunkHit`/`HybridRetriever` locally). The
+  reusable `embeddings`, `vectorstores`, `content` and `storage` modules are
+  unchanged.
+- **MCP subsystem** — deleted `fireflyframework_agentic.exposure.mcp` (server,
+  HTTP CLI, OAuth/Entra auth, transports), the `firefly-mcp-http` console
+  script, and the `mcp` + `corpus-search` optional extras.
+- **`corpus_search` example** and its docs (`corpus-search-overview`,
+  `use-case-corpus-search`, `comparison-vs-qmd`, `deploy/mcp-corpus-auth`,
+  `deploy/corpus-persistence`), the `.mcp.json.template`, and the MCP-server
+  `Dockerfile`.
+- **Azure deployment/infra** — removed the `deploy-mcp.yml` workflow (Azure
+  Container Apps deploy of the MCP server), the Azurite / Azure-OIDC /
+  Key Vault machinery from the nightly workflow, the `azure` optional extra
+  (azure-identity / azure-keyvault-secrets / msal / azure-monitor exporter),
+  the Application Insights / Azure Monitor OTel exporter from
+  `observability.exporters` (observability stays vendor-neutral: console /
+  OTLP), and the dead Entra ID config fields. **Kept** the `AzureEmbedder`
+  Azure OpenAI model provider (`azure-embeddings` extra).
+
+### Changed
+
+- CI (`pr-gate`, `nightly`) install `--extra binary` and no longer install
+  the removed `mcp` / `corpus-search` / `azure` extras.
+
 ## [26.05.29] - 2026-05-29
 
 ### Added
@@ -127,7 +170,6 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
   cached `uv` resolver across jobs (#218).
 - **Cost-tracking docs** now point users at `examples/cost_tracking.py` for the
   cost-resolver override pattern.
-
 ## [26.05.21] - 2026-05-21
 
 ### Changed (BREAKING — delegation routing API)
