@@ -33,6 +33,11 @@ dependencies = [
     "opentelemetry-api>=1.29.0",
     "opentelemetry-sdk>=1.29.0",
     "genai-prices>=0.0.1",
+    # markdown-it-py backs content.markdown_chunker (structure-aware markdown
+    # chunking). content/__init__ imports MarkdownChunker eagerly, which
+    # imports markdown_it at module load, so this is a core dependency rather
+    # than an optional extra. (Pure-Python, no native build.)
+    "markdown-it-py>=3.0",
     # The example scripts under ``examples/`` load a project-local .env via
     # python-dotenv so a developer can run them without exporting keys by
     # hand. Real env vars always win (load_dotenv defaults to override=False).
@@ -84,10 +89,6 @@ google-embeddings = [
 mistral-embeddings = [
     "mistralai>=1.0.0",
 ]
-markitdown = [
-    "markitdown[pdf,docx,pptx,xlsx]>=0.0.1a3",
-    "markdown-it-py>=3.0",
-]
 voyage-embeddings = [
     "voyageai>=0.3.0",
 ]
@@ -131,7 +132,7 @@ binary = [
     "extract-msg>=0.51",
 ]
 all = [
-    "fireflyframework-agentic[rest,queues,postgres,mongodb,security,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,vectorstores-sqlite-vec,markitdown,watch,binary]",
+    "fireflyframework-agentic[rest,queues,postgres,mongodb,security,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,vectorstores-sqlite-vec,watch,binary]",
 ]
 dev = [
     "pytest>=8.3.0",
@@ -170,6 +171,11 @@ ignore = ["E501", "TC001", "TC002", "TC003", "UP040", "UP046", "B008"]
 
 [tool.ruff.lint.per-file-ignores]
 "fireflyframework_agentic/exposure/queues/__init__.py" = ["PLC0415"]
+# content.binary lazy-imports its optional heavy deps (pypdf, Pillow,
+# pillow-heif, cairosvg, py7zr, extract-msg, httpx) inside the handlers so the
+# module imports cleanly without the ``[binary]`` extra; the deferred import
+# IS the design (degrade to a typed error only when a format is encountered).
+"fireflyframework_agentic/content/binary/*.py" = ["PLC0415"]
 # Tests use inline imports for fixture isolation and to control import timing
 # around mocks of optional dependencies (asyncpg, motor, qdrant, pinecone, ...).
 "tests/**" = ["PLC0415"]

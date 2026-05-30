@@ -44,11 +44,20 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
   `observability.exporters` (observability stays vendor-neutral: console /
   OTLP), and the dead Entra ID config fields. **Kept** the `AzureEmbedder`
   Azure OpenAI model provider (`azure-embeddings` extra).
+- **MarkItDown** — removed the Microsoft `markitdown` document converter:
+  deleted `content.loaders` (`MarkitdownLoader` + the `loaders` package) and
+  the `markitdown` optional extra. Services that relied on the universal
+  MarkItDown loader now use native per-format loaders.
+- Dead Azurite test fixture (and its `mcr.microsoft.com/azure-storage/azurite`
+  image reference) and the stale corpus / MCP / Azure entries in
+  `.env.template`.
 
 ### Changed
 
+- `markdown-it-py` (used by `content.markdown_chunker`) is promoted from the
+  removed `markitdown` extra to a core dependency.
 - CI (`pr-gate`, `nightly`) install `--extra binary` and no longer install
-  the removed `mcp` / `corpus-search` / `azure` extras.
+  the removed `mcp` / `corpus-search` / `azure` / `markitdown` extras.
 
 ## [26.05.29] - 2026-05-29
 
