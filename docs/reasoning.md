@@ -776,16 +776,14 @@ example, `ReActPattern._act` runs the LLM with a text prompt and emits a
 placeholder `ActionStep(tool_name="react_action", tool_args={"thought": …})`
 whose payload is the LLM's free-text description of the action.
 
-The framework's tool-using ReAct implementation lives next to its first
-consumer in
-[`fireflyframework_agentic/rag/retrieval/reasoning_answerer.py`](../fireflyframework_agentic/rag/retrieval/reasoning_answerer.py).
-It delegates the loop to pydantic-ai's native tool-calling
-(`FireflyAgent(tools=[...])`), then translates the resulting message
-history into a typed `ReasoningTrace` so the existing trace API still
-applies. See [use-case-corpus-search.md §14](use-case-corpus-search.md) for the user-facing
-contract.
+If you need a tool-using ReAct loop, drive pydantic-ai's native
+tool-calling directly — construct a `FireflyAgent(tools=[...])` (see the
+[Agents guide](agents.md)) and let it dispatch real function tools. You
+can then translate the resulting message history into a typed
+`ReasoningTrace` to keep the trace API in this module applicable. See
+[use-case-idp.md](use-case-idp.md) for an end-to-end reasoning example.
 
 **Open follow-up**: promote a generic `ToolCallingReActPattern` into this
-module once a second consumer needs it. The trace-translation helper
-(`_trace_from_messages` in `reasoning_answerer.py`) is the load-bearing
-piece to lift.
+module once a concrete consumer needs it. The load-bearing piece to lift
+is a helper that translates a pydantic-ai message history into a
+`ReasoningTrace`.
