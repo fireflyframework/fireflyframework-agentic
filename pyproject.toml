@@ -146,8 +146,21 @@ vectorstores-qdrant = [
     "qdrant-client>=1.12.0",
 ]
 watch = ["watchfiles>=0.24.0"]
+# Binary normalisation (fireflyframework_agentic.content.binary): convert
+# uploaded files (PDF/Office/images/archives/emails) into consumer-ready
+# artifacts for document loaders or multimodal LLMs. All imports are lazy;
+# ``soffice`` (LibreOffice) is an OS-level dep only the subprocess converter
+# needs, and Gotenberg is reached over HTTP via the core ``httpx`` dep.
+binary = [
+    "pypdf>=4.3.0",
+    "Pillow>=11.0",
+    "pillow-heif>=0.18",
+    "cairosvg>=2.7",
+    "py7zr>=0.22",
+    "extract-msg>=0.51",
+]
 all = [
-    "fireflyframework-agentic[rest,queues,postgres,mongodb,security,azure,http,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,corpus-search,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,vectorstores-sqlite-vec,markitdown,watch]",
+    "fireflyframework-agentic[rest,queues,postgres,mongodb,security,azure,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,vectorstores-sqlite-vec,markitdown,watch,binary]",
 ]
 dev = [
     "pytest>=8.3.0",
