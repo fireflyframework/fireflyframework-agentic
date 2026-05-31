@@ -500,47 +500,6 @@ export FIREFLY_AGENTIC_DATABASE_ALLOW_UNSAFE_QUERIES=true
 
 ---
 
-## CORS Security
-
-The REST API enforces restrictive CORS policies by default.
-
-### Default Policy (Secure)
-
-By default, **no origins** are allowed:
-
-```python
-from fireflyframework_agentic.exposure.rest.middleware import add_cors_middleware
-
-# Default - blocks all cross-origin requests
-add_cors_middleware(app)
-```
-
-### Explicit Allow List
-
-Specify allowed origins for production deployments:
-
-```python
-add_cors_middleware(
-    app,
-    allow_origins=["https://app.example.com", "https://admin.example.com"],
-    allow_credentials=True,
-)
-```
-
-### Environment Configuration
-
-```bash
-export FIREFLY_AGENTIC_CORS_ALLOWED_ORIGINS='["https://app.example.com"]'
-export FIREFLY_AGENTIC_CORS_ALLOW_CREDENTIALS=true
-export FIREFLY_AGENTIC_CORS_ALLOW_METHODS='["GET", "POST"]'
-export FIREFLY_AGENTIC_CORS_MAX_AGE=3600
-```
-
-**Security Note:** Never use `allow_origins=["*"]` in production. Always
-maintain an explicit allow list of trusted domains.
-
----
-
 ## Security Best Practices
 
 ### Defence in Depth
@@ -584,7 +543,6 @@ async def secure_endpoint(prompt: str, token: str):
 - [x] Enable RBAC for multi-user access
 - [x] Encrypt sensitive data at rest
 - [x] Use parameterized queries for database access
-- [x] Configure restrictive CORS policies
 - [x] Enable PromptGuard and OutputGuard middleware
 - [x] Set budget limits with CostGuardMiddleware
 - [x] Store secrets in a secure vault (not env vars)

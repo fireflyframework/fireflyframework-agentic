@@ -1,6 +1,6 @@
 [project]
 name = "fireflyframework-agentic"
-version = "26.05.32"
+version = "26.05.33"
 description = "A GenAI metaframework built on Pydantic AI for building production-grade GenAI applications with agents, reasoning patterns, prompt engineering, observability, and more."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -45,23 +45,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-rest = [
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.34.0",
-    "sse-starlette>=2.0.0",
-]
-kafka = [
-    "aiokafka>=0.12.0",
-]
-rabbitmq = [
-    "aio-pika>=9.5.0",
-]
-redis = [
-    "redis>=5.2.0",
-]
-queues = [
-    "fireflyframework-agentic[kafka,rabbitmq,redis]",
-]
 postgres = [
     "asyncpg>=0.30.0",
     "sqlalchemy>=2.0.0",
@@ -135,7 +118,7 @@ binary = [
     "extract-msg>=0.51",
 ]
 all = [
-    "fireflyframework-agentic[rest,queues,postgres,mongodb,security,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,vectorstores-pgvector,vectorstores-sqlite-vec,watch,binary]",
+    "fireflyframework-agentic[postgres,mongodb,security,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,vectorstores-pgvector,vectorstores-sqlite-vec,watch,binary]",
 ]
 dev = [
     "pytest>=8.3.0",
@@ -173,7 +156,6 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "TC", "PLC0415"]
 ignore = ["E501", "TC001", "TC002", "TC003", "UP040", "UP046", "B008"]
 
 [tool.ruff.lint.per-file-ignores]
-"fireflyframework_agentic/exposure/queues/__init__.py" = ["PLC0415"]
 # content.binary lazy-imports its optional heavy deps (pypdf, Pillow,
 # pillow-heif, cairosvg, py7zr, extract-msg, httpx) inside the handlers so the
 # module imports cleanly without the ``[binary]`` extra; the deferred import

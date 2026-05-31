@@ -29,35 +29,35 @@ class TestConfigValidation:
         assert cfg.qos_consistency_runs >= 2
 
     def test_removed_cost_calculator_field_raises(self) -> None:
-        with pytest.raises(ValidationError, match="Removed cost-tracking config fields"):
+        with pytest.raises(ValidationError, match="Removed config fields"):
             FireflyAgenticConfig(cost_calculator="auto")
 
     def test_removed_budget_alert_threshold_field_raises(self) -> None:
-        with pytest.raises(ValidationError, match="Removed cost-tracking config fields"):
+        with pytest.raises(ValidationError, match="Removed config fields"):
             FireflyAgenticConfig(budget_alert_threshold_usd=5.0)
 
+    def test_removed_auth_api_keys_field_raises(self) -> None:
+        with pytest.raises(ValidationError, match="Removed config fields"):
+            FireflyAgenticConfig(auth_api_keys=["key1"])
 
-class TestConfigAuthAndUsageFields:
-    def test_auth_api_keys_default(self) -> None:
-        cfg = FireflyAgenticConfig()
-        assert cfg.auth_api_keys is None
+    def test_removed_auth_bearer_tokens_field_raises(self) -> None:
+        with pytest.raises(ValidationError, match="Removed config fields"):
+            FireflyAgenticConfig(auth_bearer_tokens=["tok1"])
 
-    def test_auth_bearer_tokens_default(self) -> None:
-        cfg = FireflyAgenticConfig()
-        assert cfg.auth_bearer_tokens is None
+    def test_removed_cors_allowed_origins_field_raises(self) -> None:
+        with pytest.raises(ValidationError, match="Removed config fields"):
+            FireflyAgenticConfig(cors_allowed_origins=["https://app.example.com"])
 
+
+class TestConfigUsageFields:
     def test_usage_tracker_max_records_default(self) -> None:
         cfg = FireflyAgenticConfig()
         assert cfg.usage_tracker_max_records == 10_000
 
     def test_custom_values(self) -> None:
         cfg = FireflyAgenticConfig(
-            auth_api_keys=["key1"],
-            auth_bearer_tokens=["tok1"],
             usage_tracker_max_records=500,
         )
-        assert cfg.auth_api_keys == ["key1"]
-        assert cfg.auth_bearer_tokens == ["tok1"]
         assert cfg.usage_tracker_max_records == 500
 
 

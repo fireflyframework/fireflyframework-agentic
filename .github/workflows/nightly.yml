@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - run: uv sync --extra dev --extra rest --extra binary --extra vectorstores-sqlite-vec --extra openai-embeddings
+      - run: uv sync --extra dev --extra binary --extra vectorstores-sqlite-vec --extra openai-embeddings
       - run: uv run pytest --cov --cov-report=term-missing --durations=50
 
   report-failure:

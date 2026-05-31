@@ -151,14 +151,6 @@ class FireflyAgenticConfig(BaseSettings):
     memory_mongodb_pool_size: int = 10
     """Maximum connections in MongoDB pool."""
 
-    # -- Authentication -------------------------------------------------------
-    auth_api_keys: list[str] | None = None
-    """List of valid API keys for REST endpoint authentication.  When set,
-    the auth middleware is automatically enabled."""
-
-    auth_bearer_tokens: list[str] | None = None
-    """List of valid bearer tokens for REST endpoint authentication."""
-
     # -- Usage tracker -------------------------------------------------------
     usage_tracker_max_records: int = 10_000
     """Maximum number of usage records retained in memory.  Oldest records
@@ -203,9 +195,6 @@ class FireflyAgenticConfig(BaseSettings):
     encryption_key: str | None = None
     """Encryption key for AES-256-GCM (32 bytes, or password for key derivation)."""
 
-    cors_allowed_origins: list[str] = []
-    """List of allowed CORS origins. Empty list = no origins allowed (secure default)."""
-
     # -- HTTP Connection Pooling ---------------------------------------------
     http_pool_enabled: bool = True
     """Whether to use HTTP connection pooling (requires httpx)."""
@@ -240,11 +229,17 @@ class FireflyAgenticConfig(BaseSettings):
     @classmethod
     def _reject_removed_cost_fields(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            removed = {"cost_calculator", "budget_alert_threshold_usd"} & set(data)
+            removed = {
+                "cost_calculator",
+                "budget_alert_threshold_usd",
+                "auth_api_keys",
+                "auth_bearer_tokens",
+                "cors_allowed_origins",
+            } & set(data)
             if removed:
                 raise ValueError(
-                    f"Removed cost-tracking config fields: {sorted(removed)}. "
-                    "See docs/observability.md for the new BudgetGate / resolver API."
+                    f"Removed config fields: {sorted(removed)}. Serving/exposure (REST/queue "
+                    "auth, CORS) is now owned by the host service; see CHANGELOG."
                 )
         return data
 

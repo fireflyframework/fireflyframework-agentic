@@ -16,8 +16,7 @@
 
 This package provides production-grade abstractions for building GenAI
 applications including agents, reasoning patterns, prompt engineering,
-tools, observability, explainability, experimentation, and exposure
-via REST APIs and message queues.
+tools, observability, explainability, and experimentation.
 
 Quick start::
 
@@ -51,7 +50,6 @@ from fireflyframework_agentic.exceptions import (
     EmbeddingProviderError,
     ExperimentError,
     ExplainabilityError,
-    ExposureError,
     FireflyAgenticError,
     FireflyMemoryError,
     MemoryError,
@@ -63,7 +61,6 @@ from fireflyframework_agentic.exceptions import (
     PromptNotFoundError,
     PromptValidationError,
     QoSError,
-    QueueConnectionError,
     QuotaError,
     RateLimitError,
     ReasoningError,
@@ -122,8 +119,6 @@ __all__ = [
     "ExperimentError",
     "ObservabilityError",
     "ExplainabilityError",
-    "ExposureError",
-    "QueueConnectionError",
     "ChunkingError",
     "CompressionError",
     "OutputReviewError",

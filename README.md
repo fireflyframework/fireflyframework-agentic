@@ -40,23 +40,22 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 model-agnostic agents with structured output. But a production GenAI system demands
 far more than a single agent call. You need to orchestrate multi-step reasoning,
 validate and retry LLM outputs against schemas, manage conversation memory across
-turns, observe every call with traces and metrics, run A/B experiments to compare
-models, and expose the whole thing over REST or message queues — all without coupling
-your domain logic to infrastructure concerns.
+turns, observe every call with traces and metrics, and run A/B experiments to compare
+models — all without coupling your domain logic to infrastructure concerns.
 
 **fireflyframework-agentic is the production framework built on top of Pydantic AI.**
-It extends the engine with six composable layers — from core configuration through
-agent management, intelligent reasoning, experimentation, pipeline orchestration,
-and service exposure — so that every concern has a dedicated, protocol-driven module.
+It extends the engine with composable layers — from core configuration through
+agent management, intelligent reasoning, experimentation, and pipeline orchestration —
+so that every concern has a dedicated, protocol-driven module.
 You write your business logic; the framework provides the architecture.
 
 **What "metaframework" means in practice:**
 
 - You keep Pydantic AI's familiar `Agent`, `Tool`, and `RunContext` APIs unchanged.
 - The framework wraps them with lifecycle hooks, registries, delegation routers,
-  memory managers, reasoning patterns, validation loops, DAG pipelines, and exposure
-  endpoints — all optional, all composable, all swappable through Python protocols.
-- No vendor lock-in: switch models, swap memory backends, or replace the REST layer
+  memory managers, reasoning patterns, validation loops, and DAG pipelines — all
+  optional, all composable, all swappable through Python protocols.
+- No vendor lock-in: switch models, swap memory backends, or replace components
   without touching your agent code.
 
 ---
@@ -64,12 +63,11 @@ You write your business logic; the framework provides the architecture.
 ## Key Principles
 
 1. **Protocol-driven contracts** — Every extension point is defined as a
-   `@runtime_checkable` `Protocol` or abstract base class. The framework ships thirteen
+   `@runtime_checkable` `Protocol` or abstract base class. The framework ships twelve
    protocols (`AgentLike`, `ToolProtocol`, `GuardProtocol`, `ReasoningPattern`,
    `DelegationStrategy`, `StepExecutor`, `CompressionStrategy`, `MemoryStore`,
-   `ValidationRule`, `Chunker`, `EmbeddingProtocol`, `VectorStoreProtocol`,
-   `QueueConsumer` / `QueueProducer`) so you can swap or extend any component
-   without modifying framework internals.
+   `ValidationRule`, `Chunker`, `EmbeddingProtocol`, `VectorStoreProtocol`) so you can
+   swap or extend any component without modifying framework internals.
 
 2. **Convention over configuration** — Sensible defaults everywhere.
    `FireflyAgenticConfig` is a Pydantic Settings singleton that reads from environment
@@ -77,16 +75,15 @@ You write your business logic; the framework provides the architecture.
    governs model defaults, retry counts, token limits, observability endpoints,
    memory backends, and validation thresholds — override only what you need.
 
-3. **Layered composition** — Six layers with strict top-down dependency flow:
-   **Core → Agent → Intelligence → Experimentation → Orchestration → Exposure**.
+3. **Layered composition** — Layers with strict top-down dependency flow:
+   **Core → Agent → Intelligence → Experimentation → Orchestration**.
    Higher layers depend on lower layers but never the reverse, keeping the
    dependency graph acyclic and each module independently testable.
 
-4. **Optional dependencies** — Heavy libraries (`fastapi`, `aiokafka`, `aio-pika`,
-   `redis`, `chromadb`, `pinecone`, `openai`) are declared as pip extras (`[rest]`,
-   `[kafka]`, `[rabbitmq]`, `[redis]`, `[openai-embeddings]`,
-   `[vectorstores-chroma]`, `[all]`). The core framework imports them lazily inside
-   factory functions so that you install only what your deployment requires.
+4. **Optional dependencies** — Heavy libraries (`chromadb`, `pinecone`, `openai`,
+   `asyncpg`) are declared as pip extras (`[openai-embeddings]`,
+   `[vectorstores-chroma]`, `[postgres]`, `[all]`). The core framework imports them
+   lazily inside factory functions so that you install only what your deployment requires.
 
 ---
 
@@ -94,11 +91,6 @@ You write your business logic; the framework provides the architecture.
 
 ```mermaid
 graph TD
-    subgraph Exposure Layer
-        REST["REST API<br/><small>create_agentic_app · SSE streaming<br/>health · middleware · router</small>"]
-        QUEUES["Message Queues<br/><small>Kafka · RabbitMQ · Redis<br/>consumers · producers · QueueRouter</small>"]
-    end
-
     subgraph Orchestration Layer
         PIPE["Pipeline / DAG Engine<br/><small>DAG · DAGNode · DAGEdge<br/>PipelineEngine · PipelineBuilder<br/>AgentStep · ReasoningStep · CallableStep<br/>FanOutStep · FanInStep<br/>EmbeddingStep · RetrievalStep</small>"]
     end
@@ -135,8 +127,6 @@ graph TD
         PLUG["Plugin System<br/><small>PluginDiscovery<br/>3 entry-point groups</small>"]
     end
 
-    REST --> PIPE
-    QUEUES --> PIPE
     PIPE --> AGT
     PIPE --> REASON
     PIPE --> VAL
@@ -213,15 +203,6 @@ classDiagram
         +name: str
         +validate(value) ValidationRuleResult
     }
-    class QueueConsumer {
-        <<Protocol>>
-        +start()
-        +stop()
-    }
-    class QueueProducer {
-        <<Protocol>>
-        +publish(message)
-    }
     class EmbeddingProtocol {
         <<Protocol>>
         +embed(texts) EmbeddingResult
@@ -265,12 +246,6 @@ classDiagram
     ValidationRule <|.. RangeRule
     ValidationRule <|.. EnumRule
     ValidationRule <|.. CustomRule
-    QueueConsumer <|.. KafkaAgentConsumer
-    QueueConsumer <|.. RabbitMQAgentConsumer
-    QueueConsumer <|.. RedisAgentConsumer
-    QueueProducer <|.. KafkaAgentProducer
-    QueueProducer <|.. RabbitMQAgentProducer
-    QueueProducer <|.. RedisAgentProducer
     EmbeddingProtocol <|.. BaseEmbedder
     VectorStoreProtocol <|.. BaseVectorStore
 ```
@@ -370,15 +345,6 @@ classDiagram
   `EvalDataset` loads/saves test cases from JSON. `ModelComparison` runs the
   same prompts across multiple agents for side-by-side analysis.
 
-- **Exposure** — `create_agentic_app()` produces a FastAPI application with
-  auto-generated `POST /agents/{name}/run` endpoints, SSE streaming via
-  `sse_stream`, health/readiness/liveness checks, CORS and request-ID middleware,
-  and multimodal input support. Queue consumers (`KafkaAgentConsumer`,
-  `RabbitMQAgentConsumer`, `RedisAgentConsumer`) route messages to agents.
-  Queue producers (`KafkaAgentProducer`, `RabbitMQAgentProducer`,
-  `RedisAgentProducer`) publish results back. `QueueRouter` provides
-  pattern-based message routing across agents.
-
 - **Embeddings** — `EmbeddingProtocol` (duck-typed) and `BaseEmbedder`
   (inheritance with auto-batching) provide provider-agnostic text embedding.
   Eight providers ship out of the box: **OpenAI**, **Azure OpenAI**, **Cohere**,
@@ -425,17 +391,12 @@ classDiagram
 
 **Optional dependencies** (installed via extras):
 
-- `[rest]` — [FastAPI](https://fastapi.tiangolo.com/) `>=0.115.0`, [Uvicorn](https://www.uvicorn.org/) `>=0.34.0`, [sse-starlette](https://github.com/sysid/sse-starlette) `>=2.0.0`
-- `[kafka]` — [aiokafka](https://aiokafka.readthedocs.io/) `>=0.12.0`
-- `[rabbitmq]` — [aio-pika](https://aio-pika.readthedocs.io/) `>=9.5.0`
-- `[redis]` — [redis-py](https://redis-py.readthedocs.io/) `>=5.2.0`
 - `[costs]` — [genai-prices](https://pypi.org/project/genai-prices/) for up-to-date LLM pricing data
-- `[queues]` — All queue backends (Kafka + RabbitMQ + Redis)
 - `[openai-embeddings]` — [openai](https://github.com/openai/openai-python) `>=1.0.0` for OpenAI/Azure embeddings
 - `[vectorstores-chroma]` — [chromadb](https://www.trychroma.com/) `>=0.5.0`
 - `[vectorstores-pinecone]` — [pinecone](https://www.pinecone.io/) `>=5.0.0`
 - `[vectorstores-qdrant]` — [qdrant-client](https://qdrant.tech/) `>=1.12.0`
-- `[all]` — Everything (REST + queues + embeddings + vector stores + costs + security + HTTP)
+- `[all]` — Everything (embeddings + vector stores + costs + security + HTTP)
 
 **LLM provider keys** (at least one):
 
@@ -490,11 +451,6 @@ uv sync --all-extras # or: pip install -e ".[all]"
 
 | Extra | What it adds | When you need it |
 |---|---|---|
-| `rest` | FastAPI, Uvicorn, SSE | Exposing agents as REST endpoints |
-| `kafka` | aiokafka | Consuming/producing via Apache Kafka |
-| `rabbitmq` | aio-pika | Consuming/producing via RabbitMQ |
-| `redis` | redis-py | Consuming/producing via Redis Pub/Sub |
-| `queues` | All of the above | Any message queue integration |
 | `postgres` | asyncpg, SQLAlchemy | PostgreSQL memory persistence |
 | `mongodb` | motor, pymongo | MongoDB memory persistence |
 | `security` | PyJWT, cryptography | RBAC, encryption, JWT auth |
@@ -657,34 +613,6 @@ results = await store.search_text("machine learning languages", top_k=1)
 print(results[0].document.text)  # Python is great for AI
 ```
 
-### 9. Expose via REST
-
-```python
-from fireflyframework_agentic.exposure.rest import create_agentic_app
-
-app = create_agentic_app(title="My GenAI Service")
-# uvicorn myapp:app --reload
-```
-
-### 10. Expose via Queues (Consumer)
-
-```python
-from fireflyframework_agentic.exposure.queues.kafka import KafkaAgentConsumer
-
-consumer = KafkaAgentConsumer("assistant", topic="requests", bootstrap_servers="localhost:9092")
-await consumer.start()
-```
-
-### 11. Publish via Queues (Producer)
-
-```python
-from fireflyframework_agentic.exposure.queues.kafka import KafkaAgentProducer
-
-producer = KafkaAgentProducer(topic="results", bootstrap_servers="localhost:9092")
-await producer.publish({"agent": "assistant", "output": "Done processing."})
-await producer.close()
-```
-
 ## Using in Jupyter Notebooks
 
 firefly-agentic works seamlessly in Jupyter notebooks and JupyterLab.
@@ -779,7 +707,7 @@ pipeline. Start here if you want to learn the framework thoroughly.
 **[docs/use-case-idp.md](docs/use-case-idp.md)** is a focused walkthrough of building a
 7-phase IDP pipeline that ingests, splits, classifies, extracts, validates, assembles,
 and explains data from corporate documents — using agents, reasoning, document splitting,
-content processing, validation, explainability, pipelines, and REST exposure.
+content processing, validation, explainability, and pipelines.
 
 ### Module Reference
 
@@ -801,8 +729,6 @@ Detailed guides for each module:
 - [Explainability](docs/explainability.md) — Decision recording, audit trails, reports
 - [Experiments](docs/experiments.md) — A/B testing, variant comparison
 - [Lab](docs/lab.md) — Benchmarks, datasets, evaluators
-- [Exposure REST](docs/exposure-rest.md) — FastAPI integration, SSE streaming
-- [Exposure Queues](docs/exposure-queues.md) — Kafka, RabbitMQ, Redis integration
 - Studio — moved to [fireflyframework-agentic-studio](https://github.com/fireflyframework/fireflyframework-agentic-studio)
 ---
 

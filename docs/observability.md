@@ -75,33 +75,6 @@ context = extract_trace_context(incoming_headers)
 # Continue trace with extracted context
 ```
 
-**REST API Integration:**
-
-The framework's REST API automatically propagates trace context:
-
-```python
-# Middleware injects trace context into responses
-# and extracts from incoming requests
-from fireflyframework_agentic.exposure.rest.middleware import add_trace_propagation_middleware
-
-add_trace_propagation_middleware(app)
-```
-
-**Queue Integration:**
-
-Message queue consumers/producers automatically propagate trace context:
-
-```python
-# Kafka example - trace context in message headers
-from fireflyframework_agentic.exposure.queues.kafka import KafkaConsumer
-
-consumer = KafkaConsumer(
-    topic="requests",
-    handler=process_message,
-)
-# Trace context automatically extracted from message headers
-```
-
 **Pipeline Context:**
 
 Traces flow through pipeline steps via `PipelineContext.correlation_id`:

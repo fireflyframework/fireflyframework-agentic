@@ -20,11 +20,11 @@ The framework follows four guiding principles:
    configuration and supports environment-variable overrides.
 
 3. **Layered composition** -- Modules are organised into layers (Core, Agent, Intelligence,
-   Experimentation, Exposure). Higher layers depend on lower layers but never the reverse.
+   Experimentation, Orchestration). Higher layers depend on lower layers but never the reverse.
 
-4. **Optional dependencies** -- Heavy third-party libraries (FastAPI, aiokafka, aio-pika,
-   redis) are declared as extras. The core framework imports them lazily so that users
-   only install what they need.
+4. **Optional dependencies** -- Heavy third-party libraries (embedding providers, vector
+   store clients, storage backends) are declared as extras. The core framework imports them
+   lazily so that users only install what they need.
 
 ---
 
@@ -32,11 +32,6 @@ The framework follows four guiding principles:
 
 ```mermaid
 graph TD
-    subgraph Exposure Layer
-        REST["REST API<br/><small>create_agentic_app · SSE streaming · WebSocket<br/>health · auth middleware · router · conversations<br/>RateLimiter</small>"]
-        QUEUES["Message Queues<br/><small>Kafka · RabbitMQ · Redis<br/>consumers · producers · QueueRouter</small>"]
-    end
-
     subgraph Orchestration Layer
         PIPE["Pipeline / DAG Engine<br/><small>DAG · DAGNode · DAGEdge<br/>PipelineEngine · PipelineBuilder · PipelineEventHandler<br/>AgentStep · ReasoningStep · CallableStep · BranchStep<br/>FanOutStep · FanInStep · exponential backoff + jitter</small>"]
     end
@@ -72,8 +67,6 @@ graph TD
         PLUG["Plugin System<br/><small>PluginDiscovery<br/>3 entry-point groups</small>"]
     end
 
-    REST --> PIPE
-    QUEUES --> PIPE
     PIPE --> AGT
     PIPE --> REASON
     PIPE --> VAL
@@ -146,15 +139,6 @@ classDiagram
         +name: str
         +validate(value) ValidationRuleResult
     }
-    class QueueConsumer {
-        <<Protocol>>
-        +start()
-        +stop()
-    }
-    class QueueProducer {
-        <<Protocol>>
-        +publish(message)
-    }
 
     AgentLike <|.. FireflyAgent
     AgentLike <|.. pydantic_ai.Agent
@@ -192,12 +176,6 @@ classDiagram
     ValidationRule <|.. RangeRule
     ValidationRule <|.. EnumRule
     ValidationRule <|.. CustomRule
-    QueueConsumer <|.. KafkaAgentConsumer
-    QueueConsumer <|.. RabbitMQAgentConsumer
-    QueueConsumer <|.. RedisAgentConsumer
-    QueueProducer <|.. KafkaAgentProducer
-    QueueProducer <|.. RabbitMQAgentProducer
-    QueueProducer <|.. RedisAgentProducer
 ```
 
 ---
@@ -314,14 +292,6 @@ a global registry, delegation strategies, and declarative decorators.
 - **pipeline/context.py** -- `PipelineContext` shared data bus.
 - **pipeline/result.py** -- `NodeResult`, `PipelineResult`, `ExecutionTraceEntry`.
 
-### Exposure Layer
-
-- **exposure/rest/** -- FastAPI application factory that auto-generates REST endpoints
-  for every registered agent, with rate limiting, authentication middleware,
-  WebSocket support, and conversation CRUD endpoints.
-- **exposure/queues/** -- Abstract consumer/producer with Kafka, RabbitMQ, and Redis
-  implementations and a pattern-based message router.
-
 ### Studio Layer
 
 - **studio/server.py** -- FastAPI application factory for Firefly Agentic Studio,
@@ -346,15 +316,13 @@ a global registry, delegation strategies, and declarative decorators.
 
 ## Request Flow
 
-The following diagram shows the typical lifecycle of a request entering through the
-REST exposure layer, being processed by an agent with reasoning, and producing
-observability and explainability artefacts.
+The following diagram shows the typical lifecycle of an in-process agent run: a caller
+resolves an agent from the registry and invokes it, the agent reasons with tools, and
+observability and explainability artefacts are produced.
 
 ```mermaid
 sequenceDiagram
-    participant Client
-    participant REST as REST API<br/>(create_agentic_app)
-    participant MW as Middleware<br/>(CORS · RequestID)
+    participant Caller
     participant Reg as AgentRegistry
     participant Agent as FireflyAgent
     participant Mem as MemoryManager
@@ -364,11 +332,9 @@ sequenceDiagram
     participant OBS as FireflyTracer<br/>FireflyMetrics
     participant EXPL as TraceRecorder<br/>AuditTrail
 
-    Client->>REST: POST /agents/{name}/run
-    REST->>MW: apply middleware chain
-    MW->>Reg: agent_registry.get(name)
-    Reg-->>MW: FireflyAgent instance
-    MW->>Agent: agent.run(prompt, conversation_id)
+    Caller->>Reg: agent_registry.get(name)
+    Reg-->>Caller: FireflyAgent instance
+    Caller->>Agent: agent.run(prompt, conversation_id)
     Agent->>OBS: tracer.start_span("agent.run")
     Agent->>Mem: load conversation history
     Mem-->>Agent: message_history
@@ -386,8 +352,7 @@ sequenceDiagram
     Agent->>Mem: save conversation turn
     Agent->>OBS: tracer.end_span() · metrics.record_latency()
     Agent->>EXPL: audit_trail.append()
-    Agent-->>REST: AgentResponse
-    REST-->>Client: JSON response (or SSE stream)
+    Agent-->>Caller: AgentResponse
 ```
 
 ### Pipeline Execution Flow

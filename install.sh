@@ -484,29 +484,19 @@ step_check_tools() {
 step_select_extras() {
     step_header 4 "Extras Selection"
 
-    info "Optional components add REST API and message queue support."
+    info "Optional components add embeddings, vector stores, and storage backends."
     printf "\n"
 
     local options=(
         "Core only      ${DIM}— no optional dependencies${RESET}"
-        "REST API       ${DIM}— FastAPI + Uvicorn + SSE streaming${RESET}"
-        "Kafka          ${DIM}— aiokafka (Apache Kafka)${RESET}"
-        "RabbitMQ       ${DIM}— aio-pika (AMQP)${RESET}"
-        "Redis          ${DIM}— redis-py (Pub/Sub)${RESET}"
-        "All queues     ${DIM}— Kafka + RabbitMQ + Redis${RESET}"
-        "Everything     ${DIM}— REST + all queues + costs${RESET}"
+        "Everything     ${DIM}— all optional dependencies${RESET}"
     )
 
     local choice
     choice="$(prompt_choice "Select a configuration:" "${options[@]}")"
 
     case "$choice" in
-        2) EXTRAS="rest" ;;
-        3) EXTRAS="kafka" ;;
-        4) EXTRAS="rabbitmq" ;;
-        5) EXTRAS="redis" ;;
-        6) EXTRAS="queues" ;;
-        7) EXTRAS="all" ;;
+        2) EXTRAS="all" ;;
         *) EXTRAS="" ;;
     esac
 
