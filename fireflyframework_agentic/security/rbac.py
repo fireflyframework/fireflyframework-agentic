@@ -110,8 +110,9 @@ class RBACManager:
         roles: dict[str, list[str]] | None = None,
     ) -> None:
         # ``jwt_secret`` is optional so that subclasses or callers that only need
-        # the permission/role machinery (e.g. with externally-issued tokens like
-        # Entra ID) can construct an RBACManager without a symmetric secret.
+        # the permission/role machinery (e.g. with externally-issued tokens from
+        # an external identity provider) can construct an RBACManager without a
+        # symmetric secret.
         # ``create_token``/``validate_token`` raise if invoked without one.
         self._jwt_secret = jwt_secret
         self._jwt_algorithm = jwt_algorithm

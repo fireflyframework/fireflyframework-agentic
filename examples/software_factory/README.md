@@ -96,7 +96,7 @@ The Postgres and Redis backends live in this folder as **plug-and-play templates
 - `checkpointers/redis.py` — same idea against a caller-supplied `redis.Redis` client.
 - `audit/postgres.py` — implements `QueryableAuditLog` against a caller-supplied `psycopg.Connection`.
 
-Each file is a flat ~50-LOC class. The framework no longer ships these — copy whichever you need into your project, adapt the table name or key prefix, and pass your own connection. The framework's `Checkpointer` and `AuditLog` Protocols are the only contract you need to match.
+Each file is a flat ~50-LOC class. These ship as templates rather than framework code — copy whichever you need into your project, adapt the table name or key prefix, and pass your own connection. The framework's `Checkpointer` and `AuditLog` Protocols are the only contract you need to match.
 
 ## When to use Redis vs Postgres
 

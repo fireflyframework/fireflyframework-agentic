@@ -102,7 +102,8 @@ class SqliteVecVectorStore(BaseVectorStore):
                 "Install with: pip install 'fireflyframework-agentic[vectorstores-sqlite-vec]'"
             )
         path.parent.mkdir(parents=True, exist_ok=True)
-        # See _open_corpus_conn for why timeout= is used instead of PRAGMA.
+        # The connect-level timeout= sets SQLite's busy timeout reliably across
+        # platforms; a PRAGMA busy_timeout can be lost on reconnection.
         conn = sqlite3.connect(str(path), isolation_level=None, check_same_thread=False, timeout=30.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")

@@ -5,8 +5,7 @@
 
 """Tests for the framework's File Checkpointer.
 
-The Postgres and Redis backends used to live in the framework and were
-exercised here with mocks; both moved to plug-and-play templates under
+Postgres- and Redis-backed checkpointers ship as plug-and-play templates under
 ``examples/software_factory/checkpointers/`` (apps that need them copy the
 file into their repo and test it against their own infra).
 """
