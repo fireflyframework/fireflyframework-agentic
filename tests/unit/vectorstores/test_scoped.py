@@ -123,12 +123,8 @@ class TestTenantScopedVectorStore:
     async def test_search_is_scope_isolated(self) -> None:
         inner = _FakeStore()
         store = TenantScopedVectorStore(inner)
-        await store.upsert(
-            [VectorDocument(id="1", text="a", embedding=[1.0])], tenant_id="acme", workspace_id="main"
-        )
-        await store.upsert(
-            [VectorDocument(id="2", text="b", embedding=[1.0])], tenant_id="other", workspace_id="main"
-        )
+        await store.upsert([VectorDocument(id="1", text="a", embedding=[1.0])], tenant_id="acme", workspace_id="main")
+        await store.upsert([VectorDocument(id="2", text="b", embedding=[1.0])], tenant_id="other", workspace_id="main")
         mine = await store.search([1.0], tenant_id="acme", workspace_id="main")
         assert [r.document.id for r in mine] == ["1"]
         foreign = await store.search([1.0], tenant_id="nobody", workspace_id="main")
@@ -137,9 +133,7 @@ class TestTenantScopedVectorStore:
     async def test_delete_is_scoped(self) -> None:
         inner = _FakeStore()
         store = TenantScopedVectorStore(inner)
-        await store.upsert(
-            [VectorDocument(id="1", text="a", embedding=[1.0])], tenant_id="acme", workspace_id="main"
-        )
+        await store.upsert([VectorDocument(id="1", text="a", embedding=[1.0])], tenant_id="acme", workspace_id="main")
         await store.delete(["1"], tenant_id="acme", workspace_id="main")
         assert await store.search([1.0], tenant_id="acme", workspace_id="main") == []
 

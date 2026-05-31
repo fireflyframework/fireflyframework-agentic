@@ -10,12 +10,10 @@ aggregated per-agent / per-model breakdown — no manual ``record_call`` needed.
 
 On top of that it shows:
 
-* Attaching custom sinks (``JSONLFileSink``) to the *existing* tracker so
-  every agent's cost lands on disk for offline inspection.
-* Optional Azure Monitor export — when
-  ``APPLICATIONINSIGHTS_CONNECTION_STRING`` is in the environment, OTel
-  metrics flow to Application Insights; otherwise the demo falls back to
-  local sinks only.
+* Attaching custom sinks (``JSONLFileSink``, ``OTelMetricsSink``) to the
+  *existing* tracker so every agent's cost lands on disk for offline
+  inspection and is emitted via the OpenTelemetry API. Configuring the OTel
+  SDK/exporters (where those metrics ultimately land) is the host's job.
 * A :class:`BudgetGate` with HARD/SOFT rules installed on the default
   tracker so it applies to real agent traffic.
 * A model-specific :class:`CostFn` (``fixed_rate_cost``) backed by
@@ -58,7 +56,6 @@ from fireflyframework_agentic.observability.cost_resolvers import (
     DEFAULT_RESOLVERS,
     CostContext,
 )
-from fireflyframework_agentic.observability.exporters import configure_exporters
 from fireflyframework_agentic.observability.sinks import (
     JSONLFileSink,
     OTelMetricsSink,
@@ -101,31 +98,11 @@ def fixed_rate_cost(ctx: CostContext) -> float | None:
     return ctx.input_tokens * input_price + ctx.output_tokens * output_price
 
 
-def _try_attach_app_insights() -> bool:
-    """Wire Azure Monitor exporters if a connection string is present."""
-    cs = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING")
-    if not cs:
-        print("APPLICATIONINSIGHTS_CONNECTION_STRING not set; skipping App Insights.")
-        return False
-    try:
-        configure_exporters(
-            service_name="firefly-cost-demo",
-            azure_monitor_connection_string=cs,
-            metric_export_interval_ms=5_000,
-        )
-    except Exception as exc:  # noqa: BLE001
-        print(f"App Insights export not enabled ({type(exc).__name__}: {exc}); falling back to local sinks.")
-        return False
-    print("App Insights exporters attached.")
-    return True
-
-
-def configure_default_tracker(*, with_otel: bool, inflated_prices: bool) -> None:
+def configure_default_tracker(*, inflated_prices: bool) -> None:
     """Install sinks, optional fixed-rate resolver, and budget gate on the singleton."""
     JSONL_PATH.unlink(missing_ok=True)
     default_usage_tracker.add_sink(JSONLFileSink(JSONL_PATH))
-    if with_otel:
-        default_usage_tracker.add_sink(OTelMetricsSink())
+    default_usage_tracker.add_sink(OTelMetricsSink())
 
     resolvers = list(DEFAULT_RESOLVERS)
     if inflated_prices:
@@ -210,8 +187,7 @@ def _print_breakdown(title: str, group: dict, *, width: int) -> None:
 
 async def main() -> None:
     args = parse_args()
-    app_insights_ready = _try_attach_app_insights()
-    configure_default_tracker(with_otel=app_insights_ready, inflated_prices=args.inflated_prices)
+    configure_default_tracker(inflated_prices=args.inflated_prices)
     try:
         await run_agents()
     except BudgetExceededError as exc:

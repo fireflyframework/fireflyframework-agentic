@@ -8,9 +8,9 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 ---
 
 **fireflyframework-agentic** is the production-grade GenAI metaframework built on
-[Pydantic AI](https://ai.pydantic.dev/). It extends the engine with six composable
+[Pydantic AI](https://ai.pydantic.dev/). It extends the engine with composable
 layers — from core configuration through agent management, intelligent reasoning,
-experimentation, pipeline orchestration, and service exposure — so that every concern
+experimentation, and pipeline orchestration — so that every concern
 has a dedicated, protocol-driven module.
 
 ---
@@ -28,14 +28,14 @@ has a dedicated, protocol-driven module.
 
 ## Documentation Map
 
-The framework is organised into six layers. Each layer depends only on the layers
+The framework is organised into layered modules. Each layer depends only on the layers
 below it, keeping the dependency graph acyclic and each module independently testable.
 
 ### Core Layer
 
 | | |
 |---|---|
-| **[Architecture](architecture.md)** | Design principles, six-layer model, protocol hierarchy, dependency flow |
+| **[Architecture](architecture.md)** | Design principles, layered model, protocol hierarchy, dependency flow |
 
 ### Agent Layer
 
@@ -82,18 +82,15 @@ below it, keeping the dependency graph acyclic and each module independently tes
 | **[Experiments](experiments.md)** | `Experiment`, `Variant`, `ExperimentRunner`, `ExperimentTracker`, `VariantComparator` |
 | **[Lab](lab.md)** | `LabSession`, `Benchmark`, `EvalOrchestrator`, `EvalDataset`, `ModelComparison` |
 
+> **Optional developer tooling.** `experiments` and `lab` are leaf modules — nothing
+> in the core imports them and they add no third-party dependencies. Import them only
+> if you run experiments or evaluations; agent-building consumers can ignore them.
+
 ### Orchestration Layer
 
 | | |
 |---|---|
 | **[Pipeline](pipeline.md)** | `DAG`, `PipelineEngine`, `PipelineBuilder`, step types, parallel execution, retries |
-
-### Exposure Layer
-
-| | |
-|---|---|
-| **[REST Exposure](exposure-rest.md)** | `create_agentic_app()`, auto-generated routes, SSE streaming, WebSocket, auth middleware, conversation CRUD, rate limiting, health checks |
-| **[Queue Exposure](exposure-queues.md)** | Kafka, RabbitMQ, Redis consumers/producers, `QueueRouter` |
 
 ### Studio
 
@@ -109,7 +106,7 @@ lives in a separate repository:
 every concept from zero to expert through a real-world **Intelligent Document
 Processing** pipeline. It covers configuration, agents, tools, prompts, reasoning,
 content processing, memory, validation, pipelines, observability, explainability,
-experiments, lab, REST and queue exposure, deployment, and advanced patterns.
+experiments, lab, deployment, and advanced patterns.
 
 ---
 

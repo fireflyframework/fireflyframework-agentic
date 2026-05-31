@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.05.33] - 2026-05-31
+
+### Removed
+
+- **BREAKING — REST/queue exposure layer.** Deleted the `fireflyframework_agentic.exposure`
+  package (FastAPI app factory, HTTP/WS controllers, health probes, SSE, CORS/rate-limit/auth
+  middleware, and Kafka/RabbitMQ/Redis consumer/producer hosts), the `rest`/`kafka`/`rabbitmq`/
+  `redis`/`queues` extras, the `ExposureError`/`QueueConnectionError` exceptions, and the
+  REST-serving config fields `auth_api_keys`/`auth_bearer_tokens`/`cors_allowed_origins`.
+  Serving/hosting is now owned by the consuming service. The framework is a pure in-process
+  library: it serves no port and consumes no broker.
+- **BREAKING — service/infra observability.** Removed `observability.configure_exporters`
+  (global OTel SDK provider/exporter wiring), the W3C trace-context propagation helpers
+  (`inject_trace_context`/`extract_trace_context`/`get_trace_context`/`set_trace_context`/
+  `trace_context_scope`), the `WebhookSink`, and the `otlp_endpoint` config field. The
+  framework still emits model/agent spans/metrics via the OpenTelemetry API; configuring the
+  SDK/exporters and cross-service trace propagation is now the host's responsibility.
+- **BREAKING — inbound RBAC auth.** Removed `security.RBACManager`/`require_permission`, the
+  `rbac_enabled`/`rbac_jwt_secret`/`rbac_multi_tenant` config fields, and the `pyjwt`
+  dependency from the `security` extra (`cryptography` stays for `EncryptedMemoryStore`).
+  Inbound-request authorization is a hosting concern owned by the service.
+
+### Changed
+
+- **`experiments`/`lab` documented as optional** leaf developer-tooling modules (no code or
+  dependency change; they were already not imported by the core).
+
 ## [26.05.32] - 2026-05-31
 
 ### Fixed

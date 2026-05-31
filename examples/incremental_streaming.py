@@ -269,10 +269,6 @@ async def main():
     print("\n  # With debouncing to reduce message frequency")
     print("  async for token in stream.stream_tokens(debounce_ms=50.0):")
     print("      ...")
-    print("\nREST API:")
-    print("  POST /agents/{name}/stream/incremental")
-    print("  - Returns SSE events with individual tokens")
-    print("  - Query param: debounce_ms (optional)")
     print()
 
 

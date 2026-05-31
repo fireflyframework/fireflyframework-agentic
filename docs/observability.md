@@ -5,6 +5,14 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 The Observability module provides OpenTelemetry-native tracing, custom metrics, and
 event recording for GenAI workloads.
 
+> **Framework emits, host exports.** The framework *emits* model/agent spans,
+> metrics, and events through the OpenTelemetry **API**. It deliberately does
+> **not** configure the OpenTelemetry SDK, install global tracer/meter
+> providers, wire up exporters, or propagate trace context across services —
+> that is the **host** application's responsibility. Configure your SDK and
+> exporters once in the host process and the framework's telemetry flows into
+> them automatically.
+
 ---
 
 ## Architecture
@@ -15,10 +23,10 @@ flowchart TD
     DEC --> TRACER[FireflyTracer]
     DEC --> METRICS[FireflyMetrics]
     APP --> EVENTS[FireflyEvents]
-    TRACER --> OTEL[OpenTelemetry SDK]
+    TRACER --> OTEL["OpenTelemetry API"]
     METRICS --> OTEL
     EVENTS --> OTEL
-    OTEL --> EXP["Exporters<br/>(OTLP, Console, Jaeger)"]
+    OTEL --> HOST["Host-configured SDK<br/>(providers + exporters)"]
 ```
 
 ---
@@ -53,54 +61,11 @@ async def process_request(prompt: str) -> str:
 
 ### Distributed Trace Correlation
 
-The framework supports **W3C Trace Context** propagation for correlating traces
-across service boundaries (HTTP, message queues, pipelines).
-
-**Trace Context Functions:**
-
-```python
-from fireflyframework_agentic.observability.tracer import inject_trace_context, extract_trace_context
-
-# Inject trace context into HTTP headers
-headers = {}
-inject_trace_context(headers)
-# headers now contain: traceparent, tracestate
-
-# Send request with trace context
-response = await http_client.post(url, headers=headers)
-
-# On receiving side, extract trace context
-incoming_headers = request.headers
-context = extract_trace_context(incoming_headers)
-# Continue trace with extracted context
-```
-
-**REST API Integration:**
-
-The framework's REST API automatically propagates trace context:
-
-```python
-# Middleware injects trace context into responses
-# and extracts from incoming requests
-from fireflyframework_agentic.exposure.rest.middleware import add_trace_propagation_middleware
-
-add_trace_propagation_middleware(app)
-```
-
-**Queue Integration:**
-
-Message queue consumers/producers automatically propagate trace context:
-
-```python
-# Kafka example - trace context in message headers
-from fireflyframework_agentic.exposure.queues.kafka import KafkaConsumer
-
-consumer = KafkaConsumer(
-    topic="requests",
-    handler=process_message,
-)
-# Trace context automatically extracted from message headers
-```
+Cross-service trace-context propagation (e.g. W3C Trace Context over HTTP or
+message queues) is owned by the **host** application: configure the standard
+OpenTelemetry propagators in your host and the spans the framework emits will
+be parented correctly. The framework itself only emits spans; it does not
+inject or extract `traceparent`/`tracestate` headers.
 
 **Pipeline Context:**
 
@@ -160,24 +125,14 @@ events.emit("agent.started", {"agent": "writer", "model": "gpt-4o"})
 
 ---
 
-## Exporters
+## Exporters and SDK Configuration
 
-The `configure_exporters` function sets up OpenTelemetry exporters based on the
-framework's configuration:
-
-```python
-from fireflyframework_agentic.observability import configure_exporters
-
-configure_exporters(
-    otlp_endpoint="http://localhost:4317",
-    console=True,
-)
-```
-
-Supported exporters:
-
-- **OTLP** -- Sends traces and metrics to any OpenTelemetry-compatible collector.
-- **Console** -- Prints spans and metrics to standard output (useful for development).
+The framework does **not** configure OpenTelemetry exporters or install global
+providers. It emits spans and metrics through the OpenTelemetry API; the **host**
+application owns SDK/exporter setup (OTLP collector, console, Jaeger, Azure
+Monitor, etc.). Configure the SDK once in your host process — for example with
+the standard `opentelemetry-sdk` / `opentelemetry-exporter-otlp` packages — and
+the framework's telemetry flows into it automatically.
 
 ---
 
@@ -268,7 +223,7 @@ For the single-tenant case, the `budget_limit_usd` config field auto-installs a 
 
 ## Cost Sinks
 
-`UsageTracker` fans every `UsageRecord` out to one or more `CostSink` instances. Built-ins: `OTelMetricsSink`, `EventBusSink`, `LoggingSink`, `JSONLFileSink`, `WebhookSink`. Custom sinks implement the protocol's `emit(record)` method.
+`UsageTracker` fans every `UsageRecord` out to one or more `CostSink` instances. Built-ins: `OTelMetricsSink`, `EventBusSink`, `LoggingSink`, `JSONLFileSink`. Custom sinks implement the protocol's `emit(record)` method.
 
 ```python
 from fireflyframework_agentic.observability.sinks import (

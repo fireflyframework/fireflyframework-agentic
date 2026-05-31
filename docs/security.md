@@ -309,76 +309,6 @@ The `scan()` method returns an `OutputGuardResult` dataclass with:
 
 ---
 
-## Role-Based Access Control (RBAC)
-
-The RBAC module provides JWT-based authentication and role/permission management
-for multi-tenant agent deployments.
-
-```python
-from fireflyframework_agentic.security.rbac import RBACManager, require_permission
-
-# Initialize RBAC with JWT secret
-rbac = RBACManager(jwt_secret="your-secret-key-here")
-
-# Create roles and assign permissions
-rbac.create_role("admin", permissions=["agent.create", "agent.delete", "agent.run"])
-rbac.create_role("user", permissions=["agent.run"])
-
-# Assign roles to users
-rbac.assign_role("user@example.com", "user")
-rbac.assign_role("admin@example.com", "admin")
-
-# Generate JWT token
-token = rbac.generate_token("user@example.com")
-
-# Validate token and check permissions
-claims = rbac.validate_token(token)
-if rbac.has_permission(claims["sub"], "agent.run"):
-    # Allow access
-    result = await agent.run(prompt)
-```
-
-### Decorator-Based Protection
-
-Protect agent endpoints with the `@require_permission` decorator:
-
-```python
-from fireflyframework_agentic.security.rbac import require_permission
-
-@require_permission("agent.run")
-async def call_agent(prompt: str, token: str):
-    # Token is validated and permission checked
-    return await agent.run(prompt)
-```
-
-### Multi-Tenant Isolation
-
-RBAC supports tenant-scoped permissions for SaaS applications:
-
-```python
-# Create tenant-specific roles
-rbac.create_role("tenant-1-user", permissions=["agent.run"], tenant="tenant-1")
-rbac.create_role("tenant-2-user", permissions=["agent.run"], tenant="tenant-2")
-
-# Assign users to tenants
-rbac.assign_role("user1@example.com", "tenant-1-user", tenant="tenant-1")
-
-# Check tenant-scoped permission
-if rbac.has_permission("user1@example.com", "agent.run", tenant="tenant-1"):
-    # User can access tenant-1 resources only
-    pass
-```
-
-### Environment Configuration
-
-```bash
-export FIREFLY_AGENTIC_RBAC_ENABLED=true
-export FIREFLY_AGENTIC_RBAC_JWT_SECRET=your-secret-key
-export FIREFLY_AGENTIC_RBAC_TOKEN_EXPIRY_SECONDS=3600
-```
-
----
-
 ## Data Encryption
 
 The encryption module provides AES-256-GCM encryption for sensitive data at rest.
@@ -500,47 +430,6 @@ export FIREFLY_AGENTIC_DATABASE_ALLOW_UNSAFE_QUERIES=true
 
 ---
 
-## CORS Security
-
-The REST API enforces restrictive CORS policies by default.
-
-### Default Policy (Secure)
-
-By default, **no origins** are allowed:
-
-```python
-from fireflyframework_agentic.exposure.rest.middleware import add_cors_middleware
-
-# Default - blocks all cross-origin requests
-add_cors_middleware(app)
-```
-
-### Explicit Allow List
-
-Specify allowed origins for production deployments:
-
-```python
-add_cors_middleware(
-    app,
-    allow_origins=["https://app.example.com", "https://admin.example.com"],
-    allow_credentials=True,
-)
-```
-
-### Environment Configuration
-
-```bash
-export FIREFLY_AGENTIC_CORS_ALLOWED_ORIGINS='["https://app.example.com"]'
-export FIREFLY_AGENTIC_CORS_ALLOW_CREDENTIALS=true
-export FIREFLY_AGENTIC_CORS_ALLOW_METHODS='["GET", "POST"]'
-export FIREFLY_AGENTIC_CORS_MAX_AGE=3600
-```
-
-**Security Note:** Never use `allow_origins=["*"]` in production. Always
-maintain an explicit allow list of trusted domains.
-
----
-
 ## Security Best Practices
 
 ### Defence in Depth
@@ -554,7 +443,6 @@ from fireflyframework_agentic.agents.builtin_middleware import (
     OutputGuardMiddleware,
     CostGuardMiddleware,
 )
-from fireflyframework_agentic.security.rbac import require_permission
 from fireflyframework_agentic.security.encryption import EncryptedMemoryStore
 
 # Encrypted storage
@@ -573,18 +461,14 @@ agent = FireflyAgent(
     ],
 )
 
-# Protected endpoint
-@require_permission("agent.run")
-async def secure_endpoint(prompt: str, token: str):
-    return await agent.run(prompt)
+# Run the agent through the security middleware chain
+result = await agent.run(prompt)
 ```
 
 ### Production Checklist
 
-- [x] Enable RBAC for multi-user access
 - [x] Encrypt sensitive data at rest
 - [x] Use parameterized queries for database access
-- [x] Configure restrictive CORS policies
 - [x] Enable PromptGuard and OutputGuard middleware
 - [x] Set budget limits with CostGuardMiddleware
 - [x] Store secrets in a secure vault (not env vars)

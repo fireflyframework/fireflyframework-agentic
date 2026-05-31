@@ -6,7 +6,7 @@
 import json
 import logging
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -16,7 +16,6 @@ from fireflyframework_agentic.observability.sinks import (
     JSONLFileSink,
     LoggingSink,
     OTelMetricsSink,
-    WebhookSink,
     _emit_safely,
 )
 from fireflyframework_agentic.observability.usage import UsageRecord
@@ -123,47 +122,3 @@ def test_jsonl_file_sink_rotation(tmp_path: Path) -> None:
     sink.close()
     rotated = list(tmp_path.glob("cost.jsonl*"))
     assert len(rotated) > 1
-
-
-def test_webhook_sink_batches_and_flushes() -> None:
-    posts: list[list[dict]] = []
-
-    def fake_post(url: str, json: list[dict], headers: dict, timeout: float) -> MagicMock:
-        posts.append(json)
-        m = MagicMock()
-        m.status_code = 200
-        return m
-
-    sink = WebhookSink("https://example.test/cost", batch_size=3, flush_interval_s=10.0, _post=fake_post)
-    for i in range(5):
-        sink.emit(UsageRecord(agent=f"a{i}", cost_usd=0.01))
-    sink.close()  # forces drain
-    assert sum(len(b) for b in posts) == 5
-
-
-def test_webhook_sink_retries_5xx_then_succeeds() -> None:
-    attempts = {"n": 0}
-
-    def fake_post(url: str, json: list[dict], headers: dict, timeout: float) -> MagicMock:
-        attempts["n"] += 1
-        m = MagicMock()
-        m.status_code = 500 if attempts["n"] < 2 else 200
-        return m
-
-    sink = WebhookSink("https://example.test/cost", batch_size=1, flush_interval_s=10.0, max_retries=3, _post=fake_post)
-    sink.emit(UsageRecord(agent="a", cost_usd=0.01))
-    sink.close()
-    assert attempts["n"] >= 2
-
-
-def test_webhook_sink_drops_after_max_retries(caplog: pytest.LogCaptureFixture) -> None:
-    def always_fail(url: str, json: list[dict], headers: dict, timeout: float) -> MagicMock:
-        m = MagicMock()
-        m.status_code = 500
-        return m
-
-    sink = WebhookSink("https://x", batch_size=1, flush_interval_s=10.0, max_retries=2, _post=always_fail)
-    with caplog.at_level(logging.WARNING):
-        sink.emit(UsageRecord(agent="a", cost_usd=0.01))
-        sink.close()
-    assert any("drop" in r.message.lower() or "fail" in r.message.lower() for r in caplog.records)

@@ -9,11 +9,10 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 >
 > Each chapter introduces a concept, explains *why* it exists, shows *how* it works
 > with architecture diagrams, and immediately applies it to the IDP pipeline. By
-> Chapter 20 you will have a production-grade GenAI application that uses agents,
+> Chapter 18 you will have a production-grade GenAI application that uses agents,
 > tools, prompts, reasoning patterns, content processing, memory, validation, pipelines,
-> observability, explainability, experiments, a REST API, message-queue consumers **and
-> producers** (Kafka, RabbitMQ, Redis), multi-agent delegation, template agents, and
-> a plugin system — all wired together.
+> observability, explainability, experiments, multi-agent delegation, template agents,
+> and a plugin system — all wired together.
 
 ---
 
@@ -39,19 +38,17 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 11. [Observability](#chapter-11-observability) — Tracing, metrics, events, OpenTelemetry exporters
 12. [Explainability](#chapter-12-explainability) — Decisions, explanations, audit trail, reports
 
-**Part IV — Experimentation & Deployment**
+**Part IV — Experimentation**
 
 13. [Experiments](#chapter-13-experiments) — A/B testing, variant comparison, tracking
 14. [Lab](#chapter-14-lab) — Interactive sessions, benchmarks, model comparison, eval datasets
-15. [Exposure: REST API](#chapter-15-exposure-rest-api) — FastAPI factory, SSE streaming, health probes, CORS
-16. [Exposure: Message Queues](#chapter-16-exposure-message-queues) — Consumers + producers for Kafka, RabbitMQ, Redis *(diagram)*
 
 **Part V — Advanced**
 
-17. [Template Agents](#chapter-17-template-agents) — Summariser, classifier, extractor, conversational, router
-18. [Multi-Agent Delegation](#chapter-18-multi-agent-delegation) — Delegation router, strategies, memory forking *(diagram)*
-19. [Plugin System](#chapter-19-plugin-system) — Entry-point discovery, packaging agents/tools/patterns
-20. [Putting It All Together](#chapter-20-putting-it-all-together) — Full IDP implementation, project structure, production checklist *(full system diagram)*
+15. [Template Agents](#chapter-15-template-agents) — Summariser, classifier, extractor, conversational, router
+16. [Multi-Agent Delegation](#chapter-16-multi-agent-delegation) — Delegation router, strategies, memory forking *(diagram)*
+17. [Plugin System](#chapter-17-plugin-system) — Entry-point discovery, packaging agents/tools/patterns
+18. [Putting It All Together](#chapter-18-putting-it-all-together) — Full IDP implementation, project structure, production checklist *(full system diagram)*
 
 ---
 
@@ -76,7 +73,6 @@ to your destination.
 - **Backend engineers** building GenAI features into existing applications.
 - **ML/AI engineers** who want structured reasoning, validation, and observability out
   of the box.
-- **Platform teams** who need a standard way to expose agents via REST APIs and queues.
 
 ### The Four Design Principles
 
@@ -87,12 +83,12 @@ The framework is guided by four principles that show up in every module:
 2. **Convention over configuration** — Sensible defaults everywhere. One `FireflyAgenticConfig`
    object (backed by Pydantic Settings) centralises every knob and reads from environment
    variables automatically.
-3. **Layered composition** — Modules are organised into six layers (Core, Agent,
-   Intelligence, Experimentation, Orchestration, Exposure). Higher layers depend on
+3. **Layered composition** — Modules are organised into layers (Core, Agent,
+   Intelligence, Experimentation, Orchestration). Higher layers depend on
    lower layers, never the reverse.
-4. **Optional dependencies** — Heavy libraries (FastAPI, aiokafka, aio-pika, redis) are
-   declared as extras. The core framework imports them lazily so you only install what
-   you use.
+4. **Optional dependencies** — Heavy libraries (embedding providers, vector store
+   clients, storage backends) are declared as extras. The core framework imports them
+   lazily so you only install what you use.
 
 ### The Running Example: Intelligent Document Processing
 
@@ -103,7 +99,7 @@ Raw Document → Classify → Digitise (OCR) → Extract Fields → Validate →
 ```
 
 Every chapter teaches a framework concept and immediately applies it to a phase of this
-pipeline. By Chapter 20 you will have the complete, production-ready system.
+pipeline. By Chapter 18 you will have the complete, production-ready system.
 
 ---
 
@@ -130,22 +126,20 @@ This installs the core framework with its minimal dependencies: `pydantic-ai`,
 The framework provides optional extras for additional capabilities:
 
 ```bash
-# REST API support (FastAPI + Uvicorn + SSE)
-uv add "fireflyframework-agentic[rest]"
+# Embedding providers (e.g. OpenAI / Azure)
+uv add "fireflyframework-agentic[openai-embeddings]"
 
-# Individual message queue backends
-uv add "fireflyframework-agentic[kafka]"
-uv add "fireflyframework-agentic[rabbitmq]"
-uv add "fireflyframework-agentic[redis]"
+# Vector store backends
+uv add "fireflyframework-agentic[vectorstores-chroma]"
 
-# All queue backends at once
-uv add "fireflyframework-agentic[queues]"
+# Memory persistence backends
+uv add "fireflyframework-agentic[postgres]"
 
-# Everything (REST + all queues)
+# Everything
 uv add "fireflyframework-agentic[all]"
 ```
 
-For our IDP project we will eventually use REST and queues, so install everything:
+For our IDP project we will eventually use several of these, so install everything:
 
 ```bash
 uv add "fireflyframework-agentic[all]"
@@ -191,7 +185,6 @@ Here are the most commonly used configuration fields:
 - `default_temperature` — Sampling temperature (0.0–1.0).
 - `max_retries` — Default retry count for agent runs.
 - `observability_enabled` — Toggle OpenTelemetry instrumentation.
-- `otlp_endpoint` — OTLP exporter endpoint (default: console).
 - `prompt_templates_dir` — Directory for Jinja2 prompt files.
 - `default_chunk_size` / `default_chunk_overlap` — Content chunking defaults.
 - `max_context_tokens` — Maximum context window (default 128,000).
@@ -342,7 +335,7 @@ agent = FireflyAgent(name="local-agent", model=model)
   runtime.
 
 Both approaches work identically with every framework feature — tools, reasoning
-patterns, pipelines, REST exposure, queue consumers, cost tracking, prompt caching,
+patterns, pipelines, cost tracking, prompt caching,
 and all other modules. The framework's `model_utils` module normalizes model
 identity from both strings and `Model` objects, so observability and resilience
 features work uniformly across all providers.
@@ -367,8 +360,8 @@ FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true
 Every GenAI application starts with a single question: *"How do I talk to the model?"*
 In raw Pydantic AI you create an `Agent`, give it a system prompt, and call `run()`.
 That works great for scripts — but the moment you need to register agents by name,
-share them across REST endpoints and queue consumers, attach lifecycle hooks, or plug
-them into reasoning patterns and pipelines, you need a thin coordination layer on top.
+share them across pipelines, delegation, and reasoning patterns, attach lifecycle hooks,
+or plug them into a larger system, you need a thin coordination layer on top.
 
 That is exactly what `FireflyAgent` is. It wraps a Pydantic AI `Agent` and adds three
 things the framework relies on: a **global registry** (so any module can look up an
@@ -398,8 +391,6 @@ graph TB
     end
 
     subgraph Consumers
-        REST["REST / API"]
-        QUEUE["Queue Consumers"]
         PIPE["Pipelines"]
         DELEG["Delegation Router"]
         REASON["Reasoning Patterns"]
@@ -411,8 +402,6 @@ graph TB
     FA -->|registers in| REG
     FA -->|carries| CTX
     FA -->|hooks| LC
-    REG -->|lookup by name| REST
-    REG -->|lookup by name| QUEUE
     REG -->|lookup by name| PIPE
     REG -->|lookup by name| DELEG
     REG -->|lookup by name| REASON
@@ -442,7 +431,7 @@ What happens behind the scenes:
 2. The decorated function becomes the agent's **dynamic instructions provider** — it is
    called at the start of every run and can use the context to customise the system prompt.
 3. The agent is automatically registered in the global `AgentRegistry`, so any module
-   (REST endpoints, pipelines, delegation routers) can look it up by name.
+   (pipelines, delegation routers) can look it up by name.
 
 ### Creating an Agent with the Class
 
@@ -466,7 +455,7 @@ classifier = FireflyAgent(
     output_type=dict,
 )
 
-# Register it so other parts of the framework (REST, queues, pipelines) can find it.
+# Register it so other parts of the framework (pipelines, delegation) can find it.
 agent_registry.register(classifier)
 ```
 
@@ -492,8 +481,8 @@ async with classifier.run_stream("Classify this document: ...") as stream:
 ### The Agent Registry
 
 The `AgentRegistry` is a process-wide singleton that maps agent names to `FireflyAgent`
-instances. This is the glue that lets any module — REST endpoints, queue consumers,
-delegation routers, pipelines, reasoning patterns — discover and invoke agents without
+instances. This is the glue that lets any module — delegation routers, pipelines,
+reasoning patterns — discover and invoke agents without
 importing them directly:
 
 ```python
@@ -976,7 +965,7 @@ agent = FireflyAgent(
 For our IDP pipeline, we need tools the extraction agent can call. We define them
 with `@firefly_tool`, group them into a `ToolKit`, and attach them to the agent
 via `as_pydantic_tools()`. This is the pattern you will see end-to-end in
-Chapter 6 (reasoning patterns) and Chapter 20 (full IDP application).
+Chapter 6 (reasoning patterns) and Chapter 18 (full IDP application).
 
 **Step 1 — Define the tools:**
 
@@ -1023,7 +1012,7 @@ extractor_agent = FireflyAgent(
 > **What happens next:** In Chapter 6 we pass `extractor_agent` (with its tools
 > already attached) to reasoning patterns like Plan-and-Execute and Reflexion.
 > The pattern calls `agent.run()` internally — the tools are available because
-> they were bound here. Chapter 20 shows the complete production module
+> they were bound here. Chapter 18 shows the complete production module
 > (`idp/tools.py`) with retries, guards, and the full ToolKit.
 
 ---
@@ -1762,7 +1751,7 @@ if not validation_passed:
 > **Architecture recap:** Reasoning patterns never see tools directly. They receive
 > an agent (which owns its tools) and call `agent.run()`. This is why tools must be
 > bound to the agent *before* passing it to a pattern — see the "Attaching Tools to
-> Agents" section in Chapter 4 and the full `idp/tools.py` module in Chapter 20.
+> Agents" section in Chapter 4 and the full `idp/tools.py` module in Chapter 18.
 
 ---
 
@@ -2916,23 +2905,17 @@ events.emit("pipeline.step.completed", {"step": "classify", "duration_ms": 250})
 
 ### Exporter Configuration
 
-Configure where traces and metrics go:
-
-```python
-from fireflyframework_agentic.observability import configure_exporters
-
-# Send to an OTLP collector (Jaeger, Grafana Tempo, etc.)
-configure_exporters(otlp_endpoint="http://localhost:4317")
-
-# Or just print to console for development
-configure_exporters(console=True)
-```
+The framework emits spans and metrics purely through the OpenTelemetry API; it
+does not configure the OTel SDK or any exporters itself. The host application
+owns OTel SDK and exporter setup — wire up your `TracerProvider`,
+`MeterProvider`, and the exporters (OTLP collector, console, etc.) however your
+deployment requires, and the framework's telemetry flows through the globally
+configured providers automatically.
 
 Configuration via environment variables:
 
 ```bash
 export FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true
-export FIREFLY_AGENTIC_OTLP_ENDPOINT=http://localhost:4317
 export FIREFLY_AGENTIC_LOG_LEVEL=DEBUG
 ```
 
@@ -3135,7 +3118,7 @@ print(report.build_markdown())
 
 ---
 
-# Part IV — Experimentation & Deployment
+# Part IV — Experimentation
 
 ---
 
@@ -3341,389 +3324,11 @@ print(f"Extraction accuracy: {report.avg_score:.1%}")
 
 ---
 
-## Chapter 15: Exposure: REST API
-
-Your agents work, your pipeline passes validation, your experiments prove which model is
-best. Now you need to put it all behind an HTTP endpoint so other services (or a UI)
-can call it. The Exposure REST module gives you a one-liner FastAPI application factory
-that auto-generates endpoints for every agent in the `AgentRegistry` — including
-streaming via Server-Sent Events, health probes, CORS, and correlation-ID propagation.
-You can also add custom endpoints for pipelines.
-
-### Quick Start
-
-```bash
-uv add "fireflyframework-agentic[rest]"
-```
-
-```python
-from fireflyframework_agentic.exposure.rest import create_agentic_app
-
-app = create_agentic_app(title="IDP Service", version="1.0.0")
-```
-
-```bash
-uvicorn myapp:app --reload
-```
-
-That's it. The app auto-generates endpoints for every agent in the `AgentRegistry`.
-
-### What You Get Out of the Box
-
-- **GET /agents/** — Lists all registered agents with metadata.
-- **POST /agents/{name}/run** — Invokes an agent with a JSON body.
-- **GET /agents/{name}/stream** — SSE streaming for real-time output.
-- **GET /health** — Liveness probe (`{"status": "healthy"}`).
-- **GET /health/ready** — Readiness probe (`{"status": "ready"}`).
-- **X-Request-ID** middleware — Injects or propagates request correlation IDs.
-- **CORS** middleware — Configurable origins.
-
-### Request and Response
-
-```json
-// POST /agents/extractor/run
-{
-    "prompt": "Extract fields from: Invoice #INV-001, Acme Corp, $500",
-    "deps": {}
-}
-```
-
-```json
-// Response
-{
-    "agent_name": "extractor",
-    "output": {"invoice_number": "INV-001", "vendor_name": "Acme Corp", ...},
-    "success": true,
-    "error": null,
-    "metadata": {}
-}
-```
-
-### SSE Streaming
-
-For long-running agent invocations:
-
-```
-GET /agents/extractor/stream?prompt=Extract+fields+from+...
-
-data: {"text": "Processing..."}
-data: {"text": "Found invoice number..."}
-data: [DONE]
-```
-
-### Configuration
-
-```python
-app = create_agentic_app(
-    title="IDP Service",
-    version="1.0.0",
-    enable_cors=True,
-    cors_origins=["https://myapp.example.com"],
-)
-```
-
-### Multi-Turn Conversations via REST
-
-Pass `conversation_id` in the request body:
-
-```json
-{
-    "prompt": "What did we discuss earlier?",
-    "conversation_id": "abc123"
-}
-```
-
-### IDP Tie-In: Exposing the Pipeline as a REST API
-
-```python
-from fireflyframework_agentic.exposure.rest import create_agentic_app
-from fastapi import UploadFile
-
-app = create_agentic_app(title="IDP Service")
-
-# Custom endpoint for the full IDP pipeline
-@app.post("/idp/process")
-async def process_document(file: UploadFile):
-    content = await file.read()
-    ctx = PipelineContext(
-        inputs=content,
-        metadata={"filename": file.filename},
-    )
-    result = await idp_pipeline.run(context=ctx)
-    return result.model_dump() if hasattr(result, "model_dump") else result
-```
-
----
-
-## Chapter 16: Exposure: Message Queues
-
-REST is great for synchronous request/response, but many production systems are
-**event-driven**: documents arrive on a Kafka topic, processing results go back on
-another topic, and nothing blocks. The Queues module gives you both sides of that
-coin — **consumers** that listen for incoming messages and route them to agents, and
-**producers** that publish agent results back to the broker.
-
-Three brokers are supported out of the box: Apache Kafka, RabbitMQ, and Redis Pub/Sub.
-Each follows the same `QueueConsumer` / `QueueProducer` protocol, so switching
-brokers is a one-line change.
-
-```mermaid
-flowchart LR
-    subgraph Broker
-        REQ["Requests Topic"]
-        RES["Results Topic"]
-    end
-
-    subgraph fireflyframework-agentic
-        CONS["Consumer<br/><small>KafkaAgentConsumer<br/>RabbitMQAgentConsumer<br/>RedisAgentConsumer</small>"]
-        ROUTER["QueueRouter<br/><small>pattern-based routing</small>"]
-        REG["AgentRegistry"]
-        AGT["FireflyAgent"]
-        PROD["Producer<br/><small>KafkaAgentProducer<br/>RabbitMQAgentProducer<br/>RedisAgentProducer</small>"]
-    end
-
-    REQ --> CONS
-    CONS --> ROUTER
-    ROUTER --> REG
-    REG --> AGT
-    AGT --> PROD
-    PROD --> RES
-```
-
-### Quick Start
-
-```bash
-# Install the backend you need
-uv add "fireflyframework-agentic[kafka]"
-uv add "fireflyframework-agentic[rabbitmq]"
-uv add "fireflyframework-agentic[redis]"
-```
-
-### Consumers
-
-Consumers listen on a topic/queue/channel and route each incoming message to a
-registered agent. They run continuously — think of them as your agent's "inbox".
-
-#### Kafka Consumer
-
-```python
-from fireflyframework_agentic.exposure.queues.kafka import KafkaAgentConsumer
-
-# This consumer reads from the "idp-incoming-documents" topic.
-# Every message body is passed to the "document_classifier" agent's run() method.
-consumer = KafkaAgentConsumer(
-    agent_name="document_classifier",
-    topic="idp-incoming-documents",
-    bootstrap_servers="localhost:9092",
-    group_id="idp-workers", # Kafka consumer group for load balancing
-)
-await consumer.start() # Blocks and processes messages until stopped
-```
-
-#### RabbitMQ Consumer
-
-```python
-from fireflyframework_agentic.exposure.queues.rabbitmq import RabbitMQAgentConsumer
-
-consumer = RabbitMQAgentConsumer(
-    agent_name="document_classifier",
-    queue_name="idp-incoming-documents",
-    url="amqp://guest:guest@localhost/",
-)
-await consumer.start()
-```
-
-#### Redis Consumer
-
-```python
-from fireflyframework_agentic.exposure.queues.redis import RedisAgentConsumer
-
-consumer = RedisAgentConsumer(
-    agent_name="document_classifier",
-    channel="idp-incoming-documents",
-    url="redis://localhost:6379",
-)
-await consumer.start()
-```
-
-### Producers
-
-Producers are the other half — they publish messages (typically agent results) back
-to the broker. Each producer satisfies the `QueueProducer` protocol.
-
-#### Kafka Producer
-
-```python
-from fireflyframework_agentic.exposure.queues.kafka import KafkaAgentProducer
-from fireflyframework_agentic.exposure.queues import QueueMessage
-
-# Create a producer that publishes to the "idp-results" topic.
-producer = KafkaAgentProducer(
-    topic="idp-results",
-    bootstrap_servers="localhost:9092",
-)
-
-# Publish a result back to the broker.
-await producer.publish(QueueMessage(
-    body='{"invoice_number": "INV-001", "status": "extracted"}',
-    headers={"agent": "field_extractor", "tenant": "acme-corp"},
-))
-
-# When you're done, clean up.
-await producer.stop()
-```
-
-#### RabbitMQ Producer
-
-```python
-from fireflyframework_agentic.exposure.queues.rabbitmq import RabbitMQAgentProducer
-
-producer = RabbitMQAgentProducer(
-    queue_name="idp-results",
-    url="amqp://guest:guest@localhost/",
-)
-await producer.publish(QueueMessage(body='{"status": "done"}'))
-await producer.stop()
-```
-
-#### Redis Producer
-
-```python
-from fireflyframework_agentic.exposure.queues.redis import RedisAgentProducer
-
-producer = RedisAgentProducer(
-    channel="idp-results",
-    url="redis://localhost:6379",
-)
-await producer.publish(QueueMessage(body='{"status": "done"}'))
-await producer.stop()
-```
-
-#### Consumer + Producer Pattern
-
-The most common pattern is a **consumer that processes messages and publishes results**.
-This turns your agent into a microservice that reads from one topic and writes to another:
-
-```python
-from fireflyframework_agentic.exposure.queues.kafka import KafkaAgentConsumer, KafkaAgentProducer
-from fireflyframework_agentic.exposure.queues import QueueMessage
-from fireflyframework_agentic.agents.registry import agent_registry
-
-# Set up both sides
-consumer = KafkaAgentConsumer(
-    agent_name="field_extractor",
-    topic="idp-extract-requests",
-    bootstrap_servers="kafka:9092",
-)
-producer = KafkaAgentProducer(
-    topic="idp-extract-results",
-    bootstrap_servers="kafka:9092",
-)
-
-# Process: consume → run agent → publish result
-async def process_and_publish():
-    agent = agent_registry.get("field_extractor")
-    # In practice, you'd integrate this into the consumer's message loop.
-    # Here we show the conceptual flow:
-    result = await agent.run("Extract fields from: Invoice #INV-001, Acme, $500")
-    await producer.publish(QueueMessage(
-        body=str(result.output),
-        headers={"agent": "field_extractor"},
-    ))
-```
-
-### Queue Messages
-
-All consumers and producers work with `QueueMessage`:
-
-```python
-from fireflyframework_agentic.exposure.queues import QueueMessage
-
-message = QueueMessage(
-    body="Process this invoice",
-    headers={"tenant": "acme-corp", "priority": "high"},
-    routing_key="invoice.process",
-    reply_to="idp-responses",
-)
-```
-
-### Queue Router
-
-Route messages to different agents based on routing-key patterns:
-
-```python
-from fireflyframework_agentic.exposure.queues import QueueRouter
-
-router = QueueRouter(default_agent="fallback")
-router.add_route(r"invoice\..*", "invoice_processor")
-router.add_route(r"receipt\..*", "receipt_processor")
-router.add_route(r"contract\..*", "contract_processor")
-
-# Incoming message with routing_key="invoice.classify"
-# → routed to "invoice_processor" agent
-```
-
-### Custom Consumers
-
-For unsupported brokers, extend `BaseQueueConsumer`:
-
-```python
-from fireflyframework_agentic.exposure.queues.base import BaseQueueConsumer
-
-class MyBrokerConsumer(BaseQueueConsumer):
-    async def start(self) -> None:
-        # Connect and begin consuming
-        ...
-
-    async def stop(self) -> None:
-        # Disconnect gracefully
-        ...
-```
-
-The base class provides `_process_message(message)` which routes to the configured
-agent automatically.
-
-### IDP Tie-In: Processing Documents from Kafka
-
-In our IDP system, documents arrive on a Kafka topic. The consumer classifies them
-and routes to specialised extractors. Results go back on a results topic for
-downstream systems to pick up:
-
-```python
-from fireflyframework_agentic.exposure.queues.kafka import KafkaAgentConsumer, KafkaAgentProducer
-from fireflyframework_agentic.exposure.queues import QueueRouter, QueueMessage
-
-# Route different document types to specialised extraction agents.
-# Messages with routing_key "invoice.*" go to the invoice extractor, etc.
-router = QueueRouter(default_agent="document_classifier")
-router.add_route(r"invoice\..*", "invoice_extractor")
-router.add_route(r"receipt\..*", "receipt_extractor")
-
-# Consumer: reads raw documents from Kafka
-consumer = KafkaAgentConsumer(
-    agent_name="document_classifier",
-    topic="idp-documents",
-    bootstrap_servers="kafka:9092",
-    group_id="idp-consumers",
-)
-
-# Producer: publishes extraction results back to Kafka
-producer = KafkaAgentProducer(
-    topic="idp-results",
-    bootstrap_servers="kafka:9092",
-)
-
-# Start both — the consumer runs in a loop, the producer is ready to publish.
-await consumer.start()
-```
-
----
-
 # Part V — Advanced
 
 ---
 
-## Chapter 17: Template Agents
+## Chapter 15: Template Agents
 
 By now you've written several agents from scratch — classifier, extractor, OCR. Each
 time you had to think about the system prompt, output type, and registration. But many
@@ -3878,7 +3483,7 @@ extractor_agent = create_extractor_agent(
 
 ---
 
-## Chapter 18: Multi-Agent Delegation
+## Chapter 16: Multi-Agent Delegation
 
 Not every document is an invoice. Your IDP system might receive receipts, contracts,
 and forms — each requiring a specialised agent with different prompts, tools, and
@@ -3993,7 +3598,7 @@ router = DelegationRouter(
 
 ---
 
-## Chapter 19: Plugin System
+## Chapter 17: Plugin System
 
 As your application grows, you'll want to share agents, tools, and reasoning patterns
 across projects — or let third-party teams contribute their own. The Plugin module
@@ -4058,7 +3663,7 @@ agents automatically.
 
 ---
 
-## Chapter 20: Putting It All Together
+## Chapter 18: Putting It All Together
 
 You've learned every module in fireflyframework-agentic, each in isolation. Now it's time
 to see how they all fit together in a single, production-grade application. The diagram
@@ -4068,11 +3673,8 @@ below shows the full system architecture — every layer, every connection:
 
 ```mermaid
 graph TB
-    subgraph "Exposure Layer"
-        REST["REST API\n(FastAPI + SSE)"]
-        KAFKA["Kafka Consumer"]
-        RABBIT["RabbitMQ Consumer"]
-        REDIS["Redis Consumer"]
+    subgraph "Caller"
+        APP["Host application\n(in-process)"]
     end
 
     subgraph "Orchestration Layer"
@@ -4112,7 +3714,7 @@ graph TB
         PLUG["Plugin System\n(entry-point discovery)"]
     end
 
-    REST & KAFKA & RABBIT & REDIS --> PIPE & DELEG
+    APP --> PIPE & DELEG
     PIPE --> FA
     DELEG --> FA
     FA --> REASON
@@ -4154,8 +3756,7 @@ idp-service/
 │ ├── tools.py # Tool definitions
 │ ├── pipeline.py # Pipeline wiring
 │ ├── validation.py # Validation rules
-│ ├── app.py # REST application
-│ └── consumers.py # Queue consumers
+│ └── main.py # In-process entry point
 └── tests/
     └── test_pipeline.py
 ```
@@ -4167,7 +3768,6 @@ FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o
 FIREFLY_AGENTIC_DEFAULT_TEMPERATURE=0.1
 FIREFLY_AGENTIC_MAX_RETRIES=3
 FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true
-FIREFLY_AGENTIC_OTLP_ENDPOINT=http://localhost:4317
 FIREFLY_AGENTIC_MEMORY_BACKEND=file
 FIREFLY_AGENTIC_MEMORY_FILE_DIR=.firefly_memory
 FIREFLY_AGENTIC_DEFAULT_CHUNK_SIZE=4000
@@ -4372,59 +3972,33 @@ async def process_document(document_bytes: bytes, metadata: dict | None = None) 
     return result.final_output if result.success else {"error": result.failed_nodes}
 ```
 
-### REST Application (app.py)
+### Entry Point (main.py)
+
+`fireflyframework-agentic` is a pure in-process library: it serves no port and consumes
+no broker. Your host service owns serving and calls `process_document` directly. The host
+also owns OTel SDK and exporter configuration; the framework emits spans and metrics
+through the OpenTelemetry API, so they flow through whatever providers the host has set up:
 
 ```python
-from fireflyframework_agentic.exposure.rest import create_agentic_app
-from fireflyframework_agentic.observability import configure_exporters
-from fastapi import UploadFile
+import asyncio
+
 from .pipeline import process_document
 
-# Configure observability
-configure_exporters(otlp_endpoint="http://localhost:4317", console=True)
 
-# Create the app
-app = create_agentic_app(title="IDP Service", version="1.0.0")
-
-@app.post("/idp/process")
-async def handle_document(file: UploadFile):
-    content = await file.read()
-    result = await process_document(
-        content,
-        metadata={"filename": file.filename, "source": "rest-api"},
+async def main(document_bytes: bytes, filename: str) -> dict:
+    return await process_document(
+        document_bytes,
+        metadata={"filename": filename, "source": "host-service"},
     )
-    return result
+
+
+if __name__ == "__main__":
+    with open("invoice.pdf", "rb") as fh:
+        print(asyncio.run(main(fh.read(), "invoice.pdf")))
 ```
 
-### Queue Consumers (consumers.py)
-
-```python
-from fireflyframework_agentic.exposure.queues.kafka import KafkaAgentConsumer
-from fireflyframework_agentic.exposure.queues import QueueRouter
-
-# Route different document types to specialised processing
-router = QueueRouter(default_agent="document_classifier")
-router.add_route(r"invoice\..*", "field_extractor")
-router.add_route(r"receipt\..*", "receipt_processor")
-
-# Main Kafka consumer
-consumer = KafkaAgentConsumer(
-    agent_name="document_classifier",
-    topic="idp-documents",
-    bootstrap_servers="kafka:9092",
-    group_id="idp-workers",
-)
-```
-
-### Running the Service
-
-```bash
-# Start the REST API
-uvicorn idp_service.app:app --host 0.0.0.0 --port 8000
-
-# Or start the Kafka consumer
-python -m idp_service.consumers
-```
+To expose this over HTTP or wire it to a message broker, embed `process_document` in
+your host service's framework of choice — the agent library stays in-process.
 
 ### Production Checklist
 
@@ -4440,8 +4014,6 @@ Before deploying to production, verify:
   for your use case.
 - [ ] **Retry limits** — Pipeline nodes have appropriate `retry_max` and
   `timeout_seconds`.
-- [ ] **CORS** — REST API `cors_origins` is restricted to known domains.
-- [ ] **Health checks** — Kubernetes probes point to `/health` and `/health/ready`.
 - [ ] **Experiments** — You've A/B tested your prompt and model variants.
 - [ ] **Audit trail** — Explainability is enabled for regulated workloads.
 
@@ -4474,6 +4046,4 @@ paths to explore further:
 - [Explainability](explainability.md)
 - [Experiments](experiments.md)
 - [Lab](lab.md)
-- [Exposure REST](exposure-rest.md)
-- [Exposure Queues](exposure-queues.md)
 - [Use Case: IDP](use-case-idp.md)

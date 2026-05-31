@@ -17,9 +17,9 @@
 
 This example shows all production-ready features working together:
 - Database persistence (PostgreSQL/MongoDB)
-- Distributed tracing (W3C Trace Context)
+- Model/agent telemetry (OpenTelemetry spans and metrics)
 - API quota management
-- Security (RBAC, encryption, SQL injection prevention)
+- Security (encryption, SQL injection prevention)
 - HTTP connection pooling
 - Incremental streaming
 - Batch processing
@@ -245,31 +245,18 @@ async def demo_security_features():
     """Demonstrate security features integration."""
     print("\n\n=== Security Features Integration ===\n")
 
-    # RBAC (if enabled)
-    print("1. RBAC (Role-Based Access Control):")
-    print("   Configure with: FIREFLY_AGENTIC_RBAC_ENABLED=true")
-    print("   Set JWT secret: FIREFLY_AGENTIC_RBAC_JWT_SECRET=your-secret")
-    print("   Use @require_permission decorator on agent endpoints")
-    print()
-
     # Encryption (if enabled)
-    print("2. Data Encryption:")
+    print("1. Data Encryption:")
     print("   Configure with: FIREFLY_AGENTIC_ENCRYPTION_ENABLED=true")
     print("   Set encryption key: FIREFLY_AGENTIC_ENCRYPTION_KEY=your-key-32-bytes")
     print("   Use EncryptedMemoryStore wrapper for sensitive data")
     print()
 
     # SQL Injection Prevention
-    print("3. SQL Injection Prevention:")
+    print("2. SQL Injection Prevention:")
     print("   Automatically enabled in DatabaseTool")
     print("   Detects 15+ dangerous SQL patterns")
     print("   Enforces parameterized queries")
-    print()
-
-    # CORS Security
-    print("4. CORS Security:")
-    print("   Default: No origins allowed (secure)")
-    print("   Configure: FIREFLY_AGENTIC_CORS_ALLOWED_ORIGINS=['https://app.example.com']")
     print()
 
 
@@ -279,11 +266,9 @@ async def demo_observability_integration():
 
     config = get_config()
 
-    print("1. Distributed Tracing:")
-    print(f"   Enabled: {config.observability_enabled}")
-    print(f"   OTLP endpoint: {config.otlp_endpoint or 'Not configured'}")
-    print(f"   Service name: {config.service_name}")
-    print("   W3C Trace Context propagation: Enabled")
+    print("1. Telemetry:")
+    print(f"   Model/agent observability enabled: {config.observability_enabled}")
+    print("   Spans/metrics are emitted via the OpenTelemetry API; the host configures exporters.")
     print()
 
     print("2. Usage Tracking:")
@@ -312,10 +297,8 @@ async def demo_configuration_integration():
     print("export FIREFLY_AGENTIC_MEMORY_MONGODB_URL=mongodb://localhost:27017/")
     print()
 
-    print("# Distributed Tracing")
+    print("# Telemetry (the host owns OTel SDK/exporter configuration)")
     print("export FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true")
-    print("export FIREFLY_AGENTIC_OTLP_ENDPOINT=http://localhost:4317")
-    print("export FIREFLY_AGENTIC_SERVICE_NAME=my-genai-app")
     print()
 
     print("# Quota Management")
@@ -325,11 +308,8 @@ async def demo_configuration_integration():
     print()
 
     print("# Security")
-    print("export FIREFLY_AGENTIC_RBAC_ENABLED=true")
-    print("export FIREFLY_AGENTIC_RBAC_JWT_SECRET=your-secret-key")
     print("export FIREFLY_AGENTIC_ENCRYPTION_ENABLED=true")
     print("export FIREFLY_AGENTIC_ENCRYPTION_KEY=your-32-byte-key")
-    print("export FIREFLY_AGENTIC_CORS_ALLOWED_ORIGINS=['https://app.example.com']")
     print()
 
     print("# HTTP Connection Pooling")
@@ -351,9 +331,9 @@ async def main():
     print()
     print("This example demonstrates all production-ready features working together:")
     print("✓ Database persistence (PostgreSQL/MongoDB)")
-    print("✓ Distributed tracing (W3C Trace Context)")
+    print("✓ Model/agent telemetry (OpenTelemetry spans and metrics)")
     print("✓ API quota management")
-    print("✓ Security (RBAC, encryption, SQL injection prevention)")
+    print("✓ Security (encryption, SQL injection prevention)")
     print("✓ HTTP connection pooling")
     print("✓ Incremental streaming")
     print("✓ Batch processing")
@@ -377,7 +357,6 @@ async def main():
     print("✓ Configuration is unified through environment variables")
     print("✓ Middleware provides composable production features")
     print("✓ Pipelines support all agent capabilities")
-    print("✓ REST API exposes all functionality")
     print()
     print("Quick Start:")
     print("  1. Set environment variables for desired features")
@@ -387,7 +366,7 @@ async def main():
     print("For detailed documentation:")
     print("  - docs/deployment.md - Production deployment guide")
     print("  - docs/observability.md - Tracing and monitoring")
-    print("  - docs/security.md - RBAC and encryption")
+    print("  - docs/security.md - Encryption and SQL injection prevention")
     print("  - docs/memory.md - Database persistence")
     print()
 

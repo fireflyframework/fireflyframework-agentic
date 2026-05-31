@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Observability subpackage -- tracing, metrics, events, and exporters."""
+"""Observability subpackage -- tracing, metrics, events, and cost/usage tracking."""
 
 from fireflyframework_agentic.observability.budget import (
     BudgetGate,
@@ -31,7 +31,6 @@ from fireflyframework_agentic.observability.cost_resolvers import (
 )
 from fireflyframework_agentic.observability.decorators import metered, traced
 from fireflyframework_agentic.observability.events import FireflyEvent, FireflyEvents, default_events
-from fireflyframework_agentic.observability.exporters import ProviderBundle, configure_exporters
 from fireflyframework_agentic.observability.metrics import FireflyMetrics, default_metrics
 from fireflyframework_agentic.observability.sinks import (
     CostSink,
@@ -39,14 +38,10 @@ from fireflyframework_agentic.observability.sinks import (
     JSONLFileSink,
     LoggingSink,
     OTelMetricsSink,
-    WebhookSink,
 )
 from fireflyframework_agentic.observability.tracer import (
     FireflyTracer,
     default_tracer,
-    extract_trace_context,
-    inject_trace_context,
-    trace_context_scope,
 )
 from fireflyframework_agentic.observability.usage import (
     UsageRecord,
@@ -71,24 +66,18 @@ __all__ = [
     "JSONLFileSink",
     "LoggingSink",
     "OTelMetricsSink",
-    "ProviderBundle",
     "ScopeContext",
     "UnknownModelCostError",
     "UsageRecord",
     "UsageSummary",
     "UsageTracker",
-    "WebhookSink",
-    "configure_exporters",
     "default_events",
     "default_metrics",
     "default_tracer",
     "default_usage_tracker",
-    "extract_trace_context",
     "genai_prices_cost",
-    "inject_trace_context",
     "metered",
     "provider_reported_cost",
     "resolve_cost",
-    "trace_context_scope",
     "traced",
 ]

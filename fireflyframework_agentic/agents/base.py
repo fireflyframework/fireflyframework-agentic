@@ -106,8 +106,8 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         output_type: The Pydantic model (or scalar type) for structured output.
         deps_type: The dependency type expected at run time.
         tools: Sequence of tool functions or :class:`pydantic_ai.Tool` objects.
-        description: Free-form description shown in documentation and the REST
-            exposure layer.
+        description: Free-form description shown in documentation and agent
+            discovery listings.
         version: Semantic version string for this agent definition.
         tags: Iterable of tags used for capability-based discovery.
         metadata: Arbitrary key-value pairs attached to the agent.

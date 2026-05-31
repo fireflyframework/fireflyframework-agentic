@@ -118,17 +118,6 @@ class ExplainabilityError(FireflyAgenticError):
     """Raised for errors in trace recording, explanation generation, or audit."""
 
 
-# -- Exposure ----------------------------------------------------------------
-
-
-class ExposureError(FireflyAgenticError):
-    """Raised for errors in REST API or queue-based agent exposure."""
-
-
-class QueueConnectionError(ExposureError):
-    """Raised when a queue backend connection fails."""
-
-
 # -- Content processing ------------------------------------------------------
 
 
