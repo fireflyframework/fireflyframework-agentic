@@ -128,7 +128,9 @@ class ArchiveUnpacker:
             raise
         except Exception as exc:  # noqa: BLE001
             if "password" in str(exc).lower():
-                raise ArchiveExtractionError("password-protected 7z archives are not supported", filename=filename) from exc
+                raise ArchiveExtractionError(
+                    "password-protected 7z archives are not supported", filename=filename
+                ) from exc
             raise ArchiveExtractionError(f"corrupt 7z archive: {exc}", filename=filename) from exc
 
         total_bytes = 0

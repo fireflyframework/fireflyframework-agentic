@@ -5,9 +5,8 @@
 
 """Audit-log tests — File / Logging / OTel backends + pipeline wiring.
 
-PostgresAuditLog used to live in the framework and was tested here with mocks;
-it moved to ``examples/software_factory/audit/postgres.py`` as a plug-and-play
-template.
+A Postgres-backed audit log ships as a plug-and-play template in
+``examples/software_factory/audit/postgres.py``.
 """
 
 from __future__ import annotations

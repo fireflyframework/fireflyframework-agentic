@@ -116,9 +116,9 @@ async def run_branching() -> None:
 # =============================================================================
 # Scenario 2 — Map-reduce via Send
 #
-# (The software-factory scenario that used to live here has its own folder
-# now: ``examples/software_factory/``. It exercises the QA feedback loop,
-# checkpoint + resume, and includes plug-and-play Postgres / Redis templates.)
+# (For a larger end-to-end scenario see ``examples/software_factory/``. It
+# exercises the QA feedback loop, checkpoint + resume, and includes
+# plug-and-play Postgres / Redis templates.)
 # =============================================================================
 
 

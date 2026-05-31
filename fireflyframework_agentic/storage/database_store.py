@@ -199,8 +199,8 @@ class DatabaseStore:
                     # Force any uncommitted WAL frames into the main SQLite
                     # file BEFORE the backend uploads it. The backend copies
                     # the main file only — without this, writes left in -wal
-                    # by long-lived sqlite3 connections (e.g. SqliteCorpus)
-                    # would silently disappear from the uploaded artifact.
+                    # by long-lived sqlite3 connections would silently
+                    # disappear from the uploaded artifact.
                     await asyncio.to_thread(_checkpoint_wal, self._cache_path)
                     await self._upload_with_retry(first_write=first_write)
         finally:

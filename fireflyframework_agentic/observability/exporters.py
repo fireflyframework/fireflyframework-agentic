@@ -98,11 +98,8 @@ class ProviderBundle:
     also registered globally so ``trace.get_tracer(...)`` / ``metrics.get_meter(...)``
     pick them up automatically.
 
-    The ``tracer`` attribute preserves the legacy return type of
-    :func:`configure_exporters`; existing code that did
-    ``provider = configure_exporters(...)`` and called
-    ``provider.add_span_processor(...)`` should migrate to
-    ``configure_exporters(...).tracer``.
+    Use the ``tracer`` attribute to reach the ``TracerProvider`` directly, e.g.
+    ``configure_exporters(...).tracer.add_span_processor(...)``.
     """
 
     tracer: TracerProvider

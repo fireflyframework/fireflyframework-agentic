@@ -341,10 +341,7 @@ def _wrap_text_as_html(data: bytes, media_type: str) -> bytes:
     import html as _html
 
     body = _html.escape(data.decode("utf-8", errors="replace"))
-    document = (
-        '<!DOCTYPE html>\n<html><head><meta charset="utf-8"></head>'
-        f"<body><pre>{body}</pre></body></html>"
-    )
+    document = f'<!DOCTYPE html>\n<html><head><meta charset="utf-8"></head><body><pre>{body}</pre></body></html>'
     return document.encode("utf-8")
 
 
