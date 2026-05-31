@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.05.32] - 2026-05-31
+
+### Fixed
+
+- **`QdrantVectorStore.delete` is now namespace-scoped** — it deletes only points
+  matching both the namespace and the requested ids (via a `FilterSelector`
+  combining a `_namespace` `FieldCondition` with `HasIdCondition`), mirroring the
+  namespace filter applied on search. Previously it deleted by a bare id list,
+  ignoring the namespace.
+
+### Changed
+
+- **`scope_namespace` validates its inputs** — rejects empty components or
+  components containing `/`, so distinct `(tenant_id, workspace_id)` scopes can
+  never encode to a colliding namespace. The guard lives where the namespace is
+  built rather than trusting callers.
+
 ## [26.05.31] - 2026-05-31
 
 ### Added

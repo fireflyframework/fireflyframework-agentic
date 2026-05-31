@@ -11,8 +11,9 @@ try:
         Distance,
         FieldCondition,
         Filter,
+        FilterSelector,
+        HasIdCondition,
         MatchValue,
-        PointIdsList,
         PointStruct,
         VectorParams,
     )
@@ -23,8 +24,9 @@ except ImportError:
     Distance = None  # type: ignore[assignment,misc]
     FieldCondition = None  # type: ignore[assignment,misc]
     Filter = None  # type: ignore[assignment,misc]
+    FilterSelector = None  # type: ignore[assignment,misc]
+    HasIdCondition = None  # type: ignore[assignment,misc]
     MatchValue = None  # type: ignore[assignment,misc]
-    PointIdsList = None  # type: ignore[assignment,misc]
 
 from fireflyframework_agentic.vectorstores.base import BaseVectorStore
 from fireflyframework_agentic.vectorstores.types import SearchFilter, SearchResult, VectorDocument
@@ -124,9 +126,17 @@ class QdrantVectorStore(BaseVectorStore):
         return search_results
 
     async def _delete(self, ids: list[str], namespace: str) -> None:
+        # Confine the delete to the namespace AND the requested ids, so a delete
+        # can never reach across namespaces even if an id is presented out of
+        # scope -- mirrors the namespace filter applied on _search.
         await self._client.delete(
             collection_name=self._collection_name,
-            points_selector=PointIdsList(  # type: ignore[misc]
-                points=ids,
+            points_selector=FilterSelector(  # type: ignore[misc]
+                filter=Filter(  # type: ignore[misc]
+                    must=[
+                        FieldCondition(key="_namespace", match=MatchValue(value=namespace)),  # type: ignore[misc]
+                        HasIdCondition(has_id=ids),  # type: ignore[misc]
+                    ]
+                )
             ),
         )
