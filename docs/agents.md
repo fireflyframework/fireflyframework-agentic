@@ -123,8 +123,8 @@ agent = FireflyAgent(
 ## Agent Registry
 
 The `AgentRegistry` is a singleton that maps agent names to `FireflyAgent` instances.
-Any part of the framework -- REST endpoints, queue consumers, delegation routers --
-can look up an agent by name.
+Any part of your application -- delegation routers, reasoning pipelines, or your own
+host service -- can look up an agent by name.
 
 ```python
 from fireflyframework_agentic.agents.registry import agent_registry
@@ -406,9 +406,10 @@ not affect application-level or third-party loggers.
 ## Usage Tracking
 
 When cost tracking is enabled (the default), `FireflyAgent.run()` and `run_sync()`
-automatically extract token usage from Pydantic AI results, compute estimated cost
-via the configured `CostCalculator`, and feed a `UsageRecord` to the global
-`default_usage_tracker`. This happens transparently — no code changes are needed.
+automatically extract token usage from Pydantic AI results, price it through the
+cost resolver chain (`resolve_cost` / `genai_prices_cost` / `provider_reported_cost`),
+and feed a `UsageRecord` to the global `default_usage_tracker`. This happens
+transparently — no code changes are needed.
 
 ```python
 from fireflyframework_agentic.observability import default_usage_tracker
@@ -425,9 +426,8 @@ Configure via environment variables:
 
 ```bash
 FIREFLY_AGENTIC_COST_TRACKING_ENABLED=true # default
-FIREFLY_AGENTIC_BUDGET_ALERT_THRESHOLD_USD=5.00
 FIREFLY_AGENTIC_BUDGET_LIMIT_USD=10.00
-FIREFLY_AGENTIC_COST_CALCULATOR=auto # auto | static | genai_prices
+FIREFLY_AGENTIC_COST_STRICT=false # when true, raise on unpriceable models instead of returning None
 ```
 
 See the [Observability Guide](observability.md#usage-tracking) for full details.
@@ -497,7 +497,9 @@ order (LIFO).
 ### Built-in Middleware: RetryMiddleware
 
 `RetryMiddleware` injects rate limit retry configuration into the middleware
-context. It is auto-wired by default alongside `LoggingMiddleware`.
+context. It is **not** auto-wired — add it explicitly when you want to override
+the defaults read from configuration. (Rate-limit retry is applied inside
+`FireflyAgent.run()` regardless of whether this middleware is present; see below.)
 
 ```python
 from fireflyframework_agentic.agents.builtin_middleware import RetryMiddleware
@@ -516,10 +518,12 @@ full details on how 429 errors are handled.
 
 ### Auto-Wired Default Middleware
 
-By default, every `FireflyAgent` is auto-wired with `LoggingMiddleware` and
-`RetryMiddleware` prepended to the middleware chain. This provides structured
-logging and transparent rate limit retry for every execution path without any
-explicit configuration.
+By default, every `FireflyAgent` prepends `LoggingMiddleware` to the middleware
+chain (always), plus `ObservabilityMiddleware` when `config.observability_enabled`
+is `True`. This provides structured logging and — when observability is on —
+OpenTelemetry spans, metrics, and events for every execution path without any
+explicit configuration. (Transparent rate-limit retry is handled directly inside
+`FireflyAgent.run()` and does not require a middleware.)
 
 Disable auto-wiring by passing `default_middleware=False`:
 
@@ -548,8 +552,12 @@ agent = FireflyAgent(
 
 ### Built-in Middleware
 
-The framework ships **ten** built-in middleware classes in
-`agents.builtin_middleware` and `agents.prompt_cache`, `resilience.circuit_breaker`:
+The framework ships **eleven** built-in middleware classes: nine in
+`agents.builtin_middleware` (`LoggingMiddleware`, `PromptGuardMiddleware`,
+`CostGuardMiddleware`, `ObservabilityMiddleware`, `ExplainabilityMiddleware`,
+`CacheMiddleware`, `OutputGuardMiddleware`, `ValidationMiddleware`,
+`RetryMiddleware`), plus `PromptCacheMiddleware` in `agents.prompt_cache` and
+`CircuitBreakerMiddleware` in `resilience.circuit_breaker`:
 
 #### LoggingMiddleware
 
@@ -738,12 +746,18 @@ Enables provider-specific prompt caching for significant cost savings (90-95%
 reduction on cached tokens). Supports Anthropic, OpenAI, and Gemini prompt
 caching features.
 
-Parameters:
+Parameters (all keyword-only):
 
-- **`cache_system_prompt`** — Cache the system prompt/instructions (default: `True`).
-- **`cache_min_tokens`** — Minimum tokens required to enable caching (default: 1024).
+- **`cache_system_prompt`** — Cache the system prompt block (default: `True`).
+- **`cache_last_message`** — Cache the last user message block; only takes effect
+  on multi-turn runs that pass a non-empty `message_history` (default: `True`).
+- **`cache_tool_definitions`** — Cache the tool-definitions block; valuable only
+  when the agent has many tools (default: `False`).
 - **`cache_ttl_seconds`** — Cache TTL in seconds (default: 300).
 - **`enabled`** — Enable/disable caching (default: `True`).
+- **`openai_cache_key`** — Static string or callable to derive the OpenAI cache key.
+- **`google_cached_content`** — Static string or callable to supply the Gemini
+  `cachedContent` resource name.
 
 ```python
 from fireflyframework_agentic.agents.prompt_cache import PromptCacheMiddleware
@@ -764,13 +778,22 @@ proxy providers route correctly:
 - **OpenAI** (including `azure:gpt-*`): Uses `cached_content` for supported models
 - **Google**: Uses `cachedContent` for Gemini models
 
-Cache statistics are tracked and can be retrieved via `get_cache_stats()`:
+To monitor cache effectiveness, use the standalone `CacheStatistics` helper.
+Feed it the cache-creation / cache-read token counts from each result via
+`record_usage()`, then read the aggregates back (both are **methods**, called
+with parentheses):
 
 ```python
-# After multiple requests
-stats = middleware.get_cache_stats()
-print(f"Cache hit rate: {stats.cache_hit_rate:.1%}")
-print(f"Estimated savings: ${stats.estimated_savings_usd:.2f}")
+from fireflyframework_agentic.agents.prompt_cache import CacheStatistics
+
+stats = CacheStatistics()
+
+# After each request, record the cache tokens reported by the result
+stats.record_usage(cache_creation_tokens=2048, cache_read_tokens=0)
+stats.record_usage(cache_creation_tokens=0, cache_read_tokens=2048)
+
+print(f"Cache hit rate: {stats.cache_hit_rate():.1%}")
+print(f"Estimated savings: ${stats.estimated_savings_usd():.2f}")
 ```
 
 #### CircuitBreakerMiddleware
@@ -955,11 +978,12 @@ result = await run_with_fallback(agent, "Hello!", fallback)
 
 `run_with_fallback()` tries the current model, advances through the fallback
 chain on failure, and resets to the primary after completion. The
-`max_fallback_attempts` parameter limits how many models are tried.
+`max_fallback_attempts` parameter limits how many models are tried; when left
+as `None` it defaults to the number of models in the chain.
 
-When falling back, the framework automatically updates the agent's
-`_model_identifier` so that cost tracking and rate-limit backoff keys remain
-accurate for whichever model is currently active.
+When falling back, the framework automatically updates the agent's public
+`model_identifier` attribute so that cost tracking and rate-limit backoff keys
+remain accurate for whichever model is currently active.
 
 ### Cross-Provider Fallback
 
@@ -989,7 +1013,7 @@ fallback = FallbackModelWrapper(
 
 `ResultCache` provides an in-memory LRU cache keyed by a SHA-256 hash of
 the model name and prompt text. Useful for deduplicating identical requests
-in batch pipelines or high-traffic REST endpoints.
+in batch pipelines or high-traffic workloads.
 
 ```python
 from fireflyframework_agentic.agents.cache import ResultCache

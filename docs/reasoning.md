@@ -48,7 +48,7 @@ classDiagram
         +execute(agent, input, **kwargs) ReasoningResult
         -_structured_run(agent, prompt, output_type) T
         -_fallback_parse(raw, output_type) T
-        -_resolve_model(agent) Model | None
+        -_resolve_model(agent) str | Model | None
         -_init_memory(memory, pattern_name) MemoryManager | None
         -_enrich_prompt(prompt, memory) str
         -_persist_step(memory, step, step_num) None
@@ -620,14 +620,20 @@ built-in templates from `reasoning.prompts` are used. You can override any promp
 by passing a `prompts` dict to the pattern constructor. Slots that are not overridden
 use the built-in defaults.
 
+A `PromptTemplate` takes three positional arguments — `name`, `system_template`,
+and `user_template` — and declares its required variables as a list of plain
+strings via the keyword-only `required_variables`. Its `.render(**vars)` returns
+a `Prompt` object (with `.system` and `.user`), not a bare string.
+
 ```python
-from fireflyframework_agentic.prompts.template import PromptTemplate, PromptVariable
+from fireflyframework_agentic.prompts.template import PromptTemplate
 from fireflyframework_agentic.reasoning import ReActPattern
 
 custom_thought = PromptTemplate(
     "my:react:thought",
+    "You are a careful reasoner.",
     "Think step by step about: {{ context }}",
-    variables=[PromptVariable(name="context")],
+    required_variables=["context"],
 )
 pattern = ReActPattern(prompts={"thought": custom_thought})
 ```

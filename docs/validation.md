@@ -16,11 +16,13 @@ downstream consumers.
 Rules are composable predicates that check a single field value. The framework ships
 with five built-in rule types:
 
-- **RegexRule** -- Value matches a regular expression.
-- **FormatRule** -- Value matches a named format (`email`, `url`, `date`, `uuid`, `iso_date`).
-- **RangeRule** -- Numeric value falls within `[min, max]`.
-- **EnumRule** -- Value is one of a predefined set.
-- **CustomRule** -- User-supplied predicate function.
+- **RegexRule** -- Value matches a regular expression. Accepts an optional keyword-only `description` used as the failure message.
+- **FormatRule** -- Value matches one of six named formats: `email`, `date`, `iso_date`, `phone`, `url`, `uuid`. An unknown `format_type` raises `ValueError`.
+- **RangeRule** -- Numeric value falls within `[min_value, max_value]` (either bound may be `None`).
+- **EnumRule** -- Value is one of a predefined set. Accepts a keyword-only `case_sensitive` flag (default `True`).
+- **CustomRule** -- User-supplied predicate `(value) -> bool` with an optional `description`.
+
+Every rule exposes a `.name` property and a `.validate(value) -> ValidationRuleResult` method.
 
 ```python
 from fireflyframework_agentic.validation.rules import (
@@ -39,9 +41,10 @@ assert report.valid is True
 
 ### OutputValidator
 
-`OutputValidator` orchestrates multiple `FieldValidator` instances to validate an
-entire output dictionary at once. The result is a `ValidationReport` listing all
-passing and failing fields.
+`OutputValidator` maps each field name to a list of rules and validates an entire
+output at once. The `validate(output)` method accepts a `dict`, a Pydantic
+`BaseModel` (it is dumped via `model_dump()`), or any object exposing `__dict__`.
+The result is a `ValidationReport`.
 
 ```python
 from fireflyframework_agentic.validation.rules import OutputValidator, RegexRule, EnumRule, RangeRule
@@ -52,6 +55,47 @@ validator = OutputValidator({
 })
 report = validator.validate({"status": "approved", "amount": 42.5})
 ```
+
+Rules can also be added incrementally with `add_field_rule(field_name, rule)`:
+
+```python
+validator.add_field_rule("invoice_number", RegexRule("invoice_number", r"^INV-\d{6}$"))
+```
+
+#### Cross-field rules
+
+For checks that span multiple fields, pass `cross_field_rules` -- a sequence of
+callables that receive the full output dict and return a `ValidationRuleResult`:
+
+```python
+from fireflyframework_agentic.validation.rules import OutputValidator, ValidationRuleResult
+
+def net_below_gross(data: dict) -> ValidationRuleResult:
+    ok = data.get("net", 0) <= data.get("gross", 0)
+    return ValidationRuleResult(
+        rule_name="net_below_gross",
+        field_name="net",
+        passed=ok,
+        message="" if ok else "net must not exceed gross",
+    )
+
+validator = OutputValidator(cross_field_rules=[net_below_gross])
+report = validator.validate({"net": 90, "gross": 100})
+```
+
+### Report and result models
+
+`ValidationReport` aggregates the outcome of every rule:
+
+- **valid** -- `True` when no rule failed.
+- **results** -- The full list of `ValidationRuleResult` objects (passing and failing).
+- **errors** -- A property returning only the failing results.
+- **error_count** -- Number of failing rules.
+- **field_count** -- Number of fields with configured rules.
+
+Each `ValidationRuleResult` carries `rule_name`, `field_name`, `passed`, `message`
+(empty on success), and the offending `value`. The `OutputReviewer` retry feedback
+is built from the `message` of each failing result.
 
 ---
 
@@ -195,4 +239,47 @@ result = await pattern.execute(agent, "Extract invoice data from the document.")
 - **output** -- The validated output.
 - **attempts** -- Total attempts made (1 = first try succeeded).
 - **validation_report** -- The final `ValidationReport` if a validator was used.
-- **retry_history** -- List of `RetryAttempt` objects (attempt number, raw output, error messages).
+- **retry_history** -- List of `RetryAttempt` objects (`attempt` number, `raw_output`, `errors`).
+
+---
+
+## Rubric Reviewer (`validation.reviewer`)
+
+`RubricReviewer` is an LLM-as-judge variant: instead of a schema, it evaluates output
+against a list of natural-language pass/fail criteria using a separate **grader**
+agent that runs in its own context window. When criteria are not met, a revision
+prompt describing the gaps is sent back to the generator and the loop repeats.
+
+```python
+from fireflyframework_agentic.validation import RubricReviewer
+
+reviewer = RubricReviewer(
+    rubric=[
+        "The answer cites at least one source.",
+        "The tone is professional and free of slang.",
+        "No claim is unsupported by the cited material.",
+    ],
+    max_iterations=3,
+)
+result = await reviewer.review(agent, "Summarise the attached policy document.")
+print(result.output)   # the accepted output
+print(result.attempts) # number of generation passes
+```
+
+By default a `FireflyAgent` grader is created automatically (reusing the generator's
+model when available). Supply your own with `grader=...`. The rubric may also be
+loaded from a Markdown file -- each `- ` / `* ` bullet becomes a criterion:
+
+```python
+reviewer = RubricReviewer.from_rubric_file("rubric.md", max_iterations=2)
+```
+
+### Parameters
+
+- **rubric** -- Ordered list of pass/fail criteria (must be non-empty).
+- **grader** -- Optional grader agent; defaults to an auto-created `FireflyAgent`.
+- **max_iterations** -- Maximum generation passes (default 3).
+- **revision_prompt** -- Custom revision template with `{gaps}` and `{original_prompt}` placeholders.
+
+`review(agent, prompt, **kwargs)` is async, returns a `ReviewResult`, and raises
+`OutputReviewError` once `max_iterations` is exhausted without satisfying the rubric.

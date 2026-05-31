@@ -13,6 +13,20 @@ A tool is any callable that an agent can use to interact with external systems o
 perform computations. The framework wraps tools with metadata, guards, and composition
 logic.
 
+The core contract lives in `fireflyframework_agentic.tools.base`:
+
+- **`ToolProtocol`** -- a runtime-checkable `Protocol` (properties `name`, `description`;
+  `async execute(**kwargs)`). Implement it directly for composition, or subclass `BaseTool`
+  for guard evaluation, timeout, and error handling out of the box.
+- **`GuardProtocol`** -- `async check(tool_name, kwargs) -> GuardResult`.
+- **`GuardResult`** -- `GuardResult(passed: bool, reason: str | None = None)`; guards return it.
+- **`ParameterSpec`** -- `ParameterSpec(name, type_annotation, description="", required=True,
+  default=None)`; declared specs drive the Pydantic AI JSON schema the LLM sees.
+- **`ToolInfo`** -- serialisable summary (`name`, `description`, `tags`, `parameter_count`)
+  returned by `BaseTool.info()` and `ToolRegistry.list_tools()`.
+
+All six are exported from `fireflyframework_agentic.tools`.
+
 ```mermaid
 classDiagram
     class ToolProtocol {
@@ -32,20 +46,29 @@ classDiagram
     class ToolBuilder {
         +ToolBuilder(name)
         +description(d) ToolBuilder
-        +handler(fn) ToolBuilder
+        +tag(t) ToolBuilder
+        +tags(ts) ToolBuilder
+        +parameter(name, type, ...) ToolBuilder
         +guard(g) ToolBuilder
+        +handler(fn) ToolBuilder
         +build() BaseTool
     }
 
     class ToolRegistry {
         +register(tool)
         +get(name) ToolProtocol
-        +list_tools() list
+        +get_by_tag(tag) list
+        +has(name) bool
+        +unregister(name)
+        +list_tools() list~ToolInfo~
+        +clear()
     }
 
     class ToolKit {
-        +ToolKit(name, tools)
+        +ToolKit(name, tools, *, description, tags)
         +tools: list
+        +register_all(registry)
+        +unregister_all(registry)
         +as_pydantic_tools() list
     }
 
@@ -71,14 +94,22 @@ async def calculator(expression: str) -> str:
 
 ### Using the Builder
 
-The fluent `ToolBuilder` lets you construct tools step by step:
+The fluent `ToolBuilder` lets you construct tools step by step. Beyond `description()`,
+`handler()`, and `guard()`, it also exposes `tag()`, `tags()`, and
+`parameter(name, type_annotation, *, description, required, default)` — declared
+parameters generate the JSON schema the LLM uses to call the tool. `build()` raises
+`ValueError` if no handler was set.
 
 ```python
 from fireflyframework_agentic.tools import ToolBuilder
+from fireflyframework_agentic.tools.guards import RateLimitGuard
 
 tool = (
     ToolBuilder("weather")
     .description("Get current weather for a city")
+    .tags(["web", "geo"])
+    .parameter("city", "str", description="City name", required=True)
+    .guard(RateLimitGuard(max_calls=10, period_seconds=60))
     .handler(get_weather_fn)
     .build()
 )
@@ -100,25 +131,65 @@ flowchart LR
     G3 --> RES[Result]
 ```
 
+Each guard implements `GuardProtocol.check(tool_name, kwargs) -> GuardResult`. When a
+guard returns `GuardResult(passed=False, reason=...)`, `BaseTool.execute()` raises a
+`ToolError` before the handler runs.
+
 ### Built-in Guards
 
-- **ValidationGuard** -- Validates input arguments against a schema before execution.
-- **RateLimitGuard** -- Enforces a maximum number of calls within a time window.
-- **ApprovalGuard** -- Requires explicit approval before execution (useful for
-  destructive operations).
-- **SandboxGuard** -- Restricts the execution environment (filesystem paths, network
-  access).
-- **CompositeGuard** -- Chains multiple guards together.
+- **ValidationGuard** -- `ValidationGuard(required_keys)` — rejects the call when any
+  required keyword argument is missing.
+- **RateLimitGuard** -- `RateLimitGuard(max_calls, period_seconds=60.0)` — sliding-window
+  rate limiter that caps invocations per time window.
+- **ApprovalGuard** -- `ApprovalGuard(callback)` — human-in-the-loop gate; `callback` is
+  an async callable `(tool_name, kwargs) -> bool` that must return `True` to approve.
+- **SandboxGuard** -- `SandboxGuard(*, allowed_patterns=(), denied_patterns=())` — converts
+  each kwarg value to a string and rejects it if it matches a `denied_patterns` regex
+  (unless it also matches an `allowed_patterns` regex, which takes precedence).
+- **CompositeGuard** -- `CompositeGuard(guards)` — AND-composition; evaluates guards in
+  order and short-circuits on the first failure.
 
 ### Applying Guards
 
+Two equivalent paths. The `@guarded` decorator appends a guard to an existing `BaseTool`:
+
 ```python
-from fireflyframework_agentic.tools import guarded
+from fireflyframework_agentic.tools import firefly_tool, guarded
 from fireflyframework_agentic.tools.guards import RateLimitGuard
 
 @guarded(RateLimitGuard(max_calls=10, period_seconds=60))
-@firefly_tool(name="search", description="Search the web")
+@firefly_tool("search", description="Search the web")
 async def search(query: str) -> str:
+    ...
+```
+
+Or pass a guard chain straight to a tool's constructor via the `guards=` keyword
+(accepted by `BaseTool`, the built-in tools, `firefly_tool`, and `ToolBuilder.guard()`):
+
+```python
+from fireflyframework_agentic.tools.builtins import ShellTool
+from fireflyframework_agentic.tools.guards import SandboxGuard
+
+shell = ShellTool(
+    allowed_commands=["ls", "cat"],
+    guards=[SandboxGuard(denied_patterns=[r"rm\s+-rf"])],
+)
+```
+
+### Retry
+
+`retryable(max_retries=3, backoff=1.0)` is a cross-cutting decorator (alongside `guarded`)
+exported from `fireflyframework_agentic.tools`. It wraps a `BaseTool`'s `execute` so that
+failures are retried with exponential backoff — the call is attempted up to
+`max_retries + 1` times, doubling the delay (starting at `backoff` seconds) after each
+failure. If every attempt fails, the last exception propagates.
+
+```python
+from fireflyframework_agentic.tools import firefly_tool, retryable
+
+@retryable(max_retries=3, backoff=0.5)
+@firefly_tool("fetch", description="Fetch a flaky upstream")
+async def fetch(url: str) -> str:
     ...
 ```
 
@@ -126,11 +197,27 @@ async def search(query: str) -> str:
 
 ## Composition
 
-Tools can be composed into higher-level operations:
+Tools can be composed into higher-level operations. Each composer implements
+`ToolProtocol`, so it can be registered or nested inside other composers.
 
-- **SequentialComposer** -- Runs tools in order, passing each output as input to the next.
-- **FallbackComposer** -- Tries tools in order until one succeeds.
-- **ConditionalComposer** -- Selects a tool based on a predicate.
+- **SequentialComposer** -- `SequentialComposer(name, tools, *, description="")` — runs
+  tools in order; the first receives the original kwargs, each subsequent tool receives a
+  single `input=` kwarg set to the previous tool's return value.
+- **FallbackComposer** -- `FallbackComposer(name, tools, *, description="")` — tries tools
+  in priority order until one succeeds; raises `ToolError` if all fail.
+- **ConditionalComposer** -- `ConditionalComposer(name, router_fn, tool_map, *,
+  description="")` — `router_fn(**kwargs)` returns the key of the tool in `tool_map` to run.
+
+```python
+from fireflyframework_agentic.tools import ConditionalComposer
+from fireflyframework_agentic.tools.builtins import CalculatorTool, TextTool
+
+router = ConditionalComposer(
+    name="dispatch",
+    router_fn=lambda **kw: "math" if kw.get("kind") == "math" else "text",
+    tool_map={"math": CalculatorTool(), "text": TextTool()},
+)
+```
 
 ```mermaid
 flowchart TD
@@ -160,7 +247,7 @@ The framework ships with nine ready-to-use tools in `tools/builtins/`.
 - **CalculatorTool** -- Safely evaluate math expressions using AST-based parsing (no `eval`). Supports arithmetic, functions (`sqrt`, `sin`, `cos`, `log`, etc.), and constants (`pi`, `e`).
 - **JsonTool** -- Parse, validate, extract (dot-path), format, and list keys of JSON data.
 - **TextTool** -- Text utilities: count (words/chars/sentences/lines), extract (regex), truncate, replace, and split.
-- **HttpTool** -- Make HTTP requests (GET, POST, PUT, DELETE). Uses `asyncio.to_thread` to keep the event loop non-blocking.
+- **HttpTool** -- Make HTTP requests (GET, POST, PUT, DELETE). Uses a pooled `httpx.AsyncClient` when available, falling back to `urllib` via `asyncio.to_thread` to keep the event loop non-blocking.
 - **FileSystemTool** -- Read, write, and list files within a sandboxed base directory. Path-traversal attacks are rejected.
 - **ShellTool** -- Execute shell commands restricted to an explicit allow-list using `create_subprocess_exec` (no shell metacharacter injection). Empty allow-list rejects all commands (safe default).
 
@@ -207,9 +294,14 @@ You can also use a `ToolKit` to group tools:
 from fireflyframework_agentic.tools.toolkit import ToolKit
 from fireflyframework_agentic.tools.builtins import DateTimeTool, JsonTool, TextTool
 
-kit = ToolKit("utilities", [DateTimeTool(), JsonTool(), TextTool()])
+kit = ToolKit("utilities", [DateTimeTool(), JsonTool(), TextTool()], description="Common helpers")
 agent = FireflyAgent(name="helper", model="openai:gpt-4o", tools=[kit])
 ```
+
+The constructor is `ToolKit(name, tools, *, description="", tags=())`. Beyond direct use
+with an agent, a kit can register or remove its tools in bulk against a `ToolRegistry`
+via `register_all(registry)` / `unregister_all(registry)`, expose its tools as Pydantic AI
+tools with `as_pydantic_tools()`, and reports its size through `len(kit)`.
 
 Plain async functions and `pydantic_ai.Tool` objects are passed through unchanged.
 
@@ -227,9 +319,11 @@ from fireflyframework_agentic.tools.builtins import HttpTool
 
 http_tool = HttpTool()
 
-# Make requests
-response = await http_tool.run("GET", "https://api.example.com/data")
+# All built-in tools expose a keyword-only `execute(**kwargs)`. HttpTool reads
+# `url` (required) and `method` (default "GET"), plus optional `body` and `headers`.
+response = await http_tool.execute(url="https://api.example.com/data", method="GET")
 print(response["status"]) # 200
+print(response["headers"]) # dict of response headers
 print(response["body"]) # Response text
 ```
 
@@ -258,6 +352,10 @@ Connection pooling uses `httpx.AsyncClient` under the hood, providing:
 
 ### Configuration
 
+`FireflyAgenticConfig` carries the pool defaults (`http_pool_enabled`, `http_pool_size`,
+`http_pool_max_keepalive`, `http_pool_timeout`), settable from the environment with the
+`FIREFLY_AGENTIC_` prefix. Pass the resolved values into the `HttpTool` constructor:
+
 ```bash
 # Enable connection pooling (default: true)
 export FIREFLY_AGENTIC_HTTP_POOL_ENABLED=true
@@ -266,8 +364,21 @@ export FIREFLY_AGENTIC_HTTP_POOL_ENABLED=true
 export FIREFLY_AGENTIC_HTTP_POOL_SIZE=100
 export FIREFLY_AGENTIC_HTTP_POOL_MAX_KEEPALIVE=20
 
-# Set default timeout
+# Set default request timeout (seconds)
 export FIREFLY_AGENTIC_HTTP_POOL_TIMEOUT=30.0
+```
+
+```python
+from fireflyframework_agentic import get_config
+from fireflyframework_agentic.tools.builtins import HttpTool
+
+cfg = get_config()
+http_tool = HttpTool(
+    use_pool=cfg.http_pool_enabled,
+    pool_size=cfg.http_pool_size,
+    pool_max_keepalive=cfg.http_pool_max_keepalive,
+    timeout=cfg.http_pool_timeout,
+)
 ```
 
 ### Fallback to urllib
@@ -306,23 +417,16 @@ result = await agent.run("Fetch data from https://api.example.com/users")
 
 ### Cleanup
 
-When using connection pooling, close the client when done to release resources:
+When using connection pooling, call `await http_tool.close()` when done to release the
+underlying `httpx.AsyncClient` (an unclosed client emits a `ResourceWarning`):
 
 ```python
 http_tool = HttpTool(use_pool=True)
 
 try:
-    response = await http_tool.run("GET", "https://api.example.com")
+    response = await http_tool.execute(url="https://api.example.com")
 finally:
     await http_tool.close() # Release connection pool
-```
-
-Or use as an async context manager:
-
-```python
-async with HttpTool(use_pool=True) as http_tool:
-    response = await http_tool.run("GET", "https://api.example.com")
-# Connections automatically released
 ```
 
 ---
@@ -367,7 +471,11 @@ Cache management methods:
 the tool's `_execute` call in `asyncio.wait_for`. If the call exceeds the
 timeout, a `ToolTimeoutError` is raised.
 
+`ToolTimeoutError` lives in `fireflyframework_agentic.exceptions` (it is not re-exported
+from `fireflyframework_agentic.tools`), so import it explicitly:
+
 ```python
+from fireflyframework_agentic.exceptions import ToolTimeoutError
 from fireflyframework_agentic.tools.builtins import HttpTool
 
 # Timeout HTTP calls after 10 seconds
@@ -386,12 +494,21 @@ in production pipelines.
 
 ## Tool Registry
 
-The `ToolRegistry` provides global tool lookup by name:
+The `ToolRegistry` provides thread-safe tool lookup by name and tag. A module-level
+singleton `tool_registry` is also exported — `firefly_tool(..., auto_register=True)`
+(the default) registers decorated tools into it automatically.
 
 ```python
-from fireflyframework_agentic.tools.registry import ToolRegistry
+from fireflyframework_agentic.tools import ToolRegistry, tool_registry
 
 registry = ToolRegistry()
 registry.register(my_tool)
-tool = registry.get("my_tool")
+
+tool = registry.get("my_tool")          # raises ToolNotFoundError if absent
+math_tools = registry.get_by_tag("math") # list[ToolProtocol]
+exists = registry.has("my_tool")         # bool ("my_tool" in registry also works)
+infos = registry.list_tools()            # list[ToolInfo]
+registry.unregister("my_tool")
+registry.clear()                         # primarily for tests
+count = len(registry)
 ```

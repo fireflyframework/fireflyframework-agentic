@@ -3,8 +3,10 @@
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The Vector Stores module provides pluggable storage and retrieval backends for
-embedding vectors. It supports in-memory, ChromaDB, Pinecone, and Qdrant backends
-with a unified API for upserting, searching, and deleting documents.
+embedding vectors. It ships **seven** backends -- in-memory, ChromaDB, Pinecone,
+Qdrant, PostgreSQL/pgvector, and sqlite-vec -- behind a unified API for upserting,
+searching, and deleting documents, plus a tenant/workspace-scoped wrapper that
+makes any backend multi-tenant.
 
 ---
 
@@ -17,14 +19,18 @@ graph TD
     BVS --> CH[ChromaVectorStore]
     BVS --> PC[PineconeVectorStore]
     BVS --> QD[QdrantVectorStore]
+    BVS --> PG[PgVectorVectorStore]
+    BVS --> SV[SqliteVecVectorStore]
     REG[VectorStoreRegistry] --> VP
     BVS --> |auto-embed| EMB[EmbeddingProtocol]
+    TS[TenantScopedVectorStore] --> |wraps| VP
 ```
 
 - **VectorStoreProtocol** -- Duck-typed protocol with `upsert()`, `search()`, `search_text()`, `delete()`.
 - **BaseVectorStore** -- Abstract base providing auto-embedding, `search_text` convenience, and error wrapping.
 - **Concrete Backends** -- Backend-specific implementations that override `_upsert()`, `_search()`, `_delete()`.
 - **VectorStoreRegistry** -- Named registry for managing multiple store instances.
+- **TenantScopedVectorStore** -- Wraps any backend with mandatory `(tenant_id, workspace_id)` isolation.
 
 ---
 
@@ -114,6 +120,71 @@ store = QdrantVectorStore(
 
 Install: `pip install fireflyframework-agentic[vectorstores-qdrant]`
 
+### PostgreSQL / pgvector
+
+A PostgreSQL-backed store using the `pgvector` extension, so production
+deployments can co-locate vectors with an existing Postgres instance instead of
+operating a separate vector database. ANN search uses an HNSW index over cosine
+distance.
+
+```python
+from fireflyframework_agentic.vectorstores import PgVectorVectorStore
+
+store = PgVectorVectorStore(
+    "postgresql://user:pass@host/db",  # connection string (first positional)
+    dimension=1536,                    # must match your embedder; sizes the vector column
+    table_name="vector_documents",     # default
+    hnsw_m=16,                         # HNSW build params
+    hnsw_ef_construction=64,
+    hnsw_ef_search=200,                # set per query for recall/latency tuning
+    pool_min_size=1,
+    pool_max_size=10,
+    embedder=my_embedder,
+)
+
+await store.initialise()  # opens the asyncpg pool and creates the table/indexes (idempotent)
+await store.upsert(docs)
+results = await store.search_text("query")
+await store.close()       # closes the connection pool
+```
+
+The store owns one table (created on first use) and supports all seven
+`SearchFilter` operators on metadata. `_prepare_session(conn, *, namespace)` is an
+overridable per-transaction hook (default no-op) for callers that need
+`SET LOCAL` session setup -- e.g. Postgres Row-Level Security GUCs. Connection
+and pool failures raise `VectorStoreConnectionError`.
+
+Install: `pip install fireflyframework-agentic[vectorstores-pgvector]`
+
+### sqlite-vec
+
+A sqlite-vec (`vec0` virtual table) backend that co-resides inside an existing
+SQLite file via the `storage` module's `DatabaseStore`. Useful for embedded,
+file-based deployments.
+
+```python
+from fireflyframework_agentic.vectorstores import SqliteVecVectorStore
+
+# From a path (wrapped in a DatabaseStore/LocalBackend automatically)
+store = SqliteVecVectorStore("vectors.db", dimension=1536, embedder=my_embedder)
+
+# Or from a pre-built DatabaseStore (to share a SQLite file with other data)
+from fireflyframework_agentic.storage import DatabaseStore, LocalBackend
+db = DatabaseStore(LocalBackend("app.db"), store_id="local:app.db")
+store = SqliteVecVectorStore(db, dimension=1536, table_name="vec_chunks", embedder=my_embedder)
+
+await store.upsert(docs)
+results = await store.search_text("query")
+await store.close()
+```
+
+`upsert()` and `delete()` accept an optional keyword-only `session: WriteSession`
+to enlist the operation in a coordinated `DatabaseStore` write batch. `search()`
+returns results carrying only the document `id` and `score` (text/metadata are not
+stored by this backend).
+
+Install: `pip install fireflyframework-agentic[vectorstores-sqlite-vec]`
+
 ---
 
 ## Core Types
@@ -156,7 +227,9 @@ results = await store.search(query_embedding, filters=filters)
 ```
 
 Note: Filter operator support varies by backend. `eq` is universally supported.
-InMemoryVectorStore supports all 7 operators. External backends support `eq` and `in`.
+`InMemoryVectorStore` and `PgVectorVectorStore` support all 7 operators;
+`PgVectorVectorStore` binds both the metadata key and value as parameters
+(no SQL interpolation). Other external backends support a narrower subset.
 
 ---
 
@@ -207,9 +280,61 @@ from fireflyframework_agentic.vectorstores import VectorStoreRegistry, InMemoryV
 registry = VectorStoreRegistry()
 registry.register("memory", InMemoryVectorStore(embedder=my_embedder))
 
-store = registry.get("memory")
+store = registry.get("memory")        # raises KeyError if the name is not registered
 await store.upsert(docs)
+
+registry.list_names()                 # -> ["memory"]
+registry.unregister("memory")         # remove (no-op if absent)
 ```
+
+---
+
+## Tenant/Workspace Scoping
+
+The `VectorStoreProtocol` is single-namespace: a store partitions documents by one
+opaque `namespace` string. Multi-tenant applications need stronger guarantees --
+every read and write must be confined to a `(tenant_id, workspace_id)` scope, and
+forgetting the scope must fail loudly rather than silently leak across tenants.
+
+`TenantScopedVectorStore` wraps **any** `VectorStoreProtocol` backend and folds the
+scope into the canonical `"t/<tenant_id>/w/<workspace_id>"` namespace, so a single
+wrapper makes every backend multi-tenant.
+
+```python
+from fireflyframework_agentic.vectorstores import (
+    InMemoryVectorStore,
+    TenantScopedVectorStore,
+)
+
+inner = InMemoryVectorStore(embedder=my_embedder)
+store = TenantScopedVectorStore(inner)  # stamp_metadata=True by default
+
+# tenant_id and workspace_id are required keyword-only arguments on every op
+await store.upsert(docs, tenant_id="acme", workspace_id="prod")
+results = await store.search(query_embedding, top_k=5, tenant_id="acme", workspace_id="prod")
+await store.delete(["id-1"], tenant_id="acme", workspace_id="prod")
+
+await store.initialise()  # passes through to the wrapped store's lifecycle hook
+await store.close()
+```
+
+On `upsert`, each document is copied (never mutating the caller's objects), its
+namespace is set to the scope, and -- when `stamp_metadata=True` (default) -- the
+scope is also stamped onto `metadata["tenant_id"]` / `metadata["workspace_id"]` as
+defense-in-depth. A caller that forgets `tenant_id`/`workspace_id` fails with
+`TypeError`, so isolation can never be lost silently.
+
+The namespace codec is exported directly:
+
+```python
+from fireflyframework_agentic.vectorstores import scope_namespace, parse_scope_namespace
+
+scope_namespace("acme", "prod")          # -> "t/acme/w/prod"
+parse_scope_namespace("t/acme/w/prod")   # -> ("acme", "prod")
+```
+
+Both raise `ValueError` if a component is empty or contains `/`. `ScopedVectorStore`
+is the fail-loud `Protocol` that `TenantScopedVectorStore` satisfies.
 
 ---
 
@@ -226,26 +351,30 @@ Global defaults via environment variables (prefix `FIREFLY_AGENTIC_`):
 
 ## Pipeline Integration (RAG)
 
-Build retrieval-augmented generation workflows using pipeline steps:
+Build retrieval-augmented generation workflows by wiring a `RetrievalStep` into a
+pipeline via `PipelineBuilder` / `PipelineEngine`:
 
 ```python
-from fireflyframework_agentic.pipeline import Pipeline, PipelineStep, RetrievalStep
+from fireflyframework_agentic.pipeline import PipelineBuilder, RetrievalStep
 
-# RetrievalStep embeds the query and searches the store
-retrieval = RetrievalStep(
-    store=my_store,
-    embedder=my_embedder,
-    top_k=5,
+# RetrievalStep embeds the query text (via embedder) and searches the store
+retrieval = RetrievalStep(my_store, embedder=my_embedder, top_k=5)
+
+engine = (
+    PipelineBuilder("rag")
+    .add_node("retrieve", retrieval)
+    # .add_node("answer", agent)  # e.g. an AgentStep that consumes the results
+    # .chain("retrieve", "answer")
+    .build()
 )
 
-pipeline = Pipeline(
-    steps=[
-        PipelineStep(name="retrieve", executor=retrieval),
-        # ... further steps (e.g., prompt augmentation, agent call)
-    ]
-)
-result = await pipeline.execute("What is RAG?")
+result = await engine.run(inputs="What is RAG?")
 ```
+
+`RetrievalStep(store, *, embedder=None, top_k=5, input_key="input")` reads the
+query from `inputs[input_key]` (falling back to the pipeline's initial inputs). It
+embeds the query with `embedder.embed_one(...)` then calls `store.search(...)`; if
+no embedder is supplied, the input is assumed to already be an embedding.
 
 ---
 
@@ -276,5 +405,12 @@ class MyVectorStore(BaseVectorStore):
         # Remove documents by ID within the namespace
         ...
 ```
+
+The base class fills in the contract for you: all public ops default to
+`namespace="default"`; `search()`/`search_text()` default to `top_k=5`; `upsert()`
+auto-embeds documents lacking an embedding via `embedder.embed(texts)` (batch);
+`search_text()` uses `embedder.embed_one(query)` and raises `VectorStoreError` if no
+embedder is configured. Every public method wraps any non-`VectorStoreError`
+exception from your `_upsert`/`_search`/`_delete` in a `VectorStoreError`.
 
 See also: [Embeddings Guide](embeddings.md) for embedding provider setup.

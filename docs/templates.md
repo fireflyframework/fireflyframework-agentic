@@ -24,14 +24,26 @@ summarizer = create_summarizer_agent(model="openai:gpt-4o")
 result = await summarizer.run("Summarize this document: ...")
 ```
 
+All factories are keyword-only past their first positional argument. The summarizer and
+conversational factories take no positional arguments at all (their signatures start with
+`*`); `create_classifier_agent(categories, *, ...)`, `create_extractor_agent(output_type,
+*, ...)`, and `create_router_agent(agent_map, *, ...)` take one positional argument then
+keyword-only parameters.
+
 Every factory function supports the following common keyword arguments:
 
-- **name** -- Agent name for the registry (each template has a sensible default).
-- **model** -- LLM model string; falls back to the framework default when `None`.
+- **name** -- Agent name for the registry. Defaults: summarizer = `"summarizer"`,
+  classifier = `"classifier"`, extractor = `"extractor"`, conversational = `"assistant"`,
+  router = `"router"`.
+- **model** -- LLM model string (or a `pydantic-ai` `Model`); falls back to the framework
+  default when `None`.
 - **extra_instructions** -- Free-text appended to the system prompt.
 - **tools** -- Additional tools to attach to the agent. When empty, templates that
   benefit from built-in tools will auto-attach them (see *Default Tools* below).
 - **auto_register** -- Set to `False` to skip global registry registration.
+
+Any extra keyword arguments are forwarded to `FireflyAgent` (e.g. `tags`, `description`),
+so you can override the underlying agent configuration without a wrapper.
 
 ---
 
@@ -219,7 +231,8 @@ class RoutingDecision(BaseModel):
 ## Combining Templates
 
 Template agents are standard `FireflyAgent` instances, so they integrate with every
-framework feature: delegation, pipelines, REST exposure, experiments, and more.
+framework feature: delegation, pipelines, experiments, and more. (The framework is a
+pure in-process library; the host service owns HTTP serving and inbound auth.)
 
 ```python
 from fireflyframework_agentic.agents.templates import (

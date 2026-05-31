@@ -147,7 +147,7 @@ documentation.
 
 ## Default Injection Patterns
 
-The built-in pattern set contains **27 compiled regular expressions** organised
+The built-in pattern set contains **25 compiled regular expressions** organised
 into four categories:
 
 ### Classic injection phrases (10 patterns)
@@ -175,10 +175,10 @@ into four categories:
 - Spanish ("ignorar instrucciones"), French ("ignorer instructions"),
   and German ("ignoriere anweisungen") injection variants
 
-### Advanced techniques (9 patterns)
+### Advanced techniques (7 patterns)
 
 - DAN / jailbreak keywords
-- "developer mode enabled/activated"
+- "developer mode enabled/activated/on"
 - "enable unrestricted mode"
 - "respond without restrictions/filters/limitations"
 - System prompt extraction attacks: "what is your system prompt",
@@ -312,12 +312,17 @@ The `scan()` method returns an `OutputGuardResult` dataclass with:
 ## Data Encryption
 
 The encryption module provides AES-256-GCM encryption for sensitive data at rest.
+It requires the optional `security` extra (`pip install fireflyframework-agentic[security]`,
+which ships `cryptography`).
 
 ```python
 from fireflyframework_agentic.security.encryption import AESEncryptionProvider
 
-# Initialize encryption provider
-encryption = AESEncryptionProvider(key="your-32-byte-encryption-key-here")
+# Initialize encryption provider with an explicit 32-byte key (used directly)
+encryption = AESEncryptionProvider(key=b"12345678901234567890123456789012")
+
+# Or pass a password-style string of any length — a 32-byte key is derived for you
+encryption = AESEncryptionProvider(key="my-password")
 
 # Encrypt sensitive data
 plaintext = "API key: sk-secret"
@@ -328,9 +333,21 @@ decrypted = encryption.decrypt(encrypted)
 assert decrypted == plaintext
 ```
 
+`AESEncryptionProvider` implements the `EncryptionProvider` protocol (a
+`runtime_checkable` `Protocol` exporting `encrypt(plaintext) -> str` and
+`decrypt(ciphertext) -> str`), so you can plug in your own provider anywhere a
+provider is accepted.
+
+When the key is exactly 32 bytes it is used directly as the AES-256 key. For any
+other length the key is treated as a password and a 32-byte key is derived with
+PBKDF2-HMAC-SHA256 (100 000 iterations). Each call to `encrypt()` generates a
+random 16-byte salt and a random 12-byte nonce for AES-GCM. The base64-encoded
+ciphertext is stored as `salt[16] + nonce[12] + ciphertext + tag`, so identical
+plaintexts produce different ciphertexts and tampering is detected on decrypt.
+
 ### Encrypted Memory Store
 
-Wrap any `MemoryStore` with encryption for automatic transparent encryption:
+Wrap any memory store with encryption to transparently protect entry content:
 
 ```python
 from fireflyframework_agentic.security.encryption import EncryptedMemoryStore
@@ -339,30 +356,48 @@ from fireflyframework_agentic.memory import FileStore
 # Base storage backend
 file_store = FileStore(base_dir=".memory")
 
-# Wrap with encryption
-encrypted_store = EncryptedMemoryStore(
-    store=file_store,
-    encryption_provider=encryption,
-)
+# Wrap with encryption — second positional arg is the key (str or bytes)
+encrypted_store = EncryptedMemoryStore(file_store, "my-secret-key")
 
-# Use as normal - data is automatically encrypted/decrypted
+# Use as normal - content is automatically encrypted/decrypted
 memory = MemoryManager(store=encrypted_store)
 ```
 
-All data is encrypted before writing and decrypted after reading, with no
-changes to application code.
+The constructor signature is
+`EncryptedMemoryStore(store, encryption_key, provider=None)`. If you already have
+an `EncryptionProvider`, pass it via the optional `provider=` argument; otherwise
+an `AESEncryptionProvider` is built from `encryption_key`.
 
-Each call to `encrypt()` generates a random 16-byte salt for PBKDF2 key
-derivation and a random 12-byte nonce for AES-GCM.  The ciphertext is stored as
-`salt[16] + nonce[12] + ciphertext + tag`, ensuring that identical plaintexts
-produce different ciphertexts.
+Only the `MemoryEntry.content` field is encrypted before writing and decrypted on
+read. Metadata, keys, and timestamps stay plaintext so they remain available for
+indexing and querying. If decryption of an entry fails, the error is logged and
+the (still-encrypted) content is returned rather than raising.
+
+### Configuration-driven Provider
+
+`create_encryption_provider_from_config()` builds an `AESEncryptionProvider` from
+framework configuration, returning `None` when encryption is disabled. The
+module-level `default_encryption_provider` holds the result of that call at import
+time:
+
+```python
+from fireflyframework_agentic.security.encryption import (
+    create_encryption_provider_from_config,
+    default_encryption_provider,
+)
+
+provider = create_encryption_provider_from_config()  # None unless enabled + key set
+```
 
 ### Environment Configuration
 
 ```bash
 export FIREFLY_AGENTIC_ENCRYPTION_ENABLED=true
-export FIREFLY_AGENTIC_ENCRYPTION_KEY=your-32-byte-key-here # Must be 32 bytes for AES-256
+export FIREFLY_AGENTIC_ENCRYPTION_KEY=your-32-byte-key-here # Used directly when exactly 32 bytes
 ```
+
+Both `encryption_enabled` and `encryption_key` must be set for
+`create_encryption_provider_from_config()` to return a provider.
 
 **Security Note:** Store encryption keys in a secure vault (AWS Secrets Manager,
 HashiCorp Vault, etc.) rather than environment variables in production.
@@ -371,62 +406,94 @@ HashiCorp Vault, etc.) rather than environment variables in production.
 
 ## SQL Injection Prevention
 
-The `DatabaseTool` automatically detects and blocks SQL injection attempts using
-pattern matching before executing queries.
+`DatabaseTool` is an **abstract** built-in tool: subclass it and implement the
+`async def _execute_query(self, query, params)` method with your preferred driver.
+Before the query reaches `_execute_query`, the tool applies two security checks —
+SQL-injection heuristics and a read-only guard.
 
 ```python
+from typing import Any
+
 from fireflyframework_agentic.tools.builtins.database import DatabaseTool
 
-db_tool = DatabaseTool(
-    connection_string="postgresql://localhost/mydb",
-    enable_sql_injection_detection=True, # Enabled by default
-)
+class PostgresTool(DatabaseTool):
+    async def _execute_query(self, query: str, params: dict[str, Any] | None) -> Any:
+        # run query through your async driver, e.g. asyncpg / psycopg
+        ...
 
-# Safe query - passes validation
-result = await db_tool.execute_query(
-    "SELECT * FROM users WHERE id = ?",
-    params=[user_id]
+db_tool = PostgresTool(
+    name="database",          # keyword-only; defaults to "database"
+    read_only=True,           # default: only SELECT / WITH queries allowed
+    enable_injection_detection=True,  # default: heuristic SQL-injection scan
 )
-
-# Unsafe query - blocked and raises ToolError
-try:
-    result = await db_tool.execute_query(
-        f"SELECT * FROM users WHERE name = '{user_input}'" # SQL injection risk
-    )
-except ToolError as e:
-    print(f"Blocked: {e}") # "Unsafe query: SQL injection pattern detected"
 ```
+
+The constructor is keyword-only with `name="database"`, `read_only=True`,
+`enable_injection_detection=True`, and `guards=()`. There is no connection-string
+parameter — connection management belongs to your subclass.
+
+### Invocation and Validation
+
+Invoke the tool like any other `BaseTool` via `execute()` (it accepts a `query`
+string and an optional `params` mapping, typed `dict[str, Any] | None`):
+
+```python
+# Safe query - passes validation, then your _execute_query runs
+result = await db_tool.execute(query="SELECT * FROM users WHERE id = :id", params={"id": user_id})
+
+# Unsafe query - blocked before execution
+from fireflyframework_agentic.exceptions import ToolError
+
+try:
+    await db_tool.execute(query=f"SELECT * FROM users WHERE name = '{user_input}'")
+except ToolError as e:
+    print(f"Blocked: {e}")
+    # "Unsafe SQL pattern detected: <reason>. Use parameterized queries with the
+    #  'params' argument instead of string interpolation."
+```
+
+### Read-only Mode
+
+By default `read_only=True`. When enabled, any query that does not begin with
+`SELECT` or `WITH` (after trimming and upper-casing) raises a `PermissionError`,
+independent of injection detection. Set `read_only=False` on the subclass instance
+to allow writes.
 
 ### Detected Patterns
 
-The tool detects 15+ dangerous SQL patterns including:
+When `enable_injection_detection=True`, the tool scans for ~25 heuristic SQL
+patterns including:
 
-- String concatenation in queries: `' + variable`
-- SQL comments: `--`, `/**/`
-- Stacked queries: `;DROP TABLE`
-- Boolean-based injection: `' OR '1'='1`
-- Union-based injection: `UNION SELECT`
-- Time-based injection: `SLEEP()`, `WAITFOR`
+- String concatenation in queries: `' + '`, `' || '`, `CONCAT(...)`
+- Stacked statements: `;DROP`, `;DELETE`, `;UPDATE`, `;INSERT`, `;EXEC`, `;SELECT`
+- SQL comments: trailing `--`, `/* ... */`
+- Always-true conditions: `' OR '1'='1`, `' OR 1=1`
+- Union-based injection: `UNION SELECT`, `UNION ALL SELECT`
+- Catalog reconnaissance: `information_schema.`, `sys.`, `pg_catalog.`
+- Time-based injection: `SLEEP()`, `WAITFOR DELAY`, `BENCHMARK()`
+- File exfiltration: `INTO OUTFILE`, `INTO DUMPFILE`, `LOAD_FILE()`
+- Obfuscation: long hex literals, format-string placeholders inside quotes
+
+These are heuristic defense-in-depth measures, not a substitute for proper
+parameterization.
 
 ### Parameterized Queries
 
-Always use parameterized queries for user input:
+Always use parameterized queries for user input — pass values through the `params`
+mapping rather than interpolating them into the query string:
 
 ```python
-# Good - parameterized query
-query = "SELECT * FROM users WHERE email = ?"
-result = await db_tool.execute_query(query, params=[email])
+# Good - parameterized query (params is a mapping)
+await db_tool.execute(query="SELECT * FROM users WHERE email = :email", params={"email": email})
 
 # Bad - string interpolation
-query = f"SELECT * FROM users WHERE email = '{email}'" # BLOCKED
+query = f"SELECT * FROM users WHERE email = '{email}'"  # BLOCKED by heuristics
 ```
 
 ### Configuration
 
-```bash
-# Disable SQL injection detection (not recommended)
-export FIREFLY_AGENTIC_DATABASE_ALLOW_UNSAFE_QUERIES=true
-```
+Injection detection is toggled per instance via the `enable_injection_detection`
+constructor flag. There is no global config field or environment variable for it.
 
 ---
 
@@ -445,8 +512,8 @@ from fireflyframework_agentic.agents.builtin_middleware import (
 )
 from fireflyframework_agentic.security.encryption import EncryptedMemoryStore
 
-# Encrypted storage
-encrypted_store = EncryptedMemoryStore(FileStore(), encryption)
+# Encrypted storage — second positional arg is the encryption key
+encrypted_store = EncryptedMemoryStore(FileStore(), "your-32-byte-encryption-key-here")
 memory = MemoryManager(store=encrypted_store)
 
 # Agent with security middleware
@@ -467,11 +534,16 @@ result = await agent.run(prompt)
 
 ### Production Checklist
 
-- [x] Encrypt sensitive data at rest
-- [x] Use parameterized queries for database access
-- [x] Enable PromptGuard and OutputGuard middleware
-- [x] Set budget limits with CostGuardMiddleware
-- [x] Store secrets in a secure vault (not env vars)
-- [x] Enable distributed tracing for audit trails
-- [x] Use HTTPS for all API endpoints
-- [x] Implement rate limiting and quota management
+The framework is a pure in-process library: it does not serve an HTTP port or
+authenticate inbound requests. Transport security (TLS), inbound authn/authz, and
+rate limiting are owned by the host service that embeds the framework.
+
+- [x] Encrypt sensitive data at rest with `EncryptedMemoryStore`
+- [x] Use parameterized queries (the `params` mapping) for database access
+- [x] Enable `PromptGuardMiddleware` and `OutputGuardMiddleware`
+- [x] Set budget limits with `CostGuardMiddleware`
+- [x] Store encryption keys and secrets in a secure vault (not env vars)
+- [x] Consume the model/agent spans the framework emits via the OpenTelemetry API
+      (the host configures the OTel SDK/exporters)
+- [x] Terminate TLS and enforce inbound auth in the host service
+- [x] Apply rate limiting and quotas at the host's ingress layer

@@ -190,10 +190,12 @@ Here are the most commonly used configuration fields:
 - `max_context_tokens` — Maximum context window (default 128,000).
 - `validation_enabled` — Enable/disable output validation.
 - `cost_tracking_enabled` — Enable/disable usage and cost tracking.
-- `budget_limit_usd` / `budget_alert_threshold_usd` — Budget thresholds.
-- `cost_calculator` — `"auto"`, `"static"`, or `"genai_prices"`.
-- `memory_backend` — `"in_memory"` or `"file"`.
+- `budget_limit_usd` — Hard budget limit in USD (a warning is logged when exceeded).
+- `cost_strict` — When `True`, cost resolution raises `UnknownModelCostError` instead of
+  returning `None` for models with no known pricing (default `False`).
+- `memory_backend` — `"in_memory"`, `"file"`, `"postgres"`, or `"mongodb"`.
 - `memory_max_conversation_tokens` — Token budget per conversation.
+- `encryption_enabled` / `encryption_key` — Enable AES-256-GCM encryption of memory at rest.
 
 The singleton is created once and cached for the process lifetime. Call `reset_config()`
 in tests to force re-creation.
@@ -473,7 +475,10 @@ result = classifier.run_sync("Classify this document: ...")
 print(result.output)
 
 # Streaming — for real-time UI feedback where you want tokens as they arrive.
-async with classifier.run_stream("Classify this document: ...") as stream:
+# streaming_mode is "buffered" (default, chunked) or "incremental" (token-by-token).
+async with classifier.run_stream(
+    "Classify this document: ...", streaming_mode="incremental"
+) as stream:
     async for chunk in stream:
         print(chunk, end="", flush=True)
 ```
@@ -543,6 +548,34 @@ await lifecycle.run_warmup()
 # ... application serves requests ...
 await lifecycle.run_shutdown()
 ```
+
+### The Middleware Stack
+
+Every `FireflyAgent` runs each call (`run`, `run_sync`, `run_stream`,
+`run_with_reasoning`) through a `MiddlewareChain` — a before/after pipeline whose hooks
+receive a `MiddlewareContext` (agent name, prompt, method, model, deps). Two middlewares
+are auto-wired: `LoggingMiddleware` is always added, and `ObservabilityMiddleware` is
+added when `config.observability_enabled` is true. You can attach more from
+`fireflyframework_agentic.agents`:
+
+- `PromptGuardMiddleware` / `OutputGuardMiddleware` — block prompt-injection / leaky output.
+- `CostGuardMiddleware` — raises `BudgetExceededError` when a budget is exceeded.
+- `CacheMiddleware` (`ResultCache`) and `PromptCacheMiddleware` (`CacheStatistics`).
+- `ValidationMiddleware` — validate structured output.
+- `RetryMiddleware` — retry on failure (not auto-wired; rate-limit retry is built into
+  `run()` itself).
+- `ExplainabilityMiddleware` — record decisions to a `TraceRecorder`.
+
+```python
+from fireflyframework_agentic.agents import FireflyAgent, PromptGuardMiddleware
+
+agent = FireflyAgent(name="assistant", model="openai:gpt-4o")
+agent.middleware.add(PromptGuardMiddleware())
+```
+
+For provider resilience, `FallbackModelWrapper` / `run_with_fallback` let an agent fall
+back to a secondary model, and `CircuitBreakerMiddleware` (Chapter 11) trips on repeated
+failures.
 
 ### IDP Tie-In: The Document Classifier Agent
 
@@ -1026,33 +1059,44 @@ production you need to **version** prompts (so you can A/B test), **compose** th
 and **load** them from files (so non-engineers can edit them).
 
 The Prompts module provides all of this through a Jinja2-based template engine. Every
-template is a first-class object with a name, a version, typed variables, and a render
+template is a first-class object with a name, a version, declared variables, and a render
 method — not just a raw string.
 
 ### Creating a Prompt Template
+
+A `PromptTemplate` takes **three positional arguments** — `name`, `system_template`, and
+`user_template` — plus keyword-only `version`, `description`, `required_variables`, and
+`metadata`. Both templates are Jinja2 source:
 
 ```python
 from fireflyframework_agentic.prompts import PromptTemplate
 
 extraction_prompt = PromptTemplate(
     "invoice_extraction",
-    "You are an invoice data extraction specialist.\n\n"
+    # system_template
+    "You are an invoice data extraction specialist.\n"
+    "Always return valid JSON matching the requested schema.",
+    # user_template
     "Extract the following fields from the document text below:\n"
     "- invoice_number\n"
     "- vendor_name\n"
     "- total_amount (numeric)\n"
     "- due_date (ISO format)\n"
     "- line_items (list of {description, quantity, unit_price})\n\n"
-    "Document text:\n{{ document_text }}\n\n"
-    "Return valid JSON matching the schema above.",
+    "Document text:\n{{ document_text }}",
     version="1.0.0",
+    required_variables=["document_text"],
 )
 
-rendered = extraction_prompt.render(document_text="Invoice #INV-001 from Acme Corp...")
+# render() returns a Prompt object with .system and .user fields (NOT a string).
+prompt = extraction_prompt.render(document_text="Invoice #INV-001 from Acme Corp...")
+print(prompt.system)  # rendered system_template
+print(prompt.user)    # rendered user_template
 ```
 
 Templates use Jinja2 syntax — `{{ variable }}`, `{% if %}`, `{% for %}`, filters, and
-macros all work.
+macros all work. `required_variables` is validated at render time: rendering without a
+required variable raises `PromptValidationError`.
 
 ### Versioning
 
@@ -1079,17 +1123,19 @@ Templates can be composed using three strategies:
 
 #### Sequential Composition
 
-Render templates in order and join them — useful for building system + context + task prompts:
+Render templates in order and join them — useful for building system + context + task prompts.
+The `system` parts are joined together and the `user` parts are joined together, and
+`render()` returns a single `Prompt`:
 
 ```python
 from fireflyframework_agentic.prompts.composer import SequentialComposer
 
-# By default, templates are joined with "\n\n". Override with `separator=`.
+# By default, templates are joined with "\n\n". Override with the keyword-only `separator=`.
 composer = SequentialComposer(
-    templates=[system_prompt, context_prompt, task_prompt],
+    [system_prompt, context_prompt, task_prompt],
     separator="\n\n",
 )
-full_prompt = composer.render(document_text="Invoice #INV-001...")
+prompt = composer.render(document_text="Invoice #INV-001...")  # -> Prompt(.system, .user)
 ```
 
 #### Conditional Composition
@@ -1101,14 +1147,15 @@ render kwargs and returns a string key that maps into `template_map`:
 from fireflyframework_agentic.prompts.composer import ConditionalComposer
 
 # The condition function inspects the kwargs and returns a template key.
+# Both args are positional: (condition_fn, template_map).
 composer = ConditionalComposer(
-    condition_fn=lambda **kwargs: "invoice" if kwargs.get("doc_type") == "invoice" else "generic",
-    template_map={
+    lambda **kwargs: "invoice" if kwargs.get("doc_type") == "invoice" else "generic",
+    {
         "invoice": invoice_prompt,
         "generic": generic_prompt,
     },
 )
-rendered = composer.render(doc_type="invoice", document_text="...")
+prompt = composer.render(doc_type="invoice", document_text="...")  # -> Prompt
 ```
 
 #### Merge Composition
@@ -1119,12 +1166,13 @@ combine:
 ```python
 from fireflyframework_agentic.prompts.composer import MergeComposer
 
-# The merge_fn receives a list of rendered strings and returns the combined result.
+# The merge_fn is applied separately to the system parts and to the user parts.
+# Both args are positional: (templates, merge_fn).
 composer = MergeComposer(
-    templates=[header, body, footer],
-    merge_fn=lambda parts: "\n---\n".join(parts),
+    [header, body, footer],
+    lambda parts: "\n---\n".join(parts),
 )
-full_prompt = composer.render(document_text="...")
+prompt = composer.render(document_text="...")  # -> Prompt
 ```
 
 ### Validation
@@ -1136,10 +1184,11 @@ token limits and required sections — catching problems before they reach the L
 from fireflyframework_agentic.prompts import PromptValidator
 
 # Validate that the rendered prompt fits within 4,000 tokens
-# and contains the required "Return valid JSON" section.
-validator = PromptValidator(max_tokens=4000, required_sections=["Return valid JSON"])
-rendered = extraction_prompt.render(document_text="Invoice #INV-001 from Acme Corp...")
-result = validator.validate(rendered)
+# and contains the required "valid JSON" section.
+validator = PromptValidator(max_tokens=4000, required_sections=["valid JSON"])
+prompt = extraction_prompt.render(document_text="Invoice #INV-001 from Acme Corp...")
+# validate() takes a string — pass the rendered user (or system) text.
+result = validator.validate(prompt.user)
 if not result.valid:
     print(f"Prompt issues: {result.errors}")
 ```
@@ -1150,7 +1199,9 @@ So far we've created templates, versioned them, and composed them — but none o
 is useful until the rendered text reaches an agent. Here is how the two systems connect.
 
 **Direct rendering → `agent.run()`** — The simplest path. Render a template and pass
-the result as the prompt:
+the rendered `user` text as the prompt. (`render()` returns a `Prompt`; an agent's
+`run()` takes the user text — the system prompt is usually set as the agent's
+`instructions`.)
 
 ```python
 from fireflyframework_agentic.agents import FireflyAgent
@@ -1158,15 +1209,17 @@ from fireflyframework_agentic.prompts import PromptTemplate
 
 extraction_prompt = PromptTemplate(
     "invoice_extraction",
+    "You are a precise invoice data extraction assistant.",  # system_template
     "Extract invoice_number, vendor_name, total_amount, due_date from:\n\n"
-    "{{ document_text }}\n\nReturn valid JSON.",
+    "{{ document_text }}\n\nReturn valid JSON.",              # user_template
 )
 
-agent = FireflyAgent(name="extractor", model="openai:gpt-4o", output_type=dict)
-
-# Render the template, then feed the result to the agent.
-rendered = extraction_prompt.render(document_text=ocr_output)
-result = await agent.run(rendered)
+# Use the template's system text as the agent's instructions.
+prompt = extraction_prompt.render(document_text=ocr_output)
+agent = FireflyAgent(
+    name="extractor", model="openai:gpt-4o", instructions=prompt.system, output_type=dict
+)
+result = await agent.run(prompt.user)
 print(result.output) # {"invoice_number": "INV-001", ...}
 ```
 
@@ -1176,13 +1229,14 @@ multiple templates (system instructions + context + task) into one prompt:
 ```python
 from fireflyframework_agentic.prompts.composer import SequentialComposer
 
-system = PromptTemplate("system", "You are a precise data extraction assistant.")
-context = PromptTemplate("context", "Document type: {{ doc_type }}")
-task = PromptTemplate("task", "Extract fields from:\n{{ document_text }}")
+# Each template provides system + user halves; here the work lives in the user half.
+system = PromptTemplate("system", "You are a precise data extraction assistant.", "")
+context = PromptTemplate("context", "", "Document type: {{ doc_type }}")
+task = PromptTemplate("task", "", "Extract fields from:\n{{ document_text }}")
 
-composer = SequentialComposer(templates=[system, context, task])
-full_prompt = composer.render(doc_type="invoice", document_text=ocr_output)
-result = await agent.run(full_prompt)
+composer = SequentialComposer([system, context, task])
+prompt = composer.render(doc_type="invoice", document_text=ocr_output)
+result = await agent.run(prompt.user)
 ```
 
 **Reasoning patterns use prompts internally** — Every reasoning pattern (Chapter 6)
@@ -1194,7 +1248,7 @@ to the agent, and records the output in the trace. You can override any slot:
 from fireflyframework_agentic.reasoning import ReActPattern
 
 # Override the built-in thought prompt with your own template.
-custom = PromptTemplate("my:thought", "Think about: {{ context }}")
+custom = PromptTemplate("my:thought", "You are a careful reasoner.", "Think about: {{ context }}")
 pattern = ReActPattern(prompts={"thought": custom})
 ```
 
@@ -1204,20 +1258,28 @@ See Chapter 6 → *Configurable Prompts* for the full list of prompt slots per p
 
 For large prompts or team workflows, store templates as files:
 
+`PromptLoader` exposes three **static** factory methods — `from_string()`,
+`from_file()`, and `from_directory()`:
+
 ```python
 from fireflyframework_agentic.prompts import PromptLoader
 
-loader = PromptLoader()
+# From an inline string (name, system_template, user_template).
+template = PromptLoader.from_string(
+    "invoice_extraction",
+    "You are an invoice parser.",
+    "Extract fields from:\n{{ document_text }}",
+)
 
-# Load a single file (.txt, .md, or .jinja2)
-template = loader.load_file("prompts/invoice_extraction.jinja2")
+# From a YAML file (keys map to PromptTemplate fields; name defaults to the file stem).
+template = PromptLoader.from_file("prompts/invoice_extraction.yaml")
 
-# Load an entire directory
-all_templates = loader.load_directory("prompts/")
+# Load an entire directory (defaults to the *.j2 glob).
+all_templates = PromptLoader.from_directory("prompts/")
 ```
 
-The loader infers the template name from the filename (e.g. `invoice_extraction.jinja2`
-becomes `"invoice_extraction"`).
+When a name is not supplied, the loader infers it from the file stem (e.g.
+`invoice_extraction.yaml` becomes `"invoice_extraction"`).
 
 ### IDP Tie-In: Versioned Extraction Prompts
 
@@ -1231,17 +1293,18 @@ prompt_registry = PromptRegistry()
 # Version 1: Simple extraction
 extraction_v1 = PromptTemplate(
     "idp_extraction",
-    "Extract these fields from the invoice:\n"
+    "You are an invoice parser. Return valid JSON.",  # system_template
+    "Extract these fields from the invoice:\n"          # user_template
     "- invoice_number, vendor_name, total_amount, due_date, line_items\n\n"
-    "Text: {{ document_text }}\n\n"
-    "Return valid JSON.",
+    "Text: {{ document_text }}",
     version="1.0.0",
+    required_variables=["document_text"],
 )
 
 # Version 2: More structured with examples
 extraction_v2 = PromptTemplate(
     "idp_extraction",
-    "You are an expert invoice parser. Extract structured data from the text below.\n\n"
+    "You are an expert invoice parser. Extract structured data and return valid JSON.",
     "Required fields:\n"
     " invoice_number: string (format: INV-NNNN)\n"
     " vendor_name: string\n"
@@ -1254,6 +1317,7 @@ extraction_v2 = PromptTemplate(
     '"unit_price": 50.0}]}\n\n'
     "Document text:\n{{ document_text }}",
     version="2.0.0",
+    required_variables=["document_text"],
 )
 
 prompt_registry.register(extraction_v1)
@@ -1261,7 +1325,7 @@ prompt_registry.register(extraction_v2)
 
 # In production, select the version based on experiment configuration
 template = prompt_registry.get("idp_extraction") # Returns v2 (latest)
-prompt = template.render(document_text=ocr_output)
+prompt = template.render(document_text=ocr_output)  # -> Prompt(.system, .user)
 ```
 
 ---
@@ -1611,13 +1675,14 @@ Every pattern uses `PromptTemplate` instances for its LLM calls. You can overrid
 prompt by passing a `prompts` dict:
 
 ```python
-from fireflyframework_agentic.prompts.template import PromptTemplate, PromptVariable
+from fireflyframework_agentic.prompts.template import PromptTemplate
 from fireflyframework_agentic.reasoning import ReActPattern
 
 custom_thought = PromptTemplate(
     "my:react:thought",
-    "Think carefully about: {{ context }}",
-    variables=[PromptVariable(name="context")],
+    "You are a careful reasoner.",            # system_template
+    "Think carefully about: {{ context }}",   # user_template
+    required_variables=["context"],
 )
 pattern = ReActPattern(prompts={"thought": custom_thought})
 ```
@@ -1869,13 +1934,15 @@ tiles = tiler.compute_tiles(image_width=4096, image_height=6144)
 
 ### Batch Processing
 
-`BatchProcessor` sends chunks through an agent concurrently:
+`BatchProcessor` sends chunks through an agent concurrently. By default it returns a
+list of per-chunk result strings; pass a `result_aggregator` callable to merge them
+into any shape you like:
 
 ```python
 from fireflyframework_agentic.content.chunking import BatchProcessor
 
 processor = BatchProcessor(concurrency=4)
-results = await processor.process(ocr_agent, chunks)
+results = await processor.process(ocr_agent, chunks)  # -> list[str]
 ```
 
 ### Context Compression
@@ -1945,6 +2012,33 @@ estimator = TokenEstimator() # Default ratio: 1.33 tokens per word
 tokens = estimator.estimate("This is a test sentence.")
 ```
 
+### Binary Ingestion (`content.binary`)
+
+The text pipeline above assumes you already have text. For real documents — PDFs, Office
+files, images, archives, emails — the `content.binary` submodule (installed via the
+`[binary]` extra) turns raw caller bytes into one or more normalised `BinaryArtifact`
+rows ready for OCR/extraction. `BinaryNormalizer` dispatches by sniffed media type and
+delegates to pluggable handlers: `PdfGuard` (PDF sanitisation), `ImageNormalizer`,
+`OfficeConverter` (build via `build_office_converter`, backed by `GotenbergConverter`,
+`LibreOfficeConverter`, or `NoOpOfficeConverter`), `ArchiveUnpacker`, and `EmailUnpacker`.
+
+```python
+from fireflyframework_agentic.content.binary import (
+    BinaryNormalizer, BinaryConfig, build_office_converter, sniff_media_type,
+)
+
+config = BinaryConfig()  # caps, toggles
+normalizer = BinaryNormalizer(config=config, office=build_office_converter(config))
+
+# normalise() is async and never returns empty.
+artifacts = await normalizer.normalise(raw_bytes, filename="invoice.pdf")
+for art in artifacts:
+    print(art.media_type, art.kind, art.page_count)
+```
+
+Handlers are injected so a host can swap implementations (e.g. Gotenberg vs LibreOffice)
+without touching the framework.
+
 ### IDP Tie-In: Processing Large Documents
 
 In our IDP pipeline, the OCR phase may produce text that exceeds the extraction
@@ -1958,12 +2052,13 @@ from fireflyframework_agentic.content.compression import ContextCompressor, MapR
 chunker = TextChunker(chunk_size=3000, chunk_overlap=200, strategy="paragraph")
 chunks = chunker.chunk(raw_ocr_text)
 
-# Step 2: If needed, process chunks in parallel through OCR cleanup agent
+# Step 2: If needed, process chunks in parallel through OCR cleanup agent.
+# By default process() returns a list of strings (one per chunk).
 processor = BatchProcessor(concurrency=4)
 cleaned_chunks = await processor.process(ocr_cleanup_agent, chunks)
 
-# Step 3: Compress for the extraction agent
-full_text = "\n".join(c.output for c in cleaned_chunks)
+# Step 3: Compress for the extraction agent (compress() is async — await it).
+full_text = "\n".join(cleaned_chunks)
 compressor = ContextCompressor(
     strategy=MapReduceStrategy(summary_agent)
 )
@@ -2144,6 +2239,20 @@ JSON file persistence. Each namespace gets its own file:
 from fireflyframework_agentic.memory import FileStore
 store = FileStore(base_dir=".firefly_memory")
 ```
+
+#### SQLiteStore
+
+Single-file SQLite persistence — durable and queryable without a separate server:
+
+```python
+from fireflyframework_agentic.memory import SQLiteStore
+store = SQLiteStore(path=".firefly_memory/memory.db")
+```
+
+For larger deployments the `memory_backend` config field also accepts `"postgres"` and
+`"mongodb"` (configured via `memory_postgres_url` / `memory_mongodb_url`). Conversation
+memory can auto-summarise evicted turns with a summariser built by
+`create_llm_summarizer(agent)`.
 
 #### Custom Backends
 
@@ -2513,6 +2622,31 @@ The result contains:
 - `retry_history` — List of `RetryAttempt` objects with attempt number, raw output,
   and error messages.
 
+### Rubric Reviewer (LLM-as-judge)
+
+Where `OutputReviewer` enforces a schema and deterministic rules, `RubricReviewer`
+evaluates **free-form** output against a list of natural-language criteria using a
+separate grader agent. When criteria are unmet, it sends a revision prompt back to the
+generator and loops (up to `max_iterations`), returning a `ReviewResult`:
+
+```python
+from fireflyframework_agentic.validation import RubricReviewer
+
+reviewer = RubricReviewer(
+    rubric=[
+        "All five invoice fields are present.",
+        "Amounts are numeric, not strings.",
+        "The due date is ISO 8601.",
+    ],
+    grader=evaluator_agent,  # optional; a default grader is created otherwise
+    max_iterations=3,
+)
+result = await reviewer.review(extractor_agent, f"Extract fields from:\n{ocr_text}")
+```
+
+You can also load the rubric from a Markdown bullet list with
+`RubricReviewer.from_rubric_file("rubric.md")`.
+
 ### IDP Tie-In: Validating Extracted Invoice Data
 
 For our IDP pipeline, we combine structural validation, QoS checks, and the output
@@ -2647,13 +2781,18 @@ result = await engine.run(inputs="<invoice text>")
 
 ### Step Executors
 
-Five built-in executors cover most scenarios:
+The built-in executors (all implementing `StepExecutor`) cover most scenarios:
 
 - **`AgentStep`** — Runs a `FireflyAgent` with the input as prompt.
 - **`ReasoningStep`** — Runs a reasoning pattern through an agent.
 - **`CallableStep`** — Wraps any `async` function `(context, inputs) -> output`.
 - **`FanOutStep`** — Splits input into a list for parallel downstream processing.
 - **`FanInStep`** — Merges outputs from multiple upstream nodes.
+- **`BranchStep`** — Routes to one of several downstream paths by a router function.
+- **`BatchLLMStep`** — Runs an agent over a batch of inputs concurrently.
+- **`EmbeddingStep`** — Embeds text via a `BaseEmbedder` (see Embeddings & Vector Stores).
+- **`RetrievalStep`** — Retrieves nearest neighbours from a vector store:
+  `RetrievalStep(store, *, embedder=None, top_k=5, input_key="input")`.
 
 ### Parallel Execution (Fan-Out / Fan-In)
 
@@ -2767,6 +2906,56 @@ engine = PipelineEngine(dag)
 result = await engine.run(inputs="hello")
 ```
 
+### Embeddings & Vector Stores
+
+`EmbeddingStep` and `RetrievalStep` build on two reusable framework modules. The
+`embeddings` package ships `BaseEmbedder`/`EmbedderRegistry` with **8** provider backends
+(OpenAI, Azure, Cohere, Google, Mistral, Voyage, Bedrock, Ollama). The `vectorstores`
+package ships `BaseVectorStore` with **7** backends — `InMemoryVectorStore`,
+`ChromaVectorStore`, `PineconeVectorStore`, `QdrantVectorStore`, `PgVectorVectorStore`,
+and `SqliteVecVectorStore` — plus a scoping layer (`ScopedVectorStore`,
+`TenantScopedVectorStore`, `scope_namespace`, `parse_scope_namespace`) for multi-tenant
+isolation:
+
+```python
+from fireflyframework_agentic.vectorstores import InMemoryVectorStore
+from fireflyframework_agentic.pipeline import RetrievalStep
+
+store = InMemoryVectorStore()          # async upsert / search / search_text / delete
+retrieve = RetrievalStep(store, top_k=5, input_key="input")
+```
+
+The framework ships these as building blocks; it does not bundle a turnkey RAG/corpus
+agent. `BaseEmbedder`, `EmbedderRegistry`, `BaseVectorStore`, and `InMemoryVectorStore`
+are re-exported from the top-level `fireflyframework_agentic` package.
+
+### State-Based Pipelines, Checkpointing & Audit Logs
+
+Beyond the port-based DAG above, `PipelineBuilder` has a **state-based** mode: pass a
+Pydantic `state=` model and nodes become `async (state) -> dict | None | Pause | Send |
+list[Send]` functions over a typed shared state. Branching is a single `.branch(source,
+router)` call, and **state reducers** (`append`, `extend`, `merge_dict`, `replace`)
+control how each node's returned dict is merged into the state.
+
+Two control signals shape the flow: `Pause` suspends a run (resume later), and `Send`
+dispatches dynamic fan-out work. For durability, pass a `Checkpointer`
+(`FileCheckpointer(root=...)` writes `CheckpointRecord`s) so a failed run can resume or
+start mid-pipeline. An `AuditLog` records every node transition — choose `FileAuditLog`,
+`LoggingAuditLog`, `OtelAuditLog`, or `QueryableAuditLog` (each entry is an `AuditEntry`):
+
+```python
+from fireflyframework_agentic.pipeline import (
+    PipelineBuilder, FileCheckpointer, OtelAuditLog,
+)
+
+engine = PipelineBuilder(
+    "stateful-idp",
+    state=IdpState,                       # a pydantic.BaseModel
+    checkpointer=FileCheckpointer(root=".checkpoints"),
+    audit_log=OtelAuditLog(),
+).build()
+```
+
 ### IDP Tie-In: Wiring the Complete Pipeline
 
 Here's our IDP pipeline as a DAG with all five phases:
@@ -2835,22 +3024,29 @@ failing, or how many tokens you're burning.
 
 The Observability module wraps OpenTelemetry and gives you three primitives out of the
 box: **tracing** (distributed spans across agents, tools, and pipeline steps), **metrics**
-(counters, histograms, and gauges for latency, throughput, and token usage), and
+(counters and histograms for tokens, latency, cost, errors, and reasoning depth), and
 **events** (structured logs for significant occurrences). When observability is
 enabled, the framework instruments agent runs automatically — you get spans for free.
 
 ### Tracing
 
-`FireflyTracer` wraps the OpenTelemetry `Tracer` and adds GenAI-specific attributes:
+`FireflyTracer` wraps the OpenTelemetry `Tracer` and adds GenAI-specific attributes. It
+exposes purpose-built context managers — `agent_span(agent_name, *, model=..., **attrs)`,
+`tool_span(...)`, `reasoning_span(...)` — plus a generic `custom_span(name, **attrs)`, an
+`event(name, **attrs)` annotation helper, and a static `set_error(span, error)`:
 
 ```python
 from fireflyframework_agentic.observability import FireflyTracer
 
 tracer = FireflyTracer(service_name="idp-service")
 
-with tracer.start_span("agent.run", attributes={"agent.name": "classifier"}) as span:
+with tracer.agent_span("classifier", model="openai:gpt-4o") as span:
     result = await classifier_agent.run("Classify this document")
     span.set_attribute("tokens.total", 150)
+
+# Or a generic span with arbitrary attributes:
+with tracer.custom_span("agent.run", phase="classify") as span:
+    ...
 ```
 
 #### The `@traced` Decorator
@@ -2867,40 +3063,51 @@ async def classify_document(text: str) -> dict:
 
 ### Metrics
 
-`FireflyMetrics` provides counters, histograms, and gauges:
+`FireflyMetrics` records GenAI-specific OpenTelemetry instruments via purpose-built
+methods (each takes keyword args like `agent=`, `model=`, `operation=`, `pattern=` — not
+a generic `labels=` dict):
 
 ```python
 from fireflyframework_agentic.observability import FireflyMetrics
 
 metrics = FireflyMetrics(service_name="idp-service")
 
-# Count invocations
-metrics.increment("agent.invocations", labels={"agent": "classifier"})
-
-# Record latency
-metrics.record_histogram("agent.latency_ms", 142.5, labels={"agent": "classifier"})
+metrics.record_tokens(150, agent="classifier", model="openai:gpt-4o")
+metrics.record_prompt_tokens(100, agent="classifier", model="openai:gpt-4o")
+metrics.record_completion_tokens(50, agent="classifier", model="openai:gpt-4o")
+metrics.record_latency(142.5, operation="classify", agent="classifier")
+metrics.record_cost(0.0021, agent="classifier", model="openai:gpt-4o")
+metrics.record_error(operation="classify", agent="classifier", error_type="Timeout")
+metrics.record_reasoning_depth(4, pattern="react")
 ```
 
 #### The `@metered` Decorator
 
+`@metered`'s first parameter is `operation` (it records latency, and an error on
+exception). Use a positional string or `operation=`:
+
 ```python
 from fireflyframework_agentic.observability import metered
 
-@metered(name="extraction")
+@metered("extraction")
 async def extract_fields(text: str) -> dict:
     return await extractor_agent.run(text)
 ```
 
 ### Events
 
-`FireflyEvents` emits structured events for significant occurrences:
+`FireflyEvents` emits structured events (logged as JSON-serialisable dicts) via typed
+methods — there is no generic `emit()`:
 
 ```python
 from fireflyframework_agentic.observability import FireflyEvents
 
 events = FireflyEvents()
-events.emit("agent.started", {"agent": "classifier", "model": "gpt-4o"})
-events.emit("pipeline.step.completed", {"step": "classify", "duration_ms": 250})
+events.agent_started("classifier", model="openai:gpt-4o")
+events.agent_completed("classifier", tokens=150, latency_ms=250)
+events.tool_executed("vendor_lookup", success=True, latency_ms=12)
+events.reasoning_step("react", step=1, step_type="thought")
+events.agent_error("classifier", error="timeout")
 ```
 
 ### Exporter Configuration
@@ -2939,22 +3146,29 @@ agent_summary = default_usage_tracker.get_summary_for_agent("extractor")
 pipeline_summary = default_usage_tracker.get_summary_for_correlation("run-123")
 ```
 
-Cost is calculated via `CostCalculator` — either a built-in static price table or
-the optional `genai-prices` library for up-to-date pricing:
+Cost is computed by a **resolver chain** (`observability/cost_resolvers.py`). The default
+chain `DEFAULT_RESOLVERS` tries `provider_reported_cost` (uses cost the provider already
+reported) then `genai_prices_cost` (prices via the bundled `genai-prices` data). The
+entry point is `resolve_cost`:
 
 ```python
-from fireflyframework_agentic.observability import get_cost_calculator
+from fireflyframework_agentic.observability import resolve_cost, CostContext
 
-calc = get_cost_calculator() # auto-selects best available
-cost = calc.estimate("openai:gpt-4o", input_tokens=1000, output_tokens=500)
+cost = resolve_cost(
+    CostContext(model="openai:gpt-4o", input_tokens=1000, output_tokens=500)
+)
+# Returns the USD cost, or None when no resolver can price the model.
 ```
+
+When `config.cost_strict=True`, an unpriceable model raises `UnknownModelCostError`
+instead of returning `None`. `UsageTracker` applies this chain automatically for every
+recorded run.
 
 #### Budget Enforcement
 
-Set budget thresholds to get warnings when costs are high:
+Set a hard budget limit; a warning is logged when costs exceed it:
 
 ```bash
-export FIREFLY_AGENTIC_BUDGET_ALERT_THRESHOLD_USD=5.00
 export FIREFLY_AGENTIC_BUDGET_LIMIT_USD=10.00
 ```
 
@@ -2975,23 +3189,19 @@ code manually unless you want additional detail.
 ### IDP Tie-In: Instrumenting the Pipeline
 
 ```python
-from fireflyframework_agentic.observability import FireflyTracer, FireflyMetrics, traced
+from fireflyframework_agentic.observability import FireflyTracer, traced
 
 tracer = FireflyTracer(service_name="idp-service")
-metrics = FireflyMetrics(service_name="idp-service")
 
 @traced(name="idp.process_document")
 async def process_document(document_bytes: bytes) -> dict:
-    ctx = PipelineContext(inputs=document_bytes)
-    result = await idp_pipeline.run(context=ctx)
-
-    metrics.increment("idp.documents_processed")
-    if result.success:
-        metrics.increment("idp.documents_succeeded")
-    else:
-        metrics.increment("idp.documents_failed")
-
-    return result.final_output
+    with tracer.custom_span("idp.run") as span:
+        ctx = PipelineContext(inputs=document_bytes)
+        result = await idp_pipeline.run(context=ctx)
+        span.set_attribute("idp.success", result.success)
+        # Per-agent token, latency, and cost metrics are recorded automatically
+        # when observability is enabled; inspect them via default_usage_tracker.
+        return result.final_output
 ```
 
 ---
@@ -3003,74 +3213,74 @@ acceptable answer. Auditors, compliance officers, and customers need to see **wh
 agent classified a document as an invoice, **why** it chose one vendor name over
 another, and **what** alternatives it considered. The Explainability module provides
 four building blocks: a **trace recorder** that captures every decision, an
-**explanation generator** that turns raw records into natural-language narratives, a
-tamper-evident **audit trail**, and a **report builder** that compiles everything into
+**explanation generator** that turns raw records into natural-language narratives, an
+append-only **audit trail**, and a **report builder** that compiles everything into
 markdown or JSON.
 
 ### Trace Recorder
 
-`TraceRecorder` captures every decision during execution:
+`TraceRecorder` captures decision records during execution. The method is
+`record(category, *, agent="", detail=None, input_summary="", output_summary="")`, and
+recorded items are exposed via the `.records` property:
 
 ```python
 from fireflyframework_agentic.explainability import TraceRecorder
 
 recorder = TraceRecorder()
-recorder.record_decision(
-    agent_name="extractor",
-    action="field_extraction",
-    chosen="regex_match",
-    alternatives=["llm_extraction", "template_match"],
-    rationale="Invoice number matches INV-NNNN pattern; regex is more reliable.",
+recorder.record(
+    "reasoning_step",
+    agent="extractor",
+    detail={"chosen": "regex_match", "alternatives": ["llm_extraction", "template_match"]},
+    input_summary="raw OCR text",
+    output_summary="invoice_number=INV-2026-001",
 )
 ```
 
-Each `DecisionRecord` includes: timestamp, agent name, action, chosen option,
-alternatives considered, and rationale.
+Each `DecisionRecord` has these fields: `timestamp`, `category`, `agent`, `detail`,
+`input_summary`, and `output_summary`.
 
 ### Explanation Generator
 
-Transforms raw decision records into natural-language explanations:
+Transforms raw decision records into a natural-language narrative:
 
 ```python
 from fireflyframework_agentic.explainability import ExplanationGenerator
 
 generator = ExplanationGenerator()
-explanation = generator.generate(recorder.decisions)
+explanation = generator.generate(recorder.records)
 print(explanation)
-# "The extractor agent chose regex_match for field_extraction because..."
+# Multi-line "Decision Explanation" narrative walking each record chronologically.
 ```
 
 ### Audit Trail
 
-A tamper-evident log where each entry includes a hash of the previous entry:
+An append-only log. Each entry captures an actor, action, resource, and outcome:
 
 ```python
 from fireflyframework_agentic.explainability import AuditTrail
 
 trail = AuditTrail()
-for decision in recorder.decisions:
-    trail.append(decision)
+trail.append("extractor", "field_extraction", resource="invoice_number", outcome="success")
 
-# Verify integrity
-assert trail.verify()
+# Inspect or export
+print(len(trail))            # number of entries
+print(trail.entries)         # list[AuditEntry]
+print(trail.export_json())   # JSON string
 ```
 
 ### Report Builder
 
-Compile everything into a structured report:
+Compile records into a structured `ExplainabilityReport`, then render it:
 
 ```python
 from fireflyframework_agentic.explainability import ReportBuilder
 
-builder = ReportBuilder()
-builder.add_decisions(recorder.decisions)
-builder.add_explanation(explanation)
+builder = ReportBuilder(title="Invoice Extraction Report")
+report = builder.build(recorder.records)   # -> ExplainabilityReport
 
-# Markdown report (for documentation/review)
-markdown = builder.build_markdown()
-
-# JSON report (for programmatic consumption)
-json_data = builder.build_json()
+# Render via static helpers
+markdown = ReportBuilder.to_markdown(report)   # for documentation/review
+json_data = ReportBuilder.to_json(report)      # for programmatic consumption
 ```
 
 ### IDP Tie-In: Audit Trail for Invoice Extraction
@@ -3085,35 +3295,32 @@ from fireflyframework_agentic.explainability import (
 recorder = TraceRecorder()
 
 # During extraction, record decisions
-recorder.record_decision(
-    agent_name="field_extractor",
-    action="extract_invoice_number",
-    chosen="INV-2026-001",
-    alternatives=["INV-2026-01", "2026-001"],
-    rationale="Matched the INV-NNNN pattern with highest confidence.",
+recorder.record(
+    "field_extraction",
+    agent="field_extractor",
+    detail={"chosen": "INV-2026-001", "alternatives": ["INV-2026-01", "2026-001"]},
+    output_summary="Matched the INV-NNNN pattern with highest confidence.",
 )
-recorder.record_decision(
-    agent_name="field_extractor",
-    action="extract_amount",
-    chosen="1234.56",
-    alternatives=["1,234.56", "$1234.56"],
-    rationale="Normalised currency format to numeric value.",
+recorder.record(
+    "field_extraction",
+    agent="field_extractor",
+    detail={"chosen": "1234.56", "alternatives": ["1,234.56", "$1234.56"]},
+    output_summary="Normalised currency format to numeric value.",
 )
 
-# Generate explanation and audit trail
+# Generate explanation
 generator = ExplanationGenerator()
-explanation = generator.generate(recorder.decisions)
+explanation = generator.generate(recorder.records)
 
+# Audit trail — append (actor, action) entries
 trail = AuditTrail()
-for decision in recorder.decisions:
-    trail.append(decision)
-assert trail.verify()
+trail.append("field_extractor", "extract_invoice_number", resource="INV-2026-001")
+trail.append("field_extractor", "extract_amount", resource="1234.56")
+print(trail.export_json())
 
-# Build the report
-report = ReportBuilder()
-report.add_decisions(recorder.decisions)
-report.add_explanation(explanation)
-print(report.build_markdown())
+# Build and render the report
+report = ReportBuilder(title="Invoice Extraction Report").build(recorder.records)
+print(ReportBuilder.to_markdown(report))
 ```
 
 ---
@@ -3133,49 +3340,64 @@ length), and **compare results** — all in a few lines of code.
 
 ### Defining an Experiment
 
+An `Experiment` holds `variants` plus a `dataset` of test inputs. Each `Variant` carries
+`name`, `model`, `temperature`, and a `parameters` dict:
+
 ```python
 from fireflyframework_agentic.experiments import Experiment, Variant
 
 experiment = Experiment(
     name="extraction_model_comparison",
-    description="Compare GPT-4o vs Claude 3.5 Sonnet on invoice extraction.",
+    hypothesis="Claude 3.5 Sonnet beats GPT-4o on invoice extraction.",
     variants=[
-        Variant(name="gpt4o", config={"model": "openai:gpt-4o"}),
-        Variant(name="claude", config={"model": "anthropic:claude-3-5-sonnet"}),
+        Variant(name="gpt4o", model="openai:gpt-4o"),
+        Variant(name="claude", model="anthropic:claude-3-5-sonnet"),
     ],
-)
-```
-
-### Running an Experiment
-
-The `ExperimentRunner` executes each variant against test inputs and collects metrics
-(latency, token usage, quality):
-
-```python
-from fireflyframework_agentic.experiments import ExperimentRunner
-
-runner = ExperimentRunner()
-results = await runner.run(
-    experiment,
-    inputs=[
+    dataset=[
         "Extract fields from: Invoice #INV-001, Acme Corp, $500, 2026-01-15",
         "Extract fields from: Invoice #INV-002, Globex, $1,200, 2026-02-28",
     ],
 )
 ```
 
+### Running an Experiment
+
+`ExperimentRunner.run(experiment, agent_factory, *, context=None)` runs every variant
+against the experiment's `dataset`. The second positional argument is an
+**agent_factory** callable `(variant) -> agent` that builds an agent configured for that
+variant. It returns a `list[VariantResult]`:
+
+```python
+from fireflyframework_agentic.experiments import ExperimentRunner
+from fireflyframework_agentic.agents import FireflyAgent
+
+def make_agent(variant):
+    return FireflyAgent(
+        name=f"extractor-{variant.name}",
+        model=variant.model,
+        instructions="You are an invoice data extraction specialist.",
+    )
+
+runner = ExperimentRunner()
+results = await runner.run(experiment, make_agent)
+```
+
 ### Tracking Results
 
-Persist results for later analysis and reproducibility:
+`ExperimentTracker` stores `VariantResult`s in memory with optional JSON persistence
+(pass `storage_path=`). `ExperimentRunner` already records each result into its tracker;
+you can also record manually and export:
 
 ```python
 from fireflyframework_agentic.experiments import ExperimentTracker
 
-tracker = ExperimentTracker(storage_dir="./experiment_results")
-tracker.save(results)
+tracker = ExperimentTracker(storage_path="./experiment_results.json")
+for result in results:
+    tracker.record(result)
 
-# Later, reload
-loaded = tracker.load("extraction_model_comparison")
+# Query and export
+subset = tracker.get_by_experiment("extraction_model_comparison")
+print(tracker.export_json())
 ```
 
 ### Comparing Variants
@@ -3194,15 +3416,23 @@ print(comparator.summary(results))
 ```python
 experiment = Experiment(
     name="idp_extraction_ab_test",
-    description="A/B test extraction accuracy for IDP invoices.",
+    hypothesis="Lower temperature improves IDP invoice extraction accuracy.",
     variants=[
-        Variant(name="gpt4o", config={"model": "openai:gpt-4o", "temperature": 0.1}),
-        Variant(name="gpt4o_warm", config={"model": "openai:gpt-4o", "temperature": 0.5}),
-        Variant(name="claude", config={"model": "anthropic:claude-3-5-sonnet"}),
+        Variant(name="gpt4o", model="openai:gpt-4o", temperature=0.1),
+        Variant(name="gpt4o_warm", model="openai:gpt-4o", temperature=0.5),
+        Variant(name="claude", model="anthropic:claude-3-5-sonnet"),
     ],
+    dataset=test_invoices,
 )
 
-results = await ExperimentRunner().run(experiment, inputs=test_invoices)
+def make_agent(variant):
+    return FireflyAgent(
+        name=f"extractor-{variant.name}",
+        model=variant.model,
+        instructions="You are an invoice data extraction specialist.",
+    )
+
+results = await ExperimentRunner().run(experiment, make_agent)
 print(VariantComparator().summary(results))
 ```
 
@@ -3564,6 +3794,20 @@ router = DelegationRouter([invoice_agent, receipt_agent], strategy)
 result = await router.route("Extract invoice data.")
 # → Routed to invoice_agent (which has the "invoice_extraction" tag)
 ```
+
+### Other Strategies
+
+The framework ships **7** delegation strategies, all importable from
+`fireflyframework_agentic.agents.delegation` (and re-exported from
+`fireflyframework_agentic.agents`):
+
+- `RoundRobinStrategy` — even load balancing.
+- `CapabilityStrategy` — match by required tag.
+- `ContentBasedStrategy` — route by keywords in the request content.
+- `CostAwareStrategy` — prefer the lowest-cost capable agent.
+- `ChainStrategy` — run a fixed chain of agents in order.
+- `FallbackStrategy` — try agents in order until one succeeds.
+- `WeightedStrategy` — weighted random selection.
 
 ### Memory with Delegation
 
@@ -4006,7 +4250,8 @@ Before deploying to production, verify:
 
 - [ ] **Configuration** — All `FIREFLY_AGENTIC_*` environment variables are set.
 - [ ] **Model access** — API keys for your LLM provider are configured.
-- [ ] **Observability** — OTLP endpoint is reachable; traces are flowing.
+- [ ] **Observability** — `observability_enabled` is on, and your **host service** has
+  configured the OTel SDK/exporters so framework spans and metrics flow to your backend.
 - [ ] **Memory persistence** — `memory_backend` is set to `"file"` (or a custom backend)
   for durability.
 - [ ] **Validation** — `OutputValidator` rules match your business requirements.
@@ -4026,7 +4271,8 @@ paths to explore further:
 
 - **Dive deeper** — Each chapter links to a detailed module guide in `docs/`.
 - **Read the source** — The framework is fully typed and well-documented in code.
-- **Run the tests** — `uv run pytest` runs 367+ tests that exercise every module.
+- **Run the tests** — `uv run pytest` runs 1,300+ tests across ~128 files that exercise
+  every module.
 - **Build your own** — Extend `AbstractReasoningPattern`, implement `MemoryStore`,
   create custom tools, or write a plugin.
 

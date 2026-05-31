@@ -34,22 +34,43 @@ flowchart TD
 ## Tracing
 
 `FireflyTracer` wraps the OpenTelemetry `Tracer` and adds convenience methods for
-creating spans with GenAI-specific attributes (model name, token counts, agent name).
+creating spans with GenAI-specific attributes. Each method is a context manager that
+prefixes attribute keys with `firefly.` so spans group cleanly in any backend:
+
+| Method | Span name | Purpose |
+|--------|-----------|---------|
+| `agent_span(agent_name, *, model="", **attrs)` | `agent.<name>` | Wrap an agent run |
+| `tool_span(tool_name, **attrs)` | `tool.<name>` | Wrap a tool execution |
+| `reasoning_span(pattern_name, step=0, **attrs)` | `reasoning.<pattern>.step_<n>` | Wrap a reasoning step |
+| `custom_span(name, **attrs)` | `<name>` | Arbitrary span |
 
 ```python
 from fireflyframework_agentic.observability import FireflyTracer
 
 tracer = FireflyTracer(service_name="my-genai-app")
 
-with tracer.start_span("agent.run", attributes={"agent.name": "writer"}) as span:
+with tracer.agent_span("writer", model="gpt-4o") as span:
     result = await agent.run("Hello")
-    span.set_attribute("tokens.total", result.usage.total_tokens)
+    span.set_attribute("firefly.tokens.total", result.usage().total_tokens)
 ```
+
+Two helpers complement the span context managers:
+
+- `tracer.event(name, **attrs)` attaches a zero-duration event to the *currently
+  active* span — ideal for routing decisions, cache hits, or retries where opening
+  a child span would be overkill (no-op when no span is active).
+- `FireflyTracer.set_error(span, error)` (static) records an exception on a span and
+  sets its status to error. The `@traced` decorator calls it automatically.
+
+The module exposes a shared `default_tracer` singleton; the `@traced` decorator
+operates on it.
 
 ### The @traced Decorator
 
-For convenience, the `@traced` decorator automatically creates a span around any
-function call:
+For convenience, the `@traced` decorator automatically creates a `custom_span`
+around any function call (sync or async). The span name defaults to the function's
+qualified name; extra keyword args become span attributes. On exception it calls
+`set_error` and re-raises.
 
 ```python
 from fireflyframework_agentic.observability import traced
@@ -88,23 +109,41 @@ result = await pipeline.run(context)
 
 ## Metrics
 
-`FireflyMetrics` provides counters, histograms, and gauges for tracking GenAI-specific
-measurements.
+`FireflyMetrics` registers a fixed set of OpenTelemetry counters and histograms for
+GenAI-specific measurements. There is no generic `increment`/`record_histogram` API —
+instead you call typed `record_*` methods that take well-known keyword labels:
+
+| Method | Instrument | Labels |
+|--------|-----------|--------|
+| `record_tokens(count, *, agent="", model="")` | `firefly.tokens.total` (counter) | agent, model |
+| `record_prompt_tokens(count, *, agent="", model="")` | `firefly.tokens.prompt` (counter) | agent, model |
+| `record_completion_tokens(count, *, agent="", model="")` | `firefly.tokens.completion` (counter) | agent, model |
+| `record_cost(usd, *, agent="", model="")` | `firefly.cost.total` (counter) | agent, model |
+| `record_latency(ms, *, operation="", agent="")` | `firefly.latency` (histogram) | operation, agent |
+| `record_error(*, operation="", agent="", error_type="")` | `firefly.errors.total` (counter) | operation, agent, error_type |
+| `record_reasoning_depth(steps, *, pattern="")` | `firefly.reasoning.depth` (histogram) | pattern |
 
 ```python
 from fireflyframework_agentic.observability import FireflyMetrics
 
 metrics = FireflyMetrics(service_name="my-genai-app")
-metrics.increment("agent.invocations", labels={"agent": "writer"})
-metrics.record_histogram("agent.latency_ms", 142.5, labels={"agent": "writer"})
+metrics.record_tokens(1500, agent="writer", model="gpt-4o")
+metrics.record_latency(142.5, operation="agent.run", agent="writer")
 ```
 
+A shared `default_metrics` singleton is exposed; the `@metered` decorator and the
+cost sinks record against it.
+
 ### The @metered Decorator
+
+`@metered` records the wrapped function's latency (and an error on exception). Its
+first parameter is `operation` (the label), defaulting to the function's qualified
+name:
 
 ```python
 from fireflyframework_agentic.observability import metered
 
-@metered(name="agent_call")
+@metered("agent_call")
 async def call_agent(prompt: str) -> str:
     ...
 ```
@@ -113,15 +152,28 @@ async def call_agent(prompt: str) -> str:
 
 ## Events
 
-`FireflyEvents` emits structured events (as OpenTelemetry log records) for significant
-occurrences: agent started, tool invoked, reasoning step completed, error encountered.
+`FireflyEvents` emits structured `FireflyEvent` records (serialised dicts logged via
+the `fireflyframework_agentic.events` logger) for significant occurrences. There is
+no generic `emit()`; instead it exposes typed methods, each accepting `**extra`
+keyword detail:
+
+| Method | Event type |
+|--------|-----------|
+| `agent_started(agent_name, model="", **extra)` | `agent.started` |
+| `agent_completed(agent_name, *, tokens=0, latency_ms=0, **extra)` | `agent.completed` |
+| `agent_error(agent_name, error, **extra)` | `agent.error` |
+| `tool_executed(tool_name, *, success=True, latency_ms=0, **extra)` | `tool.executed` |
+| `reasoning_step(pattern, step, step_type="", **extra)` | `reasoning.step` |
 
 ```python
 from fireflyframework_agentic.observability import FireflyEvents
 
 events = FireflyEvents()
-events.emit("agent.started", {"agent": "writer", "model": "gpt-4o"})
+events.agent_started("writer", model="gpt-4o")
 ```
+
+A shared `default_events` singleton is exposed; the `EventBusSink` forwards every
+usage record to it as an `agent.completed` event.
 
 ---
 
@@ -153,7 +205,34 @@ print(f"Requests: {summary.total_requests}")
 # Filter by agent or pipeline correlation ID
 agent_summary = default_usage_tracker.get_summary_for_agent("my-agent")
 pipeline_summary = default_usage_tracker.get_summary_for_correlation("run-123")
+
+# Lifetime cost accumulator (independent of record eviction)
+print(f"Cumulative cost: ${default_usage_tracker.cumulative_cost_usd:.4f}")
 ```
+
+### Recording a Call
+
+`record_call()` is the high-level producer entry the framework uses internally. It
+resolves cost via the resolver chain, builds a `UsageRecord`, commits it to the
+`BudgetGate` (if configured), and fans the record out to every `CostSink`:
+
+```python
+default_usage_tracker.record_call(
+    model="anthropic:claude-3-5-sonnet-latest",
+    input_tokens=1_000,
+    output_tokens=500,
+    cache_read_tokens=8_000,   # optional cache / reasoning token fields
+    reasoning_tokens=0,
+    agent="writer",
+    correlation_id="run-123",
+    latency_ms=842.0,
+    request_count=1,
+)
+```
+
+In-tree producers that already hold a `UsageRecord` call the low-level
+`record(record, scope_ctx=None)` instead. Other accessors: `add_sink(sink)`, the
+`records` property (a copy of retained records), and `reset()`.
 
 ### Bounded Record Storage
 
@@ -178,30 +257,45 @@ lifetime cost.
 ### How It Works
 
 `FireflyAgent.run()`, `run_sync()`, and `run_stream()` automatically extract
-`result.usage()` from Pydantic AI results, compute cost via the configured cost
-calculator, and feed a `UsageRecord` into the global `default_usage_tracker`.
-For streaming, usage is captured when the stream context manager exits
-(`__aexit__`), ensuring that token counts from streamed responses are tracked
-transparently. Reasoning patterns do the same for each ephemeral LLM call in
-`_structured_run()`. Pipeline runs aggregate all records by `correlation_id`
+`result.usage()` (including cache-write/cache-read token counts) from Pydantic AI
+results and call `default_usage_tracker.record_call(...)`, which prices the call via
+the [cost resolver chain](#cost-resolution). For streaming, usage is captured when
+the stream context manager exits (`__aexit__`), ensuring that token counts from
+streamed responses are tracked transparently. Reasoning patterns do the same for
+each ephemeral LLM call. Pipeline runs aggregate all records by `correlation_id`
 into `PipelineResult.usage`.
 
 ---
 
 ## Cost Resolution
 
-Each LLM call is priced by a chain of resolver callables. The default chain tries the provider-reported cost first (e.g. OpenRouter's `usage.cost`), then falls back to `genai-prices` for token-by-token computation. Cache tokens, reasoning tokens, and the `BATCH` tier are all honored when the provider's price record exposes the relevant fields.
+Each LLM call is priced by a chain of resolver callables, each returning `float | None`.
+The default chain (`DEFAULT_RESOLVERS`) tries `provider_reported_cost` first (e.g.
+OpenRouter's `usage.cost` in the provider payload), then falls back to
+`genai_prices_cost` for token-by-token computation against the `genai-prices` price
+table. `CostContext` carries the token breakdown — cache and reasoning tokens are
+priced when the model's price record exposes the relevant fields:
 
 ```python
-from fireflyframework_agentic.observability.cost_resolvers import resolve_cost, CostContext, CallTier
-cost = resolve_cost(CostContext(model="anthropic:claude-3-5-sonnet-latest",
-                                input_tokens=1_000, output_tokens=500,
-                                cache_read_tokens=8_000, tier=CallTier.BATCH))
+from fireflyframework_agentic.observability.cost_resolvers import resolve_cost, CostContext
+
+cost = resolve_cost(CostContext(
+    model="anthropic:claude-3-5-sonnet-latest",
+    input_tokens=1_000,
+    output_tokens=500,
+    cache_creation_tokens=0,
+    cache_read_tokens=8_000,
+    reasoning_tokens=0,
+))
 ```
 
 Custom strategies plug in by passing your own chain: `resolve_cost(ctx, [my_fixed_rate, *DEFAULT_RESOLVERS])`. See `examples/cost_tracking.py`.
 
-When `genai-prices` has no entry for a model, the resolver returns `0.0`, increments the `cost_unknown` metric, and logs a WARNING once per model.
+When no resolver can price the model, `resolve_cost` returns `None`, increments the
+`cost_unknown` metric, and logs a WARNING on every such call. The default
+`UsageTracker` coerces `None` to `0.0`. In **strict mode** — `resolve_cost(ctx,
+strict=True)`, or globally via `config.cost_strict` / `FIREFLY_AGENTIC_COST_STRICT=true`
+— it raises `UnknownModelCostError` instead (a public export).
 
 ## Budgets
 
@@ -219,11 +313,27 @@ gate = BudgetGate([
 ])
 ```
 
-For the single-tenant case, the `budget_limit_usd` config field auto-installs a global HARD rule on the default tracker.
+A rule matches a call when every key/value in its `match` dict is present in the
+call's `ScopeContext.to_match_dict()`. `ScopeContext` carries `tenant`, `agent`,
+`model`, `correlation_id`, plus arbitrary `labels`; built-in fields win over labels
+on collision, and *empty* built-in fields are omitted from matching (so a rule keyed
+on `tenant` never matches a call with an empty tenant).
+
+Runtime methods:
+
+- `precheck(estimated_cost_usd, ctx=None)` raises `BudgetExceededError` if the
+  estimated cost would push a HARD rule over its limit (call before an LLM request).
+- `commit(record, ctx=None)` accumulates `record.cost_usd` into every matching rule;
+  HARD breaches raise, SOFT breaches log a warning. `UsageTracker.record()` calls this.
+- `spend(rule_name)` returns accumulated spend for the current window bucket;
+  `reset(rule_name=None)` clears one rule (or all).
+
+For the single-tenant case, the `budget_limit_usd` config field auto-installs a
+global HARD `BudgetRule` (`name="config_global"`) on the default tracker.
 
 ## Cost Sinks
 
-`UsageTracker` fans every `UsageRecord` out to one or more `CostSink` instances. Built-ins: `OTelMetricsSink`, `EventBusSink`, `LoggingSink`, `JSONLFileSink`. Custom sinks implement the protocol's `emit(record)` method.
+`UsageTracker` fans every `UsageRecord` out to one or more `CostSink` instances. Built-ins: `OTelMetricsSink`, `EventBusSink`, `LoggingSink`, `JSONLFileSink`. The `CostSink` protocol defines `emit(record)` plus `flush()` and `close()` (both default no-ops; override them to drain buffers). `JSONLFileSink` supports size-based rotation via the `rotate_bytes` keyword:
 
 ```python
 from fireflyframework_agentic.observability.sinks import (
@@ -231,41 +341,44 @@ from fireflyframework_agentic.observability.sinks import (
 )
 from fireflyframework_agentic.observability.usage import UsageTracker
 tracker = UsageTracker(sinks=[OTelMetricsSink(), EventBusSink(),
-                              JSONLFileSink("/var/log/firefly/cost.jsonl")])
+                              JSONLFileSink("/var/log/firefly/cost.jsonl",
+                                            rotate_bytes=50_000_000)])
 ```
 
-A failing sink does not break other sinks; failures increment `cost_sink_errors` labeled by sink class.
+The default tracker is built with `[OTelMetricsSink(), EventBusSink()]`; attach more at runtime with `tracker.add_sink(sink)`. A failing sink does not break other sinks; failures increment the `cost_sink_errors` metric (labeled by sink class).
 
 ---
 
 ## API Quota Management
 
-The `QuotaManager` provides production-grade quota enforcement with rate limiting,
-daily budget caps, and adaptive backoff for 429 rate limit responses.
+The `QuotaManager` handles **request-rate** concerns only: per-model rate limiting
+and adaptive backoff for 429 responses. (Budget/cost enforcement is the
+[`BudgetGate`](#budgets)'s job — `QuotaManager` does not track spend.) Its
+constructor is keyword-only:
 
 ```python
 from fireflyframework_agentic.observability.quota import QuotaManager
 
 quota = QuotaManager(
-    daily_budget_usd=100.0,
     rate_limits={
-        "openai:gpt-4o": 60, # 60 requests/minute
+        "openai:gpt-4o": 60,          # 60 requests/minute
         "anthropic:claude-opus-4": 50,
     },
-    adaptive_backoff=True,
+    enable_adaptive_backoff=True,
 )
 
-# Check before making request
-if not quota.check_budget_available(cost_usd=0.05):
-    raise QuotaError("Daily budget exceeded")
-
+# Before a request: enforce the rate limit (raises RateLimitError on breach)
+quota.check_quota_before_request("openai:gpt-4o")
+# ...or check without raising:
 if not quota.check_rate_limit_available("openai:gpt-4o"):
-    # Apply backoff delay
-    delay = quota.get_backoff_delay("openai:gpt-4o")
-    await asyncio.sleep(delay)
+    await asyncio.sleep(quota.get_backoff_delay("openai:gpt-4o"))
 
-# Record usage after request
-quota.record_request("openai:gpt-4o", cost_usd=0.05, tokens=1500)
+# After the request completes
+quota.record_request("openai:gpt-4o", success=True)
+
+# On a 429 error
+quota.record_rate_limit_error("openai:gpt-4o")
+delay = quota.get_backoff_delay("openai:gpt-4o")
 ```
 
 ### Rate Limiting
@@ -297,18 +410,20 @@ backoff = AdaptiveBackoff(
     base_delay=1.0, # Start at 1 second
     max_delay=60.0, # Cap at 60 seconds
     multiplier=2.0, # Double each time
-    jitter_factor=0.1, # Add 10% jitter
+    jitter=True,    # Add 0-50% random jitter
 )
 
-# After receiving 429 response
-delay = backoff.next_delay("openai:gpt-4o")
+# After receiving a 429 response: record the failure, then read the delay
+backoff.record_failure("openai:gpt-4o")
+delay = backoff.get_delay("openai:gpt-4o")
 await asyncio.sleep(delay)
 
 # On success, reset
 backoff.reset("openai:gpt-4o")
 ```
 
-Exponential backoff with jitter prevents thundering herd issues when rate limits reset.
+`get_failure_count(key)` exposes the current consecutive-failure count. Exponential
+backoff with jitter prevents thundering-herd issues when rate limits reset.
 
 ### Automatic Rate Limit Retry
 
@@ -346,57 +461,62 @@ print(f"Base delay: {cfg.rate_limit_base_delay}s")
 print(f"Max delay: {cfg.rate_limit_max_delay}s")
 ```
 
-When `quota_enabled` is `True` (the default), the agent uses the global
-`QuotaManager`'s `AdaptiveBackoff` instance for shared state across all agents.
-When disabled, each agent creates a standalone backoff tracker.
+When `quota_enabled` is `True`, the agent uses the global `QuotaManager`'s
+`AdaptiveBackoff` instance for shared state across all agents. When `quota_enabled`
+is `False` (the default), each agent creates a standalone backoff tracker.
 
 ### Environment Configuration
 
 ```bash
-# Enable quota management (default: true)
+# Enable quota (rate-limit) management (default: false)
 export FIREFLY_AGENTIC_QUOTA_ENABLED=true
 
-# Set daily budget cap
-export FIREFLY_AGENTIC_QUOTA_BUDGET_DAILY_USD=100.0
-
-# Configure per-model rate limits (JSON)
+# Configure per-model rate limits (JSON) — consumed by the default QuotaManager
 export FIREFLY_AGENTIC_QUOTA_RATE_LIMITS='{"openai:gpt-4o": 60, "anthropic:claude-opus-4": 50}'
 
 # Enable adaptive backoff (default: true)
 export FIREFLY_AGENTIC_QUOTA_ADAPTIVE_BACKOFF=true
 
-# Rate limit retry settings
+# Rate limit retry settings (used by FireflyAgent.run() automatic retry)
 export FIREFLY_AGENTIC_RATE_LIMIT_MAX_RETRIES=3
 export FIREFLY_AGENTIC_RATE_LIMIT_BASE_DELAY=1.0
 export FIREFLY_AGENTIC_RATE_LIMIT_MAX_DELAY=60.0
 ```
 
+`create_quota_manager_from_config()` builds the default `QuotaManager` from
+`quota_rate_limits` and `quota_adaptive_backoff` only. The `quota_budget_daily_usd`
+config field exists but is **not** consumed by `QuotaManager` — for budget/cost
+caps use the [`BudgetGate`](#budgets) (or the `budget_limit_usd` config field).
+
 ### Integration with Agents
 
-Quota enforcement can be integrated via middleware or direct checks:
+Budget enforcement is integrated via middleware, while rate-limit enforcement is
+integrated via direct `QuotaManager` checks:
 
 ```python
 from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.agents.builtin_middleware import CostGuardMiddleware
 
-# Budget enforcement via middleware
+# Budget enforcement via middleware (cost is the BudgetGate's domain)
 agent = FireflyAgent(
     name="quota-agent",
     model="openai:gpt-4o",
     middleware=[CostGuardMiddleware(budget_usd=10.0)],
 )
 
-# Or manual quota checks
-quota = QuotaManager(daily_budget_usd=100.0)
+# Manual rate-limit checks
+quota = QuotaManager(rate_limits={"openai:gpt-4o": 60})
 
 async def call_with_quota(prompt):
-    if not quota.check_budget_available():
-        raise QuotaError("Daily budget exhausted")
-
+    quota.check_quota_before_request(agent.model)  # raises RateLimitError if over
     result = await agent.run(prompt)
-    quota.record_request(agent.model, cost_usd=result.usage.total_cost)
+    quota.record_request(agent.model, success=True)
     return result
 ```
+
+To inspect cost after a run, read it from the usage tracker
+(`default_usage_tracker.cumulative_cost_usd` or a summary's `total_cost_usd`), not
+from the Pydantic AI result object.
 
 ---
 

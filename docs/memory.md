@@ -21,6 +21,9 @@ graph TD
     CM --> TOKENS[TokenEstimator]
     STORE --> IM[InMemoryStore]
     STORE --> FS[FileStore]
+    STORE --> SQ[SQLiteStore]
+    STORE --> PG[PostgreSQLStore]
+    STORE --> MG[MongoDBStore]
     STORE --> CUSTOM[Custom Backend]
 ```
 
@@ -28,7 +31,10 @@ graph TD
   wraps pydantic-ai's `message_history` mechanism.
 - **WorkingMemory** -- Scoped key-value scratchpad for session facts, entities,
   and intermediate state.
-- **MemoryStore** -- Pluggable persistence backends (in-memory, file, custom).
+- **MemoryStore** -- Pluggable persistence backends. Three are stdlib-only
+  (`InMemoryStore`, `FileStore`, `SQLiteStore`); `PostgreSQLStore` and
+  `MongoDBStore` live behind optional dependency groups. Implement the
+  `MemoryStore` protocol for any custom backend.
 - **MemoryManager** -- Facade that composes conversation and working memory
   behind a single API.
 
@@ -103,9 +109,11 @@ When many turns are evicted, important context can be lost. The optional
 **summarization** feature compresses evicted turns into a summary that is
 retained for context enrichment.
 
-Summarization triggers when the total token count exceeds `summarize_threshold`.
-Pass a `summarizer` callable that takes a list of `ConversationTurn` objects
-and returns a summary string:
+`summarize_threshold` is a **token count** (default `3072`). When the sum of
+the per-turn `token_estimate` values exceeds it, the oldest turns are evicted
+and (if a `summarizer` is configured) compressed into a summary. Pass a
+`summarizer` callable that takes a list of `ConversationTurn` objects and
+returns a summary string:
 
 ```python
 from fireflyframework_agentic.memory import ConversationMemory
@@ -121,6 +129,9 @@ conv_mem = ConversationMemory(
 )
 ```
 
+Summarization only runs when a `summarizer` is supplied; with no summarizer,
+turns are still evicted by the token budget but no summary is produced.
+
 Retrieve the summary for a conversation:
 
 ```python
@@ -132,10 +143,14 @@ if summary:
 In production, the summarizer can be an LLM call that condenses older turns
 into a concise paragraph, preserving key facts while staying within budget.
 
-Configure the threshold via environment variable:
+When the manager is built via `MemoryManager.from_config()`, the threshold
+comes from `memory_summarize_threshold` (env
+`FIREFLY_AGENTIC_MEMORY_SUMMARIZE_THRESHOLD`) and is applied as a **token**
+count. The config default is `10`, which is intentionally small; set a
+realistic token budget for production:
 
 ```bash
-export FIREFLY_AGENTIC_MEMORY_SUMMARIZE_THRESHOLD=10
+export FIREFLY_AGENTIC_MEMORY_SUMMARIZE_THRESHOLD=3000
 ```
 
 ---
@@ -151,17 +166,25 @@ from fireflyframework_agentic.memory import WorkingMemory
 
 wm = WorkingMemory(scope_id="idp-session-42")
 wm.set("doc_type", "invoice")
-wm.set("vendor", "Acme Corp")
+wm.set("vendor", "Acme Corp", importance=0.9)  # importance is 0.0-1.0, default 0.5
 
 print(wm.get("doc_type")) # "invoice"
+print(wm.has("vendor")) # True
+print(wm.keys()) # ["doc_type", "vendor"]
+print(wm.items()) # [("doc_type", "invoice"), ("vendor", "Acme Corp")]
 print(wm.to_dict()) # {"doc_type": "invoice", "vendor": "Acme Corp"}
+
+wm.delete("vendor")  # remove a single key
 
 # Render as a text block for prompt injection
 print(wm.to_context_string())
 # Working Memory:
 # - doc_type: invoice
-# - vendor: Acme Corp
 ```
+
+The full key-value API is `set(key, value, *, importance=0.5)`, `get(key,
+default=None)`, `has(key)`, `delete(key)`, `keys()`, `items()`, `to_dict()`,
+`to_context_string()`, and `clear()`.
 
 ### Scoped Isolation
 
@@ -180,6 +203,26 @@ agent_b_mem.set("key", "from B")
 assert agent_a_mem.get("key") == "from A"
 assert agent_b_mem.get("key") == "from B"
 ```
+
+---
+
+## Memory Entries
+
+The unit of storage is `MemoryEntry`, and every store honours its fields:
+
+```python
+from fireflyframework_agentic.memory import MemoryEntry, MemoryScope
+```
+
+- **`scope`** — a `MemoryScope` (`CONVERSATION`, `WORKING`, or `LONG_TERM`)
+  classifying the entry's lifetime.
+- **`key`** — optional key for key-value lookups (used by `WorkingMemory`).
+- **`content`** — the stored value (string, dict, list, etc.).
+- **`importance`** — a `0.0–1.0` priority weight (default `0.5`).
+- **`expires_at`** — optional TTL timestamp. Entries past their expiry report
+  `entry.is_expired` and are filtered out of `load()` / `load_by_key()` by
+  every backend; the database backends additionally provide
+  `cleanup_expired()` to delete them.
 
 ---
 
@@ -203,20 +246,43 @@ from fireflyframework_agentic.memory import FileStore
 store = FileStore(base_dir=".firefly_memory")
 ```
 
-`FileStore` also provides **async wrappers** (`save_async`, `load_async`,
-`delete_async`, `clear_async`) that delegate blocking I/O to
-`asyncio.to_thread()`, keeping the event loop non-blocking in async
+`FileStore` also provides **async wrappers** (`async_save`, `async_load`,
+`async_load_by_key`, `async_delete`, `async_clear`) that delegate blocking I/O
+to `asyncio.to_thread()`, keeping the event loop non-blocking in async
 applications:
 
 ```python
-await store.save_async("conversations", entry)
-entries = await store.load_async("conversations")
+await store.async_save("conversations", entry)
+entries = await store.async_load("conversations")
 ```
+
+### SQLiteStore
+
+Stdlib-only SQLite persistence (`sqlite3`), with the same constructor-and-go
+ergonomics as `FileStore`. Compared to `FileStore`, every operation is atomic
+(a crash mid-save cannot corrupt the file) and namespace queries use a SQL
+index instead of loading and parsing every entry. The file and its parent
+directories are created automatically.
+
+```python
+from fireflyframework_agentic.memory import SQLiteStore
+store = SQLiteStore("data/firefly_memory.sqlite3")
+```
+
+`SQLiteStore` exposes the same async wrappers as `FileStore` (`async_save`,
+`async_load`, `async_load_by_key`, `async_delete`, `async_clear`). Choose
+`FileStore` for human-readable JSON; choose `SQLiteStore` for crash safety and
+faster operations on larger namespaces.
 
 ### PostgreSQLStore
 
 Production-grade PostgreSQL persistence with connection pooling. Requires
 `asyncpg` (install via `pip install fireflyframework-agentic[postgres]`).
+
+The constructor is `PostgreSQLStore(url, *, pool_size=10, pool_min_size=2,
+timeout=30.0, schema_name="firefly_memory")`. You must `await
+store.initialize()` before use — it creates the connection pool and migrates
+the schema (it is idempotent and safe to call more than once).
 
 ```python
 from fireflyframework_agentic.memory.database_store import PostgreSQLStore
@@ -224,11 +290,23 @@ from fireflyframework_agentic.memory.database_store import PostgreSQLStore
 store = PostgreSQLStore(
     url="postgresql://user:pass@localhost/firefly",
     pool_size=10,
+    pool_min_size=2,
+    schema_name="firefly_memory",
 )
+await store.initialize()  # required before any operation
 
 # Use with MemoryManager
 memory = MemoryManager(store=store)
+
+# During application shutdown
+await store.close()
 ```
+
+The sync `save`/`load`/etc. methods run their async counterparts in a worker
+thread and will lazily call `initialize()` if you skipped it, but the
+async-native path (`async_save`, `async_load`, ...) is recommended. The store
+also exposes `await store.cleanup_expired() -> int`, which deletes all
+expired entries (by `expires_at`) and returns the count removed.
 
 **Environment Configuration:**
 
@@ -236,73 +314,101 @@ memory = MemoryManager(store=store)
 export FIREFLY_AGENTIC_MEMORY_BACKEND=postgres
 export FIREFLY_AGENTIC_MEMORY_POSTGRES_URL=postgresql://user:pass@localhost/firefly
 export FIREFLY_AGENTIC_MEMORY_POSTGRES_POOL_SIZE=10
+export FIREFLY_AGENTIC_MEMORY_POSTGRES_POOL_MIN_SIZE=2
+export FIREFLY_AGENTIC_MEMORY_POSTGRES_SCHEMA=firefly_memory
 ```
 
-The store automatically creates required tables on first use. All operations
-are async-native using `asyncpg` for optimal performance.
+`MemoryManager.from_config()` reads these and calls `initialize()` for you.
 
-**Schema:**
+**Schema** (created automatically on `initialize()`):
 
 ```sql
-CREATE TABLE IF NOT EXISTS firefly_memory (
-    namespace VARCHAR(255) NOT NULL,
-    entry_id VARCHAR(255) NOT NULL,
-    key VARCHAR(255) NOT NULL,
-    data JSONB NOT NULL,
-    metadata JSONB,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (namespace, entry_id)
+CREATE TABLE IF NOT EXISTS firefly_memory.memory_entries (
+    entry_id    TEXT PRIMARY KEY,
+    namespace   TEXT NOT NULL,
+    scope       TEXT NOT NULL,
+    key         TEXT,
+    content     JSONB NOT NULL,
+    metadata    JSONB NOT NULL DEFAULT '{}',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at  TIMESTAMPTZ,
+    importance  FLOAT NOT NULL DEFAULT 0.5
+        CHECK (importance >= 0.0 AND importance <= 1.0)
 );
 
-CREATE INDEX idx_namespace_key ON firefly_memory(namespace, key);
-CREATE INDEX idx_created_at ON firefly_memory(created_at);
+CREATE INDEX idx_namespace      ON firefly_memory.memory_entries(namespace);
+CREATE INDEX idx_namespace_key  ON firefly_memory.memory_entries(namespace, key)
+    WHERE key IS NOT NULL;
+CREATE INDEX idx_expires_at     ON firefly_memory.memory_entries(expires_at)
+    WHERE expires_at IS NOT NULL;
 ```
+
+The schema name (default `firefly_memory`) is configurable via `schema_name`.
 
 ### MongoDBStore
 
 Scalable MongoDB persistence with connection pooling. Requires `motor` and
 `pymongo` (install via `pip install fireflyframework-agentic[mongodb]`).
 
+The constructor is `MongoDBStore(url, *, database="firefly_memory",
+collection="entries", pool_size=10)`. As with `PostgreSQLStore`, call
+`await store.initialize()` before use (it connects and creates indexes) and
+`await store.close()` on shutdown.
+
 ```python
 from fireflyframework_agentic.memory.database_store import MongoDBStore
 
 store = MongoDBStore(
     url="mongodb://localhost:27017/",
-    database="firefly",
+    database="firefly_memory",
+    collection="entries",
     pool_size=10,
 )
+await store.initialize()  # required before any operation
 
 memory = MemoryManager(store=store)
+
+# During application shutdown
+await store.close()
 ```
+
+`MongoDBStore` also exposes `await store.cleanup_expired() -> int` to purge
+expired entries.
 
 **Environment Configuration:**
 
 ```bash
 export FIREFLY_AGENTIC_MEMORY_BACKEND=mongodb
 export FIREFLY_AGENTIC_MEMORY_MONGODB_URL=mongodb://localhost:27017/
-export FIREFLY_AGENTIC_MEMORY_MONGODB_DATABASE=firefly
+export FIREFLY_AGENTIC_MEMORY_MONGODB_DATABASE=firefly_memory
+export FIREFLY_AGENTIC_MEMORY_MONGODB_COLLECTION=entries
 export FIREFLY_AGENTIC_MEMORY_MONGODB_POOL_SIZE=10
 ```
 
-The store automatically creates required collections and indexes:
+The store automatically creates the `entries` collection (in the
+`firefly_memory` database by default) and these indexes:
 
 ```javascript
-// Collection: firefly_memory
+// Each document is the serialized MemoryEntry plus namespace/scope fields:
 {
-  namespace: "conversations",
-  entry_id: "conv-123",
-  key: "user-session",
-  data: { ... },
+  entry_id: "abc123",
+  namespace: "working:session-42",
+  scope: "working",
+  key: "doc_type",
+  content: { ... },
   metadata: { ... },
   created_at: ISODate("..."),
-  updated_at: ISODate("...")
+  expires_at: null,
+  importance: 0.5
 }
 
 // Indexes
-db.firefly_memory.createIndex({ namespace: 1, entry_id: 1 }, { unique: true })
-db.firefly_memory.createIndex({ namespace: 1, key: 1 })
-db.firefly_memory.createIndex({ created_at: 1 })
+db.entries.createIndex({ namespace: 1 })
+db.entries.createIndex({ namespace: 1, key: 1 },
+                       { partialFilterExpression: { key: { $exists: true } } })
+db.entries.createIndex({ expires_at: 1 },
+                       { partialFilterExpression: { expires_at: { $exists: true } } })
+db.entries.createIndex({ entry_id: 1 }, { unique: true })
 ```
 
 ### Custom Backends
@@ -378,14 +484,17 @@ strategy that extracts key sentences from the most recent turns.
 
 ## MemoryManager
 
-`MemoryManager` is the single entry point
-memory. It is the object you attach to agents, delegation routers, and pipelines.
+`MemoryManager` is the single entry point for conversation and working memory.
+It is the object you attach to agents, delegation routers, and pipelines. The
+constructor takes keyword-only arguments:
 
 ```python
 from fireflyframework_agentic.memory import MemoryManager
 
 mgr = MemoryManager(
+    store=None,                       # defaults to InMemoryStore
     max_conversation_tokens=32_000,
+    summarize_threshold=10,
     working_scope_id="main-session",
 )
 
@@ -397,6 +506,34 @@ history = mgr.get_message_history(cid)
 # Working memory
 mgr.set_fact("doc_type", "invoice")
 mgr.get_fact("doc_type") # "invoice"
+print(mgr.get_working_context())  # text block for prompt injection
+```
+
+### From Configuration
+
+`MemoryManager.from_config()` is the canonical env-driven wiring path. It reads
+`memory_backend`, `memory_max_conversation_tokens`, and
+`memory_summarize_threshold` from the framework config, selects the matching
+backend (`in_memory` / `file` / `postgres` / `mongodb`), raises if a required
+URL is missing, and calls `initialize()` on database backends for you:
+
+```python
+mgr = MemoryManager.from_config()
+```
+
+### Accessors and Lifecycle
+
+The composed subsystems are reachable directly, and lifecycle helpers clear
+state:
+
+```python
+mgr.conversation  # the ConversationMemory instance
+mgr.working       # the WorkingMemory instance
+mgr.store         # the underlying MemoryStore
+
+mgr.clear_conversation(cid)  # clear one conversation
+mgr.clear_working()          # clear working memory
+mgr.clear_all()              # clear both
 ```
 
 ### Forking
@@ -451,26 +588,40 @@ result = await pattern.execute(agent, "Analyze this", memory=mgr)
 # Inside pattern hooks: state["memory"].working.set("key", "value")
 ```
 
-### REST Exposure
+### Host Services
 
-Pass `conversation_id` in the request body for multi-turn conversations:
-
-```json
-{
-  "prompt": "What did we discuss earlier?",
-  "conversation_id": "abc123"
-}
-```
+The framework is a pure in-process library: it serves no HTTP port. When a host
+service exposes agents over its own transport, it owns the wiring of
+`conversation_id` from the inbound request to `agent.run(..., conversation_id=...)`.
+The memory backend simply provides the stateful continuity behind that call.
 
 ---
 
 ## Configuration
 
-Memory settings are configured via environment variables:
+Memory settings are configured via environment variables (prefix
+`FIREFLY_AGENTIC_`) and consumed by `MemoryManager.from_config()`:
 
 ```bash
-export FIREFLY_AGENTIC_MEMORY_BACKEND=in_memory # or "file"
+# Core
+export FIREFLY_AGENTIC_MEMORY_BACKEND=in_memory  # in_memory | file | postgres | mongodb
 export FIREFLY_AGENTIC_MEMORY_MAX_CONVERSATION_TOKENS=128000
-export FIREFLY_AGENTIC_MEMORY_SUMMARIZE_THRESHOLD=10
-export FIREFLY_AGENTIC_MEMORY_FILE_DIR=.firefly_memory
+export FIREFLY_AGENTIC_MEMORY_SUMMARIZE_THRESHOLD=10  # token count (small default; raise for prod)
+export FIREFLY_AGENTIC_MEMORY_FILE_DIR=.firefly_memory  # used by the "file" backend
+
+# PostgreSQL backend
+export FIREFLY_AGENTIC_MEMORY_POSTGRES_URL=postgresql://user:pass@localhost/firefly
+export FIREFLY_AGENTIC_MEMORY_POSTGRES_POOL_SIZE=10
+export FIREFLY_AGENTIC_MEMORY_POSTGRES_POOL_MIN_SIZE=2
+export FIREFLY_AGENTIC_MEMORY_POSTGRES_SCHEMA=firefly_memory
+
+# MongoDB backend
+export FIREFLY_AGENTIC_MEMORY_MONGODB_URL=mongodb://localhost:27017/
+export FIREFLY_AGENTIC_MEMORY_MONGODB_DATABASE=firefly_memory
+export FIREFLY_AGENTIC_MEMORY_MONGODB_COLLECTION=entries
+export FIREFLY_AGENTIC_MEMORY_MONGODB_POOL_SIZE=10
 ```
+
+Note: the `from_config()` env path supports `in_memory`, `file`, `postgres`,
+and `mongodb`. `SQLiteStore` is constructed explicitly (`SQLiteStore(path)`)
+and passed via `MemoryManager(store=...)`.

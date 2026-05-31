@@ -21,7 +21,7 @@ has a dedicated, protocol-driven module.
   or the interactive installer scripts (`install.sh` / `install.ps1`).
 - **[Quick Start](../README.md#5-minute-quick-start)** — Configure a provider, define
   an agent, register a tool, and run your first prompt in 5 minutes.
-- **[The Complete Tutorial](tutorial.md)** — A 20-chapter, hands-on guide covering
+- **[The Complete Tutorial](tutorial.md)** — An 18-chapter, hands-on guide covering
   every concept from zero to expert through a real-world IDP pipeline.
 
 ---
@@ -41,38 +41,38 @@ below it, keeping the dependency graph acyclic and each module independently tes
 
 | | |
 |---|---|
-| **[Agents](agents.md)** | `FireflyAgent`, `AgentRegistry`, `AgentLifecycle`, delegation, `@firefly_agent` decorator |
+| **[Agents](agents.md)** | `FireflyAgent`, `AgentRegistry`, `AgentLifecycle`, `@firefly_agent` decorator, middleware stack (`AgentMiddleware`, `MiddlewareChain`, `Logging`/`PromptGuard`/`CostGuard`/`Observability`/`Explainability`/`Cache`/`OutputGuard`/`Validation`/`Retry`/`PromptCache` middleware), 7 delegation strategies (round-robin, capability, content-based, cost-aware, chain, fallback, weighted), `FallbackModelWrapper` / `run_with_fallback`, `ResultCache` |
 | **[Template Agents](templates.md)** | Five factory functions: summarizer, classifier, extractor, conversational, router |
 | **[Tools](tools.md)** | `ToolProtocol`, `ToolBuilder`, guards, composition patterns, 9 built-in tools |
 | **[Prompts](prompts.md)** | `PromptTemplate`, `PromptRegistry`, composers, validation, loaders |
-| **[Content](content.md)** | `TextChunker`, `DocumentSplitter`, `ImageTiler`, `BatchProcessor`, compression |
-| **[Memory](memory.md)** | `ConversationMemory`, `WorkingMemory`, `MemoryManager`, storage backends |
+| **[Content](content.md)** | `TextChunker`, `MarkdownChunker`, `DocumentSplitter`, `ImageTiler`, `BatchProcessor`, compression; binary normalization (`content.binary`, `[binary]` extra: `BinaryNormalizer`, office/PDF/image/archive/email converters) |
+| **[Memory](memory.md)** | `ConversationMemory`, `WorkingMemory`, `MemoryManager`, `InMemoryStore` / `FileStore` / `SQLiteStore` backends, `MemoryScope`, LLM summarisation |
 
 ### Embeddings & Vector Stores
 
 | | |
 |---|---|
 | **[Embeddings](embeddings.md)** | `BaseEmbedder`, 8 providers (OpenAI, Azure, Cohere, Google, Mistral, Voyage, Bedrock, Ollama), auto-batching, similarity utilities, `EmbedderRegistry` |
-| **[Vector Stores](vectorstores.md)** | `BaseVectorStore`, 4 backends (In-Memory, ChromaDB, Pinecone, Qdrant), auto-embedding, `search_text`, namespaces, `VectorStoreRegistry` |
+| **[Vector Stores](vectorstores.md)** | `BaseVectorStore`, 6 backends (In-Memory, ChromaDB, Pinecone, Qdrant, pgvector, sqlite-vec), auto-embedding, `search_text`, namespaces, `ScopedVectorStore` / `TenantScopedVectorStore` multi-tenant scoping, `VectorStoreRegistry` |
 
 ### Intelligence Layer
 
 | | |
 |---|---|
 | **[Reasoning Patterns](reasoning.md)** | 6 patterns (ReAct, CoT, Plan-and-Execute, Reflexion, ToT, Goal Decomposition), pipeline |
-| **[Validation & QoS](validation.md)** | Rules, `OutputValidator`, `OutputReviewer`, confidence/consistency/grounding checks |
+| **[Validation & QoS](validation.md)** | Rules, `OutputValidator`, `OutputReviewer`, `RubricReviewer` (LLM-as-judge), `QoSGuard`, confidence/consistency/grounding checks |
 
 ### Security
 
 | | |
 |---|---|
-| **[Security](security.md)** | `PromptGuard` (27 patterns), `OutputGuard` (PII, secrets, harmful), `PromptGuardResult`, `OutputGuardResult`, injection detection, input sanitisation, output scanning |
+| **[Security](security.md)** | `PromptGuard` (25 patterns), `OutputGuard` (PII, secrets, harmful), encryption (`AESEncryptionProvider`, `EncryptedMemoryStore`), injection detection, input sanitisation, output scanning |
 
 ### Observability
 
 | | |
 |---|---|
-| **[Observability](observability.md)** | `FireflyTracer`, `FireflyMetrics`, `FireflyEvents`, `UsageTracker`, `CostCalculator`, `@traced`, `@metered`, `JsonFormatter`, exporters |
+| **[Observability](observability.md)** | `FireflyTracer`, `FireflyMetrics`, `FireflyEvents`, `UsageTracker`, cost resolvers (`resolve_cost`, `genai_prices_cost`, `provider_reported_cost`), `BudgetGate`, `@traced`, `@metered` — emits model/agent spans & metrics via the OpenTelemetry API (the host owns OTel SDK/exporter configuration) |
 | **[Explainability](explainability.md)** | `TraceRecorder`, `ExplanationGenerator`, `AuditTrail`, `ReportBuilder` |
 
 ### Experimentation Layer
@@ -90,7 +90,14 @@ below it, keeping the dependency graph acyclic and each module independently tes
 
 | | |
 |---|---|
-| **[Pipeline](pipeline.md)** | `DAG`, `PipelineEngine`, `PipelineBuilder`, step types, parallel execution, retries |
+| **[Pipeline](pipeline.md)** | `DAG`, `PipelineEngine`, `PipelineBuilder`, step types (`AgentStep`, `ReasoningStep`, `CallableStep`, `FanOutStep`/`FanInStep`, `BranchStep`, `BatchLLMStep`, `EmbeddingStep`, `RetrievalStep`), parallel execution, retries, `Checkpointer` / `FileCheckpointer`, audit logs (`AuditLog`, `FileAuditLog`, `OtelAuditLog`, `QueryableAuditLog`), state reducers (`append`, `extend`, `merge_dict`, `replace`), `Pause` / `Send` control signals |
+
+### Runtime & Infrastructure
+
+| | |
+|---|---|
+| **Resilience** (`fireflyframework_agentic.resilience`) | `CircuitBreaker`, `CircuitBreakerMiddleware`, `CircuitState`, `CircuitBreakerOpenError` — in-process circuit breaking for model/tool calls |
+| **Storage** (`fireflyframework_agentic.storage`) | `StorageBackend`, `LocalBackend`, `DatabaseStore`, `WriteSession`, `LockToken` (leasing), `RetryPolicy`, `StorageMetadata` — pluggable binary/blob persistence with leasing and retries |
 
 ### Studio
 
@@ -102,11 +109,11 @@ lives in a separate repository:
 
 ## Tutorial
 
-**[The Complete Tutorial](tutorial.md)** is a 20-chapter, hands-on guide that teaches
+**[The Complete Tutorial](tutorial.md)** is an 18-chapter, hands-on guide that teaches
 every concept from zero to expert through a real-world **Intelligent Document
 Processing** pipeline. It covers configuration, agents, tools, prompts, reasoning,
 content processing, memory, validation, pipelines, observability, explainability,
-experiments, lab, deployment, and advanced patterns.
+experiments, lab, multi-agent delegation, the plugin system, and advanced patterns.
 
 ---
 

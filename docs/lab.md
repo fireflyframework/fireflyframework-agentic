@@ -10,26 +10,30 @@ dataset management, and pluggable evaluators for developing and testing GenAI ag
 ## Concepts
 
 The Lab is a development and testing environment where engineers can iterate on agent
-behaviour without deploying to production. It supports interactive exploration,
+behaviour without wiring agents into a host service. It supports interactive exploration,
 reproducible benchmarks, and structured evaluation.
+
+`lab` is an **optional leaf dev-tooling module**: nothing in the core framework imports it,
+and it ships with the package (there is no separate extra to install). Use it from scripts,
+notebooks, or tests; keep it out of production code paths.
 
 ```mermaid
 flowchart TD
     subgraph Lab
         SESSION[LabSession]
         BENCH[Benchmark]
-        CMP[Comparison]
-        DS[Dataset]
-        EVAL[Evaluator]
+        CMP[ModelComparison]
+        DS[EvalDataset]
+        ORCH[EvalOrchestrator]
+        SCORE[Scorer]
     end
 
     SESSION --> AGENT[Agent]
     BENCH --> AGENT
     CMP --> AGENT
-    DS --> BENCH
-    DS --> CMP
-    EVAL --> BENCH
-    EVAL --> CMP
+    ORCH --> AGENT
+    DS --> ORCH
+    SCORE --> ORCH
 ```
 
 ---
@@ -43,20 +47,30 @@ Each exchange is recorded with timestamps and metadata.
 from fireflyframework_agentic.lab import LabSession
 
 session = LabSession(name="writing-test", agent=writer_agent)
+print(session.name)  # "writing-test"
+
 response = await session.interact("Write a haiku about testing.")
 print(response)
 
 # Review the session history
 for entry in session.history:
     print(f"[{entry.timestamp}] {entry.prompt} -> {entry.response}")
+
+# Reset between experiments
+session.clear_history()
 ```
 
 ---
 
 ## Benchmarking
 
-The `Benchmark` runs an agent against a list of prompts and measures latency metrics
-(average, min, max, p95).
+The `Benchmark` runs an agent against a list of prompts and measures **latency only**
+(average, min, max, p95). It does not score outputs — for correctness scoring against
+expected answers, use the `EvalOrchestrator` described below.
+
+`Benchmark.run(agent, agent_name="")` returns a `BenchmarkResult`. The optional
+`agent_name` labels the result; when omitted it falls back to `getattr(agent, "name",
+"unknown")`.
 
 ```python
 from fireflyframework_agentic.lab import Benchmark
@@ -65,25 +79,23 @@ bench = Benchmark(inputs=[
     "Translate 'hello' to French.",
     "Translate 'goodbye' to French.",
 ])
-result = await bench.run(translator_agent)
+result = await bench.run(translator_agent, agent_name="translator")
+print(f"Runs: {result.total_runs}")
 print(f"Avg latency: {result.avg_latency_ms:.1f} ms, P95: {result.p95_latency_ms:.1f} ms")
 ```
 
 ```mermaid
 sequenceDiagram
     participant Bench as Benchmark
-    participant DS as Dataset
     participant Agent
-    participant Eval as Evaluator
 
-    Bench->>DS: load samples
-    loop For each sample
-        Bench->>Agent: run(sample.input)
-        Agent-->>Bench: response
-        Bench->>Eval: score(response, sample.expected)
-        Eval-->>Bench: score
+    loop For each input prompt
+        Bench->>Bench: start timer
+        Bench->>Agent: run(prompt)
+        Agent-->>Bench: result
+        Bench->>Bench: record elapsed ms
     end
-    Bench->>Bench: aggregate metrics
+    Bench->>Bench: aggregate latency (avg/min/max/p95)
 ```
 
 ---
@@ -123,7 +135,12 @@ dataset = EvalDataset(cases=[
     EvalCase(input="Goodbye", expected_output="Bye"),
 ])
 
-# From a JSON file
+# Append cases incrementally
+dataset.add(EvalCase(input="Thanks", expected_output="You're welcome"))
+print(len(dataset))  # 3
+
+# Persist to / load from a JSON file
+dataset.to_json("test_data.json")
 dataset = EvalDataset.from_json("test_data.json")
 ```
 
@@ -132,17 +149,32 @@ dataset = EvalDataset.from_json("test_data.json")
 ## Evaluators
 
 The `EvalOrchestrator` runs an agent against an `EvalDataset` with a pluggable scorer
-function. A `Scorer` is any callable `(expected: str, actual: str) -> float`. The
-framework ships with `exact_match_scorer` as a default.
+function. A `Scorer` is any callable `(expected: str, actual: str) -> float`. When no
+scorer is supplied, the orchestrator uses `exact_match_scorer`, which returns `1.0` when
+the stripped expected and actual strings are equal and `0.0` otherwise.
+
+`evaluate(agent, dataset, agent_name="")` returns an `EvalReport` whose `results` list
+holds one `EvalResult` (`input`, `expected`, `actual`, `score`) per case. The optional
+`agent_name` labels the report and falls back to `getattr(agent, "name", "unknown")`.
 
 ```python
 from fireflyframework_agentic.lab import EvalOrchestrator, EvalDataset, EvalCase
+from fireflyframework_agentic.lab.evaluator import exact_match_scorer
 
-# Custom scorer
+# Default exact-match scoring
+orchestrator = EvalOrchestrator()  # uses exact_match_scorer
+
+# ...or a custom scorer
 def fuzzy_scorer(expected: str, actual: str) -> float:
     return 1.0 if expected.lower() in actual.lower() else 0.0
 
 orchestrator = EvalOrchestrator(scorer=fuzzy_scorer)
-report = await orchestrator.evaluate(my_agent, dataset)
+report = await orchestrator.evaluate(my_agent, dataset, agent_name="writer-v2")
 print(f"Avg score: {report.avg_score:.2f} across {report.total_cases} cases")
+for r in report.results:
+    print(f"{r.input!r}: expected {r.expected!r}, got {r.actual!r} (score {r.score})")
 ```
+
+> `exact_match_scorer` and the `Scorer` type alias live in
+> `fireflyframework_agentic.lab.evaluator` (import them from that submodule); they are not
+> re-exported from the `fireflyframework_agentic.lab` package and are not part of its `__all__`.

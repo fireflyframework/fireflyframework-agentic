@@ -48,9 +48,10 @@ from fireflyframework_agentic.content.compression import ContextCompressor, Trun
 chunker = TextChunker(chunk_size=20_000, chunk_overlap=200, strategy="token")
 chunks = chunker.chunk(raw_text)
 
-# Compress if necessary
-compressor = ContextCompressor(strategy=TruncationStrategy(max_tokens=100_000))
-compressed = compressor.compress(raw_text, max_tokens=100_000)
+# Compress if necessary. The token budget is passed to compress(), not the
+# strategy constructor; compress() is async and must be awaited.
+compressor = ContextCompressor(TruncationStrategy(), estimator=None)
+compressed = await compressor.compress(raw_text, max_tokens=100_000)
 ```
 
 ---
@@ -90,6 +91,7 @@ descriptions and a Plan-and-Execute reasoning pattern for systematic analysis.
 
 ```python
 from fireflyframework_agentic.agents.templates import create_classifier_agent
+from fireflyframework_agentic.reasoning import PlanAndExecutePattern
 
 DOCUMENT_TYPES = ["certificate_of_incorporation", "bylaws", "corporate_filing", "amendment", "other"]
 DOCUMENT_TYPE_DESCRIPTIONS = {
@@ -105,9 +107,10 @@ classifier_agent = create_classifier_agent(
     model="openai:gpt-4o",
 )
 
-# Classify with Plan-and-Execute reasoning
+# Classify with Plan-and-Execute reasoning. run_with_reasoning takes the
+# pattern object as the first positional argument and the prompt second.
 result = await classifier_agent.run_with_reasoning(
-    sub_document.text, pattern="plan_and_execute"
+    PlanAndExecutePattern(), sub_document.text
 )
 ```
 
@@ -256,17 +259,17 @@ explainer_agent = FireflyAgent(
 )
 narrative = await explainer_agent.run(
     explainability_prompt.render(
-        trace_records=recorder.decisions,
+        trace_records=recorder.records,
         audit_trail=audit.entries,
         assembled_output=assembled,
     )
 )
 
-# Structured report
-report = ReportBuilder()
-report.add_decisions(recorder.decisions)
-report.add_explanation(narrative.output)
-json_report = report.build_json()
+# Structured report: build() consumes the recorded decisions and returns an
+# ExplainabilityReport; render it with the static to_json()/to_markdown() helpers.
+report = ReportBuilder(title="IDP Pipeline Explainability Report").build(recorder.records)
+json_report = ReportBuilder.to_json(report)
+markdown_report = ReportBuilder.to_markdown(report)
 ```
 
 ---
@@ -317,7 +320,10 @@ if result.success:
     print(f"Nodes executed: {len(result.execution_trace)}")
     print(f"Total duration: {result.total_duration_ms}ms")
     for entry in result.execution_trace:
-        print(f" {entry.node_id}: {entry.status} ({entry.duration_ms}ms)")
+        print(f" {entry.node_id}: {entry.status}")
+    # Per-node timing lives on the node results:
+    for node_id, node in result.outputs.items():
+        print(f" {node_id}: {node.latency_ms}ms")
 else:
     print(f"Pipeline failed at: {result.failed_nodes}")
 ```
@@ -337,8 +343,10 @@ This use case exercises the following framework capabilities:
 - **Document splitting** -- LLM-powered boundary detection to handle multi-document PDFs.
 - **Output validation** -- `RegexRule`, `FormatRule`, `EnumRule` for structural checks;
   `OutputReviewer` with custom retry prompts for automatic re-extraction.
-- **QoS guards** -- `GroundingChecker` to detect ungrounded (hallucinated) fields.
-- **Security** -- `PromptGuardMiddleware` (27 injection patterns) and
+- **QoS guards** -- `GroundingChecker` to detect ungrounded (hallucinated) fields;
+  `QoSGuard` for quality thresholds; `RubricReviewer` (LLM-as-judge, also loadable via
+  `RubricReviewer.from_rubric_file(...)`) to score extractions against a written rubric.
+- **Security** -- `PromptGuardMiddleware` (25 default injection patterns) and
   `OutputGuardMiddleware` (PII, secrets, harmful content scanning) for defence-in-depth.
 - **DAG pipeline** -- `PipelineBuilder`, `PipelineEngine` for 7-node orchestration with
   retries, exponential backoff with jitter, timeouts, and condition gates.
@@ -346,16 +354,22 @@ This use case exercises the following framework capabilities:
   conditional routing.
 - **Tools** -- `CachedTool` for memoising deterministic tool calls; tool timeouts
   via `BaseTool(timeout=...)` for SLA enforcement.
-- **Delegation** -- Four strategies: `RoundRobinStrategy`, `CapabilityStrategy`,
-  `ContentBasedStrategy` (LLM routing), `CostAwareStrategy` (cheapest model selection).
+- **Delegation** -- Seven strategies: `RoundRobinStrategy`, `CapabilityStrategy`,
+  `ContentBasedStrategy` (LLM routing), `CostAwareStrategy` (cheapest model selection),
+  `ChainStrategy`, `FallbackStrategy`, and `WeightedStrategy`.
 - **Explainability** -- `TraceRecorder`, `AuditTrail`, `ReportBuilder`, plus an LLM
   agent for generating comprehensive human-readable narratives.
-- **Memory** -- `MemoryManager` with working memory for inter-phase data sharing,
-  `export_conversation()` / `import_conversation()` for backup and migration,
-  `create_llm_summarizer()` for LLM-based conversation compression.
-- **Middleware** -- 8 built-in middleware: Logging, PromptGuard, OutputGuard, CostGuard
-  (with `warn_only`, `per_call_limit_usd`), Observability, Explainability, Cache,
-  Validation.
+- **Memory** -- `MemoryManager` with working memory for inter-phase data sharing
+  (`set_fact()` / `get_fact()`); `MemoryManager.conversation.export_conversation()` /
+  `.import_conversation()` for backup and migration; `create_llm_summarizer()` for
+  LLM-based conversation compression. Persist beyond the process with `SQLiteStore`.
+- **Middleware** -- 9 built-in middleware in `builtin_middleware.py`: `LoggingMiddleware`,
+  `PromptGuardMiddleware`, `OutputGuardMiddleware`, `CostGuardMiddleware` (with `warn_only`,
+  `per_call_limit_usd`), `ObservabilityMiddleware`, `ExplainabilityMiddleware`,
+  `CacheMiddleware`, `ValidationMiddleware`, and `RetryMiddleware`; plus
+  `PromptCacheMiddleware` and `CircuitBreakerMiddleware` (from `resilience`). `LoggingMiddleware`
+  is always auto-wired and `ObservabilityMiddleware` is auto-wired when
+  `config.observability_enabled`; the rest are opt-in.
 - **Logging** -- `configure_logging` for structured framework-wide logging.
 - **Observability** -- `PipelineResult.execution_trace` for per-node timing and status;
   bounded `UsageTracker` with `max_records` for production memory management.

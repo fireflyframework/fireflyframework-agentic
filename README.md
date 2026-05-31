@@ -5,7 +5,7 @@
 [![Nightly](https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/nightly.yml/badge.svg?branch=main)](https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/nightly.yml)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1383%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)]()
 [![Ruff](https://img.shields.io/badge/linting-ruff-orange.svg)](https://docs.astral.sh/ruff/)
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
@@ -72,8 +72,9 @@ You write your business logic; the framework provides the architecture.
 2. **Convention over configuration** — Sensible defaults everywhere.
    `FireflyAgenticConfig` is a Pydantic Settings singleton that reads from environment
    variables prefixed with `FIREFLY_AGENTIC_` and `.env` files. One config object
-   governs model defaults, retry counts, token limits, observability endpoints,
-   memory backends, and validation thresholds — override only what you need.
+   governs model defaults, retry counts, token limits, telemetry emission
+   (`observability_enabled`), strict-cost mode (`cost_strict`), memory backends, and
+   validation thresholds — override only what you need.
 
 3. **Layered composition** — Layers with strict top-down dependency flow:
    **Core → Agent → Intelligence → Experimentation → Orchestration**.
@@ -92,12 +93,12 @@ You write your business logic; the framework provides the architecture.
 ```mermaid
 graph TD
     subgraph Orchestration Layer
-        PIPE["Pipeline / DAG Engine<br/><small>DAG · DAGNode · DAGEdge<br/>PipelineEngine · PipelineBuilder<br/>AgentStep · ReasoningStep · CallableStep<br/>FanOutStep · FanInStep<br/>EmbeddingStep · RetrievalStep</small>"]
+        PIPE["Pipeline / DAG Engine<br/><small>DAG · DAGNode · DAGEdge<br/>PipelineEngine · PipelineBuilder<br/>AgentStep · ReasoningStep · CallableStep<br/>FanOutStep · FanInStep · BranchStep<br/>BatchLLMStep · EmbeddingStep · RetrievalStep<br/>Checkpointer · AuditLog · state reducers</small>"]
     end
 
     subgraph Embeddings / Vector Stores
         EMB["Embeddings<br/><small>EmbeddingProtocol · BaseEmbedder<br/>OpenAI · Azure · Cohere · Google<br/>Mistral · Voyage · Bedrock · Ollama<br/>EmbedderRegistry · similarity</small>"]
-        VS["Vector Stores<br/><small>VectorStoreProtocol · BaseVectorStore<br/>InMemory · ChromaDB · Pinecone · Qdrant<br/>VectorStoreRegistry · search_text</small>"]
+        VS["Vector Stores<br/><small>VectorStoreProtocol · BaseVectorStore<br/>InMemory · ChromaDB · Pinecone · Qdrant<br/>pgvector · sqlite-vec<br/>Scoped/Tenant-scoped layer<br/>VectorStoreRegistry · search_text</small>"]
     end
 
     subgraph Experimentation Layer
@@ -108,23 +109,26 @@ graph TD
     subgraph Intelligence Layer
         REASON["Reasoning Patterns<br/><small>ReAct · CoT · PlanAndExecute<br/>Reflexion · ToT · GoalDecomposition<br/>ReasoningPipeline</small>"]
         VAL["Validation & QoS<br/><small>OutputReviewer · OutputValidator<br/>ConfidenceScorer · ConsistencyChecker<br/>GroundingChecker · 5 rule types</small>"]
-        OBS["Observability<br/><small>FireflyTracer · FireflyMetrics<br/>FireflyEvents · UsageTracker<br/>CostCalculator · @traced · @metered</small>"]
+        OBS["Observability<br/><small>FireflyTracer · FireflyMetrics<br/>FireflyEvents · UsageTracker<br/>resolve_cost · BudgetGate<br/>@traced · @metered</small>"]
         EXPL["Explainability<br/><small>TraceRecorder · ExplanationGenerator<br/>AuditTrail · ReportBuilder</small>"]
     end
 
     subgraph Agent Layer
-        AGT["Agents<br/><small>FireflyAgent · AgentRegistry<br/>DelegationRouter · AgentLifecycle<br/>@firefly_agent · 5 templates</small>"]
+        AGT["Agents<br/><small>FireflyAgent · AgentRegistry<br/>DelegationRouter · 7 strategies<br/>MiddlewareChain · 10 middleware<br/>FallbackModelWrapper · ResultCache<br/>AgentLifecycle · @firefly_agent · 5 templates</small>"]
         TOOLS["Tools<br/><small>BaseTool · ToolBuilder · ToolKit<br/>5 guards · 3 composers<br/>ToolRegistry · 9 built-ins</small>"]
         PROMPTS["Prompts<br/><small>PromptTemplate · PromptRegistry<br/>3 composers · PromptValidator<br/>PromptLoader</small>"]
         CONTENT["Content<br/><small>TextChunker · DocumentSplitter<br/>ImageTiler · BatchProcessor<br/>ContextCompressor · SlidingWindowManager</small>"]
-        MEM["Memory<br/><small>MemoryManager · ConversationMemory<br/>WorkingMemory · TokenEstimator<br/>InMemoryStore · FileStore</small>"]
+        MEM["Memory<br/><small>MemoryManager · ConversationMemory<br/>WorkingMemory · TokenEstimator<br/>InMemoryStore · FileStore · SQLiteStore</small>"]
     end
 
     subgraph Core Layer
         CFG["Config<br/><small>FireflyAgenticConfig<br/>get_config · reset_config</small>"]
-        TYPES["Types & Protocols<br/><small>AgentLike · 10 protocols<br/>TypeVars · type aliases</small>"]
-        EXC["Exceptions<br/><small>FireflyAgenticError hierarchy<br/>18 exception classes</small>"]
+        TYPES["Types & Protocols<br/><small>AgentLike protocol<br/>TypeVars · type aliases<br/>(other protocols live in their modules)</small>"]
+        EXC["Exceptions<br/><small>FireflyAgenticError hierarchy<br/>34 exception classes</small>"]
         PLUG["Plugin System<br/><small>PluginDiscovery<br/>3 entry-point groups</small>"]
+        RESIL["Resilience<br/><small>CircuitBreaker<br/>CircuitBreakerMiddleware<br/>CircuitState</small>"]
+        STORE["Storage<br/><small>DatabaseStore · LocalBackend<br/>StorageBackend · WriteSession<br/>LockToken · RetryPolicy</small>"]
+        SEC["Security<br/><small>PromptGuard · OutputGuard<br/>AESEncryptionProvider<br/>EncryptedMemoryStore</small>"]
     end
 
     PIPE --> AGT
@@ -152,6 +156,12 @@ graph TD
     MEM --> CFG
     REASON --> CFG
     VAL --> CFG
+    AGT --> RESIL
+    AGT --> SEC
+    MEM --> STORE
+    SEC --> CFG
+    RESIL --> CFG
+    STORE --> CFG
 ```
 
 ### Protocol Hierarchy
@@ -236,6 +246,11 @@ classDiagram
     StepExecutor <|.. FanInStep
     DelegationStrategy <|.. RoundRobinStrategy
     DelegationStrategy <|.. CapabilityStrategy
+    DelegationStrategy <|.. ContentBasedStrategy
+    DelegationStrategy <|.. CostAwareStrategy
+    DelegationStrategy <|.. ChainStrategy
+    DelegationStrategy <|.. FallbackStrategy
+    DelegationStrategy <|.. WeightedStrategy
     CompressionStrategy <|.. TruncationStrategy
     CompressionStrategy <|.. SummarizationStrategy
     CompressionStrategy <|.. MapReduceStrategy
@@ -256,11 +271,20 @@ classDiagram
 
 - **Agents** — `FireflyAgent` wraps `pydantic_ai.Agent` with metadata, lifecycle hooks,
   and automatic registration. `AgentRegistry` provides singleton name-based discovery.
-  `DelegationRouter` routes prompts across agent pools via `RoundRobinStrategy` or
-  `CapabilityStrategy`. The `@firefly_agent` decorator defines an agent in one
-  statement. Five template factories (`create_summarizer_agent`,
-  `create_classifier_agent`, `create_extractor_agent`, `create_conversational_agent`,
-  `create_router_agent`) cover common use cases out of the box.
+  `DelegationRouter` routes prompts across agent pools via seven strategies
+  (`RoundRobinStrategy`, `CapabilityStrategy`, `ContentBasedStrategy`,
+  `CostAwareStrategy`, `ChainStrategy`, `FallbackStrategy`, `WeightedStrategy`).
+  A composable middleware stack (`MiddlewareChain` over `AgentMiddleware`) wraps every
+  run — `LoggingMiddleware` is always wired and `ObservabilityMiddleware` is added when
+  `observability_enabled`, with `PromptGuardMiddleware`, `OutputGuardMiddleware`,
+  `CostGuardMiddleware`, `CacheMiddleware`, `PromptCacheMiddleware`,
+  `ExplainabilityMiddleware`, `ValidationMiddleware`, and `RetryMiddleware` available to
+  add. `FallbackModelWrapper` / `run_with_fallback` provide automatic model failover, and
+  `ResultCache` / `CacheStatistics` back response caching. The `@firefly_agent`
+  decorator defines an agent in one statement. Five template factories
+  (`create_summarizer_agent`, `create_classifier_agent`, `create_extractor_agent`,
+  `create_conversational_agent`, `create_router_agent`) cover common use cases out of
+  the box.
 
 - **Tools** — `ToolProtocol` (duck-typed) and `BaseTool` (inheritance) let you choose
   your extensibility style. `ToolBuilder` provides a fluent API for building tools
@@ -289,33 +313,50 @@ classDiagram
   chains patterns sequentially.
 
 - **Content** — `TextChunker` splits by tokens, sentences, or paragraphs with
-  configurable overlap. `DocumentSplitter` detects page breaks and section
+  configurable overlap; `MarkdownChunker` chunks structure-aware on Markdown
+  headings. `DocumentSplitter` detects page breaks and section
   separators. `ImageTiler` computes tile coordinates for VLM processing.
   `BatchProcessor` runs chunks through an agent concurrently with a semaphore.
   `ContextCompressor` delegates to pluggable strategies (`TruncationStrategy`,
-  `SummarizationStrategy`, `MapReduceStrategy`). `SlidingWindowManager` maintains
-  a rolling token-budgeted context window.
+  `SummarizationStrategy`, `MapReduceStrategy`) — `ContextCompressor.compress` is
+  async. `SlidingWindowManager` maintains a rolling token-budgeted context window.
+  The `[binary]`-gated `content.binary` submodule normalises uploaded files into
+  consumer-ready artifacts: `BinaryNormalizer` (with `BinaryConfig`) produces
+  `BinaryArtifact`s, `sniff_media_type` detects formats, `build_office_converter`
+  selects an `OfficeConverter` (`GotenbergConverter`, `LibreOfficeConverter`,
+  `NoOpOfficeConverter`), and `PdfGuard`, `ImageNormalizer`, `ArchiveUnpacker`, and
+  `EmailUnpacker` handle PDFs, images, archives, and emails.
 
 - **Memory** — `ConversationMemory` stores per-conversation turn history with
   token-budget enforcement (newest-first FIFO eviction). `WorkingMemory` provides
-  a scoped key-value scratchpad backed by `MemoryStore` (`InMemoryStore` or
-  `FileStore`). `MemoryManager` composes both behind a unified API and supports
+  a scoped key-value scratchpad backed by `MemoryStore` (`InMemoryStore`, `FileStore`,
+  or `SQLiteStore`). `MemoryManager` composes both behind a unified API and supports
   `fork()` for isolating working memory in delegated agents or pipeline branches
-  while sharing conversation context.
+  while sharing conversation context. `create_llm_summarizer` builds an LLM-backed
+  history summarizer for long conversations.
 
 - **Validation** — Five composable rules (`RegexRule`, `FormatRule`, `RangeRule`,
   `EnumRule`, `CustomRule`) feed into `FieldValidator` and `OutputValidator`.
   `OutputReviewer` wraps agent calls with parse-then-validate retry logic: on
-  failure it builds a feedback prompt and retries up to N times. QoS guards
-  (`ConfidenceScorer`, `ConsistencyChecker`, `GroundingChecker`) detect
-  hallucinations and low-quality extractions before they propagate downstream.
+  failure it builds a feedback prompt and retries up to N times. `RubricReviewer`
+  adds LLM-as-judge grading against a rubric (`RubricReviewer.from_rubric_file`).
+  QoS guards (`ConfidenceScorer`, `ConsistencyChecker`, `GroundingChecker`, plus
+  the `QoSGuard` aggregator returning a `QoSResult`) detect hallucinations and
+  low-quality extractions before they propagate downstream.
 
 - **Pipeline** — `DAG` holds `DAGNode` and `DAGEdge` objects with cycle detection
   and topological sort. `PipelineEngine` executes nodes level-by-level via
   `asyncio.gather` for maximum concurrency, with per-node condition gates, retries,
   and timeouts. `PipelineBuilder` offers a fluent API (`add_node` / `add_edge` /
-  `chain`). Five step types (`AgentStep`, `ReasoningStep`, `CallableStep`,
-  `FanOutStep`, `FanInStep`) adapt agents, patterns, and functions to DAG nodes.
+  `chain`). Step types adapt agents, patterns, and functions to DAG nodes:
+  `AgentStep`, `ReasoningStep`, `CallableStep`, `FanOutStep`, `FanInStep`,
+  `BranchStep`, `BatchLLMStep`, `EmbeddingStep`, and `RetrievalStep`. State reducers
+  (`append`, `extend`, `merge_dict`, `replace`) merge fan-out results, and control
+  signals (`Pause`, `Send`) drive branching and human-in-the-loop pauses.
+  `Checkpointer` / `FileCheckpointer` (with `CheckpointRecord`) persist and resume
+  long runs, and a pluggable audit-log family (`AuditLog`, `FileAuditLog`,
+  `LoggingAuditLog`, `OtelAuditLog`, `QueryableAuditLog` over `AuditEntry`) records
+  execution traces.
 
 - **Observability** — `FireflyTracer` creates OpenTelemetry spans scoped to agents,
   tools, and reasoning steps. `FireflyMetrics` records tokens (total, prompt,
@@ -325,9 +366,12 @@ classDiagram
   telemetry purely through the OpenTelemetry API; the host application owns OTel
   SDK and exporter configuration. `UsageTracker` automatically records token usage, cost
   estimates, and latency for every agent run, reasoning step, and pipeline
-  execution. `CostCalculator` supports a built-in static price table and optional
-  `genai-prices` integration. Budget enforcement logs warnings when configurable
-  thresholds are exceeded.
+  execution. Cost is computed through a resolver chain (`resolve_cost`,
+  `genai_prices_cost`, `provider_reported_cost`, `DEFAULT_RESOLVERS`); set
+  `cost_strict` to raise `UnknownModelCostError` when no price is found. `BudgetGate`
+  enforces token/cost budgets per scope (`BudgetRule`, `BudgetMode`, `BudgetWindow`),
+  and a pluggable sink family (`LoggingSink`, `JSONLFileSink`, `OTelMetricsSink`,
+  `EventBusSink`, `CostSink`) routes usage records wherever you need them.
 
 - **Explainability** — `TraceRecorder` captures every LLM call, tool invocation,
   and reasoning step as `DecisionRecord` objects. `ExplanationGenerator` turns
@@ -335,10 +379,32 @@ classDiagram
   immutable log with JSON export for compliance. `ReportBuilder` produces
   Markdown and JSON reports with statistics.
 
+- **Security** — `PromptGuard` scans inbound prompts for injection and jailbreak
+  patterns; `OutputGuard` redacts secrets and PII from model output
+  (`default_prompt_guard` / `default_output_guard` provide ready-to-use instances).
+  At-rest protection comes from `AESEncryptionProvider` (behind the
+  `EncryptionProvider` protocol) and `EncryptedMemoryStore`, which encrypts
+  `MemoryEntry.content` while leaving keys, metadata, and timestamps in plaintext.
+  Inbound request authentication and authorization are a hosting concern, not the
+  framework's.
+
+- **Resilience** — `CircuitBreaker` trips after a configurable failure threshold
+  and rejects calls with `CircuitBreakerOpenError` while open, transitioning through
+  `CircuitState` (closed → open → half-open). `CircuitBreakerMiddleware` plugs it
+  into the agent middleware chain so a failing model is short-circuited before it
+  drains your budget.
+
+- **Storage** — `StorageBackend` abstracts blob/object storage with `LocalBackend`
+  out of the box; `DatabaseStore` persists artifacts with leasing
+  (`WriteSession`, `LockToken`), a configurable `RetryPolicy`, and `StorageMetadata`.
+  Typed errors (`StorageUploadError`, `StorageDownloadError`, `StorageLeaseError`,
+  `StorageTransientError`, `StoreUnavailableError`) make failure handling explicit.
+
 - **Experiments** — `Experiment` defines variants with model, temperature, and
-  prompt overrides. `ExperimentRunner` executes all variants against a dataset.
-  `ExperimentTracker` persists results with optional JSON export.
-  `VariantComparator` computes latency, output length, and comparison summaries.
+  prompt overrides. `ExperimentRunner` executes all variants against a dataset via
+  an `agent_factory` callable. `ExperimentTracker` persists results with optional
+  JSON export. `VariantComparator` computes latency, output length, and comparison
+  summaries.
 
 - **Lab** — `LabSession` manages interactive agent sessions with history.
   `Benchmark` runs agents against standardised inputs and reports p95 latency.
@@ -362,13 +428,17 @@ classDiagram
   `embedding_max_retries`, and `default_embedding_model`.
 
 - **Vector Stores** — `VectorStoreProtocol` and `BaseVectorStore` provide
-  pluggable storage and retrieval with four backends: **InMemoryVectorStore**
-  (zero-dependency, brute-force cosine), **ChromaDB**, **Pinecone**, and **Qdrant**.
+  pluggable storage and retrieval with six backends: **InMemoryVectorStore**
+  (zero-dependency, brute-force cosine), **ChromaVectorStore**, **PineconeVectorStore**,
+  **QdrantVectorStore**, **PgVectorVectorStore** (Postgres + pgvector), and
+  **SqliteVecVectorStore** (embedded sqlite-vec). A multi-tenant isolation layer
+  (`ScopedVectorStore`, `TenantScopedVectorStore`, plus `scope_namespace` /
+  `parse_scope_namespace` helpers) namespaces documents per tenant or scope.
   Auto-embedding upserts documents without pre-computed vectors. `search_text`
-  embeds a query string and searches in one call. Namespace scoping isolates
-  document collections. `VectorStoreRegistry` manages named instances.
-  `EmbeddingStep` and `RetrievalStep` integrate directly into DAG pipelines
-  for RAG workflows.
+  embeds a query string and searches in one call, and `SearchFilter` narrows results
+  by metadata. Namespace scoping isolates document collections. `VectorStoreRegistry`
+  manages named instances. `EmbeddingStep` and `RetrievalStep` integrate directly
+  into DAG pipelines for retrieval-augmented workflows.
 
 - **Studio** — moved to its own repository:
   [fireflyframework-agentic-studio](https://github.com/fireflyframework/fireflyframework-agentic-studio).
@@ -389,21 +459,28 @@ classDiagram
 
 **Core dependencies** (installed automatically):
 
-- [pydantic-ai](https://ai.pydantic.dev/) `>=1.56.0` — Agent engine (model calls, tool dispatch, streaming)
+- [pydantic-ai](https://ai.pydantic.dev/) `>=1.99.0` — Agent engine (model calls, tool dispatch, streaming)
 - [pydantic](https://docs.pydantic.dev/) `>=2.10.0` — Data validation and settings
 - [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) `>=2.7.0` — Environment-based configuration
 - [Jinja2](https://jinja.palletsprojects.com/) `>=3.1.0` — Prompt template engine
+- [httpx](https://www.python-httpx.org/) `>=0.28.0` — Async HTTP client (built-in HTTP tool, Gotenberg converter)
 - [OpenTelemetry API](https://opentelemetry.io/docs/languages/python/) `>=1.29.0` — Tracing and metrics
-- [OpenTelemetry SDK](https://opentelemetry.io/docs/languages/python/) `>=1.29.0` — Telemetry exporters
+- [OpenTelemetry SDK](https://opentelemetry.io/docs/languages/python/) `>=1.29.0` — Telemetry primitives
+- [genai-prices](https://pypi.org/project/genai-prices/) `>=0.0.1` — LLM pricing data for cost resolution
+- [markdown-it-py](https://pypi.org/project/markdown-it-py/) `>=3.0` — Structure-aware Markdown chunking
+- [python-dotenv](https://pypi.org/project/python-dotenv/) `>=1.0.0` — `.env` loading for example scripts
 
 **Optional dependencies** (installed via extras):
 
-- `[costs]` — [genai-prices](https://pypi.org/project/genai-prices/) for up-to-date LLM pricing data
+- `[embeddings]` — [numpy](https://numpy.org/) for fast in-memory vector math
 - `[openai-embeddings]` — [openai](https://github.com/openai/openai-python) `>=1.0.0` for OpenAI/Azure embeddings
 - `[vectorstores-chroma]` — [chromadb](https://www.trychroma.com/) `>=0.5.0`
 - `[vectorstores-pinecone]` — [pinecone](https://www.pinecone.io/) `>=5.0.0`
 - `[vectorstores-qdrant]` — [qdrant-client](https://qdrant.tech/) `>=1.12.0`
-- `[all]` — Everything (embeddings + vector stores + costs + security + HTTP)
+- `[vectorstores-pgvector]` — [asyncpg](https://magicstack.github.io/asyncpg/) `>=0.30.0` for Postgres + pgvector
+- `[vectorstores-sqlite-vec]` — [sqlite-vec](https://github.com/asg017/sqlite-vec) `>=0.1.6` for embedded vector search
+- `[binary]` — pypdf, Pillow, pillow-heif, cairosvg, py7zr, extract-msg for `content.binary`
+- `[all]` — Everything (memory backends, security, all embedding providers, all vector stores, watch, binary)
 
 **LLM provider keys** (at least one):
 
@@ -458,11 +535,10 @@ uv sync --all-extras # or: pip install -e ".[all]"
 
 | Extra | What it adds | When you need it |
 |---|---|---|
-| `postgres` | asyncpg, SQLAlchemy | PostgreSQL memory persistence |
+| `postgres` | asyncpg, SQLAlchemy | PostgreSQL memory / storage persistence |
 | `mongodb` | motor, pymongo | MongoDB memory persistence |
-| `security` | PyJWT, cryptography | RBAC, encryption, JWT auth |
-| `http` | httpx | HTTP connection pooling for tools |
-| `costs` | genai-prices | Up-to-date LLM pricing data |
+| `security` | cryptography | At-rest encryption (`EncryptedMemoryStore`, `AESEncryptionProvider`) |
+| `embeddings` | numpy | Fast in-memory vector math |
 | `openai-embeddings` | openai | OpenAI / Azure text embeddings |
 | `cohere-embeddings` | cohere | Cohere text embeddings |
 | `google-embeddings` | google-generativeai | Google text embeddings |
@@ -474,7 +550,11 @@ uv sync --all-extras # or: pip install -e ".[all]"
 | `vectorstores-chroma` | chromadb | ChromaDB vector store backend |
 | `vectorstores-pinecone` | pinecone | Pinecone vector store backend |
 | `vectorstores-qdrant` | qdrant-client | Qdrant vector store backend |
-| `all` | Everything above | Full deployment with all integrations |
+| `vectorstores-pgvector` | asyncpg | Postgres + pgvector vector store backend |
+| `vectorstores-sqlite-vec` | sqlite-vec | Embedded sqlite-vec vector store backend |
+| `binary` | pypdf, Pillow, pillow-heif, cairosvg, py7zr, extract-msg | `content.binary` file normalisation |
+| `watch` | watchfiles | File-watching for content sources |
+| `all` | Everything above | Full install with all integrations |
 
 ### Verify Installation
 
@@ -705,7 +785,7 @@ result.output # displays the structured Summary object in the notebook
 
 ### The Complete Tutorial ("The Bible")
 
-**[docs/tutorial.md](docs/tutorial.md)** is a 20-chapter, hands-on guide that teaches
+**[docs/tutorial.md](docs/tutorial.md)** is an 18-chapter, hands-on guide that teaches
 every concept from zero to expert through a real-world **Intelligent Document Processing**
 pipeline. Start here if you want to learn the framework thoroughly.
 
@@ -730,10 +810,11 @@ Detailed guides for each module:
 - [Memory](docs/memory.md) — Conversation history, working memory, storage backends
 - [Validation](docs/validation.md) — Rules, QoS guards, output reviewer
 - [Embeddings](docs/embeddings.md) — 8 providers, auto-batching, similarity, registry
-- [Vector Stores](docs/vectorstores.md) — 4 backends, auto-embedding, search_text, namespaces
-- [Pipeline](docs/pipeline.md) — DAG orchestrator, parallel execution, retries
-- [Observability](docs/observability.md) — Tracing, metrics, events
+- [Vector Stores](docs/vectorstores.md) — 6 backends, tenant scoping, auto-embedding, search_text, namespaces
+- [Pipeline](docs/pipeline.md) — DAG orchestrator, parallel execution, checkpointing, audit log, retries
+- [Observability](docs/observability.md) — Tracing, metrics, events, cost resolvers, budget gates
 - [Explainability](docs/explainability.md) — Decision recording, audit trails, reports
+- [Security](docs/security.md) — Prompt/output guards, at-rest encryption
 - [Experiments](docs/experiments.md) — A/B testing, variant comparison
 - [Lab](docs/lab.md) — Benchmarks, datasets, evaluators
 - Studio — moved to [fireflyframework-agentic-studio](https://github.com/fireflyframework/fireflyframework-agentic-studio)
@@ -748,9 +829,9 @@ uv sync --all-extras
 ```
 
 ```bash
-uv run pytest # Run 1383+ tests
-uv run ruff check src/ tests/ # Lint
-uv run pyright src/ # Type check
+uv run pytest # Run the test suite
+uv run ruff check fireflyframework_agentic/ tests/ # Lint
+uv run pyright fireflyframework_agentic/ # Type check
 ```
 
 **Dev dependencies** (installed with `uv sync`):

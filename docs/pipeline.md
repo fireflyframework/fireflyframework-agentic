@@ -104,6 +104,13 @@ The framework provides these built-in executors:
 - **FanOutStep** _(deprecated)_ -- Splits input into a list for parallel downstream processing.
   Use `Send` in [State-Based Pipelines](#runtime-fan-out-via-send) instead.
 - **FanInStep** -- Merges outputs from multiple upstream nodes.
+- **EmbeddingStep** -- Embeds the upstream text(s) using an embedding provider
+  (`EmbeddingProtocol`). Accepts a single string or a list; `input_key` selects
+  which inputs key holds the text(s).
+- **RetrievalStep** -- Searches a vector store (`VectorStoreProtocol`) using the
+  upstream text as the query. Embeds the query with the supplied `embedder`
+  (or treats the input as a pre-computed embedding when `embedder=None`).
+  Parameters: `store`, `embedder=None`, `top_k=5`, `input_key="input"`.
 
 ---
 
@@ -180,18 +187,26 @@ Custom reducers are any callable `(current, update) -> merged`.
 
 ### Checkpoint + Resume
 
-Pass a `Checkpointer` to persist state after each successful node. Three
-backends ship out of the box, all conforming to the same `Checkpointer`
-Protocol so they're swappable without code changes.
+Pass a `Checkpointer` to persist state after each successful node. The framework
+ships **one** backend, `FileCheckpointer`, plus the `Checkpointer` Protocol it
+implements (`save`, `load_latest`, `list_runs`) and the `CheckpointRecord` model.
+Anything that satisfies the Protocol is swappable without engine changes.
 
-| Backend | Use when | Trade-off | Install |
+| Backend | Use when | Trade-off | Source |
 |---|---|---|---|
-| `FileCheckpointer` | Dev, single-host, ephemeral | No cross-process / cross-host sharing | (default — no extra) |
-| `RedisCheckpointer` | Multi-worker, sub-day-scale runs | TTL eviction; not durable forever | `pip install fireflyframework-agentic[redis]` |
-| `PostgresCheckpointer` | Long-lived runs, compliance, audit-friendly | Operational overhead of a DB | `pip install fireflyframework-agentic[postgres]` |
+| `FileCheckpointer` | Dev, single-host, ephemeral | No cross-process / cross-host sharing | shipped (`fireflyframework_agentic.pipeline`) |
+| Redis-backed | Multi-worker, sub-day-scale runs | TTL eviction; not durable forever | example template (`examples/software_factory/checkpointers/redis.py`) |
+| Postgres-backed | Long-lived runs, compliance, audit-friendly | Operational overhead of a DB | example template (`examples/software_factory/checkpointers/postgres.py`) |
+
+`FileCheckpointer` writes one JSON file per node at
+`<root>/<pipeline_name>/<run_id>/<sequence>_<node_id>.json`. The Redis and
+Postgres variants are **not** importable framework classes — they are ~50–80 LOC
+plug-and-play templates under `examples/software_factory/` that implement the
+same `Checkpointer` Protocol against a caller-supplied connection. Copy whichever
+you need into your project and adapt it.
 
 ```python
-from fireflyframework_agentic.pipeline import FileCheckpointer  # or Redis / Postgres
+from fireflyframework_agentic.pipeline import FileCheckpointer
 
 pipeline = (
     PipelineBuilder("software-factory", state=BuildState,
@@ -214,19 +229,17 @@ result = await pipeline.invoke(run_id=result.run_id)
 result = await pipeline.invoke(state=loaded_state, start_at=deployer)
 ```
 
-Swapping backends is a one-line change. Redis uses a TTL on each checkpoint
-key (default 30 days) plus a sorted-set index of run IDs; Postgres uses a
-single `firefly_checkpoints` table created idempotently on first save:
+To use a durable store, copy one of the example templates into your project.
+Each implements `save` / `load_latest` / `list_runs` against a connection you
+supply, so swapping it in is a one-line change at the builder:
 
 ```python
-from fireflyframework_agentic.pipeline import RedisCheckpointer, PostgresCheckpointer
+# After copying examples/software_factory/checkpointers/redis.py into your project:
+from myproject.checkpointers.redis import RedisCheckpointer
 
-# Either a URL/DSN (backend constructs its own client) or a pre-built client
-# (lets you share a connection pool across many pipelines).
-checkpointer = RedisCheckpointer(url="redis://localhost:6379/0", ttl_seconds=86400 * 30)
 checkpointer = RedisCheckpointer(client=my_existing_redis)
-checkpointer = PostgresCheckpointer(dsn="postgresql://user:pw@host/db")
-checkpointer = PostgresCheckpointer(connection=my_existing_psycopg_connection)
+pipeline = PipelineBuilder("software-factory", state=BuildState,
+                           checkpointer=checkpointer).add_node(architect).build()
 ```
 
 ### Cycles and `recursion_limit`
@@ -272,32 +285,44 @@ shared state.
 State pipelines emit lifecycle callbacks and OTel spans so ops can see what
 an agent workflow is doing in real time.
 
-`StatePipelineEventHandler` mirrors the legacy `PipelineEventHandler` but
-every callback carries the `run_id` (so events can be correlated across
-resumes) and `on_node_start` carries a per-node visit counter (so cyclic
-graphs and `Send` fan-outs are distinguishable). Implement any subset of
-methods; missing ones are no-ops.
+The unified `EventHandler` protocol (exported from
+`fireflyframework_agentic.pipeline`) carries the `run_id` on every callback (so
+events correlate across resumes), and `on_node_start` / `on_node_pause` carry a
+per-node `visit` counter (so cyclic graphs and `Send` fan-outs are
+distinguishable). The engine dispatches by **inspecting each callback's declared
+parameters** — so a handler whose method signature omits `run_id` or `visit`
+(including any legacy `PipelineEventHandler` implementation) keeps working
+unchanged; the engine simply drops the parameters it doesn't declare. Implement
+any subset of methods; missing ones are no-ops.
+
+`EventHandler` callbacks: `on_pipeline_start(pipeline_name, run_id)`,
+`on_node_start(pipeline_name, run_id, node_id, visit)`,
+`on_node_complete(pipeline_name, run_id, node_id, latency_ms)`,
+`on_node_error(pipeline_name, run_id, node_id, error)`,
+`on_node_skip(pipeline_name, run_id, node_id, reason)`,
+`on_node_pause(pipeline_name, run_id, node_id, reason)`, and
+`on_pipeline_complete(pipeline_name, run_id, success, duration_ms)`.
 
 ```python
-from fireflyframework_agentic.pipeline import PipelineBuilder, StatePipelineEventHandler
+from fireflyframework_agentic.pipeline import PipelineBuilder
 
 
 class ProgressHandler:
-    async def on_pipeline_start(self, name, run_id):
-        print(f"▶ [{name}] run {run_id} starting")
+    async def on_pipeline_start(self, pipeline_name, run_id):
+        print(f"▶ [{pipeline_name}] run {run_id} starting")
 
-    async def on_node_start(self, name, run_id, node_id, visit):
+    async def on_node_start(self, pipeline_name, run_id, node_id, visit):
         print(f"  ▶ {node_id} (visit #{visit})")
 
-    async def on_node_complete(self, name, run_id, node_id, latency_ms):
+    async def on_node_complete(self, pipeline_name, run_id, node_id, latency_ms):
         print(f"  ✔ {node_id} ({latency_ms:.0f}ms)")
 
-    async def on_node_error(self, name, run_id, node_id, error):
+    async def on_node_error(self, pipeline_name, run_id, node_id, error):
         print(f"  ✗ {node_id}: {error}")
 
-    async def on_pipeline_complete(self, name, run_id, success, duration_ms):
+    async def on_pipeline_complete(self, pipeline_name, run_id, success, duration_ms):
         status = "OK" if success else "FAILED"
-        print(f"═ [{name}] {status} in {duration_ms:.0f}ms")
+        print(f"═ [{pipeline_name}] {status} in {duration_ms:.0f}ms")
 
 
 pipeline = (
@@ -347,9 +372,9 @@ done = await pipeline.invoke(run_id=first.run_id, approve_pause=True)
 assert done.success
 ```
 
-The configured ``StatePipelineEventHandler`` receives an ``on_node_pause``
-callback when this happens (the callback is optional — partial handlers
-without it continue to work).
+The configured `EventHandler` receives an ``on_node_pause`` callback when this
+happens (the callback is optional — partial handlers without it continue to
+work).
 
 ### Audit Log
 
@@ -360,34 +385,36 @@ visit for compliance, debugging, and replay. Wire one in via the
 
 ```python
 from fireflyframework_agentic.pipeline import (
-    PipelineBuilder, FileAuditLog, PostgresAuditLog, LoggingAuditLog, OtelAuditLog,
+    PipelineBuilder, FileAuditLog, LoggingAuditLog, OtelAuditLog,
 )
 
 PipelineBuilder("agent", state=AgentState, audit_log=FileAuditLog("./audit"))
 ```
 
-Four backends ship, each conforming to the ``AuditLog`` Protocol:
+Three backends ship, each conforming to the ``AuditLog`` Protocol (which
+defines a single ``record(entry: AuditEntry)`` method):
 
-| Backend | Use when | Read API | Trace-correlated | Install |
+| Backend | Use when | Read API | Trace-correlated | Source |
 |---|---|---|---|---|
-| ``FileAuditLog`` | Dev / single-host | yes | no | (default) |
-| ``PostgresAuditLog`` | Compliance, retention, cross-run queries | yes | no | ``[postgres]`` |
-| ``LoggingAuditLog`` | Generic log stacks (Splunk-HEC, Loki, JSON-logging) | no (write-only) | no | (default — stdlib) |
-| ``OtelAuditLog`` | OTel-native stacks (Application Insights, Datadog APM, OTel Collector) | no (write-only) | **yes** | ``opentelemetry-sdk`` |
+| ``FileAuditLog`` | Dev / single-host | yes | no | shipped (one JSONL file per run) |
+| ``LoggingAuditLog`` | Generic log stacks (Splunk-HEC, Loki, JSON-logging) | no (write-only) | no | shipped (stdlib ``logging``) |
+| ``OtelAuditLog`` | OTel-native stacks (Application Insights, Datadog APM, OTel Collector) | no (write-only) | **yes** | shipped (needs ``opentelemetry-sdk``) |
 
-``FileAuditLog`` and ``PostgresAuditLog`` also implement
-``QueryableAuditLog`` with ``list_entries(pipeline_name, run_id)``. The
-write-only backends delegate query/search to the user's existing
-observability stack.
+``FileAuditLog`` also implements ``QueryableAuditLog`` (adds
+``list_entries(pipeline_name, run_id)``); the two write-only backends delegate
+query/search to the user's existing observability stack. For a Postgres-backed
+queryable audit log, copy the plug-and-play template at
+``examples/software_factory/audit/postgres.py`` — it implements
+``QueryableAuditLog`` against a caller-supplied ``psycopg.Connection``.
 
 Audit-log write failures are non-fatal — logged but never abort the
 pipeline.
 
 ### Mermaid Export
 
-`StatePipeline.to_mermaid()` and `DAG.to_mermaid()` render the topology as a
+`PipelineEngine.to_mermaid()` and `DAG.to_mermaid()` render the topology as a
 Mermaid flowchart. Branch edges declared with an explicit mapping show their
-label; dynamic routers are noted as such.
+label; edges carrying a condition are annotated `if?`.
 
 ### When to use which mode
 
@@ -480,7 +507,7 @@ classifications = result.outputs["classify"].output # List of results
   - Initial inputs: `inputs[prompts_key]`
 - **`batch_size`** — Maximum concurrent requests (default: 50).
 - **`wait_for_completion`** — Whether to wait for all results (default: `True`).
-- **`poll_interval_seconds`** — Polling interval for batch jobs (default: 5.0).
+- **`poll_interval_seconds`** — Polling interval for batch jobs (default: 60.0).
 - **`max_wait_seconds`** — Maximum wait time for completion (default: 3600).
 - **`on_batch_complete`** — Optional callback for each batch completion.
 
@@ -532,16 +559,16 @@ step = BatchLLMStep(classifier, prompts_key="documents", batch_size=20)
 ### Error Handling
 
 By default, exceptions from individual prompts are captured and returned as
-`Exception` objects in the results list. This prevents one failure from blocking
-the entire batch:
+`{"error": "<message>"}` entries in the results list, in input order. This
+prevents one failure from blocking the entire batch:
 
 ```python
 results = await step.execute(context, {"prompts": ["P1", "P2", "P3"]})
-# results = [<output1>, Exception("error"), <output3>]
+# results = [<output1>, {"error": "..."}, <output3>]
 
 for i, result in enumerate(results):
-    if isinstance(result, Exception):
-        print(f"Prompt {i} failed: {result}")
+    if isinstance(result, dict) and "error" in result:
+        print(f"Prompt {i} failed: {result['error']}")
 ```
 
 ---
@@ -693,6 +720,12 @@ result = await engine.run(context=ctx)
 - `success` -- `True` only if all nodes succeeded or were intentionally skipped.
 - `usage` -- Aggregated `UsageSummary` across all pipeline nodes (token counts, cost,
   latency) when cost tracking is enabled. `None` when disabled or no LLM calls were made.
+- `run_id` -- Identifier for this run; resume later with `engine.run(run_id=...)`.
+- `final_state` -- The final shared-state object for state-aware pipelines (and its
+  `state` alias property). `None` when the engine had no state overlay. The
+  state-based examples read e.g. `result.state.answer`.
+- `paused` / `paused_node` / `pause_reason` -- Set when a node returned `Pause`;
+  `paused_node` names the halting node. See [Human-in-the-loop](#human-in-the-loop-pause).
 - `failed_nodes` -- Property listing IDs of nodes that failed.
 
 ```python
@@ -720,9 +753,12 @@ respects topological ordering and condition gates.
 
 ## Pipeline Event Handler
 
-The `PipelineEventHandler` protocol lets you receive real-time callbacks as
-nodes start, complete, fail, or get skipped. Implement any subset of the
-five hooks:
+The legacy `PipelineEventHandler` protocol lets you receive real-time callbacks
+as nodes start, complete, fail, or get skipped. Implement any subset of the
+five hooks. New code should prefer the unified
+[`EventHandler`](#observability) (which adds `run_id`, `visit`, and
+`on_node_pause`); both are dispatched by signature inspection, so existing
+`PipelineEventHandler` implementations keep working unchanged.
 
 ```python
 from fireflyframework_agentic.pipeline.engine import PipelineEventHandler
@@ -758,11 +794,25 @@ failure, or feeding events to an observability pipeline.
 
 ---
 
-## Boundary Nodes (Input / Output)
+## Triggers (FolderWatcher)
 
-Boundary nodes (`Input`, `Output`) for declaring pipeline entry and exit
-points -- with auto-generated REST endpoints, queue consumers, and
-scheduled triggers -- are provided by the
-[fireflyframework-agentic-studio](https://github.com/fireflyframework/fireflyframework-agentic-studio)
-package. See its docs for configuration details and the auto-generated
-project API.
+The framework is a pure in-process library: it does not bind a port or consume a
+broker. Your host service owns inbound serving and chooses when to call
+`engine.run(...)` / `pipeline.invoke(...)`.
+
+For one common file-arrival trigger, `fireflyframework_agentic.pipeline.triggers`
+ships `FolderWatcher` — a `watchfiles`-backed async iterator over new and changed
+files under a folder. It debounces events and holds each candidate back until its
+size is observed unchanged across `stability_polls` consecutive polls (a heuristic
+for "the writer has finished"), and `startup_scan()` enumerates pre-existing files
+so callers can reconcile against a ledger.
+
+```python
+from pathlib import Path
+from fireflyframework_agentic.pipeline.triggers import FolderWatcher
+
+watcher = FolderWatcher(Path("/inbox"), debounce_ms=500, stability_polls=2)
+
+async for path in watcher.watch():       # requires `pip install watchfiles`
+    result = await pipeline.invoke(IngestState(file=str(path)))
+```

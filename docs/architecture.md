@@ -19,12 +19,19 @@ The framework follows four guiding principles:
    A single `FireflyAgenticConfig` object (backed by Pydantic Settings) centralises
    configuration and supports environment-variable overrides.
 
-3. **Layered composition** -- Modules are organised into layers (Core, Agent, Intelligence,
-   Experimentation, Orchestration). Higher layers depend on lower layers but never the reverse.
+3. **Layered composition** -- Modules are organised into layers (Core, Security, Agent,
+   Intelligence, Orchestration, plus optional Experimentation dev-tooling). Higher layers
+   depend on lower layers but never the reverse.
 
 4. **Optional dependencies** -- Heavy third-party libraries (embedding providers, vector
-   store clients, storage backends) are declared as extras. The core framework imports them
-   lazily so that users only install what they need.
+   store clients, storage backends, document-conversion tooling) are declared as extras. The
+   core framework imports them lazily so that users only install what they need.
+
+5. **Pure in-process library** -- fireflyframework-agentic is a library, not a server. It
+   serves no HTTP port and consumes no message broker; the host service owns all serving,
+   hosting, and inbound authentication. The framework *emits* model and agent spans and
+   metrics through the OpenTelemetry API, but configuring the OTel SDK, exporters, and
+   cross-service trace propagation is the host's responsibility.
 
 ---
 
@@ -33,7 +40,7 @@ The framework follows four guiding principles:
 ```mermaid
 graph TD
     subgraph Orchestration Layer
-        PIPE["Pipeline / DAG Engine<br/><small>DAG · DAGNode · DAGEdge<br/>PipelineEngine · PipelineBuilder · PipelineEventHandler<br/>AgentStep · ReasoningStep · CallableStep · BranchStep<br/>FanOutStep · FanInStep · exponential backoff + jitter</small>"]
+        PIPE["Pipeline / DAG Engine<br/><small>DAG · DAGNode · DAGEdge<br/>PipelineEngine · PipelineBuilder · PipelineEventHandler<br/>AgentStep · ReasoningStep · CallableStep · BranchStep<br/>FanOutStep · FanInStep · BatchLLMStep · EmbeddingStep · RetrievalStep<br/>Checkpointer · AuditLog · state reducers · exponential backoff + jitter</small>"]
     end
 
     subgraph Experimentation Layer
@@ -44,35 +51,37 @@ graph TD
     subgraph Intelligence Layer
         REASON["Reasoning Patterns<br/><small>ReAct · CoT · PlanAndExecute<br/>Reflexion · ToT · GoalDecomposition<br/>ReasoningPipeline</small>"]
         VAL["Validation & QoS<br/><small>OutputReviewer · OutputValidator<br/>ConfidenceScorer · ConsistencyChecker<br/>GroundingChecker · 5 rule types</small>"]
-        OBS["Observability<br/><small>FireflyTracer · FireflyMetrics<br/>FireflyEvents · UsageTracker<br/>CostCalculator · @traced · @metered</small>"]
+        OBS["Observability<br/><small>FireflyTracer · FireflyMetrics<br/>FireflyEvents · UsageTracker<br/>BudgetGate · cost resolver chain<br/>@traced · @metered</small>"]
         EXPL["Explainability<br/><small>TraceRecorder · ExplanationGenerator<br/>AuditTrail · ReportBuilder</small>"]
     end
 
     subgraph Security Layer
-        SEC["Security<br/><small>PromptGuard (27 patterns) · OutputGuard<br/>PromptGuardResult · OutputGuardResult<br/>injection detection · sanitisation · output scanning</small>"]
+        SEC["Security<br/><small>PromptGuard (25 patterns) · OutputGuard<br/>PromptGuardResult · OutputGuardResult<br/>AESEncryptionProvider · EncryptedMemoryStore<br/>injection detection · sanitisation · output scanning</small>"]
     end
 
     subgraph Agent Layer
-        AGT["Agents<br/><small>FireflyAgent · AgentRegistry<br/>DelegationRouter · AgentLifecycle<br/>@firefly_agent · 5 templates · 8 middleware<br/>4 delegation strategies · FallbackModelWrapper<br/>ResultCache · run timeout</small>"]
+        AGT["Agents<br/><small>FireflyAgent · AgentRegistry<br/>DelegationRouter · AgentLifecycle<br/>@firefly_agent · 5 templates · 11 middleware<br/>7 delegation strategies · FallbackModelWrapper<br/>ResultCache · run timeout</small>"]
         TOOLS["Tools<br/><small>BaseTool · ToolBuilder · ToolKit · CachedTool<br/>5 guards · 3 composers · tool timeout<br/>ToolRegistry · 9 built-ins</small>"]
         PROMPTS["Prompts<br/><small>PromptTemplate · PromptRegistry<br/>3 composers · PromptValidator<br/>PromptLoader</small>"]
-        CONTENT["Content<br/><small>TextChunker · DocumentSplitter<br/>ImageTiler · BatchProcessor<br/>ContextCompressor · SlidingWindowManager</small>"]
-        MEM["Memory<br/><small>MemoryManager · ConversationMemory<br/>WorkingMemory · TokenEstimator<br/>InMemoryStore · FileStore<br/>summarization · create_llm_summarizer<br/>export/import · async wrappers</small>"]
+        CONTENT["Content<br/><small>TextChunker · DocumentSplitter · MarkdownChunker<br/>ImageTiler · BatchProcessor<br/>ContextCompressor · SlidingWindowManager<br/>content.binary (BinaryNormalizer · office converters)</small>"]
+        MEM["Memory<br/><small>MemoryManager · ConversationMemory<br/>WorkingMemory · TokenEstimator<br/>InMemoryStore · FileStore · SQLiteStore<br/>summarization · create_llm_summarizer<br/>export/import · async wrappers</small>"]
+        EMB["Embeddings & Vector Stores<br/><small>BaseEmbedder · EmbedderRegistry · 8 providers<br/>BaseVectorStore · 7 backends<br/>ScopedVectorStore · TenantScopedVectorStore</small>"]
     end
 
     subgraph Core Layer
         CFG["Config<br/><small>FireflyAgenticConfig<br/>get_config · reset_config</small>"]
-        TYPES["Types & Protocols<br/><small>AgentLike · 10 protocols<br/>TypeVars · type aliases</small>"]
-        EXC["Exceptions<br/><small>FireflyAgenticError hierarchy<br/>18 exception classes</small>"]
+        TYPES["Types & Protocols<br/><small>AgentLike protocol<br/>TypeVars · type aliases</small>"]
+        EXC["Exceptions<br/><small>FireflyAgenticError hierarchy<br/>34 exception classes</small>"]
         PLUG["Plugin System<br/><small>PluginDiscovery<br/>3 entry-point groups</small>"]
+        RES["Resilience<br/><small>CircuitBreaker<br/>CircuitBreakerMiddleware<br/>CircuitState</small>"]
+        STORE["Storage<br/><small>DatabaseStore · LocalBackend<br/>WriteSession · LockToken · RetryPolicy</small>"]
     end
 
     PIPE --> AGT
     PIPE --> REASON
     PIPE --> VAL
+    PIPE --> EMB
     SEC --> AGT
-    LAB --> EXP
-    EXP --> AGT
     REASON --> AGT
     OBS --> AGT
     EXPL --> OBS
@@ -81,13 +90,22 @@ graph TD
     AGT --> PROMPTS
     AGT --> CONTENT
     AGT --> MEM
+    AGT --> EMB
+    AGT --> RES
     AGT --> CFG
     TOOLS --> CFG
     PROMPTS --> CFG
     CONTENT --> CFG
     MEM --> CFG
+    MEM --> STORE
+    EMB --> CFG
     REASON --> CFG
     VAL --> CFG
+
+    %% Experiments/Lab are optional leaf dev-tooling modules. They depend on
+    %% the agent layer, but the core framework never imports them.
+    EXP -.optional.-> AGT
+    LAB -.optional.-> EXP
 ```
 
 ### Protocol & Class Hierarchy
@@ -171,6 +189,7 @@ classDiagram
     CompressionStrategy <|.. MapReduceStrategy
     MemoryStore <|.. InMemoryStore
     MemoryStore <|.. FileStore
+    MemoryStore <|.. SQLiteStore
     ValidationRule <|.. RegexRule
     ValidationRule <|.. FormatRule
     ValidationRule <|.. RangeRule
@@ -187,23 +206,43 @@ classDiagram
 The Core layer provides foundational types, configuration, exceptions, and the plugin
 system. Every other module depends on at least one Core component.
 
-- **types.py** -- Enumerations for model providers, agent states, and log levels.
+- **types.py** -- Enumerations for model providers, agent states, and log levels, the
+  `AgentLike` protocol, TypeVars, and shared type aliases. (The other extension-point
+  protocols -- `ToolProtocol`, `GuardProtocol`, `ReasoningPattern`, `StepExecutor`,
+  `DelegationStrategy`, `CompressionStrategy`, `MemoryStore`, `ValidationRule` -- live in
+  their respective modules, not in `types.py`.)
 - **config.py** -- `FireflyAgenticConfig`, a Pydantic Settings singleton that reads
-  from environment variables and `.env` files.
-- **exceptions.py** -- A structured exception hierarchy rooted at `FireflyAgenticError`.
+  from environment variables and `.env` files. It actively rejects removed serving/exposure
+  config fields (e.g. `otlp_endpoint`, `rbac_enabled`, `cors_allowed_origins`,
+  `cost_calculator`) with a `ValueError`.
+- **exceptions.py** -- A structured exception hierarchy of 34 classes rooted at
+  `FireflyAgenticError`.
 - **plugin.py** -- `PluginDiscovery` discovers and loads entry-point plugins at startup.
+- **resilience/circuit_breaker.py** -- `CircuitBreaker` (with `CircuitState` and
+  `CircuitBreakerOpenError`) and `CircuitBreakerMiddleware` for guarding agent runs against
+  cascading failures.
+- **storage/** -- `DatabaseStore` and `LocalBackend` (behind the `StorageBackend` protocol)
+  for binary/large-object persistence, with `WriteSession`, `LockToken` leasing,
+  `RetryPolicy`, `StorageMetadata`, and a family of storage error types.
 
 ### Security Layer
 
 The Security layer provides input sanitisation and prompt injection defence.
 
-- **security/prompt_guard.py** -- `PromptGuard` scans user prompts for 27 known injection
+- **security/prompt_guard.py** -- `PromptGuard` scans user prompts for 25 known injection
   patterns (including encoding bypass, zero-width evasion, multi-language, jailbreak,
   and system prompt extraction), reports matches, and optionally sanitises suspicious
-  fragments.
+  fragments. `default_prompt_guard` provides a shared instance.
 - **security/output_guard.py** -- `OutputGuard` scans LLM responses for PII (6 patterns),
   secrets (9 patterns), harmful content (4 patterns), custom patterns, and deny
-  patterns. See the [Security Guide](security.md).
+  patterns. `default_output_guard` provides a shared instance. See the
+  [Security Guide](security.md).
+- **security/encryption.py** -- `EncryptionProvider` protocol with `AESEncryptionProvider`,
+  and `EncryptedMemoryStore(store, encryption_key, provider=None)` which transparently
+  encrypts `MemoryEntry.content` at rest (keys, metadata, and timestamps stay plaintext).
+
+> Inbound-request authorization (RBAC/JWT) is intentionally **not** part of the framework --
+> it is a hosting concern owned by the host service.
 
 ### Agent Layer
 
@@ -226,8 +265,19 @@ a global registry, delegation strategies, and declarative decorators.
   remains the one-call convenience.
 - **context.py** -- `AgentContext` carries request-scoped data through an agent run.
 - **decorators.py** -- `@firefly_agent` registers an agent declaratively.
-- **middleware.py** -- `AgentMiddleware` protocol and `MiddlewareChain` for
-  pluggable before/after hooks on every agent run.
+- **middleware.py** -- `AgentMiddleware` protocol, `MiddlewareContext`, and `MiddlewareChain`
+  for pluggable before/after hooks on every agent run.
+- **builtin_middleware.py** -- The concrete middleware stack: `LoggingMiddleware`,
+  `PromptGuardMiddleware`, `CostGuardMiddleware`, `ObservabilityMiddleware`,
+  `ExplainabilityMiddleware`, `CacheMiddleware`, `OutputGuardMiddleware`,
+  `ValidationMiddleware`, and `RetryMiddleware`. Two more live elsewhere:
+  `PromptCacheMiddleware` (`prompt_cache.py`) and `CircuitBreakerMiddleware`
+  (`resilience/`) -- 11 concrete middleware in total. By default `FireflyAgent` auto-wires
+  `LoggingMiddleware` always, and `ObservabilityMiddleware` when `config.observability_enabled`
+  is set; the rest are opt-in. (Rate-limit retry is handled inside `FireflyAgent.run()`
+  rather than by `RetryMiddleware`.)
+- **prompt_cache.py** -- `PromptCacheMiddleware` and `CacheStatistics` for prompt-level
+  response caching.
 - **fallback.py** -- `FallbackModelWrapper` and `run_with_fallback()` for
   automatic model failover. Accepts both `str` and `Model` objects for
   cross-provider fallback chains.
@@ -244,17 +294,16 @@ a global registry, delegation strategies, and declarative decorators.
 
 - **reasoning/** -- Pluggable reasoning patterns (ReAct, Chain of Thought, etc.)
   with a pipeline for chaining patterns sequentially.
-- **observability/** -- OpenTelemetry tracing, custom metrics, event emission,
-  usage tracking, cost calculation, and budget enforcement.
-- **explainability/** -- Decision recording, natural-language explanation generation,
-  audit trails, and report building.
-
-### Experimentation Layer
-
-- **experiments/** -- Define experiments with named variants, run them, track metrics,
-  and compare results with statistical tests.
-- **lab/** -- Interactive sessions, benchmarks, datasets, side-by-side comparisons,
-  and pluggable evaluators.
+- **observability/** -- Emits OpenTelemetry spans (`FireflyTracer`), custom metrics
+  (`FireflyMetrics`), and events (`FireflyEvents`) through the OTel API; `UsageTracker`
+  rolls up token usage, cost is resolved via the resolver chain (`resolve_cost`,
+  `genai_prices_cost`, `provider_reported_cost`, `DEFAULT_RESOLVERS`; gated by the
+  `cost_strict` config flag), and `BudgetGate` enforces budgets. Configuring the OTel SDK
+  and exporters is the host service's responsibility.
+- **explainability/** -- Decision recording (`TraceRecorder.record(category, ...)` with a
+  `.records` property), natural-language explanation generation (`ExplanationGenerator`),
+  audit trails (`AuditTrail.append(actor, action, ...)`), and report building
+  (`ReportBuilder(title=...).build(records)`).
 
 ### Memory Layer
 
@@ -262,23 +311,56 @@ a global registry, delegation strategies, and declarative decorators.
   chat history wrapping pydantic-ai's `message_history` mechanism.
 - **memory/working.py** -- `WorkingMemory`: scoped key-value scratchpad for session
   facts, entities, and intermediate state.
-- **memory/store.py** -- `MemoryStore` protocol with `InMemoryStore` and `FileStore`.
+- **memory/store.py** -- `MemoryStore` protocol with `InMemoryStore`, `FileStore`, and
+  `SQLiteStore` backends (`MemoryScope` namespacing). `create_llm_summarizer` builds an
+  LLM-backed history summarizer.
 - **memory/manager.py** -- `MemoryManager` facade composing conversation and working
   memory, with `fork()` for multi-agent scope isolation.
+
+### Embeddings & Vector Store Layer
+
+These modules are reusable building blocks for retrieval-augmented workflows; the framework
+ships no turnkey corpus/RAG agent, but `RetrievalStep` and `EmbeddingStep` (orchestration)
+let you assemble retrieval pipelines.
+
+- **embeddings/** -- `BaseEmbedder` (the `EmbeddingProtocol`), `EmbedderRegistry`, similarity
+  helpers (`cosine_similarity`, `dot_product`, `euclidean_distance`), and 8 provider backends
+  under `embeddings/providers/`: OpenAI, Azure, Cohere, Google, Mistral, Voyage, Bedrock,
+  and Ollama.
+- **vectorstores/** -- `BaseVectorStore` (the `VectorStoreProtocol`), `VectorStoreRegistry`,
+  `VectorDocument`, `SearchFilter`/`SearchResult`, and 7 backends: `InMemoryVectorStore`,
+  `ChromaVectorStore`, `PineconeVectorStore`, `QdrantVectorStore`, `PgVectorVectorStore`,
+  and `SqliteVecVectorStore`. The scoped layer (`ScopedVectorStore`,
+  `TenantScopedVectorStore`, `scope_namespace`, `parse_scope_namespace`) partitions a
+  shared store by tenant/scope.
 
 ### Content Layer
 
 - **content/chunking.py** -- `TextChunker`, `DocumentSplitter`, `ImageTiler`, and
   `BatchProcessor` for splitting large inputs into model-friendly chunks.
+- **content/markdown_chunker.py** -- `MarkdownChunker` for structure-aware Markdown splitting.
 - **content/compression.py** -- `ContextCompressor` with pluggable strategies
-  (truncation, summarisation, map-reduce) and `SlidingWindowManager`.
+  (`TruncationStrategy`, `SummarizationStrategy`, `MapReduceStrategy`) and
+  `SlidingWindowManager`. `ContextCompressor.compress(...)` is async.
+- **content/binary/** (the `[binary]` extra) -- A document-conversion subsystem.
+  `BinaryNormalizer` (configured by `BinaryConfig`) turns uploaded files into
+  `BinaryArtifact`s: `sniff_media_type` detects the type, office documents are converted via
+  `build_office_converter` (`GotenbergConverter` / `LibreOfficeConverter` /
+  `NoOpOfficeConverter`, all implementing `OfficeConverter`), `PdfGuard` rejects encrypted or
+  corrupt PDFs, `ImageNormalizer` standardises images, and `ArchiveUnpacker` / `EmailUnpacker`
+  expand archives and email attachments.
 
 ### Validation Layer
 
-- **validation/rules.py** -- Composable validation rules (`Regex`, `Format`, `Range`,
-  `Enum`, `Custom`), `FieldValidator`, `OutputValidator`, and `ValidationReport`.
+- **validation/rules.py** -- Composable validation rules (`RegexRule`, `FormatRule`,
+  `RangeRule`, `EnumRule`, `CustomRule`), `FieldValidator`, `OutputValidator`, and
+  `ValidationReport`.
 - **validation/qos.py** -- `ConfidenceScorer`, `ConsistencyChecker`,
-  `GroundingChecker`, and `QoSGuard` for post-generation quality checks.
+  `GroundingChecker`, and `QoSGuard` (returning `QoSResult`) for post-generation quality
+  checks.
+- **validation/reviewer.py** -- `OutputReviewer` and `RubricReviewer` (LLM-as-judge, with
+  `from_rubric_file(...)`) for criteria-based review, returning `ReviewResult` with
+  `RetryAttempt` history.
 
 ### Orchestration Layer
 
@@ -287,30 +369,27 @@ a global registry, delegation strategies, and declarative decorators.
 - **pipeline/engine.py** -- `PipelineEngine` runs DAGs with eager scheduling, concurrency,
   retries, timeouts, condition gates, and failure strategy enforcement.
 - **pipeline/builder.py** -- Fluent `PipelineBuilder` for constructing pipelines.
-- **pipeline/steps.py** -- Step executors: `AgentStep`, `ReasoningStep`,
-  `CallableStep`, `FanOutStep`, `FanInStep`.
-- **pipeline/context.py** -- `PipelineContext` shared data bus.
-- **pipeline/result.py** -- `NodeResult`, `PipelineResult`, `ExecutionTraceEntry`.
+- **pipeline/steps.py** -- Step executors implementing the `StepExecutor` protocol:
+  `AgentStep`, `ReasoningStep`, `CallableStep`, `BranchStep`, `FanOutStep`, `FanInStep`,
+  `BatchLLMStep`, `EmbeddingStep`, and `RetrievalStep`
+  (`RetrievalStep(store, *, embedder=None, top_k=5, input_key="input")`).
+- **pipeline/context.py** -- `PipelineContext` shared data bus, with state reducers
+  (`append`, `extend`, `merge_dict`, `replace`) and control signals (`Pause`, `Send`).
+- **pipeline/result.py** -- `NodeResult`, `PipelineResult`, and `ExecutionTraceEntry`.
+- **pipeline checkpointing & audit** -- `Checkpointer` / `FileCheckpointer` (recording
+  `CheckpointRecord`s) for resumable runs, and the audit-log family `AuditLog` /
+  `FileAuditLog` / `LoggingAuditLog` / `OtelAuditLog` / `QueryableAuditLog` (emitting
+  `AuditEntry`s). Event hooks are wired via `EventHandler` / `PipelineEventHandler`.
 
-### Studio Layer
+### Experimentation Layer (optional dev-tooling)
 
-- **studio/server.py** -- FastAPI application factory for Firefly Agentic Studio,
-  mounting all API routers and serving the bundled SvelteKit frontend.
-- **studio/execution/io_nodes.py** -- Input/Output boundary node configuration models
-  (trigger types: manual, HTTP, queue, schedule, file_upload; destination types:
-  response, queue, webhook, store, multi).
-- **studio/execution/compiler.py** -- Compiles the visual canvas graph into a
-  runnable `PipelineEngine`, mapping each node type to a `StepExecutor`.
-- **studio/api/project_api.py** -- Per-project REST API for pipeline execution,
-  runtime lifecycle, file upload, and schema introspection.
-- **studio/api/graphql_api.py** -- Strawberry GraphQL endpoint for project queries
-  and pipeline execution mutations.
-- **studio/runtime.py** -- `ProjectRuntime` manages queue consumers (Kafka, RabbitMQ,
-  Redis) and APScheduler for scheduled triggers.
-- **studio/tunnel.py** -- `TunnelManager` creates Cloudflare Quick Tunnels for
-  exposing Studio to the internet without configuration.
-- **studio/custom_tools.py** -- CRUD management for user-defined tools (Python,
-  webhook, API types) with a pre-built connector catalog.
+These are optional, leaf dev-tooling modules; the core framework never imports them.
+
+- **experiments/** -- Define experiments with named variants, run them through an
+  `ExperimentRunner(experiment, agent_factory, *, context=None)`, track metrics with
+  `ExperimentTracker(storage_path=...)`, and compare results with `VariantComparator`.
+- **lab/** -- Interactive sessions, benchmarks, datasets, side-by-side comparisons,
+  and pluggable evaluators.
 
 ---
 
@@ -335,7 +414,7 @@ sequenceDiagram
     Caller->>Reg: agent_registry.get(name)
     Reg-->>Caller: FireflyAgent instance
     Caller->>Agent: agent.run(prompt, conversation_id)
-    Agent->>OBS: tracer.start_span("agent.run")
+    Agent->>OBS: tracer.agent_span(agent_name, model=...)
     Agent->>Mem: load conversation history
     Mem-->>Agent: message_history
     Agent->>Reason: pattern.execute(agent, prompt)
@@ -343,15 +422,15 @@ sequenceDiagram
         Reason->>Agent: LLM call via pydantic_ai.Agent
         Reason->>Tool: guard.check() → tool.execute()
         Tool-->>Reason: tool result
-        Reason->>OBS: metrics.record_tokens() · tracer.add_event()
-        Reason->>EXPL: recorder.record_decision()
+        Reason->>OBS: metrics.record_tokens() · tracer.event(...)
+        Reason->>EXPL: recorder.record(category, ...)
     end
     Reason-->>Agent: ReasoningResult(output, trace)
     Agent->>Val: reviewer.review(output)
     Val-->>Agent: validated output (retry on failure)
     Agent->>Mem: save conversation turn
-    Agent->>OBS: tracer.end_span() · metrics.record_latency()
-    Agent->>EXPL: audit_trail.append()
+    Agent->>OBS: metrics.record_latency() (span closes)
+    Agent->>EXPL: audit_trail.append(actor, action, ...)
     Agent-->>Caller: AgentResponse
 ```
 
@@ -424,6 +503,7 @@ graph TD
     subgraph Backends
         IMS["InMemoryStore<br/><small>dict-backed</small>"]
         FS["FileStore<br/><small>JSON file per namespace</small>"]
+        SQL["SQLiteStore<br/><small>SQLite-backed</small>"]
     end
 
     MM --> CM
@@ -431,6 +511,7 @@ graph TD
     CM --> TE
     WM -->|MemoryStore protocol| IMS
     WM -->|MemoryStore protocol| FS
+    WM -->|MemoryStore protocol| SQL
 
     style MM fill:#4a90d9,color:#fff
     style CM fill:#7eb8da,color:#000
@@ -545,8 +626,14 @@ environment variables prefixed with `FIREFLY_AGENTIC_`. For example:
 ```bash
 export FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o
 export FIREFLY_AGENTIC_LOG_LEVEL=DEBUG
-export FIREFLY_AGENTIC_OTEL_ENDPOINT=http://localhost:4317
+export FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true
 ```
+
+> The framework emits telemetry through the OpenTelemetry API but does **not** configure the
+> OTel SDK or any exporter. Wiring up the SDK/exporter endpoint (including any OTLP endpoint)
+> is the host service's responsibility; `config.observability_enabled` only gates whether the
+> framework emits spans and metrics. Supplying removed serving/exposure fields (e.g.
+> `otlp_endpoint`, `rbac_enabled`, `cors_allowed_origins`) raises a `ValueError`.
 
 The configuration singleton is available via:
 
