@@ -15,7 +15,6 @@
 """Security features for production deployments.
 
 This module provides:
-- **RBAC** (Role-Based Access Control) with JWT authentication
 - **Encryption** for sensitive data at rest
 - **SQL injection** prevention for database tools
 """
@@ -23,7 +22,6 @@ This module provides:
 from fireflyframework_agentic.security.encryption import AESEncryptionProvider, EncryptedMemoryStore, EncryptionProvider
 from fireflyframework_agentic.security.output_guard import OutputGuard, default_output_guard
 from fireflyframework_agentic.security.prompt_guard import PromptGuard, default_prompt_guard
-from fireflyframework_agentic.security.rbac import RBACManager, require_permission
 
 __all__ = [
     "AESEncryptionProvider",
@@ -31,8 +29,6 @@ __all__ = [
     "EncryptionProvider",
     "OutputGuard",
     "PromptGuard",
-    "RBACManager",
     "default_output_guard",
     "default_prompt_guard",
-    "require_permission",
 ]

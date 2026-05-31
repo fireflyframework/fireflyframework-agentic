@@ -24,6 +24,10 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
   `trace_context_scope`), the `WebhookSink`, and the `otlp_endpoint` config field. The
   framework still emits model/agent spans/metrics via the OpenTelemetry API; configuring the
   SDK/exporters and cross-service trace propagation is now the host's responsibility.
+- **BREAKING — inbound RBAC auth.** Removed `security.RBACManager`/`require_permission`, the
+  `rbac_enabled`/`rbac_jwt_secret`/`rbac_multi_tenant` config fields, and the `pyjwt`
+  dependency from the `security` extra (`cryptography` stays for `EncryptedMemoryStore`).
+  Inbound-request authorization is a hosting concern owned by the service.
 
 ## [26.05.32] - 2026-05-31
 

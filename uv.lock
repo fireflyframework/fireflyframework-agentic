@@ -1169,7 +1169,6 @@ all = [
     { name = "pillow-heif" },
     { name = "pinecone" },
     { name = "py7zr" },
-    { name = "pyjwt" },
     { name = "pymongo" },
     { name = "pypdf" },
     { name = "qdrant-client" },
@@ -1236,7 +1235,6 @@ reasoning-eval = [
 ]
 security = [
     { name = "cryptography" },
-    { name = "pyjwt" },
 ]
 vectorstores-chroma = [
     { name = "chromadb" },
@@ -1296,7 +1294,6 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.10.0" },
     { name = "pydantic-ai", specifier = ">=1.99.0" },
     { name = "pydantic-settings", specifier = ">=2.7.0" },
-    { name = "pyjwt", marker = "extra == 'security'", specifier = ">=2.10.0" },
     { name = "pymongo", marker = "extra == 'mongodb'", specifier = ">=4.10.0" },
     { name = "pypdf", marker = "extra == 'binary'", specifier = ">=4.3.0" },
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.0" },

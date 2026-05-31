@@ -19,7 +19,7 @@ This example shows all production-ready features working together:
 - Database persistence (PostgreSQL/MongoDB)
 - Model/agent telemetry (OpenTelemetry spans and metrics)
 - API quota management
-- Security (RBAC, encryption, SQL injection prevention)
+- Security (encryption, SQL injection prevention)
 - HTTP connection pooling
 - Incremental streaming
 - Batch processing
@@ -245,22 +245,15 @@ async def demo_security_features():
     """Demonstrate security features integration."""
     print("\n\n=== Security Features Integration ===\n")
 
-    # RBAC (if enabled)
-    print("1. RBAC (Role-Based Access Control):")
-    print("   Configure with: FIREFLY_AGENTIC_RBAC_ENABLED=true")
-    print("   Set JWT secret: FIREFLY_AGENTIC_RBAC_JWT_SECRET=your-secret")
-    print("   Use @require_permission decorator on agent endpoints")
-    print()
-
     # Encryption (if enabled)
-    print("2. Data Encryption:")
+    print("1. Data Encryption:")
     print("   Configure with: FIREFLY_AGENTIC_ENCRYPTION_ENABLED=true")
     print("   Set encryption key: FIREFLY_AGENTIC_ENCRYPTION_KEY=your-key-32-bytes")
     print("   Use EncryptedMemoryStore wrapper for sensitive data")
     print()
 
     # SQL Injection Prevention
-    print("3. SQL Injection Prevention:")
+    print("2. SQL Injection Prevention:")
     print("   Automatically enabled in DatabaseTool")
     print("   Detects 15+ dangerous SQL patterns")
     print("   Enforces parameterized queries")
@@ -315,8 +308,6 @@ async def demo_configuration_integration():
     print()
 
     print("# Security")
-    print("export FIREFLY_AGENTIC_RBAC_ENABLED=true")
-    print("export FIREFLY_AGENTIC_RBAC_JWT_SECRET=your-secret-key")
     print("export FIREFLY_AGENTIC_ENCRYPTION_ENABLED=true")
     print("export FIREFLY_AGENTIC_ENCRYPTION_KEY=your-32-byte-key")
     print()
@@ -342,7 +333,7 @@ async def main():
     print("✓ Database persistence (PostgreSQL/MongoDB)")
     print("✓ Model/agent telemetry (OpenTelemetry spans and metrics)")
     print("✓ API quota management")
-    print("✓ Security (RBAC, encryption, SQL injection prevention)")
+    print("✓ Security (encryption, SQL injection prevention)")
     print("✓ HTTP connection pooling")
     print("✓ Incremental streaming")
     print("✓ Batch processing")
@@ -375,7 +366,7 @@ async def main():
     print("For detailed documentation:")
     print("  - docs/deployment.md - Production deployment guide")
     print("  - docs/observability.md - Tracing and monitoring")
-    print("  - docs/security.md - RBAC and encryption")
+    print("  - docs/security.md - Encryption and SQL injection prevention")
     print("  - docs/memory.md - Database persistence")
     print()
 
