@@ -44,11 +44,11 @@ class AgentRegistry:
 
     The registry enables:
 
-    * **Discovery** -- the REST exposure layer queries the registry to
-      auto-generate endpoints for every agent.
+    * **Discovery** -- host services query the registry to discover agents
+      by name.
     * **Delegation** -- the :class:`DelegationRouter` selects among registered
       agents based on capability tags.
-    * **Lifecycle** -- the exposure layer can iterate over agents to run
+    * **Lifecycle** -- callers can iterate over registered agents to run
       warmup / shutdown hooks.
     """
 

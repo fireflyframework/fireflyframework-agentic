@@ -909,15 +909,6 @@ async with await agent.run_stream("Question", streaming_mode="incremental") as s
         print(token, end="", flush=True)
 ```
 
-### REST API Integration
-
-The framework's REST API exposes both streaming modes:
-
-- **`POST /agents/{name}/stream`** — Buffered streaming (SSE)
-- **`POST /agents/{name}/stream/incremental`** — Incremental streaming (SSE)
-
-See [REST API Guide](exposure-rest.md) for details.
-
 ---
 
 ## Run Timeout

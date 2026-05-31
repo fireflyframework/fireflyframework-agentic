@@ -26,7 +26,7 @@
     Run in non-interactive mode with default options.
 
 .PARAMETER Extras
-    Optional extras to install (rest, kafka, rabbitmq, redis, queues, all).
+    Optional extras to install (all).
 
 .EXAMPLE
     .\install.ps1
@@ -37,7 +37,7 @@
 [CmdletBinding()]
 param(
     [switch]$NonInteractive,
-    [ValidateSet("", "rest", "kafka", "rabbitmq", "redis", "queues", "all")]
+    [ValidateSet("", "all")]
     [string]$Extras = ""
 )
 
@@ -286,23 +286,13 @@ function Select-Extras {
 
     $options = @(
         "Core only (no optional dependencies)",
-        "REST API (FastAPI + Uvicorn + SSE)",
-        "Kafka (aiokafka)",
-        "RabbitMQ (aio-pika)",
-        "Redis (redis-py)",
-        "All queues (Kafka + RabbitMQ + Redis)",
-        "Everything (REST + all queues + costs)"
+        "Everything (all optional dependencies)"
     )
 
     $choice = Read-Choice "Choose a configuration:" $options
 
     switch ($choice) {
-        2 { $script:SelectedExtras = "rest" }
-        3 { $script:SelectedExtras = "kafka" }
-        4 { $script:SelectedExtras = "rabbitmq" }
-        5 { $script:SelectedExtras = "redis" }
-        6 { $script:SelectedExtras = "queues" }
-        7 { $script:SelectedExtras = "all" }
+        2 { $script:SelectedExtras = "all" }
         default { $script:SelectedExtras = "" }
     }
 

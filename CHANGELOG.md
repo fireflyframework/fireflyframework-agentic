@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.05.33] - 2026-05-31
+
+### Removed
+
+- **BREAKING — REST/queue exposure layer.** Deleted the `fireflyframework_agentic.exposure`
+  package (FastAPI app factory, HTTP/WS controllers, health probes, SSE, CORS/rate-limit/auth
+  middleware, and Kafka/RabbitMQ/Redis consumer/producer hosts), the `rest`/`kafka`/`rabbitmq`/
+  `redis`/`queues` extras, the `ExposureError`/`QueueConnectionError` exceptions, and the
+  REST-serving config fields `auth_api_keys`/`auth_bearer_tokens`/`cors_allowed_origins`.
+  Serving/hosting is now owned by the consuming service. The framework is a pure in-process
+  library: it serves no port and consumes no broker.
+
 ## [26.05.32] - 2026-05-31
 
 ### Fixed

@@ -23,19 +23,6 @@ wheels = [
 ]
 
 [[package]]
-name = "aio-pika"
-version = "9.6.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "aiormq" },
-    { name = "yarl" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/96/63/56354526f2e6e915c93bee6e4dedb35888fe82d6bc1a19f35f5a77e795ff/aio_pika-9.6.2.tar.gz", hash = "sha256:c49e9246080dc8ffa1bb0e4aca407bf3d8ad78c3ee3a93df88b68fe65d7a49b9", size = 70851, upload-time = "2026-03-22T19:03:20.878Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/25/05/256fa313f48bed075056d13593b92ce804be05d75f4f312be24edb82860a/aio_pika-9.6.2-py3-none-any.whl", hash = "sha256:2a5478af920d169795071c9c09c7542cd8cdece60438cf7804533dcbcce93b7f", size = 56269, upload-time = "2026-03-22T19:03:19.558Z" },
-]
-
-[[package]]
 name = "aiofile"
 version = "3.11.1"
 source = { registry = "https://pypi.org/simple" }
@@ -125,50 +112,12 @@ wheels = [
 ]
 
 [[package]]
-name = "aiokafka"
-version = "0.14.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "async-timeout" },
-    { name = "packaging" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/89/5f/dfc1180fd22d1acdc91949ec36e97199c43742dacb057cb8efed3679ed04/aiokafka-0.14.0.tar.gz", hash = "sha256:8ffdc945798ba4d3d132b705d4244d0a1f493925efb57c637a2ca88ee82794e1", size = 601374, upload-time = "2026-04-29T10:43:03.574Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/30/b0/c9384541b2e4cc52a16402fc53fb9d44af0d78d37954cf8c7271c376ad47/aiokafka-0.14.0-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:db16e43fac4c1c5006131046c1bf370c580d6ac4495a10ac7778245710943179", size = 345859, upload-time = "2026-04-29T10:42:45.449Z" },
-    { url = "https://files.pythonhosted.org/packages/7f/d1/fc266d9f4ffba4f197356c6ffdfbb0fe32e7cb874e240f299935d058ac06/aiokafka-0.14.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:32a8e91d88cf3ccf0778927715610d6579888c5f4748db4c2022cda25d628a48", size = 348284, upload-time = "2026-04-29T10:42:47.104Z" },
-    { url = "https://files.pythonhosted.org/packages/b2/8e/0c4c270786dac79f3fca74c6166c3a25b61b0d26132be0d69f0d7f206f0a/aiokafka-0.14.0-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:aad4a575a506e7784e25e430f27026fe2f4378560b21b7f4e8c9a54f0d06eaee", size = 1117867, upload-time = "2026-04-29T10:42:48.394Z" },
-    { url = "https://files.pythonhosted.org/packages/9d/7f/3b89fbd0a3be9edfd5b51e20bb5cd695c851219b63c501c051cf84367fa9/aiokafka-0.14.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:75e4a003502c9c3b5c705fa7c00d634ba146bf38fa5d525b80bb6ff6e3e779fe", size = 1108860, upload-time = "2026-04-29T10:42:50.249Z" },
-    { url = "https://files.pythonhosted.org/packages/b3/59/849aba75cff93277bf6bf8b630de79e902949ff7ec48e4b12a64e6e32cae/aiokafka-0.14.0-cp313-cp313-win32.whl", hash = "sha256:a128e213cbc2bce0ea3db65a68920e52cebeeb8209bf001ac7aa022a8bd54d7d", size = 310889, upload-time = "2026-04-29T10:42:52.038Z" },
-    { url = "https://files.pythonhosted.org/packages/c4/e5/52eab8f8515d23da7b5d90e2c5ba10eab9494a0314f749e3f73e003f4a50/aiokafka-0.14.0-cp313-cp313-win_amd64.whl", hash = "sha256:d6fa16bef3544be87bd1a7a8317b9d85e3da59f3202326d9ff22735ed052746e", size = 329470, upload-time = "2026-04-29T10:42:53.536Z" },
-    { url = "https://files.pythonhosted.org/packages/50/9d/984803315fe2b883ea6e08b1d9c8a752bd5c16e966d8714bacc67c72c417/aiokafka-0.14.0-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:5d70615d1530ad19d0c4da8d87abaec0a12b9fdaabffdcd4e400efa0c50ef80c", size = 346672, upload-time = "2026-04-29T10:42:55.267Z" },
-    { url = "https://files.pythonhosted.org/packages/49/df/da314966b7f3c3117bd78b082563cb03dbe3007848cb8f4b0932faf390a0/aiokafka-0.14.0-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:7e2392360c370b1ba6564c57d2889e154ecdb43157a8f7b7d7afe5e3c02fcc1a", size = 349594, upload-time = "2026-04-29T10:42:56.565Z" },
-    { url = "https://files.pythonhosted.org/packages/57/7a/160516944ea0e0f68ea78e38f944c52f5248c7c7df26cba22a40b9f25709/aiokafka-0.14.0-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:201e38ecc595f9f65a945f1ef9085157ddf28f25cd2e482fd9efa1fcf4638213", size = 1114112, upload-time = "2026-04-29T10:42:57.869Z" },
-    { url = "https://files.pythonhosted.org/packages/68/c4/9841118a2157e913e8ebfbc0a2b58f7b60f1f7202040c3e1df8925ed1184/aiokafka-0.14.0-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:1cd651e1f56571baae306fdd0b5509047ab9625797a24cd75902e139c5a20318", size = 1098571, upload-time = "2026-04-29T10:42:59.356Z" },
-    { url = "https://files.pythonhosted.org/packages/d6/a1/0af8a37849a4108ae227f46c4c62f6beab31863cf66ba318fb73b0be5b26/aiokafka-0.14.0-cp314-cp314-win32.whl", hash = "sha256:128127eb96dab98150b636bb5f480c80e15f02f82a118eec206a521c8cf7cf7c", size = 314107, upload-time = "2026-04-29T10:43:01.111Z" },
-    { url = "https://files.pythonhosted.org/packages/fa/18/fb46c65f758900c71d0f1c73b7802720f99cabcb1f4a11676573f9bc1b8f/aiokafka-0.14.0-cp314-cp314-win_amd64.whl", hash = "sha256:aa385039aa9b235359319bbdcf48c9c86a75d81c9c547d645056d00361238903", size = 333320, upload-time = "2026-04-29T10:43:02.424Z" },
-]
-
-[[package]]
 name = "aiolimiter"
 version = "1.2.1"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f1/23/b52debf471f7a1e42e362d959a3982bdcb4fe13a5d46e63d28868807a79c/aiolimiter-1.2.1.tar.gz", hash = "sha256:e02a37ea1a855d9e832252a105420ad4d15011505512a1a1d814647451b5cca9", size = 7185, upload-time = "2024-12-08T15:31:51.496Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f3/ba/df6e8e1045aebc4778d19b8a3a9bc1808adb1619ba94ca354d9ba17d86c3/aiolimiter-1.2.1-py3-none-any.whl", hash = "sha256:d3f249e9059a20badcb56b61601a83556133655c11d1eb3dd3e04ff069e5f3c7", size = 6711, upload-time = "2024-12-08T15:31:49.874Z" },
-]
-
-[[package]]
-name = "aiormq"
-version = "6.9.4"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pamqp" },
-    { name = "yarl" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/6c/0e/db90154d52d399108903fe603e5110a533c42065180265dd003788264080/aiormq-6.9.4.tar.gz", hash = "sha256:0e7c01b662804e1cc7ace9a17794e8c1192a27fc2afa96162362a6e61ae8e8ef", size = 49232, upload-time = "2026-03-23T09:18:19.493Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/6c/48/1ce3773f392f02ceda37aee168fade9d725483a9592c202d06044cd093ff/aiormq-6.9.4-py3-none-any.whl", hash = "sha256:726a8586695e863fba68cf88842065ab12348c9438dcebdfc9d0bddaf6083277", size = 32166, upload-time = "2026-03-23T09:18:17.523Z" },
 ]
 
 [[package]]
@@ -239,15 +188,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/38/61/0b9ae6399dd4a58d8c1b1dc5a27d6f2808023d0b5dd3104bb99f45a33ff6/argcomplete-3.6.3.tar.gz", hash = "sha256:62e8ed4fd6a45864acc8235409461b72c9a28ee785a2011cc5eb78318786c89c", size = 73754, upload-time = "2025-10-20T03:33:34.741Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/74/f5/9373290775639cb67a2fce7f629a1c240dce9f12fe927bc32b2736e16dfc/argcomplete-3.6.3-py3-none-any.whl", hash = "sha256:f5007b3a600ccac5d25bbce33089211dfd49eab4a7718da3f10e3082525a92ce", size = 43846, upload-time = "2025-10-20T03:33:33.021Z" },
-]
-
-[[package]]
-name = "async-timeout"
-version = "5.0.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/a5/ae/136395dfbfe00dfc94da3f3e136d0b13f394cba8f4841120e34226265780/async_timeout-5.0.1.tar.gz", hash = "sha256:d9321a7a3d5a6a5e187e824d2fa0793ce379a202935782d555d6e9d2735677d3", size = 9274, upload-time = "2024-11-06T16:41:39.6Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/fe/ba/e2081de779ca30d473f21f5b30e0e737c438205440784c7dfc81efc2b029/async_timeout-5.0.1-py3-none-any.whl", hash = "sha256:39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c", size = 6233, upload-time = "2024-11-06T16:41:37.9Z" },
 ]
 
 [[package]]
@@ -1081,22 +1021,6 @@ wheels = [
 ]
 
 [[package]]
-name = "fastapi"
-version = "0.136.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "annotated-doc" },
-    { name = "pydantic" },
-    { name = "starlette" },
-    { name = "typing-extensions" },
-    { name = "typing-inspection" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/5d/45/c130091c2dfa061bbfe3150f2a5091ef1adf149f2a8d2ae769ecaf6e99a2/fastapi-0.136.1.tar.gz", hash = "sha256:7af665ad7acfa0a3baf8983d393b6b471b9da10ede59c60045f49fbc89a0fa7f", size = 397448, upload-time = "2026-04-23T16:49:44.046Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5a/ff/2e4eca3ade2c22fe1dea7043b8ee9dabe47753349eb1b56a202de8af6349/fastapi-0.136.1-py3-none-any.whl", hash = "sha256:a6e9d7eeada96c93a4d69cb03836b44fa34e2854accb7244a1ece36cd4781c3f", size = 117683, upload-time = "2026-04-23T16:49:42.437Z" },
-]
-
-[[package]]
 name = "fastavro"
 version = "1.12.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1211,7 +1135,7 @@ wheels = [
 
 [[package]]
 name = "fireflyframework-agentic"
-version = "26.5.31"
+version = "26.5.33"
 source = { editable = "." }
 dependencies = [
     { name = "genai-prices" },
@@ -1228,8 +1152,6 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
-    { name = "aio-pika" },
-    { name = "aiokafka" },
     { name = "asyncpg" },
     { name = "boto3" },
     { name = "cairosvg" },
@@ -1237,7 +1159,6 @@ all = [
     { name = "cohere" },
     { name = "cryptography" },
     { name = "extract-msg" },
-    { name = "fastapi" },
     { name = "google-generativeai" },
     { name = "httpx" },
     { name = "mistralai" },
@@ -1252,11 +1173,8 @@ all = [
     { name = "pymongo" },
     { name = "pypdf" },
     { name = "qdrant-client" },
-    { name = "redis" },
     { name = "sqlalchemy" },
     { name = "sqlite-vec" },
-    { name = "sse-starlette" },
-    { name = "uvicorn", extra = ["standard"] },
     { name = "voyageai" },
     { name = "watchfiles" },
 ]
@@ -1295,9 +1213,6 @@ embeddings = [
 google-embeddings = [
     { name = "google-generativeai" },
 ]
-kafka = [
-    { name = "aiokafka" },
-]
 mistral-embeddings = [
     { name = "mistralai" },
 ]
@@ -1315,25 +1230,9 @@ postgres = [
     { name = "asyncpg" },
     { name = "sqlalchemy" },
 ]
-queues = [
-    { name = "aio-pika" },
-    { name = "aiokafka" },
-    { name = "redis" },
-]
-rabbitmq = [
-    { name = "aio-pika" },
-]
 reasoning-eval = [
     { name = "numpy" },
     { name = "pandas" },
-]
-redis = [
-    { name = "redis" },
-]
-rest = [
-    { name = "fastapi" },
-    { name = "sse-starlette" },
-    { name = "uvicorn", extra = ["standard"] },
 ]
 security = [
     { name = "cryptography" },
@@ -1363,8 +1262,6 @@ watch = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aio-pika", marker = "extra == 'rabbitmq'", specifier = ">=9.5.0" },
-    { name = "aiokafka", marker = "extra == 'kafka'", specifier = ">=0.12.0" },
     { name = "asyncpg", marker = "extra == 'postgres'", specifier = ">=0.30.0" },
     { name = "asyncpg", marker = "extra == 'vectorstores-pgvector'", specifier = ">=0.30.0" },
     { name = "boto3", marker = "extra == 'bedrock-embeddings'", specifier = ">=1.35.0" },
@@ -1373,9 +1270,7 @@ requires-dist = [
     { name = "cohere", marker = "extra == 'cohere-embeddings'", specifier = ">=5.0.0" },
     { name = "cryptography", marker = "extra == 'security'", specifier = ">=44.0.0" },
     { name = "extract-msg", marker = "extra == 'binary'", specifier = ">=0.51" },
-    { name = "fastapi", marker = "extra == 'rest'", specifier = ">=0.115.0" },
-    { name = "fireflyframework-agentic", extras = ["kafka", "rabbitmq", "redis"], marker = "extra == 'queues'" },
-    { name = "fireflyframework-agentic", extras = ["rest", "queues", "postgres", "mongodb", "security", "embeddings", "openai-embeddings", "cohere-embeddings", "google-embeddings", "mistral-embeddings", "voyage-embeddings", "azure-embeddings", "bedrock-embeddings", "ollama-embeddings", "vectorstores-chroma", "vectorstores-pinecone", "vectorstores-qdrant", "vectorstores-pgvector", "vectorstores-sqlite-vec", "watch", "binary"], marker = "extra == 'all'" },
+    { name = "fireflyframework-agentic", extras = ["postgres", "mongodb", "security", "embeddings", "openai-embeddings", "cohere-embeddings", "google-embeddings", "mistral-embeddings", "voyage-embeddings", "azure-embeddings", "bedrock-embeddings", "ollama-embeddings", "vectorstores-chroma", "vectorstores-pinecone", "vectorstores-qdrant", "vectorstores-pgvector", "vectorstores-sqlite-vec", "watch", "binary"], marker = "extra == 'all'" },
     { name = "genai-prices", specifier = ">=0.0.1" },
     { name = "google-generativeai", marker = "extra == 'google-embeddings'", specifier = ">=0.8.0" },
     { name = "httpx", specifier = ">=0.28.0" },
@@ -1411,17 +1306,14 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "qdrant-client", marker = "extra == 'vectorstores-qdrant'", specifier = ">=1.12.0" },
-    { name = "redis", marker = "extra == 'redis'", specifier = ">=5.2.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9.0" },
     { name = "sqlalchemy", marker = "extra == 'postgres'", specifier = ">=2.0.0" },
     { name = "sqlite-vec", marker = "extra == 'vectorstores-sqlite-vec'", specifier = ">=0.1.6" },
-    { name = "sse-starlette", marker = "extra == 'rest'", specifier = ">=2.0.0" },
     { name = "testcontainers", marker = "extra == 'dev'", specifier = ">=4.10.0" },
-    { name = "uvicorn", extras = ["standard"], marker = "extra == 'rest'", specifier = ">=0.34.0" },
     { name = "voyageai", marker = "extra == 'voyage-embeddings'", specifier = ">=0.3.0" },
     { name = "watchfiles", marker = "extra == 'watch'", specifier = ">=0.24.0" },
 ]
-provides-extras = ["rest", "kafka", "rabbitmq", "redis", "queues", "postgres", "mongodb", "security", "embeddings", "openai-embeddings", "cohere-embeddings", "google-embeddings", "mistral-embeddings", "voyage-embeddings", "azure-embeddings", "bedrock-embeddings", "ollama-embeddings", "reasoning-eval", "vectorstores-chroma", "vectorstores-sqlite-vec", "vectorstores-pinecone", "vectorstores-qdrant", "vectorstores-pgvector", "watch", "binary", "all", "dev"]
+provides-extras = ["postgres", "mongodb", "security", "embeddings", "openai-embeddings", "cohere-embeddings", "google-embeddings", "mistral-embeddings", "voyage-embeddings", "azure-embeddings", "bedrock-embeddings", "ollama-embeddings", "reasoning-eval", "vectorstores-chroma", "vectorstores-sqlite-vec", "vectorstores-pinecone", "vectorstores-qdrant", "vectorstores-pgvector", "watch", "binary", "all", "dev"]
 
 [[package]]
 name = "flatbuffers"
@@ -3095,15 +2987,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pamqp"
-version = "3.3.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/fb/62/35bbd3d3021e008606cd0a9532db7850c65741bbf69ac8a3a0d8cfeb7934/pamqp-3.3.0.tar.gz", hash = "sha256:40b8795bd4efcf2b0f8821c1de83d12ca16d5760f4507836267fd7a02b06763b", size = 30993, upload-time = "2024-01-12T20:37:25.085Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ac/8d/c1e93296e109a320e508e38118cf7d1fc2a4d1c2ec64de78565b3c445eb5/pamqp-3.3.0-py2.py3-none-any.whl", hash = "sha256:c901a684794157ae39b52cbf700db8c9aae7a470f13528b9d7b4e5f7202f8eb0", size = 33848, upload-time = "2024-01-12T20:37:21.359Z" },
-]
-
-[[package]]
 name = "pandas"
 version = "3.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -4341,15 +4224,6 @@ name = "red-black-tree-mod"
 version = "1.22"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/48/75/bfa342a2ebfc9623b701f1c6995b9906fd6dd2cedf6bce777d09e23303ac/red-black-tree-mod-1.22.tar.gz", hash = "sha256:38e3652903a2bf96379c27c2082ca0b7b905158662dd7ef0c97f4fd93a9aa908", size = 34173, upload-time = "2023-12-26T14:00:22.056Z" }
-
-[[package]]
-name = "redis"
-version = "7.4.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/7b/7f/3759b1d0d72b7c92f0d70ffd9dc962b7b7b5ee74e135f9d7d8ab06b8a318/redis-7.4.0.tar.gz", hash = "sha256:64a6ea7bf567ad43c964d2c30d82853f8df927c5c9017766c55a1d1ed95d18ad", size = 4943913, upload-time = "2026-03-24T09:14:37.53Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/74/3a/95deec7db1eb53979973ebd156f3369a72732208d1391cd2e5d127062a32/redis-7.4.0-py3-none-any.whl", hash = "sha256:a9c74a5c893a5ef8455a5adb793a31bb70feb821c86eccb62eebef5a19c429ec", size = 409772, upload-time = "2026-03-24T09:14:35.968Z" },
-]
 
 [[package]]
 name = "referencing"

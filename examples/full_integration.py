@@ -266,12 +266,6 @@ async def demo_security_features():
     print("   Enforces parameterized queries")
     print()
 
-    # CORS Security
-    print("4. CORS Security:")
-    print("   Default: No origins allowed (secure)")
-    print("   Configure: FIREFLY_AGENTIC_CORS_ALLOWED_ORIGINS=['https://app.example.com']")
-    print()
-
 
 async def demo_observability_integration():
     """Demonstrate observability features."""
@@ -329,7 +323,6 @@ async def demo_configuration_integration():
     print("export FIREFLY_AGENTIC_RBAC_JWT_SECRET=your-secret-key")
     print("export FIREFLY_AGENTIC_ENCRYPTION_ENABLED=true")
     print("export FIREFLY_AGENTIC_ENCRYPTION_KEY=your-32-byte-key")
-    print("export FIREFLY_AGENTIC_CORS_ALLOWED_ORIGINS=['https://app.example.com']")
     print()
 
     print("# HTTP Connection Pooling")
@@ -377,7 +370,6 @@ async def main():
     print("✓ Configuration is unified through environment variables")
     print("✓ Middleware provides composable production features")
     print("✓ Pipelines support all agent capabilities")
-    print("✓ REST API exposes all functionality")
     print()
     print("Quick Start:")
     print("  1. Set environment variables for desired features")

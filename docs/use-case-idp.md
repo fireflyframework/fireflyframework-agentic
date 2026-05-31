@@ -324,30 +324,6 @@ else:
 
 ---
 
-## Exposing the Pipeline via REST
-
-Register the pipeline as a REST endpoint so it can be called from external systems:
-
-```python
-from fireflyframework_agentic.exposure.rest import create_agentic_app
-
-# The IDP agents are already registered in the AgentRegistry.
-# The REST app auto-generates endpoints for each agent.
-app = create_agentic_app()
-
-# The pipeline itself can be exposed as a custom endpoint:
-from fastapi import UploadFile
-
-@app.post("/idp/process")
-async def process_document(file: UploadFile):
-    content = await file.read()
-    ctx = PipelineContext(inputs=content, metadata={"filename": file.filename})
-    result = await idp_pipeline.run(context=ctx)
-    return result.model_dump()
-```
-
----
-
 ## Key Framework Features Used
 
 This use case exercises the following framework capabilities:
@@ -381,8 +357,5 @@ This use case exercises the following framework capabilities:
   (with `warn_only`, `per_call_limit_usd`), Observability, Explainability, Cache,
   Validation.
 - **Logging** -- `configure_logging` for structured framework-wide logging.
-- **Exposure** -- REST API with authentication middleware (`add_auth_middleware`),
-  WebSocket endpoint (`/ws/agents/{name}`), conversation CRUD endpoints, and
-  SSE streaming.
 - **Observability** -- `PipelineResult.execution_trace` for per-node timing and status;
   bounded `UsageTracker` with `max_records` for production memory management.
