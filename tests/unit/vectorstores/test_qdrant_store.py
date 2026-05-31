@@ -130,20 +130,30 @@ class TestQdrantVectorStore:
         results = await store.search([1.0, 0.0], top_k=5)
         assert results == []
 
-    @patch("fireflyframework_agentic.vectorstores.qdrant_store.PointIdsList")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.HasIdCondition")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.MatchValue")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.FieldCondition")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.Filter")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.FilterSelector")
     @patch("fireflyframework_agentic.vectorstores.qdrant_store.AsyncQdrantClient")
-    async def test_delete(self, mock_client_cls, mock_points_list):
+    async def test_delete_is_namespace_scoped(
+        self, mock_client_cls, mock_selector, mock_filter, mock_fc, mock_mv, mock_hasid
+    ):
         mock_client = AsyncMock()
         mock_client_cls.return_value = mock_client
 
         from fireflyframework_agentic.vectorstores.qdrant_store import QdrantVectorStore
 
         store = QdrantVectorStore(collection_name="test")
-        await store.delete(["1", "2"])
+        await store.delete(["1", "2"], namespace="ns1")
+
         mock_client.delete.assert_called_once()
-        call_kwargs = mock_client.delete.call_args[1]
-        assert call_kwargs["collection_name"] == "test"
-        mock_points_list.assert_called_once_with(points=["1", "2"])
+        assert mock_client.delete.call_args[1]["collection_name"] == "test"
+        # Delete is confined to the namespace AND the requested ids -- not a bare
+        # id list (which would ignore the scope).
+        mock_mv.assert_called_once_with(value="ns1")
+        mock_fc.assert_called_once_with(key="_namespace", match=mock_mv.return_value)
+        mock_hasid.assert_called_once_with(has_id=["1", "2"])
 
     @patch("fireflyframework_agentic.vectorstores.qdrant_store.AsyncQdrantClient", None)
     async def test_import_error_when_qdrant_not_installed(self):

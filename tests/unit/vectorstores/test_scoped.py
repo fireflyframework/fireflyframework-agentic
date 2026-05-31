@@ -63,6 +63,17 @@ def test_scope_namespace_format() -> None:
     assert scope_namespace("acme", "main") == "t/acme/w/main"
 
 
+@pytest.mark.parametrize(
+    ("tenant", "workspace"),
+    [("a/b", "main"), ("acme", "w/x"), ("", "main"), ("acme", ""), ("t/x", "w/y")],
+)
+def test_scope_namespace_rejects_unsafe_components(tenant: str, workspace: str) -> None:
+    # Collision-freedom of the namespace depends on components never containing
+    # '/' (and never being empty); enforce it where the namespace is built.
+    with pytest.raises(ValueError):
+        scope_namespace(tenant, workspace)
+
+
 def test_parse_scope_namespace_roundtrip() -> None:
     assert parse_scope_namespace("t/acme/w/main") == ("acme", "main")
     tenant, workspace = "acme", "main"

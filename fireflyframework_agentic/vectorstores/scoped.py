@@ -38,7 +38,17 @@ def scope_namespace(tenant_id: str, workspace_id: str) -> str:
     The namespace is the authoritative isolation key: it is unique per scope and
     natively indexed/filtered by every backend, so confining reads and writes to
     it is sufficient for tenant isolation.
+
+    Collision-freedom requires the components to be non-empty and to contain no
+    ``/`` (otherwise distinct scopes could encode to the same namespace), so this
+    validates them where the namespace is built rather than trusting callers.
+
+    Raises:
+        ValueError: If either component is empty or contains ``/``.
     """
+    for label, value in (("tenant_id", tenant_id), ("workspace_id", workspace_id)):
+        if not value or "/" in value:
+            raise ValueError(f"invalid {label} for scope namespace: {value!r} (must be non-empty, no '/')")
     return f"t/{tenant_id}/w/{workspace_id}"
 
 

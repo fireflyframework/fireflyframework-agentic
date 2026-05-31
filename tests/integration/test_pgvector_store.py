@@ -109,6 +109,39 @@ class TestPgVectorIntegration:
         )
         assert [r.document.id for r in results] == ["1"]
 
+    async def test_metadata_filter_in(self, store: PgVectorVectorStore) -> None:
+        await store.upsert(
+            [
+                _doc("1", [1.0, 0.0, 0.0, 0.0], source_id="s1"),
+                _doc("2", [1.0, 0.0, 0.0, 0.0], source_id="s2"),
+                _doc("3", [1.0, 0.0, 0.0, 0.0], source_id="s3"),
+            ],
+            namespace="ns",
+        )
+        results = await store.search(
+            [1.0, 0.0, 0.0, 0.0],
+            top_k=5,
+            namespace="ns",
+            filters=[SearchFilter(field="source_id", operator="in", value=["s1", "s3"])],
+        )
+        assert {r.document.id for r in results} == {"1", "3"}
+
+    async def test_metadata_filter_ne(self, store: PgVectorVectorStore) -> None:
+        await store.upsert(
+            [
+                _doc("1", [1.0, 0.0, 0.0, 0.0], source_id="s1"),
+                _doc("2", [1.0, 0.0, 0.0, 0.0], source_id="s2"),
+            ],
+            namespace="ns",
+        )
+        results = await store.search(
+            [1.0, 0.0, 0.0, 0.0],
+            top_k=5,
+            namespace="ns",
+            filters=[SearchFilter(field="source_id", operator="ne", value="s1")],
+        )
+        assert [r.document.id for r in results] == ["2"]
+
     async def test_prepare_session_hook_is_invoked(self, pg_url: str) -> None:
         """A subclass can observe/augment the per-operation session (RLS seam)."""
         seen: list[str] = []
