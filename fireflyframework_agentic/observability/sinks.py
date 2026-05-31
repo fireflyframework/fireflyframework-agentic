@@ -7,14 +7,9 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from queue import Empty, Queue
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
-
-import httpx
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from fireflyframework_agentic.observability.events import default_events
 from fireflyframework_agentic.observability.metrics import default_metrics
@@ -138,113 +133,3 @@ class JSONLFileSink:
 
     def flush(self) -> None: ...
     def close(self) -> None: ...
-
-
-def _default_post(url: str, json: list[dict], headers: dict, timeout: float) -> Any:
-    """Default POST function. Replaced in tests via WebhookSink(_post=...)."""
-    return httpx.post(url, json=json, headers=headers, timeout=timeout)
-
-
-class WebhookSink:
-    """Batch records and POST them to an HTTP endpoint.
-
-    Parameters:
-        url: Endpoint URL.
-        batch_size: Records per POST. Drained sooner on ``flush_interval_s``.
-        flush_interval_s: Background flush cadence in seconds.
-        headers: Extra HTTP headers (Authorization, etc.).
-        max_retries: How many times to retry a 5xx response before dropping.
-        timeout_s: Per-request HTTP timeout.
-        _post: Internal hook for tests.
-    """
-
-    def __init__(
-        self,
-        url: str,
-        *,
-        batch_size: int = 50,
-        flush_interval_s: float = 5.0,
-        headers: dict[str, str] | None = None,
-        max_retries: int = 3,
-        timeout_s: float = 10.0,
-        _post: Callable[[str, list[dict], dict, float], Any] | None = None,
-    ) -> None:
-        self._url = url
-        self._batch_size = batch_size
-        self._interval = flush_interval_s
-        self._headers = headers or {}
-        self._max_retries = max_retries
-        self._timeout = timeout_s
-        self._post = _post or _default_post
-        self._queue: Queue[UsageRecord] = Queue()
-        self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._run, name="WebhookSink", daemon=True)
-        self._thread.start()
-
-    def emit(self, record: UsageRecord) -> None:
-        self._queue.put(record)
-
-    def _run(self) -> None:
-        buf: list[UsageRecord] = []
-        last_flush = time.monotonic()
-        while not self._stop.is_set():
-            try:
-                rec = self._queue.get(timeout=0.1)
-                buf.append(rec)
-            except Empty:
-                pass
-            now = time.monotonic()
-            if len(buf) >= self._batch_size or (buf and now - last_flush >= self._interval):
-                self._send(buf)
-                buf = []
-                last_flush = now
-        # Drain remaining on stop.
-        while True:
-            try:
-                buf.append(self._queue.get_nowait())
-            except Empty:
-                break
-        if buf:
-            self._send(buf)
-
-    def _send(self, batch: list[UsageRecord]) -> None:
-        payload = [r.model_dump(mode="json") for r in batch]
-        delay = 0.1
-        for attempt in range(self._max_retries + 1):
-            try:
-                resp = self._post(self._url, payload, self._headers, self._timeout)
-                status = int(getattr(resp, "status_code", 0))
-                if 200 <= status < 300:
-                    return
-                if 500 <= status < 600 and attempt < self._max_retries:
-                    time.sleep(delay)
-                    delay *= 2
-                    continue
-                logger.warning("WebhookSink: dropping batch (status %d)", status)
-                self._record_sink_error()
-                return
-            except Exception:  # noqa: BLE001
-                if attempt < self._max_retries:
-                    time.sleep(delay)
-                    delay *= 2
-                    continue
-                logger.warning("WebhookSink: dropping batch after exhausted retries", exc_info=True)
-                self._record_sink_error()
-                return
-
-    @staticmethod
-    def _record_sink_error() -> None:
-        try:
-            default_metrics.record_error(operation="cost_sink_errors")
-        except Exception:  # noqa: BLE001
-            logger.debug("Failed to emit cost_sink_errors metric", exc_info=True)
-
-    def flush(self) -> None:
-        """Block until the queue is empty (best-effort)."""
-        while not self._queue.empty():
-            time.sleep(0.01)
-
-    def close(self) -> None:
-        """Stop background thread and drain remaining records."""
-        self._stop.set()
-        self._thread.join(timeout=self._interval + 2.0)
