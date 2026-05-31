@@ -29,6 +29,11 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
   dependency from the `security` extra (`cryptography` stays for `EncryptedMemoryStore`).
   Inbound-request authorization is a hosting concern owned by the service.
 
+### Changed
+
+- **`experiments`/`lab` documented as optional** leaf developer-tooling modules (no code or
+  dependency change; they were already not imported by the core).
+
 ## [26.05.32] - 2026-05-31
 
 ### Fixed

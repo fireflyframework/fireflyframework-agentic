@@ -82,6 +82,10 @@ below it, keeping the dependency graph acyclic and each module independently tes
 | **[Experiments](experiments.md)** | `Experiment`, `Variant`, `ExperimentRunner`, `ExperimentTracker`, `VariantComparator` |
 | **[Lab](lab.md)** | `LabSession`, `Benchmark`, `EvalOrchestrator`, `EvalDataset`, `ModelComparison` |
 
+> **Optional developer tooling.** `experiments` and `lab` are leaf modules — nothing
+> in the core imports them and they add no third-party dependencies. Import them only
+> if you run experiments or evaluations; agent-building consumers can ignore them.
+
 ### Orchestration Layer
 
 | | |

@@ -346,6 +346,12 @@ classDiagram
   `EvalDataset` loads/saves test cases from JSON. `ModelComparison` runs the
   same prompts across multiple agents for side-by-side analysis.
 
+  > **Optional developer tooling.** `fireflyframework_agentic.experiments` (A/B
+  > experiments) and `fireflyframework_agentic.lab` (offline evaluation /
+  > benchmarking) are leaf modules — nothing in the core imports them and they add
+  > no third-party dependencies. Import them only if you run experiments or
+  > evaluations; agent-building consumers can ignore them.
+
 - **Embeddings** — `EmbeddingProtocol` (duck-typed) and `BaseEmbedder`
   (inheritance with auto-batching) provide provider-agnostic text embedding.
   Eight providers ship out of the box: **OpenAI**, **Azure OpenAI**, **Cohere**,
