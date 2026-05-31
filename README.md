@@ -108,7 +108,7 @@ graph TD
     subgraph Intelligence Layer
         REASON["Reasoning Patterns<br/><small>ReAct · CoT · PlanAndExecute<br/>Reflexion · ToT · GoalDecomposition<br/>ReasoningPipeline</small>"]
         VAL["Validation & QoS<br/><small>OutputReviewer · OutputValidator<br/>ConfidenceScorer · ConsistencyChecker<br/>GroundingChecker · 5 rule types</small>"]
-        OBS["Observability<br/><small>FireflyTracer · FireflyMetrics<br/>FireflyEvents · UsageTracker<br/>CostCalculator · @traced · @metered<br/>configure_exporters</small>"]
+        OBS["Observability<br/><small>FireflyTracer · FireflyMetrics<br/>FireflyEvents · UsageTracker<br/>CostCalculator · @traced · @metered</small>"]
         EXPL["Explainability<br/><small>TraceRecorder · ExplanationGenerator<br/>AuditTrail · ReportBuilder</small>"]
     end
 
@@ -321,8 +321,9 @@ classDiagram
   tools, and reasoning steps. `FireflyMetrics` records tokens (total, prompt,
   completion), latency, cost, errors, and reasoning depth via the OTel metrics API.
   `FireflyEvents` emits structured log records. `@traced` and `@metered` decorators
-  instrument any function with one line. `configure_exporters` sets up OTLP or
-  console exporters. `UsageTracker` automatically records token usage, cost
+  instrument any function with one line. The framework emits model and agent
+  telemetry purely through the OpenTelemetry API; the host application owns OTel
+  SDK and exporter configuration. `UsageTracker` automatically records token usage, cost
   estimates, and latency for every agent run, reasoning step, and pipeline
   execution. `CostCalculator` supports a built-in static price table and optional
   `genai-prices` integration. Budget enforcement logs warnings when configurable

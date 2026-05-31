@@ -18,6 +18,12 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
   REST-serving config fields `auth_api_keys`/`auth_bearer_tokens`/`cors_allowed_origins`.
   Serving/hosting is now owned by the consuming service. The framework is a pure in-process
   library: it serves no port and consumes no broker.
+- **BREAKING — service/infra observability.** Removed `observability.configure_exporters`
+  (global OTel SDK provider/exporter wiring), the W3C trace-context propagation helpers
+  (`inject_trace_context`/`extract_trace_context`/`get_trace_context`/`set_trace_context`/
+  `trace_context_scope`), the `WebhookSink`, and the `otlp_endpoint` config field. The
+  framework still emits model/agent spans/metrics via the OpenTelemetry API; configuring the
+  SDK/exporters and cross-service trace propagation is now the host's responsibility.
 
 ## [26.05.32] - 2026-05-31
 

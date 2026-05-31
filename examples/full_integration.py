@@ -17,7 +17,7 @@
 
 This example shows all production-ready features working together:
 - Database persistence (PostgreSQL/MongoDB)
-- Distributed tracing (W3C Trace Context)
+- Model/agent telemetry (OpenTelemetry spans and metrics)
 - API quota management
 - Security (RBAC, encryption, SQL injection prevention)
 - HTTP connection pooling
@@ -273,11 +273,9 @@ async def demo_observability_integration():
 
     config = get_config()
 
-    print("1. Distributed Tracing:")
-    print(f"   Enabled: {config.observability_enabled}")
-    print(f"   OTLP endpoint: {config.otlp_endpoint or 'Not configured'}")
-    print(f"   Service name: {config.service_name}")
-    print("   W3C Trace Context propagation: Enabled")
+    print("1. Telemetry:")
+    print(f"   Model/agent observability enabled: {config.observability_enabled}")
+    print("   Spans/metrics are emitted via the OpenTelemetry API; the host configures exporters.")
     print()
 
     print("2. Usage Tracking:")
@@ -306,10 +304,8 @@ async def demo_configuration_integration():
     print("export FIREFLY_AGENTIC_MEMORY_MONGODB_URL=mongodb://localhost:27017/")
     print()
 
-    print("# Distributed Tracing")
+    print("# Telemetry (the host owns OTel SDK/exporter configuration)")
     print("export FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true")
-    print("export FIREFLY_AGENTIC_OTLP_ENDPOINT=http://localhost:4317")
-    print("export FIREFLY_AGENTIC_SERVICE_NAME=my-genai-app")
     print()
 
     print("# Quota Management")
@@ -344,7 +340,7 @@ async def main():
     print()
     print("This example demonstrates all production-ready features working together:")
     print("✓ Database persistence (PostgreSQL/MongoDB)")
-    print("✓ Distributed tracing (W3C Trace Context)")
+    print("✓ Model/agent telemetry (OpenTelemetry spans and metrics)")
     print("✓ API quota management")
     print("✓ Security (RBAC, encryption, SQL injection prevention)")
     print("✓ HTTP connection pooling")

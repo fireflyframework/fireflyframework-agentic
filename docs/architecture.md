@@ -44,7 +44,7 @@ graph TD
     subgraph Intelligence Layer
         REASON["Reasoning Patterns<br/><small>ReAct · CoT · PlanAndExecute<br/>Reflexion · ToT · GoalDecomposition<br/>ReasoningPipeline</small>"]
         VAL["Validation & QoS<br/><small>OutputReviewer · OutputValidator<br/>ConfidenceScorer · ConsistencyChecker<br/>GroundingChecker · 5 rule types</small>"]
-        OBS["Observability<br/><small>FireflyTracer · FireflyMetrics<br/>FireflyEvents · UsageTracker<br/>CostCalculator · @traced · @metered<br/>configure_exporters</small>"]
+        OBS["Observability<br/><small>FireflyTracer · FireflyMetrics<br/>FireflyEvents · UsageTracker<br/>CostCalculator · @traced · @metered</small>"]
         EXPL["Explainability<br/><small>TraceRecorder · ExplanationGenerator<br/>AuditTrail · ReportBuilder</small>"]
     end
 

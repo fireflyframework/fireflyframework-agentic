@@ -58,9 +58,6 @@ class FireflyAgenticConfig(BaseSettings):
     observability_enabled: bool = True
     """Whether OpenTelemetry instrumentation is active."""
 
-    otlp_endpoint: str | None = None
-    """OTLP exporter endpoint.  When *None*, traces are exported to the console."""
-
     log_level: str = "INFO"
     """Logging level for the framework's internal logger."""
 
@@ -235,6 +232,7 @@ class FireflyAgenticConfig(BaseSettings):
                 "auth_api_keys",
                 "auth_bearer_tokens",
                 "cors_allowed_origins",
+                "otlp_endpoint",
             } & set(data)
             if removed:
                 raise ValueError(

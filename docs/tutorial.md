@@ -185,7 +185,6 @@ Here are the most commonly used configuration fields:
 - `default_temperature` — Sampling temperature (0.0–1.0).
 - `max_retries` — Default retry count for agent runs.
 - `observability_enabled` — Toggle OpenTelemetry instrumentation.
-- `otlp_endpoint` — OTLP exporter endpoint (default: console).
 - `prompt_templates_dir` — Directory for Jinja2 prompt files.
 - `default_chunk_size` / `default_chunk_overlap` — Content chunking defaults.
 - `max_context_tokens` — Maximum context window (default 128,000).
@@ -2906,23 +2905,17 @@ events.emit("pipeline.step.completed", {"step": "classify", "duration_ms": 250})
 
 ### Exporter Configuration
 
-Configure where traces and metrics go:
-
-```python
-from fireflyframework_agentic.observability import configure_exporters
-
-# Send to an OTLP collector (Jaeger, Grafana Tempo, etc.)
-configure_exporters(otlp_endpoint="http://localhost:4317")
-
-# Or just print to console for development
-configure_exporters(console=True)
-```
+The framework emits spans and metrics purely through the OpenTelemetry API; it
+does not configure the OTel SDK or any exporters itself. The host application
+owns OTel SDK and exporter setup — wire up your `TracerProvider`,
+`MeterProvider`, and the exporters (OTLP collector, console, etc.) however your
+deployment requires, and the framework's telemetry flows through the globally
+configured providers automatically.
 
 Configuration via environment variables:
 
 ```bash
 export FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true
-export FIREFLY_AGENTIC_OTLP_ENDPOINT=http://localhost:4317
 export FIREFLY_AGENTIC_LOG_LEVEL=DEBUG
 ```
 
@@ -3775,7 +3768,6 @@ FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o
 FIREFLY_AGENTIC_DEFAULT_TEMPERATURE=0.1
 FIREFLY_AGENTIC_MAX_RETRIES=3
 FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true
-FIREFLY_AGENTIC_OTLP_ENDPOINT=http://localhost:4317
 FIREFLY_AGENTIC_MEMORY_BACKEND=file
 FIREFLY_AGENTIC_MEMORY_FILE_DIR=.firefly_memory
 FIREFLY_AGENTIC_DEFAULT_CHUNK_SIZE=4000
@@ -3983,18 +3975,14 @@ async def process_document(document_bytes: bytes, metadata: dict | None = None) 
 ### Entry Point (main.py)
 
 `fireflyframework-agentic` is a pure in-process library: it serves no port and consumes
-no broker. Your host service owns serving and calls `process_document` directly. Configure
-observability once at startup, then invoke the pipeline:
+no broker. Your host service owns serving and calls `process_document` directly. The host
+also owns OTel SDK and exporter configuration; the framework emits spans and metrics
+through the OpenTelemetry API, so they flow through whatever providers the host has set up:
 
 ```python
 import asyncio
 
-from fireflyframework_agentic.observability import configure_exporters
-
 from .pipeline import process_document
-
-# Configure observability
-configure_exporters(otlp_endpoint="http://localhost:4317", console=True)
 
 
 async def main(document_bytes: bytes, filename: str) -> dict:
