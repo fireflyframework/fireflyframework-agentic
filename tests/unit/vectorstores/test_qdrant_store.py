@@ -76,7 +76,7 @@ class TestQdrantVectorStore:
         mock_point2.score = 0.80
 
         mock_client = AsyncMock()
-        mock_client.search.return_value = [mock_point1, mock_point2]
+        mock_client.query_points.return_value = MagicMock(points=[mock_point1, mock_point2])
         mock_client_cls.return_value = mock_client
 
         from fireflyframework_agentic.vectorstores.qdrant_store import QdrantVectorStore
@@ -101,7 +101,7 @@ class TestQdrantVectorStore:
     @patch("fireflyframework_agentic.vectorstores.qdrant_store.AsyncQdrantClient")
     async def test_search_with_filters(self, mock_client_cls, mock_fc, mock_mv, mock_filter):
         mock_client = AsyncMock()
-        mock_client.search.return_value = []
+        mock_client.query_points.return_value = MagicMock(points=[])
         mock_client_cls.return_value = mock_client
 
         from fireflyframework_agentic.vectorstores.qdrant_store import QdrantVectorStore
@@ -121,7 +121,7 @@ class TestQdrantVectorStore:
     @patch("fireflyframework_agentic.vectorstores.qdrant_store.AsyncQdrantClient")
     async def test_search_empty_results(self, mock_client_cls, mock_fc, mock_mv, mock_filter):
         mock_client = AsyncMock()
-        mock_client.search.return_value = []
+        mock_client.query_points.return_value = MagicMock(points=[])
         mock_client_cls.return_value = mock_client
 
         from fireflyframework_agentic.vectorstores.qdrant_store import QdrantVectorStore
