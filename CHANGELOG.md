@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.05.31] - 2026-05-31
+
+### Added
+
+- **pgvector vector store** — `fireflyframework_agentic.vectorstores.PgVectorVectorStore`,
+  an asyncpg-backed `BaseVectorStore` peer to the Chroma / Pinecone / Qdrant
+  adapters. Owns its table with an HNSW cosine index, namespace-scoped storage,
+  idempotent runtime schema bootstrap, and metadata filtering. Adds an
+  overridable `_prepare_session(conn, *, namespace)` per-transaction hook (default
+  no-op) for connection-level session setup — e.g. `SET LOCAL` for Postgres
+  Row-Level Security GUCs. New optional extra `[vectorstores-pgvector]` (asyncpg);
+  requires the `pgvector` extension on the server. This fills the only vector
+  backend the framework was missing.
+- **Tenant-scoped vector store layer** — `fireflyframework_agentic.vectorstores.scoped`:
+  `ScopedVectorStore` (an explicit, fail-loud `Protocol` with required keyword-only
+  `tenant_id` / `workspace_id`) and `TenantScopedVectorStore`, a backend-agnostic
+  wrapper that folds `(tenant_id, workspace_id)` into the canonical
+  `"t/<tenant>/w/<workspace>"` namespace (and stamps it onto document metadata),
+  making **any** `VectorStoreProtocol` backend multi-tenant with one wrapper. Adds
+  `scope_namespace` / `parse_scope_namespace` helpers. The existing
+  single-namespace `VectorStoreProtocol` is unchanged (additive, non-breaking).
+
 ## [26.05.30] - 2026-05-31
 
 ### Added

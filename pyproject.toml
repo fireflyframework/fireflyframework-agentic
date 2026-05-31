@@ -1,6 +1,6 @@
 [project]
 name = "fireflyframework-agentic"
-version = "26.05.30"
+version = "26.05.31"
 description = "A GenAI metaframework built on Pydantic AI for building production-grade GenAI applications with agents, reasoning patterns, prompt engineering, observability, and more."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -117,6 +117,9 @@ vectorstores-pinecone = [
 vectorstores-qdrant = [
     "qdrant-client>=1.12.0",
 ]
+vectorstores-pgvector = [
+    "asyncpg>=0.30.0",
+]
 watch = ["watchfiles>=0.24.0"]
 # Binary normalisation (fireflyframework_agentic.content.binary): convert
 # uploaded files (PDF/Office/images/archives/emails) into consumer-ready
@@ -132,7 +135,7 @@ binary = [
     "extract-msg>=0.51",
 ]
 all = [
-    "fireflyframework-agentic[rest,queues,postgres,mongodb,security,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,vectorstores-sqlite-vec,watch,binary]",
+    "fireflyframework-agentic[rest,queues,postgres,mongodb,security,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,vectorstores-pgvector,vectorstores-sqlite-vec,watch,binary]",
 ]
 dev = [
     "pytest>=8.3.0",
