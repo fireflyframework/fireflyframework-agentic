@@ -102,15 +102,15 @@ class QdrantVectorStore(BaseVectorStore):
                 if f.operator == "eq":
                     must_conditions.append(FieldCondition(key=f.field, match=MatchValue(value=f.value)))  # type: ignore[misc]
 
-        results = await self._client.search(
+        response = await self._client.query_points(
             collection_name=self._collection_name,
-            query_vector=query_embedding,
+            query=query_embedding,
             limit=top_k,
             query_filter=Filter(must=must_conditions),  # type: ignore[misc]
         )
 
         search_results = []
-        for point in results:
+        for point in response.points:
             payload = dict(point.payload or {})
             text = payload.pop("text", "")
             payload.pop("_namespace", None)

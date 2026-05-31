@@ -35,6 +35,12 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
   distance, sized to `vector_size`, idempotent) and exposes `close()`. Previously
   the collection had to be created out-of-band before the first `upsert`.
 
+### Fixed
+
+- **`QdrantVectorStore` search** now uses `query_points` instead of the removed
+  `AsyncQdrantClient.search`, restoring compatibility with `qdrant-client`
+  >= 1.12 (the method was dropped upstream).
+
 ## [26.05.30] - 2026-05-31
 
 ### Added
