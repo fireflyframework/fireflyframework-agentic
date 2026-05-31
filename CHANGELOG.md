@@ -29,6 +29,12 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
   `scope_namespace` / `parse_scope_namespace` helpers. The existing
   single-namespace `VectorStoreProtocol` is unchanged (additive, non-breaking).
 
+### Changed
+
+- **`QdrantVectorStore`** now creates its collection on `initialise()` (cosine
+  distance, sized to `vector_size`, idempotent) and exposes `close()`. Previously
+  the collection had to be created out-of-band before the first `upsert`.
+
 ## [26.05.30] - 2026-05-31
 
 ### Added

@@ -61,6 +61,20 @@ class QdrantVectorStore(BaseVectorStore):
         self._collection_name = collection_name
         self._vector_size = vector_size
 
+    async def initialise(self) -> None:
+        """Create the collection (cosine distance) if it does not exist. Idempotent."""
+        existing = await self._client.get_collections()
+        names = {c.name for c in existing.collections}
+        if self._collection_name not in names:
+            await self._client.create_collection(
+                collection_name=self._collection_name,
+                vectors_config=VectorParams(size=self._vector_size, distance=Distance.COSINE),  # type: ignore[misc]
+            )
+
+    async def close(self) -> None:
+        """Close the underlying client connection."""
+        await self._client.close()
+
     async def _upsert(self, documents: list[VectorDocument], namespace: str) -> None:
         points = [
             PointStruct(  # type: ignore[misc]

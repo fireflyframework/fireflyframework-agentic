@@ -168,3 +168,47 @@ class TestQdrantVectorStore:
         mock_client_cls.assert_called_once_with(url="http://custom:6333", api_key="secret")
         assert store._collection_name == "my_coll"
         assert store._vector_size == 768
+
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.VectorParams")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.Distance")
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.AsyncQdrantClient")
+    async def test_initialise_creates_collection_when_absent(self, mock_client_cls, mock_distance, mock_vparams):
+        mock_client = AsyncMock()
+        collections = MagicMock()
+        collections.collections = []
+        mock_client.get_collections.return_value = collections
+        mock_client_cls.return_value = mock_client
+
+        from fireflyframework_agentic.vectorstores.qdrant_store import QdrantVectorStore
+
+        store = QdrantVectorStore(collection_name="c", vector_size=8)
+        await store.initialise()
+        mock_client.create_collection.assert_called_once()
+        assert mock_client.create_collection.call_args.kwargs["collection_name"] == "c"
+
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.AsyncQdrantClient")
+    async def test_initialise_is_noop_when_collection_exists(self, mock_client_cls):
+        mock_client = AsyncMock()
+        existing = MagicMock()
+        existing.name = "c"
+        collections = MagicMock()
+        collections.collections = [existing]
+        mock_client.get_collections.return_value = collections
+        mock_client_cls.return_value = mock_client
+
+        from fireflyframework_agentic.vectorstores.qdrant_store import QdrantVectorStore
+
+        store = QdrantVectorStore(collection_name="c", vector_size=8)
+        await store.initialise()
+        mock_client.create_collection.assert_not_called()
+
+    @patch("fireflyframework_agentic.vectorstores.qdrant_store.AsyncQdrantClient")
+    async def test_close_closes_client(self, mock_client_cls):
+        mock_client = AsyncMock()
+        mock_client_cls.return_value = mock_client
+
+        from fireflyframework_agentic.vectorstores.qdrant_store import QdrantVectorStore
+
+        store = QdrantVectorStore(collection_name="c")
+        await store.close()
+        mock_client.close.assert_called_once()
