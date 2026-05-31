@@ -176,16 +176,7 @@ class FireflyAgenticConfig(BaseSettings):
     rate_limit_max_delay: float = 60.0
     """Maximum delay (seconds) between rate limit retries."""
 
-    # -- Security (RBAC & Encryption) ----------------------------------------
-    rbac_enabled: bool = False
-    """Whether Role-Based Access Control is active."""
-
-    rbac_jwt_secret: str | None = None
-    """JWT secret key for token signing and verification."""
-
-    rbac_multi_tenant: bool = False
-    """Whether to enforce tenant isolation in RBAC."""
-
+    # -- Security (Encryption) -----------------------------------------------
     encryption_enabled: bool = False
     """Whether data encryption at rest is active."""
 
@@ -233,6 +224,9 @@ class FireflyAgenticConfig(BaseSettings):
                 "auth_bearer_tokens",
                 "cors_allowed_origins",
                 "otlp_endpoint",
+                "rbac_enabled",
+                "rbac_jwt_secret",
+                "rbac_multi_tenant",
             } & set(data)
             if removed:
                 raise ValueError(
