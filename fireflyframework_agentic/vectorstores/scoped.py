@@ -64,9 +64,7 @@ def parse_scope_namespace(namespace: str) -> tuple[str, str]:
     """
     parts = namespace.split("/")
     if len(parts) != 4 or parts[0] != "t" or parts[2] != "w" or not parts[1] or not parts[3]:
-        raise ValueError(
-            f"not a scope namespace: {namespace!r}; expected 't/<tenant_id>/w/<workspace_id>'"
-        )
+        raise ValueError(f"not a scope namespace: {namespace!r}; expected 't/<tenant_id>/w/<workspace_id>'")
     return parts[1], parts[3]
 
 
@@ -80,9 +78,7 @@ class ScopedVectorStore(Protocol):
     can never be lost silently.
     """
 
-    async def upsert(
-        self, documents: list[VectorDocument], *, tenant_id: str, workspace_id: str
-    ) -> None: ...
+    async def upsert(self, documents: list[VectorDocument], *, tenant_id: str, workspace_id: str) -> None: ...
 
     async def search(
         self,
@@ -119,9 +115,7 @@ class TenantScopedVectorStore:
         self._inner = inner
         self._stamp_metadata = stamp_metadata
 
-    async def upsert(
-        self, documents: list[VectorDocument], *, tenant_id: str, workspace_id: str
-    ) -> None:
+    async def upsert(self, documents: list[VectorDocument], *, tenant_id: str, workspace_id: str) -> None:
         namespace = scope_namespace(tenant_id, workspace_id)
         scoped_docs = [self._scope_document(doc, tenant_id, workspace_id, namespace) for doc in documents]
         await self._inner.upsert(scoped_docs, namespace=namespace)
@@ -159,9 +153,7 @@ class TenantScopedVectorStore:
         if close_fn is not None:
             await close_fn()
 
-    def _scope_document(
-        self, doc: VectorDocument, tenant_id: str, workspace_id: str, namespace: str
-    ) -> VectorDocument:
+    def _scope_document(self, doc: VectorDocument, tenant_id: str, workspace_id: str, namespace: str) -> VectorDocument:
         metadata = dict(doc.metadata)
         if self._stamp_metadata:
             metadata["tenant_id"] = tenant_id

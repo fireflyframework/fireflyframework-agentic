@@ -174,9 +174,7 @@ class PgVectorVectorStore(BaseVectorStore):
         for doc in documents:
             if doc.embedding is None:
                 raise VectorStoreError(f"VectorDocument {doc.id!r} has no embedding; pgvector requires one.")
-            rows.append(
-                (doc.id, namespace, _vector_literal(doc.embedding), doc.text, json.dumps(doc.metadata))
-            )
+            rows.append((doc.id, namespace, _vector_literal(doc.embedding), doc.text, json.dumps(doc.metadata)))
         if not rows:
             return
         pool = await self._ensure_pool()
