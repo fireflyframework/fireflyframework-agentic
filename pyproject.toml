@@ -54,7 +54,7 @@ mongodb = [
     "pymongo>=4.10.0",
 ]
 security = [
-    "cryptography>=44.0.0",
+    "cryptography>=48.0.1",
 ]
 embeddings = [
     "numpy>=1.26.0",
