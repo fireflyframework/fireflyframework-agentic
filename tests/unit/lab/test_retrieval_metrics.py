@@ -172,10 +172,18 @@ def test_empty_results_returns_zero_n_queries():
 # ── optional fields ───────────────────────────────────────────────────────────
 
 
-def test_no_answer_rate_is_none_when_no_answer_field():
-    results = [_row(gold_rank=1)]
+def test_no_answer_rate_is_zero_when_answer_present():
+    # Rows with a non-empty answer string are counted as answered.
+    results = [{**_row(gold_rank=1), "answer": "some answer text"}]
     m = compute_retrieval_metrics(results)
     assert m["no_answer_rate"] == 0.0
+
+
+def test_no_answer_rate_is_one_when_no_answer_field():
+    # Rows without an answer field are treated as no-answer by the implementation.
+    results = [_row(gold_rank=1)]
+    m = compute_retrieval_metrics(results)
+    assert m["no_answer_rate"] == 1.0
 
 
 def test_citation_precision_is_none_when_no_citations():
