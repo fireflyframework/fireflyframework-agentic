@@ -34,7 +34,9 @@ from importlib.metadata import PackageNotFoundError, version
 from fireflyframework_agentic.evaluation.gates import GateResult, Verdict, render_scorecard, run_gates
 from fireflyframework_agentic.evaluation.champion import ChampionRecord, invalidate_champion, load_champion, save_champion
 from fireflyframework_agentic.evaluation.judge import AdvisoryReport, run_judge
+from fireflyframework_agentic.evaluation.matcher import anchored, matches, source_stem, tokens
 from fireflyframework_agentic.evaluation.retrieval import RetrieverMetrics, compute_retrieval_metrics
+from fireflyframework_agentic.evaluation.stats import aa_band, aggregate_grounding, left_skew_flag
 
 try:
     __version__ = version("fireflyframework-agentic")
@@ -54,4 +56,11 @@ __all__ = [
     "run_judge",
     "RetrieverMetrics",
     "compute_retrieval_metrics",
+    "anchored",
+    "matches",
+    "source_stem",
+    "tokens",
+    "aa_band",
+    "aggregate_grounding",
+    "left_skew_flag",
 ]
