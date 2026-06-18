@@ -31,10 +31,12 @@ Champion tracking:
 
 from importlib.metadata import PackageNotFoundError, version
 
+from fireflyframework_agentic.evaluation.corpus import EMPTY, FABRICATED, SOURCE_UNKNOWN, VERIFIED, corpus_sha256, load_corpus, verify_evidence_index
 from fireflyframework_agentic.evaluation.gates import GateResult, Verdict, render_scorecard, run_gates
 from fireflyframework_agentic.evaluation.champion import ChampionRecord, invalidate_champion, load_champion, save_champion
 from fireflyframework_agentic.evaluation.judge import AdvisoryReport, run_judge
 from fireflyframework_agentic.evaluation.matcher import anchored, matches, source_stem, tokens
+from fireflyframework_agentic.evaluation.registry import Registry, RegistryItem, load_registry, registry_sha256
 from fireflyframework_agentic.evaluation.retrieval import RetrieverMetrics, compute_retrieval_metrics
 from fireflyframework_agentic.evaluation.stats import aa_band, aggregate_grounding, left_skew_flag
 
@@ -44,6 +46,13 @@ except PackageNotFoundError:
     __version__ = "0.0.0+dev"
 
 __all__ = [
+    "EMPTY",
+    "FABRICATED",
+    "SOURCE_UNKNOWN",
+    "VERIFIED",
+    "corpus_sha256",
+    "load_corpus",
+    "verify_evidence_index",
     "GateResult",
     "Verdict",
     "run_gates",
@@ -54,6 +63,10 @@ __all__ = [
     "invalidate_champion",
     "AdvisoryReport",
     "run_judge",
+    "Registry",
+    "RegistryItem",
+    "load_registry",
+    "registry_sha256",
     "RetrieverMetrics",
     "compute_retrieval_metrics",
     "anchored",
