@@ -36,6 +36,7 @@ from fireflyframework_agentic.evaluation.gates import GateResult, Verdict, g2_re
 from fireflyframework_agentic.evaluation.scorecard import render_scorecard, verdict, VERDICT_PROMOTE, VERDICT_HOLD
 from fireflyframework_agentic.evaluation.champion import ChampionRecord, invalidate_champion, load_champion, save_champion
 from fireflyframework_agentic.evaluation.judge import AdvisoryReport, run_judge
+from fireflyframework_agentic.evaluation.judge_client import JudgeClient, OllamaEmbedder, build_embedder, cosine
 from fireflyframework_agentic.evaluation.matcher import anchored, matches, source_stem, tokens
 from fireflyframework_agentic.evaluation.registry import Registry, RegistryItem, load_registry, registry_sha256
 from fireflyframework_agentic.evaluation.retrieval import RetrieverMetrics, compute_retrieval_metrics
@@ -68,6 +69,10 @@ __all__ = [
     "invalidate_champion",
     "AdvisoryReport",
     "run_judge",
+    "JudgeClient",
+    "OllamaEmbedder",
+    "build_embedder",
+    "cosine",
     "Registry",
     "RegistryItem",
     "load_registry",

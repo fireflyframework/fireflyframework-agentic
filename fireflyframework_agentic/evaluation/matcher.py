@@ -29,12 +29,7 @@ import re
 
 import numpy as np
 
-
-def cosine(a, b) -> float:
-    """Cosine similarity between two vectors."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
+from fireflyframework_agentic.evaluation.judge_client import cosine
 
 
 def tokens(text: str) -> list[str]:
