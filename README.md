@@ -412,6 +412,12 @@ classDiagram
   `EvalDataset` loads/saves test cases from JSON. `ModelComparison` runs the
   same prompts across multiple agents for side-by-side analysis.
 
+- **Evaluation** — Gate-based quality gates (G1–G5), LLM-as-judge advisory scoring,
+  champion/challenger tracking, and deterministic retrieval metrics for assessing
+  agent and pipeline outputs. The `flyeval` CLI drives the full gate pipeline from
+  the command line. Install with `pip install "fireflyframework-agentic[evaluation]"`.
+  See [docs/evaluation.md](docs/evaluation.md) for the full guide.
+
   > **Optional developer tooling.** `fireflyframework_agentic.experiments` (A/B
   > experiments) and `fireflyframework_agentic.lab` (offline evaluation /
   > benchmarking) are leaf modules — nothing in the core imports them and they add
@@ -817,6 +823,7 @@ Detailed guides for each module:
 - [Security](docs/security.md) — Prompt/output guards, at-rest encryption
 - [Experiments](docs/experiments.md) — A/B testing, variant comparison
 - [Lab](docs/lab.md) — Benchmarks, datasets, evaluators
+- [Evaluation](docs/evaluation.md) — Gate pipeline, flyeval CLI, champion/challenger, retrieval metrics
 - Studio — moved to [fireflyframework-agentic-studio](https://github.com/fireflyframework/fireflyframework-agentic-studio)
 ---
 
