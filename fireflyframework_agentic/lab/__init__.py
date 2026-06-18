@@ -18,6 +18,7 @@ from fireflyframework_agentic.lab.benchmark import Benchmark, BenchmarkResult
 from fireflyframework_agentic.lab.comparison import ComparisonEntry, ModelComparison
 from fireflyframework_agentic.lab.dataset import EvalCase, EvalDataset
 from fireflyframework_agentic.lab.evaluator import EvalOrchestrator, EvalReport, EvalResult
+from fireflyframework_agentic.lab.retrieval_metrics import RetrieverMetrics, compute_retrieval_metrics
 from fireflyframework_agentic.lab.session import LabSession, SessionEntry
 
 __all__ = [
@@ -31,5 +32,7 @@ __all__ = [
     "EvalResult",
     "LabSession",
     "ModelComparison",
+    "RetrieverMetrics",
     "SessionEntry",
+    "compute_retrieval_metrics",
 ]
