@@ -32,7 +32,8 @@ Champion tracking:
 from importlib.metadata import PackageNotFoundError, version
 
 from fireflyframework_agentic.evaluation.corpus import EMPTY, FABRICATED, SOURCE_UNKNOWN, VERIFIED, corpus_sha256, load_corpus, verify_evidence_index
-from fireflyframework_agentic.evaluation.gates import GateResult, Verdict, g2_recall_precision, render_scorecard, run_gates
+from fireflyframework_agentic.evaluation.gates import GateResult, Verdict, g2_recall_precision, run_gates
+from fireflyframework_agentic.evaluation.scorecard import render_scorecard, verdict, VERDICT_PROMOTE, VERDICT_HOLD
 from fireflyframework_agentic.evaluation.champion import ChampionRecord, invalidate_champion, load_champion, save_champion
 from fireflyframework_agentic.evaluation.judge import AdvisoryReport, run_judge
 from fireflyframework_agentic.evaluation.matcher import anchored, matches, source_stem, tokens
@@ -58,6 +59,9 @@ __all__ = [
     "g2_recall_precision",
     "run_gates",
     "render_scorecard",
+    "verdict",
+    "VERDICT_PROMOTE",
+    "VERDICT_HOLD",
     "ChampionRecord",
     "load_champion",
     "save_champion",
