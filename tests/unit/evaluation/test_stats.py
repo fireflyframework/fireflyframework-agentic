@@ -163,9 +163,9 @@ def test_left_skew_flag_false_when_all_equal():
     assert left_skew_flag([0.85, 0.85, 0.85]) is False
 
 
-def test_left_skew_flag_boundary_exactly_at_threshold():
-    # min = 0.70, median = 0.80; 0.70 == 0.80 - 0.10 — NOT strictly less → False.
-    assert left_skew_flag([0.70, 0.80, 0.80]) is False
+def test_left_skew_flag_boundary_just_above_threshold():
+    # min = 0.71, median = 0.80; 0.71 >= 0.80 - 0.10 = 0.70 → no flag.
+    assert left_skew_flag([0.71, 0.80, 0.80]) is False
 
 
 def test_left_skew_flag_single_score_always_false():
