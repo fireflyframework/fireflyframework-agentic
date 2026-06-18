@@ -39,7 +39,7 @@ from fireflyframework_agentic.evaluation.judge import AdvisoryReport, run_judge
 from fireflyframework_agentic.evaluation.judge_client import JudgeClient, OllamaEmbedder, build_embedder, cosine
 from fireflyframework_agentic.evaluation.matcher import anchored, matches, source_stem, tokens
 from fireflyframework_agentic.evaluation.registry import Registry, RegistryItem, load_registry, registry_sha256
-from fireflyframework_agentic.evaluation.retrieval import RetrieverMetrics, compute_retrieval_metrics
+from fireflyframework_agentic.lab.retrieval_metrics import RetrieverMetrics, compute_retrieval_metrics
 from fireflyframework_agentic.evaluation.stats import aa_band, aggregate_grounding, left_skew_flag
 
 try:
