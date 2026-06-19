@@ -1135,7 +1135,7 @@ wheels = [
 
 [[package]]
 name = "fireflyframework-agentic"
-version = "26.5.33"
+version = "26.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "genai-prices" },
@@ -1169,6 +1169,7 @@ all = [
     { name = "pillow-heif" },
     { name = "pinecone" },
     { name = "py7zr" },
+    { name = "pydantic-monty" },
     { name = "pymongo" },
     { name = "pypdf" },
     { name = "qdrant-client" },
@@ -1271,7 +1272,7 @@ requires-dist = [
     { name = "cohere", marker = "extra == 'cohere-embeddings'", specifier = ">=5.0.0" },
     { name = "cryptography", marker = "extra == 'security'", specifier = ">=44.0.0" },
     { name = "extract-msg", marker = "extra == 'binary'", specifier = ">=0.51" },
-    { name = "fireflyframework-agentic", extras = ["postgres", "mongodb", "security", "embeddings", "openai-embeddings", "cohere-embeddings", "google-embeddings", "mistral-embeddings", "voyage-embeddings", "azure-embeddings", "bedrock-embeddings", "ollama-embeddings", "vectorstores-chroma", "vectorstores-pinecone", "vectorstores-qdrant", "vectorstores-pgvector", "vectorstores-sqlite-vec", "watch", "binary"], marker = "extra == 'all'" },
+    { name = "fireflyframework-agentic", extras = ["postgres", "mongodb", "security", "embeddings", "openai-embeddings", "cohere-embeddings", "google-embeddings", "mistral-embeddings", "voyage-embeddings", "azure-embeddings", "bedrock-embeddings", "ollama-embeddings", "vectorstores-chroma", "vectorstores-pinecone", "vectorstores-qdrant", "vectorstores-pgvector", "vectorstores-sqlite-vec", "watch", "binary", "script-execution"], marker = "extra == 'all'" },
     { name = "genai-prices", specifier = ">=0.0.1" },
     { name = "google-generativeai", marker = "extra == 'google-embeddings'", specifier = ">=0.8.0" },
     { name = "httpx", specifier = ">=0.28.0" },

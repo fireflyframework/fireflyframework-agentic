@@ -52,7 +52,7 @@ class MontyEnvironment:
 
     def __init__(self, *, type_check: bool = False, default_limits: ExecutionLimits | None = None) -> None:
         try:
-            import pydantic_monty  # noqa: F401  (import-probe only)
+            import pydantic_monty  # type: ignore[import-not-found]  # noqa: F401
         except ImportError as exc:  # pragma: no cover - exercised only without the extra
             raise SandboxUnavailableError(
                 "MontyEnvironment requires the 'script-execution' extra: "
@@ -80,7 +80,7 @@ class MontyEnvironment:
         )
 
     def _resource_limits(self, limits: ExecutionLimits | None) -> Any:
-        from pydantic_monty import ResourceLimits
+        from pydantic_monty import ResourceLimits  # type: ignore[import-not-found]
 
         eff = self._effective_limits(limits)
         kwargs: dict[str, Any] = {}
@@ -102,7 +102,13 @@ class MontyEnvironment:
         external_functions: dict[str, Callable[..., Any]] | None = None,
         limits: ExecutionLimits | None = None,
     ) -> ExecutionResult:
-        from pydantic_monty import CollectStreams, Monty, MontyError, MontySyntaxError, MontyTypingError
+        from pydantic_monty import (  # type: ignore[import-not-found]
+            CollectStreams,
+            Monty,
+            MontyError,
+            MontySyntaxError,
+            MontyTypingError,
+        )
 
         input_names = sorted(inputs) if inputs else None
         try:

@@ -87,8 +87,7 @@ class DefaultAgentRunner:
         resolved = model or self._default_model
         if resolved is None:
             raise ValueError(
-                "DefaultAgentRunner requires a model; pass model= to agent() or "
-                "default_model= to the runner"
+                "DefaultAgentRunner requires a model; pass model= to agent() or default_model= to the runner"
             )
         kwargs: dict[str, Any] = {}
         if output_type is not None:

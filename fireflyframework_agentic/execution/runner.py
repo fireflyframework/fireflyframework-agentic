@@ -82,9 +82,7 @@ class SecureScriptRunner:
                     violations=report.messages(),
                 )
 
-        result = await self._env.run_code(
-            code, inputs=inputs, external_functions=external_functions, limits=limits
-        )
+        result = await self._env.run_code(code, inputs=inputs, external_functions=external_functions, limits=limits)
 
         if self._scrub is not None and result.stdout:
             result.stdout = self._scrub(result.stdout)

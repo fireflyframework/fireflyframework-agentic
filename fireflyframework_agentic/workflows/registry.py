@@ -198,6 +198,4 @@ async def run_workflow(
 ) -> Any:
     """Look up a registered workflow by name and run it."""
     wf = workflow_registry.get(name)
-    return await wf.run(
-        args, budget=budget, runner=runner, journal=journal, events=events, run_id=run_id
-    )
+    return await wf.run(args, budget=budget, runner=runner, journal=journal, events=events, run_id=run_id)

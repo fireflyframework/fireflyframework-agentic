@@ -164,8 +164,7 @@ class WorkflowContext:
             )
         if self.budget.max_tokens is not None and self._tokens_spent >= self.budget.max_tokens:
             raise WorkflowBudgetError(
-                f"workflow '{self.name}' exhausted token budget={self.budget.max_tokens} "
-                f"(spent {self._tokens_spent})"
+                f"workflow '{self.name}' exhausted token budget={self.budget.max_tokens} (spent {self._tokens_spent})"
             )
         self._agents_started += 1
 

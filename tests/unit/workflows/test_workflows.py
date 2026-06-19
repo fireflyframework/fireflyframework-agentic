@@ -335,6 +335,7 @@ async def test_end_to_end_research_style_workflow():
         candidates = sorted({h for h in hits if h is not None})  # reduce in plain python
 
         with phase("verify"):
+
             async def keep(prev):
                 return prev
 

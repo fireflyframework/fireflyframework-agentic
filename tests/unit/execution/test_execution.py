@@ -219,9 +219,7 @@ async def test_monty_external_function_call():
     def greet(who: str) -> str:
         return f"hi {who}"
 
-    result = await _monty_env().run_code(
-        "greet(name)", inputs={"name": "firefly"}, external_functions={"greet": greet}
-    )
+    result = await _monty_env().run_code("greet(name)", inputs={"name": "firefly"}, external_functions={"greet": greet})
     assert result.success and result.output == "hi firefly"
 
 

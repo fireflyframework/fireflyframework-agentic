@@ -79,9 +79,7 @@ async def agent(
     display = label or (prompt[:40] if isinstance(prompt, str) else f"agent#{seq}")
     ctx.emit("agent.start", {"label": display, "phase": ctx.current_phase, "seq": seq})
     async with ctx.semaphore:
-        call = await ctx.runner.run(
-            prompt, model=model, output_type=output_type, instructions=instructions, deps=deps
-        )
+        call = await ctx.runner.run(prompt, model=model, output_type=output_type, instructions=instructions, deps=deps)
     ctx.record_tokens(call.tokens)
     ctx.journal.record(seq, call.output)
     ctx.emit(
@@ -117,9 +115,7 @@ def _stage_arity(stage: Callable[..., Any]) -> int:
     if any(p.kind is inspect.Parameter.VAR_POSITIONAL for p in params):
         return 3
     positional = [
-        p
-        for p in params
-        if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        p for p in params if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
     ]
     return len(positional)
 
