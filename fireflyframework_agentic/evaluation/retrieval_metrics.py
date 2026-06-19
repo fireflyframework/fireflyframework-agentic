@@ -14,46 +14,48 @@
 
 """Deterministic IR evaluation metrics for ranked retrieval results (no LLM, no network).
 
-Industry-standard information-retrieval metrics computed over a ranked list of
-retrieved chunks vs the gold set each result carries (``gold`` + per-hit
-``is_gold``).  Metrics are reported at cut-offs k ∈ {1, 5, 10}:
+Each metric is a plain function that takes a list of result rows and returns a
+float — the same design as scikit-learn or MS MARCO evaluation scripts.
 
-* **Hit@k** -- at least one gold document appears in the top-k results.
-* **Recall@k** -- fraction of gold documents found in top-k.
-* **Precision@k** -- fraction of top-k results that are gold.
-* **MRR@10** -- mean reciprocal rank of the first gold hit (up to k=10).
-* **MAP@10** -- mean average precision (up to k=10).
-* **nDCG@10** -- normalised discounted cumulative gain (up to k=10).
+Result row schema (dict)::
 
-Optional fields (populated when the raw result rows contain them):
+    {
+        "retrieved": [{"rank": int, "source_id": str, "is_gold": bool}, ...],
+        "gold": [str, ...],          # gold source identifiers
+        # optional:
+        "no_answer": bool,           # model refused / produced no answer
+        "answer": str,               # used for no_answer detection when no_answer absent
+        "citations": [{"is_gold": bool}, ...],
+        "search_ms": float,
+        "answer_ms": float,
+    }
 
-* ``no_answer_rate`` -- fraction of rows where the model produced no answer.
-* ``citation_precision`` -- precision of in-answer citations vs gold set.
-* ``mean_search_ms`` / ``mean_answer_ms`` -- mean retrieval and generation latencies.
+Individual metrics (recommended for composability)::
 
-Ported from ``flycanon_experiments/scripts/deterministic_eval.py``.
+    hit_at_k(results, k)        -> float
+    recall_at_k(results, k)     -> float
+    precision_at_k(results, k)  -> float
+    mrr(results, k=10)          -> float
+    map_score(results, k=10)    -> float
+    ndcg(results, k=10)         -> float
+    no_answer_rate(results)     -> float | None
+    citation_precision(results) -> float | None
+    mean_latency_ms(results, field) -> float | None
+
+Convenience aggregate (all metrics in one call)::
+
+    compute_retrieval_metrics(results) -> dict
 """
 
 from __future__ import annotations
 
 import math
 
-from pydantic import BaseModel
-
 KS = (1, 5, 10)
 
 
 def _dedup(retrieved: list[dict]) -> list[dict]:
-    """Return one entry per source, first chunk wins, preserving rank order.
-
-    flycanon splits each ingested document into many chunks; a single gold
-    filing can therefore appear multiple times in the ranked list.  Without
-    deduplication nDCG/MAP/Recall count every chunk separately, inflating
-    scores past 1.0 when a good embedding model retrieves several chunks from
-    the same filing.  Taking only the first (highest-ranked) chunk per
-    source_id makes the list item-unique, matching the recommenders-library
-    contract that all IR formulae assume.
-    """
+    """Return one entry per source, first chunk wins, preserving rank order."""
     seen: set[str] = set()
     out: list[dict] = []
     for r in sorted(retrieved, key=lambda x: x["rank"]):
@@ -64,15 +66,13 @@ def _dedup(retrieved: list[dict]) -> list[dict]:
     return out
 
 
-def _ndcg(retrieved: list[dict], n_gold: int, k: int = 10) -> float:
-    """Return nDCG@k for a single query."""
+def _ndcg_single(retrieved: list[dict], n_gold: int, k: int = 10) -> float:
     dcg = sum(1.0 / math.log2(r["rank"] + 1) for r in retrieved if r.get("is_gold") and r["rank"] <= k)
     ideal = sum(1.0 / math.log2(i + 2) for i in range(min(n_gold, k)))
     return dcg / ideal if ideal else 0.0
 
 
-def _ap(retrieved: list[dict], n_gold: int, k: int = 10) -> float:
-    """Return average precision@k for a single query."""
+def _ap_single(retrieved: list[dict], n_gold: int, k: int = 10) -> float:
     hits, precisions = 0, []
     for r in sorted(retrieved, key=lambda x: x["rank"]):
         if r["rank"] > k:
@@ -83,114 +83,124 @@ def _ap(retrieved: list[dict], n_gold: int, k: int = 10) -> float:
     return sum(precisions) / min(n_gold, k) if n_gold else 0.0
 
 
-def compute_retrieval_metrics(results: list[dict]) -> dict:
-    """Compute deterministic IR metrics over a list of retrieval result rows.
+def hit_at_k(results: list[dict], k: int) -> float:
+    """Fraction of queries where at least one gold document appears in top-k."""
+    if not results:
+        return 0.0
+    hits = 0
+    for row in results:
+        retrieved = _dedup(row["retrieved"])
+        gold_ranks = [r["rank"] for r in retrieved if r.get("is_gold")]
+        if any(g <= k for g in gold_ranks):
+            hits += 1
+    return round(hits / len(results), 4)
 
-    Each element of *results* must be a dict with at least:
 
-    * ``retrieved`` -- list of dicts with ``rank`` (int, 1-based), ``source_id``
-      (str) or ``identities`` (list[str]), and ``is_gold`` (bool).
-    * ``gold`` -- list of gold source identifiers (used to compute ``n_gold``).
-
-    Optional keys per row:
-
-    * ``no_answer`` (bool) / ``answer`` (str) -- used for ``no_answer_rate``.
-    * ``citations`` (list[dict]) -- each with ``is_gold`` (bool) for citation precision.
-    * ``search_ms`` (float) / ``answer_ms`` (float) -- latency in milliseconds.
-
-    Returns a flat dict with keys: ``n_queries``, ``hit@1``, ``hit@5``,
-    ``hit@10``, ``recall@1``, ``recall@5``, ``recall@10``, ``precision@1``,
-    ``precision@5``, ``precision@10``, ``mrr@10``, ``map@10``, ``ndcg@10``,
-    ``no_answer_rate``, ``citation_precision``, ``mean_search_ms``,
-    ``mean_answer_ms``.
-    """
-    n = len(results)
-    agg = {f"{m}@{k}": 0.0 for k in KS for m in ("hit", "recall", "precision")}
-    agg.update({"mrr@10": 0.0, "map@10": 0.0, "ndcg@10": 0.0})
-    no_answer = 0
-    cite_num = cite_den = 0.0
-    search_ms: list[float] = []
-    answer_ms: list[float] = []
-
+def recall_at_k(results: list[dict], k: int) -> float:
+    """Mean fraction of gold documents found in top-k."""
+    if not results:
+        return 0.0
+    total = 0.0
     for row in results:
         retrieved = _dedup(row["retrieved"])
         n_gold = max(len(set(row["gold"])), 1)
         gold_ranks = [r["rank"] for r in retrieved if r.get("is_gold")]
-        for k in KS:
-            in_k = [g for g in gold_ranks if g <= k]
-            agg[f"hit@{k}"] += 1.0 if in_k else 0.0
-            agg[f"recall@{k}"] += len(in_k) / n_gold
-            agg[f"precision@{k}"] += len(in_k) / k
-        agg["mrr@10"] += (1.0 / min(gold_ranks)) if gold_ranks else 0.0
-        agg["map@10"] += _ap(retrieved, n_gold)
-        agg["ndcg@10"] += _ndcg(retrieved, n_gold)
+        total += len([g for g in gold_ranks if g <= k]) / n_gold
+    return round(total / len(results), 4)
 
-        if row.get("no_answer") or not row.get("answer", "").strip():
-            no_answer += 1
+
+def precision_at_k(results: list[dict], k: int) -> float:
+    """Mean fraction of top-k results that are gold."""
+    if not results:
+        return 0.0
+    total = 0.0
+    for row in results:
+        retrieved = _dedup(row["retrieved"])
+        gold_ranks = [r["rank"] for r in retrieved if r.get("is_gold")]
+        total += len([g for g in gold_ranks if g <= k]) / k
+    return round(total / len(results), 4)
+
+
+def mrr(results: list[dict], k: int = 10) -> float:
+    """Mean reciprocal rank of the first gold hit (up to k)."""
+    if not results:
+        return 0.0
+    total = 0.0
+    for row in results:
+        retrieved = _dedup(row["retrieved"])
+        gold_ranks = sorted(r["rank"] for r in retrieved if r.get("is_gold") and r["rank"] <= k)
+        total += 1.0 / gold_ranks[0] if gold_ranks else 0.0
+    return round(total / len(results), 4)
+
+
+def map_score(results: list[dict], k: int = 10) -> float:
+    """Mean average precision at k."""
+    if not results:
+        return 0.0
+    total = 0.0
+    for row in results:
+        retrieved = _dedup(row["retrieved"])
+        n_gold = max(len(set(row["gold"])), 1)
+        total += _ap_single(retrieved, n_gold, k)
+    return round(total / len(results), 4)
+
+
+def ndcg(results: list[dict], k: int = 10) -> float:
+    """Mean normalised discounted cumulative gain at k."""
+    if not results:
+        return 0.0
+    total = 0.0
+    for row in results:
+        retrieved = _dedup(row["retrieved"])
+        n_gold = max(len(set(row["gold"])), 1)
+        total += _ndcg_single(retrieved, n_gold, k)
+    return round(total / len(results), 4)
+
+
+def no_answer_rate(results: list[dict]) -> float | None:
+    """Fraction of queries where the model produced no answer. None if no results."""
+    if not results:
+        return None
+    count = sum(
+        1 for row in results if row.get("no_answer") or not row.get("answer", "").strip()
+    )
+    return round(count / len(results), 4)
+
+
+def citation_precision(results: list[dict]) -> float | None:
+    """Precision of in-answer citations vs gold set. None if no citations present."""
+    num = den = 0.0
+    for row in results:
         cites = row.get("citations", [])
         if cites:
-            cite_num += sum(1 for c in cites if c.get("is_gold"))
-            cite_den += len(cites)
-        if row.get("search_ms") is not None:
-            search_ms.append(row["search_ms"])
-        if row.get("answer_ms") is not None:
-            answer_ms.append(row["answer_ms"])
-
-    out: dict[str, object] = {k: round(v / n, 4) for k, v in agg.items()} if n else {}
-    out["n_queries"] = n
-    out["no_answer_rate"] = round(no_answer / n, 4) if n else None
-    out["citation_precision"] = round(cite_num / cite_den, 4) if cite_den else None
-    out["mean_search_ms"] = round(sum(search_ms) / len(search_ms)) if search_ms else None
-    out["mean_answer_ms"] = round(sum(answer_ms) / len(answer_ms)) if answer_ms else None
-    return out
+            num += sum(1 for c in cites if c.get("is_gold"))
+            den += len(cites)
+    return round(num / den, 4) if den else None
 
 
-class RetrieverMetrics(BaseModel):
-    """Structured IR metrics for a retrieval evaluation run.
+def mean_latency_ms(results: list[dict], field: str) -> float | None:
+    """Mean latency in ms for the given field (``search_ms`` or ``answer_ms``). None if absent."""
+    values = [row[field] for row in results if row.get(field) is not None]
+    return round(sum(values) / len(values)) if values else None
 
-    Fields mirror the flat dict returned by :func:`compute_retrieval_metrics`.
-    Optional fields are ``None`` when the raw result rows lack the required data
-    (e.g. no latency timestamps, no citations).
+
+def compute_retrieval_metrics(results: list[dict]) -> dict:
+    """Compute all IR metrics over a list of retrieval result rows and return a flat dict.
+
+    Convenience wrapper that calls each individual metric function. Prefer the
+    individual functions (``hit_at_k``, ``recall_at_k``, etc.) when you only
+    need a subset.
     """
-
-    n_queries: int = 0
-    hit_at_1: float = 0.0
-    hit_at_5: float = 0.0
-    hit_at_10: float = 0.0
-    recall_at_1: float = 0.0
-    recall_at_5: float = 0.0
-    recall_at_10: float = 0.0
-    precision_at_1: float = 0.0
-    precision_at_5: float = 0.0
-    precision_at_10: float = 0.0
-    mrr_at_10: float = 0.0
-    map_at_10: float = 0.0
-    ndcg_at_10: float = 0.0
-    no_answer_rate: float | None = None
-    citation_precision: float | None = None
-    mean_search_ms: float | None = None
-    mean_answer_ms: float | None = None
-
-    @classmethod
-    def from_results(cls, results: list[dict]) -> RetrieverMetrics:
-        """Compute metrics from raw retrieval result rows and return a model instance."""
-        m = compute_retrieval_metrics(results)
-        return cls(
-            n_queries=m.get("n_queries", 0),
-            hit_at_1=m.get("hit@1", 0.0),
-            hit_at_5=m.get("hit@5", 0.0),
-            hit_at_10=m.get("hit@10", 0.0),
-            recall_at_1=m.get("recall@1", 0.0),
-            recall_at_5=m.get("recall@5", 0.0),
-            recall_at_10=m.get("recall@10", 0.0),
-            precision_at_1=m.get("precision@1", 0.0),
-            precision_at_5=m.get("precision@5", 0.0),
-            precision_at_10=m.get("precision@10", 0.0),
-            mrr_at_10=m.get("mrr@10", 0.0),
-            map_at_10=m.get("map@10", 0.0),
-            ndcg_at_10=m.get("ndcg@10", 0.0),
-            no_answer_rate=m.get("no_answer_rate"),
-            citation_precision=m.get("citation_precision"),
-            mean_search_ms=m.get("mean_search_ms"),
-            mean_answer_ms=m.get("mean_answer_ms"),
-        )
+    out: dict[str, object] = {"n_queries": len(results)}
+    for k in KS:
+        out[f"hit@{k}"] = hit_at_k(results, k)
+        out[f"recall@{k}"] = recall_at_k(results, k)
+        out[f"precision@{k}"] = precision_at_k(results, k)
+    out["mrr@10"] = mrr(results)
+    out["map@10"] = map_score(results)
+    out["ndcg@10"] = ndcg(results)
+    out["no_answer_rate"] = no_answer_rate(results)
+    out["citation_precision"] = citation_precision(results)
+    out["mean_search_ms"] = mean_latency_ms(results, "search_ms")
+    out["mean_answer_ms"] = mean_latency_ms(results, "answer_ms")
+    return out
