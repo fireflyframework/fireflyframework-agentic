@@ -179,5 +179,3 @@ def test_mean_latency_computed_when_present():
     rows = [{**_row(gold_rank=1), "search_ms": 100.0, "answer_ms": 200.0}]
     assert mean_latency_ms(rows, "search_ms") == 100
     assert mean_latency_ms(rows, "answer_ms") == 200
-
-
