@@ -82,9 +82,9 @@ from fireflyframework_agentic.evaluation.judge_client import (
 from fireflyframework_agentic.evaluation.judge_client import (
     same_provider as same_provider,
 )
-from fireflyframework_agentic.lab.retrieval_metrics import (
+from fireflyframework_agentic.evaluation.retrieval_metrics import (
     RetrieverMetrics as RetrieverMetrics,
 )
-from fireflyframework_agentic.lab.retrieval_metrics import (
+from fireflyframework_agentic.evaluation.retrieval_metrics import (
     compute_retrieval_metrics as compute_retrieval_metrics,
 )
