@@ -245,3 +245,18 @@ class WorkflowBudgetError(WorkflowError):
 
 class WorkflowContextError(WorkflowError):
     """Raised when a workflow primitive runs outside an active workflow context."""
+
+
+# -- Secure script execution -------------------------------------------------
+
+
+class ExecutionError(FireflyAgenticError):
+    """Base exception for the secure script-execution subsystem."""
+
+
+class CodeSafetyError(ExecutionError):
+    """Raised when generated/guest code fails the static safety pre-screen."""
+
+
+class SandboxUnavailableError(ExecutionError):
+    """Raised when a sandbox backend's dependency is not installed."""

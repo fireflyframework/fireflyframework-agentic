@@ -61,6 +61,13 @@ mongodb = [
 security = [
     "cryptography>=44.0.0",
 ]
+# Secure self-hosted script execution (fireflyframework_agentic.execution): the
+# Monty backend is a Rust micro-interpreter with a deny-by-default capability
+# model (no FS/network/env; host access only via explicitly registered external
+# functions). Pure wheel, no system deps.
+script-execution = [
+    "pydantic-monty>=0.0.18",
+]
 embeddings = [
     "numpy>=1.26.0",
 ]
@@ -122,7 +129,7 @@ binary = [
     "extract-msg>=0.51",
 ]
 all = [
-    "fireflyframework-agentic[postgres,mongodb,security,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,vectorstores-pgvector,vectorstores-sqlite-vec,watch,binary]",
+    "fireflyframework-agentic[postgres,mongodb,security,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,vectorstores-pgvector,vectorstores-sqlite-vec,watch,binary,script-execution]",
 ]
 dev = [
     "pytest>=8.3.0",
@@ -165,6 +172,10 @@ ignore = ["E501", "TC001", "TC002", "TC003", "UP040", "UP046", "B008"]
 # module imports cleanly without the ``[binary]`` extra; the deferred import
 # IS the design (degrade to a typed error only when a format is encountered).
 "fireflyframework_agentic/content/binary/*.py" = ["PLC0415"]
+# execution.monty_env lazy-imports pydantic_monty (the ``[script-execution]``
+# extra) inside its methods so the module imports cleanly without the extra and
+# degrades to a typed SandboxUnavailableError only when actually used.
+"fireflyframework_agentic/execution/monty_env.py" = ["PLC0415"]
 # Tests use inline imports for fixture isolation and to control import timing
 # around mocks of optional dependencies (asyncpg, motor, qdrant, pinecone, ...).
 "tests/**" = ["PLC0415"]

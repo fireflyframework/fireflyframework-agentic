@@ -67,6 +67,7 @@ below it, keeping the dependency graph acyclic and each module independently tes
 | | |
 |---|---|
 | **[Security](security.md)** | `PromptGuard` (25 patterns), `OutputGuard` (PII, secrets, harmful), encryption (`AESEncryptionProvider`, `EncryptedMemoryStore`), injection detection, input sanitisation, output scanning |
+| **[Secure Script Execution](execution.md)** | `ExecutionEnvironment` protocol, `MontyEnvironment` (deny-by-default Rust sandbox, `[script-execution]` extra), `SecureScriptRunner` (validate→execute→capture), `analyze_code` / `SafetyPolicy` AST pre-screen, `ExecutionLimits`, Firefly Code Mode (`toolkit_external_functions`) |
 
 ### Observability
 
