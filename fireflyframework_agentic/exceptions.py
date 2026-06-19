@@ -226,3 +226,22 @@ class VectorStoreError(FireflyAgenticError):
 
 class VectorStoreConnectionError(VectorStoreError):
     """Raised when a vector store backend connection fails."""
+
+
+# -- Workflows ---------------------------------------------------------------
+
+
+class WorkflowError(FireflyAgenticError):
+    """Base exception for the dynamic-workflow orchestration engine."""
+
+
+class WorkflowNotFoundError(WorkflowError):
+    """Raised when no workflow is registered under the requested name."""
+
+
+class WorkflowBudgetError(WorkflowError):
+    """Raised when a workflow exceeds its agent-count or token budget."""
+
+
+class WorkflowContextError(WorkflowError):
+    """Raised when a workflow primitive runs outside an active workflow context."""

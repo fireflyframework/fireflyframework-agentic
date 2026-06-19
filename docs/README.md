@@ -91,6 +91,7 @@ below it, keeping the dependency graph acyclic and each module independently tes
 | | |
 |---|---|
 | **[Pipeline](pipeline.md)** | `DAG`, `PipelineEngine`, `PipelineBuilder`, step types (`AgentStep`, `ReasoningStep`, `CallableStep`, `FanOutStep`/`FanInStep`, `BranchStep`, `BatchLLMStep`, `EmbeddingStep`, `RetrievalStep`), parallel execution, retries, `Checkpointer` / `FileCheckpointer`, audit logs (`AuditLog`, `FileAuditLog`, `OtelAuditLog`, `QueryableAuditLog`), state reducers (`append`, `extend`, `merge_dict`, `replace`), `Pause` / `Send` control signals |
+| **[Dynamic Workflows](workflows.md)** | Code-defined orchestration DSL over pydantic-ai agents — `@workflow`, `agent`, `parallel`, `pipeline`, `phase`, `log`; `WorkflowBudget` (concurrency / agent-count / token ceilings); `Journal` deterministic resume; pluggable `AgentRunner`; verify combinators (`adversarial_verify`, `loop_until_dry`); `workflow_registry`, `run_workflow` |
 
 ### Runtime & Infrastructure
 
