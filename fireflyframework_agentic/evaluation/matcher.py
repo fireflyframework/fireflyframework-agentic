@@ -113,9 +113,7 @@ def _keyword_anchored(desc: str, keywords: list[str]) -> bool:
     if not keywords:
         return False
     desc_lower = desc.lower()
-    return any(
-        re.search(r"\b" + re.escape(kw.lower()) + r"\b", desc_lower) for kw in keywords
-    )
+    return any(re.search(r"\b" + re.escape(kw.lower()) + r"\b", desc_lower) for kw in keywords)
 
 
 def candidate_text(candidate: dict, scope: str) -> str:
@@ -141,18 +139,28 @@ def candidate_text(candidate: dict, scope: str) -> str:
         pain = candidate.get("pain_points") or []
         goals_str = " ".join(goals) if isinstance(goals, list) else str(goals)
         pain_str = " ".join(pain) if isinstance(pain, list) else str(pain)
-        return " ".join(filter(None, [
-            candidate.get("name", ""),
-            candidate.get("role", ""),
-            goals_str,
-            pain_str,
-        ]))
+        return " ".join(
+            filter(
+                None,
+                [
+                    candidate.get("name", ""),
+                    candidate.get("role", ""),
+                    goals_str,
+                    pain_str,
+                ],
+            )
+        )
     if scope == "informal_channel":
-        return " ".join(filter(None, [
-            candidate.get("name", ""),
-            candidate.get("usage_context", ""),
-            candidate.get("notes", ""),
-        ]))
+        return " ".join(
+            filter(
+                None,
+                [
+                    candidate.get("name", ""),
+                    candidate.get("usage_context", ""),
+                    candidate.get("notes", ""),
+                ],
+            )
+        )
     # process, decision, system, dependency_graph (diagnostic nodes)
     return " ".join(filter(None, [candidate.get("name", ""), candidate.get("description", "")]))
 
@@ -246,9 +254,7 @@ def matches_dependency_graph_relation(
 
     def _anchor(endpoint_text: str) -> set[str]:
         return {
-            a["id"]
-            for a in all_activities
-            if a.get("id") and anchored(candidate_text(a, "activity"), endpoint_text)
+            a["id"] for a in all_activities if a.get("id") and anchored(candidate_text(a, "activity"), endpoint_text)
         }
 
     from_ids = _anchor(item.from_node)
@@ -268,9 +274,8 @@ def matches_dependency_graph_relation(
     dg = result.get("dependency_graph", {})
 
     for edge in dg.get("activity_edges", []):
-        if edge.get("from_node") in from_ids and edge.get("to_node") in to_ids:
-            if _node_stems(edge) & item_stems:
-                return True
+        if edge.get("from_node") in from_ids and edge.get("to_node") in to_ids and _node_stems(edge) & item_stems:
+            return True
 
     for path in dg.get("critical_paths", []):
         if not (_node_stems(path) & item_stems):
@@ -325,19 +330,13 @@ def semantic_hits(
 
     # Flatten all candidates across scopes, preserving their scope tag for
     # text extraction and per-item filtering.
-    scoped: list[tuple[str, dict]] = [
-        (scope, cand)
-        for scope, cands in candidates.items()
-        for cand in cands
-    ]
+    scoped: list[tuple[str, dict]] = [(scope, cand) for scope, cands in candidates.items() for cand in cands]
 
     if not scoped:
         return {item.id: False for item in items}
 
     cand_texts = [candidate_text(cand, scope) for scope, cand in scoped]
-    item_texts = [
-        " ".join([item.description or ""] + list(item.keywords or [])).strip() for item in items
-    ]
+    item_texts = [" ".join([item.description or ""] + list(item.keywords or [])).strip() for item in items]
 
     cand_vecs = np.asarray(embed_fn(cand_texts))
     item_vecs = np.asarray(embed_fn(item_texts))
@@ -359,10 +358,7 @@ def semantic_hits(
                 if cosine(cand_vecs[k], item_vec) >= tau_nc:
                     hit = True
                     break
-            elif (
-                shares_source(cand, item, evidence_index)
-                and cosine(cand_vecs[k], item_vec) >= tau
-            ):
+            elif shares_source(cand, item, evidence_index) and cosine(cand_vecs[k], item_vec) >= tau:
                 hit = True
                 break
         hits[item.id] = hit

@@ -142,10 +142,7 @@ def _map_chat(chat_fn, prompts, workers=1):
 
     results: list[dict] = [{} for _ in prompts]
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {
-            executor.submit(chat_fn, system, user): idx
-            for idx, (system, user) in enumerate(prompts)
-        }
+        futures = {executor.submit(chat_fn, system, user): idx for idx, (system, user) in enumerate(prompts)}
         for future in concurrent.futures.as_completed(futures):
             idx = futures[future]
             try:
@@ -165,11 +162,7 @@ def source_coverage(result: dict) -> dict:
     source stems present in evidence_index but cited by no finding.
     """
     evidence_index = _evidence_index(result)
-    all_stems = {
-        source_stem(ev.get("locator", ""))
-        for ev in result.get("evidence_index", [])
-        if ev.get("locator")
-    }
+    all_stems = {source_stem(ev.get("locator", "")) for ev in result.get("evidence_index", []) if ev.get("locator")}
     cited_stems: set[str] = set()
     for f in result.get("findings", []):
         for ref in f.get("evidence_refs", []):
@@ -245,7 +238,7 @@ def semantic_recovery(
     cand_vecs = np.asarray(embed_fn(candidate_texts), dtype=np.float64)
 
     recovered: list[dict] = []
-    for item, ivec in zip(missed_items, item_vecs):
+    for item, ivec in zip(missed_items, item_vecs, strict=False):
         best = max((cosine(ivec, cvec) for cvec in cand_vecs), default=0.0)
         if best >= tau:
             recovered.append({"id": item.id, "cosine": round(best, 4)})
@@ -307,11 +300,7 @@ def numeric_temporal_fidelity(result: dict, chat_fn, *, workers: int = 1) -> dic
     source}], count}.
     """
     evidence_index = _evidence_index(result)
-    scored = [
-        (f, excerpts)
-        for f in result.get("findings", [])
-        if (excerpts := _cited_excerpts(f, evidence_index))
-    ]
+    scored = [(f, excerpts) for f in result.get("findings", []) if (excerpts := _cited_excerpts(f, evidence_index))]
     prompts = [
         (
             SYSTEM,
@@ -326,7 +315,7 @@ def numeric_temporal_fidelity(result: dict, chat_fn, *, workers: int = 1) -> dic
     ]
     answers = _map_chat(chat_fn, prompts, workers)
     mismatches: list[dict] = []
-    for (f, _excerpts), answer in zip(scored, answers):
+    for (f, _excerpts), answer in zip(scored, answers, strict=False):
         for m in answer.get("mismatches", []) or []:
             mismatches.append(
                 {
@@ -395,7 +384,7 @@ def nc_semantic_precision(result: dict, registry, chat_fn, *, workers: int = 1) 
     ]
     answers = _map_chat(chat_fn, prompts, workers)
     asserted_ids = [
-        item.id for item, a in zip(nc_items, answers) if str(a.get("asserted", "")).lower() == "yes"
+        item.id for item, a in zip(nc_items, answers, strict=False) if str(a.get("asserted", "")).lower() == "yes"
     ]
     return {"asserted": len(asserted_ids), "total": len(nc_items), "asserted_ids": asserted_ids}
 
@@ -407,10 +396,7 @@ def fabricated_entity(result: dict, chat_fn) -> dict:
     excerpts + locators.
     """
     output_text = _output_text(result)
-    corpus = "\n".join(
-        f"{ev.get('locator', '')} :: {ev.get('excerpt', '')}"
-        for ev in result.get("evidence_index", [])
-    )
+    corpus = "\n".join(f"{ev.get('locator', '')} :: {ev.get('excerpt', '')}" for ev in result.get("evidence_index", []))
     user = (
         "List any system, organization, or metric NAMED in the OUTPUT that does NOT "
         "appear anywhere in the CORPUS EVIDENCE.\n"
@@ -433,8 +419,7 @@ def contradiction(result: dict, chat_fn) -> dict:
         lines.append(f"{f.get('id', '?')}: {f.get('title', '')} — {f.get('description', '')}")
     user = (
         "Are any two of these FINDINGS mutually contradictory? List each contradicting pair.\n"
-        'Reply with ONLY {"pairs": [["<id_a>", "<id_b>"], ...]}.  Empty list if none.\n\n'
-        + "\n".join(lines)
+        'Reply with ONLY {"pairs": [["<id_a>", "<id_b>"], ...]}.  Empty list if none.\n\n' + "\n".join(lines)
     )
     pairs = chat_fn(SYSTEM, user).get("pairs", []) or []
     return {"count": len(pairs), "pairs": [list(p) for p in pairs]}
@@ -514,7 +499,7 @@ def severity_calibration(result: dict, chat_fn, *, workers: int = 1) -> dict:
     answers = _map_chat(chat_fn, prompts, workers)
     verdicts: dict[str, str] = {}
     miscalibrated = 0
-    for f, a in zip(findings, answers):
+    for f, a in zip(findings, answers, strict=False):
         verdict = str(a.get("calibration", "calibrated")).lower()
         verdicts[f.get("id", "?")] = verdict
         if verdict in ("under", "over"):
@@ -557,7 +542,7 @@ def surface_deduplication(result: dict, chat_fn, *, workers: int = 1) -> dict:
     def _toks(node: dict) -> frozenset[str]:
         return frozenset(node.get("name", "").lower().split())
 
-    PER_SURFACE_CAP = 10
+    per_surface_cap = 10
     # candidates: (surface, node_a, node_b, parent_process_name)
     candidates: list[tuple[str, dict, dict, str]] = []
 
@@ -574,7 +559,7 @@ def surface_deduplication(result: dict, chat_fn, *, workers: int = 1) -> dict:
                 if jac >= 0.30:
                     pairs.append((jac, procs[i], procs[j]))
         pairs.sort(key=lambda x: x[0], reverse=True)
-        for _jac, a, b in pairs[:PER_SURFACE_CAP]:
+        for _jac, a, b in pairs[:per_surface_cap]:
             candidates.append(("process", a, b, ""))
 
     # Activities and decisions: within the same parent process only
@@ -595,7 +580,7 @@ def surface_deduplication(result: dict, chat_fn, *, workers: int = 1) -> dict:
                     if jac >= 0.30:
                         all_pairs.append((jac, nodes[i], nodes[j], proc_name))
         all_pairs.sort(key=lambda x: x[0], reverse=True)
-        for _jac, a, b, proc_name in all_pairs[:PER_SURFACE_CAP]:
+        for _jac, a, b, proc_name in all_pairs[:per_surface_cap]:
             candidates.append((surface_key, a, b, proc_name))
 
     if not candidates:
@@ -604,33 +589,37 @@ def surface_deduplication(result: dict, chat_fn, *, workers: int = 1) -> dict:
     prompts = []
     for surface, a, b, parent_proc in candidates:
         ctx = f"\nPARENT PROCESS: {parent_proc}\n" if parent_proc else ""
-        prompts.append((
-            SYSTEM,
-            f"Are these two {surface} nodes genuinely DISTINCT process concepts, or is one a "
-            f"duplicate / sub-case / restatement of the other?\n"
-            f"{ctx}"
-            'Reply with ONLY {"verdict": "DISTINCT" or "DUPLICATE", "reason": "<one line>"}.\n\n'
-            f"{surface.upper()} A: {a.get('name', '')} — {a.get('description', '')}\n"
-            f"{surface.upper()} B: {b.get('name', '')} — {b.get('description', '')}",
-        ))
+        prompts.append(
+            (
+                SYSTEM,
+                f"Are these two {surface} nodes genuinely DISTINCT process concepts, or is one a "
+                f"duplicate / sub-case / restatement of the other?\n"
+                f"{ctx}"
+                'Reply with ONLY {"verdict": "DISTINCT" or "DUPLICATE", "reason": "<one line>"}.\n\n'
+                f"{surface.upper()} A: {a.get('name', '')} — {a.get('description', '')}\n"
+                f"{surface.upper()} B: {b.get('name', '')} — {b.get('description', '')}",
+            )
+        )
 
     answers = _map_chat(chat_fn, prompts, workers)
 
     distinct = 0
     redundant = 0
     redundant_pairs: list[dict] = []
-    for (surface, a, b, _parent), answer in zip(candidates, answers):
+    for (surface, a, b, _parent), answer in zip(candidates, answers, strict=False):
         verdict = str(answer.get("verdict", "")).upper()
         if verdict == "DISTINCT":
             distinct += 1
         else:
             redundant += 1
-            redundant_pairs.append({
-                "surface": surface,
-                "a": a.get("name", ""),
-                "b": b.get("name", ""),
-                "reason": str(answer.get("reason", "")),
-            })
+            redundant_pairs.append(
+                {
+                    "surface": surface,
+                    "a": a.get("name", ""),
+                    "b": b.get("name", ""),
+                    "reason": str(answer.get("reason", "")),
+                }
+            )
 
     total = distinct + redundant
     return {
@@ -800,9 +789,7 @@ def run_judge(
         "numeric_temporal_fidelity",
         lambda: numeric_temporal_fidelity(result, chat_fn, workers=concurrency),
     )
-    _run_judge_metric(
-        "citation_relevance", lambda: citation_relevance(result, chat_fn, workers=concurrency)
-    )
+    _run_judge_metric("citation_relevance", lambda: citation_relevance(result, chat_fn, workers=concurrency))
     _run_judge_metric(
         "nc_semantic_precision",
         lambda: nc_semantic_precision(result, registry, chat_fn, workers=concurrency),

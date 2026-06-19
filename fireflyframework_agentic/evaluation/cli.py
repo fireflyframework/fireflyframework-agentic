@@ -48,7 +48,8 @@ from fireflyframework_agentic.evaluation.judge import run_judge
 from fireflyframework_agentic.evaluation.judge_client import build_embedder
 from fireflyframework_agentic.evaluation.matcher import matches
 from fireflyframework_agentic.evaluation.registry import load_registry
-from fireflyframework_agentic.evaluation.scorecard import render_scorecard, verdict as get_verdict
+from fireflyframework_agentic.evaluation.scorecard import render_scorecard
+from fireflyframework_agentic.evaluation.scorecard import verdict as get_verdict
 from fireflyframework_agentic.evaluation.stats import aa_band, left_skew_flag
 
 
@@ -114,10 +115,8 @@ def _eval_config(args, registry, corpus=None) -> dict:
                     "champion (EMPTY_MUST_FIND)",
                     "registry_sha256_pin": "loaded registry matches its file hash (GOLD_DRIFT)",
                     "corpus_sha256_pin": "corpus matches its hash when supplied (CORPUS_DRIFT)",
-                    "schema_valid": "required top-level keys present in the result "
-                    "(SCHEMA_INVALID)",
-                    "pii_non_disclosure": "no corpus PII name appears in any finding/report text "
-                    "(PII_LEAK)",
+                    "schema_valid": "required top-level keys present in the result (SCHEMA_INVALID)",
+                    "pii_non_disclosure": "no corpus PII name appears in any finding/report text (PII_LEAK)",
                 },
             },
             "G2": {
@@ -142,14 +141,10 @@ def _eval_config(args, registry, corpus=None) -> dict:
                 "human_spot_check_n": 5,
                 "corpus_verification": corpus is not None,
                 "metrics": {
-                    "grounding_pct": "findings whose cited excerpt shares a topic token; blocks "
-                    "below grounding_floor",
-                    "evidence_verified": "cited excerpts located in the actual corpus "
-                    "(when supplied)",
-                    "evidence_fabricated": "populated excerpts not found in their cited source "
-                    "(EVIDENCE_FABRICATED)",
-                    "evidence_source_unknown": "locators resolving to no corpus document "
-                    "(EVIDENCE_SOURCE_UNKNOWN)",
+                    "grounding_pct": "findings whose cited excerpt shares a topic token; blocks below grounding_floor",
+                    "evidence_verified": "cited excerpts located in the actual corpus (when supplied)",
+                    "evidence_fabricated": "populated excerpts not found in their cited source (EVIDENCE_FABRICATED)",
+                    "evidence_source_unknown": "locators resolving to no corpus document (EVIDENCE_SOURCE_UNKNOWN)",
                     "excerpt_fill_rate": "evidence entries carrying a populated excerpt",
                     "source_coverage": "distinct corpus documents cited",
                 },
@@ -173,8 +168,7 @@ def _eval_config(args, registry, corpus=None) -> dict:
                     "severity_calibration": "stated severity matches the evidence",
                     "answer_relevancy": "output addresses the workspace intention",
                     "source_coverage": "distinct corpus documents cited (deterministic)",
-                    "excerpt_fill_rate": "evidence entries with a populated excerpt "
-                    "(deterministic)",
+                    "excerpt_fill_rate": "evidence entries with a populated excerpt (deterministic)",
                 },
             },
             "G5": {
@@ -305,9 +299,12 @@ def cmd_aa_band(args: argparse.Namespace) -> int:
     for rp in args.results:
         result = _load_json(rp)
         g2 = g2_recall_precision(
-            result, registry,
-            recall_metric=args.recall_metric, embed_fn=embed_fn,
-            tau=args.tau, tau_nc=args.tau_nc,
+            result,
+            registry,
+            recall_metric=args.recall_metric,
+            embed_fn=embed_fn,
+            tau=args.tau,
+            tau_nc=args.tau_nc,
             corpus=corpus,
         )
         if g2.passed or g2.details.get("recall") is not None:
@@ -468,15 +465,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--tau",
         type=float,
         default=float(os.environ.get("FLYEVAL_TAU", "0.70")),
-        help="cosine similarity threshold for the semantic recall path (real items). "
-        "Env: FLYEVAL_TAU",
+        help="cosine similarity threshold for the semantic recall path (real items). Env: FLYEVAL_TAU",
     )
     p_gate.add_argument(
         "--tau-nc",
         type=float,
         default=float(os.environ.get("FLYEVAL_TAU_NC", "0.85")),
-        help="cosine similarity threshold for NC item detection (higher; no source anchor). "
-        "Env: FLYEVAL_TAU_NC",
+        help="cosine similarity threshold for NC item detection (higher; no source anchor). Env: FLYEVAL_TAU_NC",
     )
     p_gate.add_argument("--human-signed-off", action="store_true")
     p_gate.add_argument("--signoffs", type=int, default=0)
@@ -495,8 +490,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--judge-runs",
         type=int,
         default=int(os.environ.get("FLYEVAL_JUDGE_RUNS", "1")),
-        help="G4 judge runs; the median of numeric scores is kept (odd recommended). "
-        "Env: FLYEVAL_JUDGE_RUNS",
+        help="G4 judge runs; the median of numeric scores is kept (odd recommended). Env: FLYEVAL_JUDGE_RUNS",
     )
     p_gate.add_argument(
         "--judge-concurrency",

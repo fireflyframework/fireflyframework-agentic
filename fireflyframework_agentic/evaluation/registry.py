@@ -24,6 +24,7 @@ Invariants (EVALUATION_FRAMEWORK.md, the must-find registry):
 - kappa present (0.0 placeholder allowed; G2 advisory until >= 0.70)
 - ABANCA DILO items must target a single measured sub-population
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -35,8 +36,15 @@ from typing import Literal
 
 VALID_TIERS = ("L0", "L1", "L2", "L3", "NC")
 VALID_SCOPES = (
-    "process", "activity", "decision", "finding", "action",
-    "persona", "system", "informal_channel", "dependency_graph",
+    "process",
+    "activity",
+    "decision",
+    "finding",
+    "action",
+    "persona",
+    "system",
+    "informal_channel",
+    "dependency_graph",
 )
 SCHEMA_VERSION = "lean-1"
 KAPPA_ADVISORY_THRESHOLD = 0.70
@@ -47,13 +55,13 @@ class RegistryItem:
     id: str
     tier: Literal["L0", "L1", "L2", "L3", "NC"]
     description: str
-    evidence: list[str]          # source file paths (path portion of locator, no #page=N)
-    scope: str = "finding"       # which DiscoveryResult surface to match against (§4.3)
+    evidence: list[str]  # source file paths (path portion of locator, no #page=N)
+    scope: str = "finding"  # which DiscoveryResult surface to match against (§4.3)
     keywords: list[str] = field(default_factory=list)
     weight: float = 1.0
-    from_node: str = ""   # dependency_graph relation items only
-    to_node: str = ""     # dependency_graph relation items only
-    relation: str = ""    # defaults to "precedes" when from/to present
+    from_node: str = ""  # dependency_graph relation items only
+    to_node: str = ""  # dependency_graph relation items only
+    relation: str = ""  # defaults to "precedes" when from/to present
 
 
 @dataclass(frozen=True)
@@ -87,10 +95,7 @@ class Registry:
 
 def _validate(raw: dict, path: Path) -> None:
     if raw.get("schema_version") != SCHEMA_VERSION:
-        raise ValueError(
-            f"{path.name}: schema_version must be '{SCHEMA_VERSION}', "
-            f"got {raw.get('schema_version')!r}"
-        )
+        raise ValueError(f"{path.name}: schema_version must be '{SCHEMA_VERSION}', got {raw.get('schema_version')!r}")
     for fname in ("corpus", "author", "date"):
         if not raw.get(fname):
             raise ValueError(f"{path.name}: missing required field '{fname}'")
@@ -116,20 +121,17 @@ def _validate(raw: dict, path: Path) -> None:
         tier = it.get("tier")
         if tier not in VALID_TIERS:
             raise ValueError(
-                f"{path.name}: item '{it.get('id')}' has invalid tier '{tier}'; "
-                f"must be one of {VALID_TIERS}"
+                f"{path.name}: item '{it.get('id')}' has invalid tier '{tier}'; must be one of {VALID_TIERS}"
             )
         scope = it.get("scope", "finding")
         if scope not in VALID_SCOPES:
             raise ValueError(
-                f"{path.name}: item '{it.get('id')}' has invalid scope '{scope}'; "
-                f"must be one of {VALID_SCOPES}"
+                f"{path.name}: item '{it.get('id')}' has invalid scope '{scope}'; must be one of {VALID_SCOPES}"
             )
         if scope == "dependency_graph":
             if not it.get("from") or not it.get("to"):
                 raise ValueError(
-                    f"{path.name}: dependency_graph item '{it.get('id')}' must have "
-                    "non-empty 'from' and 'to'"
+                    f"{path.name}: dependency_graph item '{it.get('id')}' must have non-empty 'from' and 'to'"
                 )
         else:
             if "from" in it or "to" in it or "relation" in it:
@@ -153,13 +155,13 @@ def _validate(raw: dict, path: Path) -> None:
     # ABANCA DILO blend guard: items must assert a single sub-population target.
     # Checks for phrases that would indicate a blended numeric target is asserted.
     # "blend" alone is too broad (items may reference it negatively).
-    BLEND_PHRASES = ("combined distribution", "across all offices regardless of segment")
+    blend_phrases = ("combined distribution", "across all offices regardless of segment")
     for it in items:
         if it.get("tier") == "NC":
             continue
         desc = it.get("description", "").lower()
         iid = it.get("id", "")
-        if any(phrase in desc for phrase in BLEND_PHRASES):
+        if any(phrase in desc for phrase in blend_phrases):
             raise ValueError(
                 f"{path.name}: item '{iid}' description targets a blended distribution; "
                 "ABANCA DILO items must target a single measured sub-population "
