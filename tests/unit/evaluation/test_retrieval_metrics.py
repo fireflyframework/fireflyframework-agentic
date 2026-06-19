@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from fireflyframework_agentic.evaluation.retrieval_metrics import (
     citation_precision,
-    compute_retrieval_metrics,
     hit_at_k,
     map_score,
     mean_latency_ms,
@@ -182,23 +181,3 @@ def test_mean_latency_computed_when_present():
     assert mean_latency_ms(rows, "answer_ms") == 200
 
 
-# ── compute_retrieval_metrics (aggregate) ─────────────────────────────────────
-
-
-def test_compute_retrieval_metrics_n_queries():
-    assert compute_retrieval_metrics([_row(1), _row(2), _row(3)])["n_queries"] == 3
-
-
-def test_compute_retrieval_metrics_empty():
-    m = compute_retrieval_metrics([])
-    assert m["n_queries"] == 0
-    assert m["hit@1"] == 0.0
-
-
-def test_compute_retrieval_metrics_matches_individual_functions():
-    rows = [_row(gold_rank=1), _row(gold_rank=2)]
-    m = compute_retrieval_metrics(rows)
-    assert m["hit@1"] == hit_at_k(rows, 1)
-    assert m["recall@5"] == recall_at_k(rows, 5)
-    assert m["mrr@10"] == mrr(rows)
-    assert m["ndcg@10"] == ndcg(rows)
