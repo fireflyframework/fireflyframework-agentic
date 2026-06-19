@@ -62,6 +62,7 @@ from fireflyframework_agentic.observability.metrics import default_metrics
 from fireflyframework_agentic.observability.usage import (
     UsageRecord,
     default_usage_tracker,
+    resolve_run_usage,
 )
 from fireflyframework_agentic.security.output_guard import OutputGuard
 from fireflyframework_agentic.security.prompt_guard import PromptGuard
@@ -157,7 +158,7 @@ class LoggingMiddleware:
     @staticmethod
     def _usage_suffix(result: Any) -> str:
         """Extract token/cost info from the result, if available."""
-        usage = result.usage() if callable(getattr(result, "usage", None)) else None
+        usage = resolve_run_usage(result)
         if usage is None:
             return ""
         tokens = getattr(usage, "total_tokens", 0) or 0
@@ -349,7 +350,7 @@ class ObservabilityMiddleware:
         elapsed_ms = (time.monotonic() - t0) * 1000 if t0 is not None else 0.0
 
         tokens = 0
-        usage = result.usage() if callable(getattr(result, "usage", None)) else None
+        usage = resolve_run_usage(result)
         if usage is not None:
             tokens = getattr(usage, "total_tokens", 0) or 0
 

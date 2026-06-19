@@ -25,9 +25,14 @@ classifiers = [
 ]
 keywords = ["genai", "agents", "pydantic-ai", "llm", "reasoning", "observability", "framework"]
 dependencies = [
-    "pydantic-ai>=1.99.0",
-    "pydantic>=2.10.0",
-    "pydantic-settings>=2.7.0",
+    # Pinned to the API-stable pydantic-ai 1.x line. The ``<2`` ceiling is
+    # deliberate: a 2.0 line with breaking changes (capabilities=[...] redesign,
+    # openai->Responses default, to_ag_ui/to_a2a removal) exists, and an
+    # unbounded ``>=`` would let a resolver silently pull it and break the Agent
+    # construction seam in agents/base.py. 2.0 migration is a separate epic.
+    "pydantic-ai>=1.107.0,<2",
+    "pydantic>=2.13,<3",
+    "pydantic-settings>=2.14.2,<3",
     "jinja2>=3.1.0",
     "httpx>=0.28.0",
     "opentelemetry-api>=1.29.0",

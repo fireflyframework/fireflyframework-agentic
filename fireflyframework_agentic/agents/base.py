@@ -51,7 +51,7 @@ from fireflyframework_agentic.observability.quota import (
     AdaptiveBackoff,
     default_quota_manager,
 )
-from fireflyframework_agentic.observability.usage import default_usage_tracker
+from fireflyframework_agentic.observability.usage import default_usage_tracker, resolve_run_usage
 from fireflyframework_agentic.reasoning.trace import ReasoningResult
 from fireflyframework_agentic.tools.base import BaseTool
 from fireflyframework_agentic.tools.toolkit import ToolKit
@@ -433,16 +433,16 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         if not cfg.cost_tracking_enabled:
             return
         try:
-            usage = result.usage() if callable(getattr(result, "usage", None)) else None
+            usage = resolve_run_usage(result)
             if usage is None:
                 return
 
             input_tokens = getattr(usage, "input_tokens", 0) or 0
             output_tokens = getattr(usage, "output_tokens", 0) or 0
             request_count = getattr(usage, "requests", 0) or 0
-            # pydantic-ai's ``Usage`` exposes ``cache_write_tokens`` (the
-            # number of tokens written to the prompt cache); fall back to
-            # ``cache_creation_tokens`` for older SDKs that used that name.
+            # pydantic-ai's ``RunUsage`` exposes ``cache_write_tokens`` (tokens
+            # written to the prompt cache); ``cache_creation_tokens`` is the
+            # historical fallback for custom/legacy usage objects.
             cache_creation = getattr(usage, "cache_write_tokens", 0) or getattr(usage, "cache_creation_tokens", 0) or 0
             cache_read = getattr(usage, "cache_read_tokens", 0) or 0
 

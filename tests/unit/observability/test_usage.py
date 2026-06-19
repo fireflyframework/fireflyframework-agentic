@@ -16,7 +16,10 @@
 
 from __future__ import annotations
 
+import warnings
+
 import pytest
+from pydantic_ai.usage import RunUsage
 
 from fireflyframework_agentic.observability.budget import BudgetGate, BudgetRule, ScopeContext
 from fireflyframework_agentic.observability.usage import (
@@ -24,7 +27,67 @@ from fireflyframework_agentic.observability.usage import (
     UsageSummary,
     UsageTracker,
     _aggregate,
+    resolve_run_usage,
 )
+
+
+class _CallableRunUsage(RunUsage):
+    """Mimics pydantic-ai 1.x's deprecated-callable ``usage`` wrapper.
+
+    A ``RunUsage`` subclass that is *also* callable; calling it emits a
+    deprecation warning (exactly the behaviour ``resolve_run_usage`` must avoid
+    triggering when it reads the value as a property).
+    """
+
+    def __call__(self) -> RunUsage:  # pragma: no cover - must NOT be invoked
+        warnings.warn("usage() is deprecated; access it as a property", DeprecationWarning, stacklevel=2)
+        return self
+
+
+class TestResolveRunUsage:
+    def test_returns_none_when_no_usage_attribute(self):
+        class _NoUsage:
+            pass
+
+        assert resolve_run_usage(_NoUsage()) is None
+
+    def test_returns_none_when_usage_is_none(self):
+        class _R:
+            usage = None
+
+        assert resolve_run_usage(_R()) is None
+
+    def test_property_style_runusage_returned_directly(self):
+        """pydantic-ai 1.x+: ``result.usage`` is already a RunUsage."""
+        u = RunUsage(input_tokens=10, output_tokens=5)
+
+        class _R:
+            usage = u
+
+        assert resolve_run_usage(_R()) is u
+
+    def test_deprecated_callable_wrapper_is_not_called(self):
+        """The 1.x callable wrapper must be read as a property — no warning."""
+        u = _CallableRunUsage(input_tokens=7)
+
+        class _R:
+            usage = u
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            resolved = resolve_run_usage(_R())
+        assert resolved is u
+        assert resolved.input_tokens == 7
+
+    def test_method_style_usage_is_called(self):
+        """Legacy SDKs / test doubles expose ``usage`` as a method."""
+        u = RunUsage(input_tokens=3)
+
+        class _R:
+            def usage(self):
+                return u
+
+        assert resolve_run_usage(_R()) is u
 
 
 class TestUsageRecord:

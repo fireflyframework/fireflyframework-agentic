@@ -69,6 +69,7 @@ from collections.abc import Callable
 from typing import Any
 
 from fireflyframework_agentic.model_utils import detect_model_family
+from fireflyframework_agentic.observability.usage import resolve_run_usage
 
 logger = logging.getLogger(__name__)
 
@@ -266,8 +267,8 @@ class PromptCacheMiddleware:
         if not self._enabled:
             return result
 
-        if hasattr(result, "usage") and callable(result.usage):
-            usage = result.usage()
+        usage = resolve_run_usage(result)
+        if usage is not None:
             # ``cache_write_tokens`` is the pydantic-ai field name;
             # ``cache_creation_tokens`` is the historical fallback.
             cache_creation = getattr(usage, "cache_write_tokens", 0) or getattr(usage, "cache_creation_tokens", 0) or 0
