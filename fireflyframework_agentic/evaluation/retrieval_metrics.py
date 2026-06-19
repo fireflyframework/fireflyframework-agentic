@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import math
 
+
 def _dedup(retrieved: list[dict]) -> list[dict]:
     """Return one entry per source, first chunk wins, preserving rank order."""
     seen: set[str] = set()
@@ -154,9 +155,7 @@ def no_answer_rate(results: list[dict]) -> float | None:
     """Fraction of queries where the model produced no answer. None if no results."""
     if not results:
         return None
-    count = sum(
-        1 for row in results if row.get("no_answer") or not row.get("answer", "").strip()
-    )
+    count = sum(1 for row in results if row.get("no_answer") or not row.get("answer", "").strip())
     return round(count / len(results), 4)
 
 
@@ -175,5 +174,3 @@ def mean_latency_ms(results: list[dict], field: str) -> float | None:
     """Mean latency in ms for the given field (``search_ms`` or ``answer_ms``). None if absent."""
     values = [row[field] for row in results if row.get(field) is not None]
     return round(sum(values) / len(values)) if values else None
-
-
