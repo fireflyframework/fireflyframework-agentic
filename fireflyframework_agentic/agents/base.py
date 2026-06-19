@@ -107,6 +107,9 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         output_type: The Pydantic model (or scalar type) for structured output.
         deps_type: The dependency type expected at run time.
         tools: Sequence of tool functions or :class:`pydantic_ai.Tool` objects.
+        toolsets: Sequence of pydantic-ai toolsets (e.g. a ``ToolKit.as_toolset()``
+            result, ``WrapperToolset``/``ApprovalRequiredToolset``, or an MCP
+            server) made available to the agent alongside ``tools``.
         description: Free-form description shown in documentation and agent
             discovery listings.
         version: Semantic version string for this agent definition.
@@ -131,6 +134,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         output_type: type[OutputT] = str,  # type: ignore[assignment]
         deps_type: type[AgentDepsT] = type(None),  # type: ignore[assignment]
         tools: Sequence[Any] = (),
+        toolsets: Sequence[Any] = (),
         description: str = "",
         version: str = "0.1.0",
         tags: Sequence[str] = (),
@@ -172,6 +176,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             output_type=output_type,
             deps_type=deps_type,
             tools=self._resolve_tools(tools),
+            toolsets=list(toolsets),
             retries=resolved_retries,
             model_settings=resolved_settings,
             name=name,

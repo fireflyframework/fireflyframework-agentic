@@ -26,6 +26,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from pydantic_ai import Tool as PydanticTool
+from pydantic_ai.toolsets import FunctionToolset
 
 from fireflyframework_agentic.tools.base import ToolProtocol
 from fireflyframework_agentic.tools.registry import ToolRegistry
@@ -104,6 +105,22 @@ class ToolKit:
                 )
             )
         return pydantic_tools
+
+    def as_toolset(self) -> FunctionToolset[Any]:
+        """Convert the kit into a pydantic-ai :class:`FunctionToolset`.
+
+        Unlike :meth:`as_pydantic_tools` (a flat list passed via ``tools=``), a
+        toolset is a first-class, composable collection: it can be wrapped
+        (``WrapperToolset``, ``ApprovalRequiredToolset``), filtered, combined with
+        MCP-server toolsets, and passed to ``Agent(toolsets=[...])`` or
+        ``FireflyAgent(toolsets=[...])``.
+        """
+        toolset: FunctionToolset[Any] = FunctionToolset()
+        for tool in self._tools:
+            pydantic_handler_fn = getattr(tool, "pydantic_handler", None)
+            handler = pydantic_handler_fn() if pydantic_handler_fn is not None else tool.execute
+            toolset.add_function(handler, name=tool.name)
+        return toolset
 
     def __len__(self) -> int:
         return len(self._tools)
