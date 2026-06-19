@@ -40,6 +40,7 @@ Usage::
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import time
 from typing import Any
@@ -449,7 +450,35 @@ class CacheMiddleware:
         return result
 
 
-# -- ValidationMiddleware ----------------------------------------------------
+# -- OutputGuardMiddleware ---------------------------------------------------
+
+
+def _replace_output(result: Any, new_output: Any) -> Any:
+    """Return ``result`` with its ``output`` swapped, preserving the result type.
+
+    Handles NamedTuple results (``_replace``), dataclass results
+    (``dataclasses.replace`` — e.g. pydantic-ai's ``AgentRunResult``), and plain
+    mutable objects (in-place assignment); degrades to the bare value only as a
+    last resort. The previous ``hasattr(result, "_replace")`` guard silently
+    failed for the dataclass ``AgentRunResult``, returning the *unwrapped* output
+    (a bare ``str``) and dropping usage/messages/type from the result.
+    """
+    if hasattr(result, "_replace"):  # NamedTuple
+        try:
+            return result._replace(output=new_output)
+        except (TypeError, ValueError):
+            pass
+    if dataclasses.is_dataclass(result) and not isinstance(result, type):
+        try:
+            return dataclasses.replace(result, output=new_output)
+        except (TypeError, ValueError):
+            pass
+    obj: Any = result
+    try:
+        obj.output = new_output
+        return obj
+    except (AttributeError, TypeError):
+        return new_output
 
 
 class OutputGuardMiddleware:
@@ -514,9 +543,10 @@ class OutputGuardMiddleware:
                 len(scan_result.matched_patterns),
                 scan_result.matched_categories,
             )
-            # Replace the output in the result if possible (e.g. NamedTuple results)
-            if hasattr(result, "output") and hasattr(result, "_replace"):
-                return result._replace(output=scan_result.sanitised_output)  # type: ignore[union-attr]
+            # Preserve the result object's contract (usage, messages, type);
+            # only swap the sanitised output field.
+            if hasattr(result, "output"):
+                return _replace_output(result, scan_result.sanitised_output)
             return scan_result.sanitised_output
 
         raise OutputGuardError(f"Output blocked for agent '{context.agent_name}': {scan_result.reason}")
