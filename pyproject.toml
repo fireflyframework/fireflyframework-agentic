@@ -191,3 +191,12 @@ markers = [
     "nightly: runs only in nightly CI. Long-running tests: benchmarks, real LLM/DB/HTTP, or anything not suitable for the PR gate.",
     "integration: runs against the real DatabaseStore / vector-store stack (no external network — embedders / LLM agents are stubbed or mocked).",
 ]
+filterwarnings = [
+    # SP-9 deprecation gate: promote any pydantic / pydantic-ai deprecation to an
+    # error so a dependency bump that introduces one fails CI immediately. The
+    # framework's own intentional deprecations (e.g. BranchStep / FanOutStep) are
+    # plain DeprecationWarning asserted via pytest.warns, so they are unaffected.
+    # Paths are stable across the pinned pydantic-ai 1.x line.
+    "error::pydantic.warnings.PydanticDeprecationWarning",
+    "error::pydantic_ai._warnings.PydanticAIDeprecationWarning",
+]
