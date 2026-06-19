@@ -86,9 +86,6 @@ from fireflyframework_agentic.evaluation.retrieval_metrics import (
     citation_precision as citation_precision,
 )
 from fireflyframework_agentic.evaluation.retrieval_metrics import (
-    compute_retrieval_metrics as compute_retrieval_metrics,
-)
-from fireflyframework_agentic.evaluation.retrieval_metrics import (
     hit_at_k as hit_at_k,
 )
 from fireflyframework_agentic.evaluation.retrieval_metrics import (

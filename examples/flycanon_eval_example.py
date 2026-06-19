@@ -26,7 +26,7 @@ the flycanon experiment evaluation workflow:
 The champion/challenger pattern mirrors the flycanon_experiments harness:
 each run writes metrics to a file; ``approve`` promotes it by repointing
 baseline.json.  Here we replicate that flow using the framework's
-``compute_retrieval_metrics`` / ``RetrieverMetrics`` API directly.
+individual retrieval metric functions directly.
 
 Usage::
 
@@ -94,7 +94,17 @@ import json
 import sys
 from pathlib import Path
 
-from fireflyframework_agentic.evaluation import RetrieverMetrics
+from fireflyframework_agentic.evaluation import (
+    citation_precision,
+    hit_at_k,
+    map_score,
+    mean_latency_ms,
+    mrr,
+    ndcg,
+    no_answer_rate,
+    precision_at_k,
+    recall_at_k,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -131,32 +141,31 @@ def _save_baseline(path: str, metrics: dict) -> None:
     Path(path).write_text(json.dumps(metrics, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def _metrics_to_flat(m: RetrieverMetrics) -> dict:
-    """Convert a RetrieverMetrics model to the flat dict stored in baseline.json."""
+def _compute_metrics(results: list[dict]) -> dict:
+    """Compute all IR metrics and return a flat dict."""
     return {
-        "n_queries": m.n_queries,
-        "hit@1": m.hit_at_1,
-        "hit@5": m.hit_at_5,
-        "hit@10": m.hit_at_10,
-        "recall@1": m.recall_at_1,
-        "recall@5": m.recall_at_5,
-        "recall@10": m.recall_at_10,
-        "precision@1": m.precision_at_1,
-        "precision@5": m.precision_at_5,
-        "precision@10": m.precision_at_10,
-        "mrr@10": m.mrr_at_10,
-        "map@10": m.map_at_10,
-        "ndcg@10": m.ndcg_at_10,
-        "no_answer_rate": m.no_answer_rate,
-        "citation_precision": m.citation_precision,
-        "mean_search_ms": m.mean_search_ms,
-        "mean_answer_ms": m.mean_answer_ms,
+        "n_queries": len(results),
+        "hit@1": hit_at_k(results, 1),
+        "hit@5": hit_at_k(results, 5),
+        "hit@10": hit_at_k(results, 10),
+        "recall@1": recall_at_k(results, 1),
+        "recall@5": recall_at_k(results, 5),
+        "recall@10": recall_at_k(results, 10),
+        "precision@1": precision_at_k(results, 1),
+        "precision@5": precision_at_k(results, 5),
+        "precision@10": precision_at_k(results, 10),
+        "mrr@10": mrr(results),
+        "map@10": map_score(results),
+        "ndcg@10": ndcg(results),
+        "no_answer_rate": no_answer_rate(results),
+        "citation_precision": citation_precision(results),
+        "mean_search_ms": mean_latency_ms(results, "search_ms"),
+        "mean_answer_ms": mean_latency_ms(results, "answer_ms"),
     }
 
 
-def _print_metrics_table(metrics: RetrieverMetrics, baseline: dict | None) -> None:
+def _print_metrics_table(flat: dict, baseline: dict | None) -> None:
     """Print a formatted table comparing current metrics vs baseline."""
-    flat = _metrics_to_flat(metrics)
 
     col_w = 22
     num_w = 10
@@ -244,10 +253,6 @@ def run_evaluation(args: argparse.Namespace) -> int:
     # ------------------------------------------------------------------
     # Step 2 — Compute deterministic IR metrics.
     #
-    # compute_retrieval_metrics() returns a flat dict of standard IR metrics.
-    # RetrieverMetrics.from_results() wraps that into a typed Pydantic model
-    # for convenient attribute access.
-    #
     # Metrics are computed at cut-offs k ∈ {1, 5, 10} and include:
     #   hit@k       -- at least one gold doc in top-k (binary)
     #   recall@k    -- fraction of gold docs found in top-k
@@ -257,13 +262,13 @@ def run_evaluation(args: argparse.Namespace) -> int:
     #   ndcg@10     -- normalised discounted cumulative gain
     # ------------------------------------------------------------------
     print("\nComputing retrieval metrics ...")
-    metrics = RetrieverMetrics.from_results(results)
+    flat = _compute_metrics(results)
 
-    print(f"  nDCG@10    : {metrics.ndcg_at_10:.4f}")
-    print(f"  MRR@10     : {metrics.mrr_at_10:.4f}")
-    print(f"  Recall@10  : {metrics.recall_at_10:.4f}")
-    print(f"  Hit@10     : {metrics.hit_at_10:.4f}")
-    print(f"  MAP@10     : {metrics.map_at_10:.4f}")
+    print(f"  nDCG@10    : {flat['ndcg@10']:.4f}")
+    print(f"  MRR@10     : {flat['mrr@10']:.4f}")
+    print(f"  Recall@10  : {flat['recall@10']:.4f}")
+    print(f"  Hit@10     : {flat['hit@10']:.4f}")
+    print(f"  MAP@10     : {flat['map@10']:.4f}")
 
     # ------------------------------------------------------------------
     # Step 3 — Load the baseline (champion) for regression detection.
@@ -282,7 +287,7 @@ def run_evaluation(args: argparse.Namespace) -> int:
     print("\n" + "=" * 56)
     print("Retrieval Metrics")
     print("=" * 56)
-    _print_metrics_table(metrics, baseline)
+    _print_metrics_table(flat, baseline)
 
     # ------------------------------------------------------------------
     # Step 5 — Regression check.
@@ -291,7 +296,6 @@ def run_evaluation(args: argparse.Namespace) -> int:
     # promotion (exit code 1) unless --promote-if-better is set and the
     # run actually improved overall.
     # ------------------------------------------------------------------
-    flat = _metrics_to_flat(metrics)
 
     if baseline:
         regressions = _detect_regressions(flat, baseline)
