@@ -22,6 +22,10 @@ provider uniformly.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import Any
+
+from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 from pydantic_ai.models import Model
 
 # Maps PydanticAI model class names to provider identifiers.
@@ -167,3 +171,23 @@ def detect_model_family(model: str | Model | None) -> str:
         return _PROVIDER_TO_FAMILY.get(provider, "unknown")
 
     return "unknown"
+
+
+def serialize_model_messages(messages: Sequence[ModelMessage]) -> list[Any]:
+    """Serialize pydantic-ai ``ModelMessage`` objects to a JSON-able list.
+
+    Uses pydantic-ai's canonical ``ModelMessagesTypeAdapter`` so the full,
+    model-agnostic message structure (typed parts, tool calls, usage, kinds)
+    survives a round-trip through :func:`deserialize_model_messages`. A plain
+    ``list[Any]`` dump loses the typed parts on reload — this does not.
+    """
+    if not messages:
+        return []
+    return ModelMessagesTypeAdapter.dump_python(list(messages), mode="json")
+
+
+def deserialize_model_messages(data: Any) -> list[ModelMessage]:
+    """Reconstruct ``ModelMessage`` objects produced by :func:`serialize_model_messages`."""
+    if not data:
+        return []
+    return list(ModelMessagesTypeAdapter.validate_python(data))
