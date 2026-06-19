@@ -30,7 +30,7 @@ Result row schema (dict)::
         "answer_ms": float,
     }
 
-Individual metrics (recommended for composability)::
+Individual metrics::
 
     hit_at_k(results, k)        -> float
     recall_at_k(results, k)     -> float
@@ -41,18 +41,11 @@ Individual metrics (recommended for composability)::
     no_answer_rate(results)     -> float | None
     citation_precision(results) -> float | None
     mean_latency_ms(results, field) -> float | None
-
-Convenience aggregate (all metrics in one call)::
-
-    compute_retrieval_metrics(results) -> dict
 """
 
 from __future__ import annotations
 
 import math
-
-KS = (1, 5, 10)
-
 
 def _dedup(retrieved: list[dict]) -> list[dict]:
     """Return one entry per source, first chunk wins, preserving rank order."""
@@ -184,23 +177,3 @@ def mean_latency_ms(results: list[dict], field: str) -> float | None:
     return round(sum(values) / len(values)) if values else None
 
 
-def compute_retrieval_metrics(results: list[dict]) -> dict:
-    """Compute all IR metrics over a list of retrieval result rows and return a flat dict.
-
-    Convenience wrapper that calls each individual metric function. Prefer the
-    individual functions (``hit_at_k``, ``recall_at_k``, etc.) when you only
-    need a subset.
-    """
-    out: dict[str, object] = {"n_queries": len(results)}
-    for k in KS:
-        out[f"hit@{k}"] = hit_at_k(results, k)
-        out[f"recall@{k}"] = recall_at_k(results, k)
-        out[f"precision@{k}"] = precision_at_k(results, k)
-    out["mrr@10"] = mrr(results)
-    out["map@10"] = map_score(results)
-    out["ndcg@10"] = ndcg(results)
-    out["no_answer_rate"] = no_answer_rate(results)
-    out["citation_precision"] = citation_precision(results)
-    out["mean_search_ms"] = mean_latency_ms(results, "search_ms")
-    out["mean_answer_ms"] = mean_latency_ms(results, "answer_ms")
-    return out
