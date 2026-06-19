@@ -109,7 +109,7 @@ watch = ["watchfiles>=0.24.0"]
 # ``soffice`` (LibreOffice) is an OS-level dep only the subprocess converter
 # needs, and Gotenberg is reached over HTTP via the core ``httpx`` dep.
 binary = [
-    "pypdf>=4.3.0",
+    "pypdf>=6.13.3",
     "Pillow>=11.0",
     "pillow-heif>=0.18",
     "cairosvg>=2.7",
