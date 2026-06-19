@@ -23,10 +23,11 @@ This module also provides the fixed aggregate_grounding() that closes a prior
 aggregation bug where the previous runner inherited run 0's grounding report
 unchanged instead of merging across all runs.
 """
+
 from __future__ import annotations
 
 import statistics
-from typing import Sequence
+from collections.abc import Sequence
 
 
 def aa_band(scores: Sequence[float], *, percentile: int = 95) -> float:
@@ -49,11 +50,7 @@ def aa_band(scores: Sequence[float], *, percentile: int = 95) -> float:
     scores = list(scores)
     if len(scores) < 2:
         raise ValueError(f"aa_band requires >= 2 reruns; got {len(scores)}")
-    deltas = [
-        abs(x - y)
-        for i, x in enumerate(scores)
-        for y in scores[i + 1:]
-    ]
+    deltas = [abs(x - y) for i, x in enumerate(scores) for y in scores[i + 1 :]]
     sorted_deltas = sorted(deltas)
     # Index for the requested percentile; clamp to valid range
     idx = max(0, min(len(sorted_deltas) - 1, int(len(sorted_deltas) * percentile / 100)))

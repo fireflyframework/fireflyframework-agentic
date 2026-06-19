@@ -188,13 +188,9 @@ def _render_advisory(report) -> list[str]:
         d = m["faithfulness"]
         u = d.get("unsupported_ids", [])
         extra = f"   (unsupported: {', '.join(u)})" if u else ""
-        lines.append(
-            f"Faithfulness (entailment):       {d.get('supported')}/{d.get('total')} supported{extra}"
-        )
+        lines.append(f"Faithfulness (entailment):       {d.get('supported')}/{d.get('total')} supported{extra}")
     if "numeric_temporal_fidelity" in m:
-        lines.append(
-            f"Numeric/temporal fidelity:       {m['numeric_temporal_fidelity'].get('count', 0)} mismatch(es)"
-        )
+        lines.append(f"Numeric/temporal fidelity:       {m['numeric_temporal_fidelity'].get('count', 0)} mismatch(es)")
     if "citation_relevance" in m:
         d = m["citation_relevance"]
         lines.append(
@@ -218,14 +214,10 @@ def _render_advisory(report) -> list[str]:
         lines.append(f"Contradiction detection:         {m['contradiction'].get('count', 0)}")
     if "actionability" in m:
         d = m["actionability"]
-        lines.append(
-            f"Actionability:                   {_num(d.get('score'))}   (rated {d.get('rated', 0)})"
-        )
+        lines.append(f"Actionability:                   {_num(d.get('score'))}   (rated {d.get('rated', 0)})")
     if "severity_calibration" in m:
         d = m["severity_calibration"]
-        lines.append(
-            f"Severity calibration:            {d.get('miscalibrated', 0)}/{d.get('total', 0)} miscalibrated"
-        )
+        lines.append(f"Severity calibration:            {d.get('miscalibrated', 0)}/{d.get('total', 0)} miscalibrated")
     if "answer_relevancy" in m:
         lines.append(f"Answer relevancy:                {_num(m['answer_relevancy'].get('score'))}")
     if "comparative_vs_champion" in m:
@@ -236,14 +228,10 @@ def _render_advisory(report) -> list[str]:
         d = m["source_coverage"]
         o = d.get("orphaned", [])
         extra = f"   (orphaned: {', '.join(o)})" if o else ""
-        lines.append(
-            f"Source coverage [D]:             {d.get('cited')}/{d.get('total')} documents cited{extra}"
-        )
+        lines.append(f"Source coverage [D]:             {d.get('cited')}/{d.get('total')} documents cited{extra}")
     if "excerpt_fill_rate" in m:
         d = m["excerpt_fill_rate"]
-        lines.append(
-            f"Evidence-excerpt fill [D]:       {d.get('populated')}/{d.get('total')} populated"
-        )
+        lines.append(f"Evidence-excerpt fill [D]:       {d.get('populated')}/{d.get('total')} populated")
     if "open_gap" in m:
         gap = (m["open_gap"].get("gap") or "").strip()
         if gap:
@@ -259,9 +247,7 @@ def _render_advisory(report) -> list[str]:
         json.dumps({"metrics": report.metrics, "details": report.details}, indent=2, default=str),
         "```",
     ]
-    lines.append(
-        "> Decision support for the G5 human sign-off; advisory until LLM-as-a-Judge calibration (§10)."
-    )
+    lines.append("> Decision support for the G5 human sign-off; advisory until LLM-as-a-Judge calibration (§10).")
     lines.append("")
     return lines
 
@@ -284,9 +270,7 @@ def _render_analysis(gate_results: list, advisory=None) -> list[str]:
         matched = d.get("findings_matched_to_registry", {}).get("fraction", 0.0)
 
         tier_summary = ", ".join(
-            f"{t} {v['hit']}/{v['total']}"
-            for t, v in tiers.items()
-            if "hit" in v and "total" in v
+            f"{t} {v['hit']}/{v['total']}" for t, v in tiers.items() if "hit" in v and "total" in v
         )
         lines.append(
             f"Lexical recall is **{recall:.3f}** ({tier_summary}). "
@@ -300,9 +284,7 @@ def _render_analysis(gate_results: list, advisory=None) -> list[str]:
                 "The run is covering the same ground multiple times rather than broadening coverage."
             )
         else:
-            lines.append(
-                f"Finding redundancy is low ({redundancy:.0%}): each finding addresses a distinct topic."
-            )
+            lines.append(f"Finding redundancy is low ({redundancy:.0%}): each finding addresses a distinct topic.")
         lines.append(
             "_G2 is a topic-level test. A recall of 1.000 means every required topic was "
             "mentioned somewhere — it does not verify that the specific claims about those "
@@ -453,14 +435,10 @@ def _render_analysis(gate_results: list, advisory=None) -> list[str]:
     flag_names = [g.gate for g in flags]
 
     if not flags:
-        lines.append(
-            "All deterministic gates pass. The run is ready for G5 human sign-off."
-        )
+        lines.append("All deterministic gates pass. The run is ready for G5 human sign-off.")
     else:
         flag_str = ", ".join(flag_names)
-        lines.append(
-            f"The run is at **HOLD** due to flags on: {flag_str}. "
-        )
+        lines.append(f"The run is at **HOLD** due to flags on: {flag_str}. ")
         for g in flags:
             if g.gate == "G3" and g.reason_code == "EVIDENCE_SOURCE_UNKNOWN":
                 lines.append(

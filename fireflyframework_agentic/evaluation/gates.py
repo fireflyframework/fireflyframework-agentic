@@ -93,11 +93,7 @@ def _build_evidence_index(result: dict, corpus: Corpus | None = None) -> dict[st
     if corpus is None:
         return index
     statuses = verify_evidence_index(corpus, result)
-    return {
-        eid: ev
-        for eid, ev in index.items()
-        if statuses[eid] in (VERIFIED, EMPTY)
-    }
+    return {eid: ev for eid, ev in index.items() if statuses[eid] in (VERIFIED, EMPTY)}
 
 
 # ── G1: Structural & Safe ────────────────────────────────────────────────────
@@ -322,8 +318,10 @@ def _finding_redundancy_rate(findings: list[dict]) -> float:
     """Fraction of findings that are near-duplicates of another (Jaccard ≥0.6 on ≥5-char tokens)."""
     if len(findings) < 2:
         return 0.0
+
     def _tok(text: str) -> frozenset[str]:
         return frozenset(t.lower() for t in text.split() if len(t) >= 5)
+
     token_sets = [_tok(f.get("description", "")) for f in findings]
     in_redundant: set[int] = set()
     for i in range(len(token_sets)):
@@ -381,9 +379,7 @@ def g2_recall_precision(
         if item.tier == "NC":
             lexical[item.id] = False
         elif item.scope == "dependency_graph" and item.from_node:
-            lexical[item.id] = matcher.matches_dependency_graph_relation(
-                item, result, evidence_index
-            )
+            lexical[item.id] = matcher.matches_dependency_graph_relation(item, result, evidence_index)
         else:
             lexical[item.id] = any(
                 matches(c, item, evidence_index, scope=scope)
@@ -394,14 +390,10 @@ def g2_recall_precision(
     if recall_metric not in ("lexical", "semantic", "hybrid"):
         raise ValueError(f"unknown recall_metric {recall_metric!r}")
     if recall_metric in ("semantic", "hybrid") and embed_fn is None:
-        raise ValueError(
-            f"recall_metric={recall_metric!r} requires an embedder; pass embed_fn"
-        )
+        raise ValueError(f"recall_metric={recall_metric!r} requires an embedder; pass embed_fn")
 
     if embed_fn is not None:
-        semantic = matcher.semantic_hits(
-            candidates, registry.items, evidence_index, embed_fn, tau, tau_nc=tau_nc
-        )
+        semantic = matcher.semantic_hits(candidates, registry.items, evidence_index, embed_fn, tau, tau_nc=tau_nc)
         # dependency_graph relation items have no embedding candidates (§5.3b uses
         # the endpoint matcher, not per-candidate text embeddings); mirror the
         # lexical result so semantic/hybrid never under-credits them.
@@ -424,8 +416,7 @@ def g2_recall_precision(
     finding_count = len(findings)
     finding_scoped_items = [i for i in registry.real_items if i.scope == "finding"]
     findings_matched = sum(
-        1 for f in findings
-        if any(matches(f, item, evidence_index, scope="finding") for item in finding_scoped_items)
+        1 for f in findings if any(matches(f, item, evidence_index, scope="finding") for item in finding_scoped_items)
     )
     _sn = {
         "finding_count": finding_count,
@@ -493,9 +484,7 @@ def g2_recall_precision(
             "lexical_recall": round(_weighted_recall(scored_items, lexical), 4),
             "semantic_recall": round(_weighted_recall(scored_items, semantic), 4),
             "hybrid_recall": round(
-                _weighted_recall(
-                    scored_items, {iid: lexical[iid] or semantic[iid] for iid in lexical}
-                ),
+                _weighted_recall(scored_items, {iid: lexical[iid] or semantic[iid] for iid in lexical}),
                 4,
             ),
             "tau": tau,
@@ -577,8 +566,8 @@ def g3_grounded(
 
     grounded_ids: list[str] = []
     # Ungrounded split (§6.3): distinguish format issues from real faithfulness failures.
-    ungrounded_empty_only: list[str] = []    # every ref had an empty excerpt
-    ungrounded_populated: list[str] = []     # had populated excerpt(s) but none anchored
+    ungrounded_empty_only: list[str] = []  # every ref had an empty excerpt
+    ungrounded_populated: list[str] = []  # had populated excerpt(s) but none anchored
 
     # Excerpt fill: count all resolved refs and how many carry a non-empty excerpt.
     total_refs = 0
@@ -657,18 +646,14 @@ def g3_grounded(
             "Populated excerpt(s) not found in the cited corpus document — "
             "the run asserts evidence the source does not contain."
         )
-        return GateResult(
-            gate="G3", passed=False, reason_code="EVIDENCE_FABRICATED", details=details
-        )
+        return GateResult(gate="G3", passed=False, reason_code="EVIDENCE_FABRICATED", details=details)
 
     if unknown_source_ids:
         details["message"] = (
             "Evidence locator(s) resolve to no corpus document — either the "
             "corpus bundle is incomplete or the run invented a source."
         )
-        return GateResult(
-            gate="G3", passed=False, reason_code="EVIDENCE_SOURCE_UNKNOWN", details=details
-        )
+        return GateResult(gate="G3", passed=False, reason_code="EVIDENCE_SOURCE_UNKNOWN", details=details)
 
     if grounding_pct < grounding_floor:
         details["floor"] = grounding_floor
@@ -746,8 +731,7 @@ def g5_no_regression(
         band = noise.get(metric, 0.0)
         if delta < -band:
             regressions.append(
-                f"{metric}: candidate={cand_val:.4f} champion={champ_val:.4f} "
-                f"delta={delta:+.4f} < -band={-band:.4f}"
+                f"{metric}: candidate={cand_val:.4f} champion={champ_val:.4f} delta={delta:+.4f} < -band={-band:.4f}"
             )
         elif delta > band:
             improvements.append(f"{metric}: delta={delta:+.4f} > band={band:.4f}")

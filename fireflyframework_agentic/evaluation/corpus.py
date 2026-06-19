@@ -80,7 +80,7 @@ def normalize(text: str) -> str:
     smart quotes, collapse whitespace, casefold."""
     text = unicodedata.normalize("NFKC", text)
     text = text.replace("**", "").replace("*", "")
-    text = re.sub(r"[\"""''']", "", text)
+    text = re.sub(r"[\"" "''']", "", text)
     return re.sub(r"\s+", " ", text).strip().casefold()
 
 
@@ -129,9 +129,7 @@ def load_corpus(path: str | Path) -> Corpus:
 
 def _fragment_coverage(fragment: str, source: str) -> float:
     """Fraction of fragment covered by matching blocks of >= _MIN_BLOCK_CHARS chars."""
-    blocks = difflib.SequenceMatcher(
-        None, fragment, source, autojunk=False
-    ).get_matching_blocks()
+    blocks = difflib.SequenceMatcher(None, fragment, source, autojunk=False).get_matching_blocks()
     covered = sum(b.size for b in blocks if b.size >= _MIN_BLOCK_CHARS)
     return covered / len(fragment)
 
@@ -158,11 +156,9 @@ def verify_entry(corpus: Corpus, entry: dict) -> str:
     if not excerpt:
         return EMPTY
 
-    fragments = [
-        f.strip()
-        for f in _SPLICE_PATTERN.split(excerpt)
-        if len(f.strip()) >= _MIN_FRAGMENT_CHARS
-    ] or [excerpt]
+    fragments = [f.strip() for f in _SPLICE_PATTERN.split(excerpt) if len(f.strip()) >= _MIN_FRAGMENT_CHARS] or [
+        excerpt
+    ]
 
     for fragment in fragments:
         if fragment in source:
@@ -178,8 +174,4 @@ def verify_evidence_index(corpus: Corpus, result: dict) -> dict[str, str]:
     Returns {evidence_id: status} over all entries — referenced or not — so
     the gates share one verification pass.
     """
-    return {
-        ev["id"]: verify_entry(corpus, ev)
-        for ev in result.get("evidence_index", [])
-        if ev.get("id")
-    }
+    return {ev["id"]: verify_entry(corpus, ev) for ev in result.get("evidence_index", []) if ev.get("id")}

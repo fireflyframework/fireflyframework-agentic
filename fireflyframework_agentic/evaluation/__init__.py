@@ -31,16 +31,29 @@ Champion tracking:
 
 from importlib.metadata import PackageNotFoundError, version
 
-from fireflyframework_agentic.evaluation.corpus import EMPTY, FABRICATED, SOURCE_UNKNOWN, VERIFIED, corpus_sha256, load_corpus, verify_evidence_index
+from fireflyframework_agentic.evaluation.champion import (
+    ChampionRecord,
+    invalidate_champion,
+    load_champion,
+    save_champion,
+)
+from fireflyframework_agentic.evaluation.corpus import (
+    EMPTY,
+    FABRICATED,
+    SOURCE_UNKNOWN,
+    VERIFIED,
+    corpus_sha256,
+    load_corpus,
+    verify_evidence_index,
+)
 from fireflyframework_agentic.evaluation.gates import GateResult, Verdict, g2_recall_precision, run_gates
-from fireflyframework_agentic.evaluation.scorecard import render_scorecard, verdict, VERDICT_PROMOTE, VERDICT_HOLD
-from fireflyframework_agentic.evaluation.champion import ChampionRecord, invalidate_champion, load_champion, save_champion
 from fireflyframework_agentic.evaluation.judge import AdvisoryReport, run_judge
 from fireflyframework_agentic.evaluation.judge_client import JudgeClient, OllamaEmbedder, build_embedder, cosine
 from fireflyframework_agentic.evaluation.matcher import anchored, matches, source_stem, tokens
 from fireflyframework_agentic.evaluation.registry import Registry, RegistryItem, load_registry, registry_sha256
-from fireflyframework_agentic.lab.retrieval_metrics import RetrieverMetrics, compute_retrieval_metrics
+from fireflyframework_agentic.evaluation.scorecard import VERDICT_HOLD, VERDICT_PROMOTE, render_scorecard, verdict
 from fireflyframework_agentic.evaluation.stats import aa_band, aggregate_grounding, left_skew_flag
+from fireflyframework_agentic.lab.retrieval_metrics import RetrieverMetrics, compute_retrieval_metrics
 
 try:
     __version__ = version("fireflyframework-agentic")

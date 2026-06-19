@@ -32,6 +32,7 @@ Usage:
         --options    request_options.json \
         --commit     c107918
 """
+
 from __future__ import annotations
 
 import argparse
@@ -133,12 +134,8 @@ def write_snapshot(output_dir: str | Path, config: dict) -> Path:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Capture the flyradar run configuration.")
     parser.add_argument("--output-dir", required=True, help="Run directory holding output.json.")
-    parser.add_argument(
-        "--options", required=True, help="JSON file of the DiscoveryRequest options that were sent."
-    )
-    parser.add_argument(
-        "--base-url", default=None, help="flyradar base URL (default: $FLYRADAR_BASE_URL)."
-    )
+    parser.add_argument("--options", required=True, help="JSON file of the DiscoveryRequest options that were sent.")
+    parser.add_argument("--base-url", default=None, help="flyradar base URL (default: $FLYRADAR_BASE_URL).")
     parser.add_argument("--commit", default=None, help="Deployed flyradar git commit, if known.")
     args = parser.parse_args(argv)
 

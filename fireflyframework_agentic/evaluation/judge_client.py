@@ -245,8 +245,7 @@ class JudgeClient:
         if self.provider == "ollama":
             return self._ollama(system, user, max_tokens)
         raise ValueError(
-            f"unknown judge provider {self.provider!r} in {self.model_spec!r}; "
-            "use anthropic:/openai:/azure:/ollama:"
+            f"unknown judge provider {self.provider!r} in {self.model_spec!r}; use anthropic:/openai:/azure:/ollama:"
         )
 
     def _anthropic(self, system: str, user: str, max_tokens: int) -> str:
@@ -262,9 +261,7 @@ class JudgeClient:
         }
         headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
         resp = _http_post_json("https://api.anthropic.com/v1/messages", headers, body, self.timeout)
-        text = next(
-            (b.get("text") for b in resp.get("content", []) if b.get("type") == "text"), None
-        )
+        text = next((b.get("text") for b in resp.get("content", []) if b.get("type") == "text"), None)
         if not text:
             raise RuntimeError(f"judge returned no text: {resp}")
         return text
@@ -283,9 +280,7 @@ class JudgeClient:
             ],
         }
         headers = {"Authorization": f"Bearer {api_key}"}
-        resp = _http_post_json(
-            "https://api.openai.com/v1/chat/completions", headers, body, self.timeout
-        )
+        resp = _http_post_json("https://api.openai.com/v1/chat/completions", headers, body, self.timeout)
         return _extract_openai_text(resp)
 
     def _azure(self, system: str, user: str, max_tokens: int) -> str:
@@ -297,10 +292,7 @@ class JudgeClient:
             raise RuntimeError("AZURE_OPENAI_API_KEY not set")
         api_version = _env("AZURE_OPENAI_API_VERSION") or "2024-06-01"
         # Azure deployment lives in the URL path, not the JSON body.
-        url = (
-            f"{endpoint.rstrip('/')}/openai/deployments/{self.model}/chat/completions"
-            f"?api-version={api_version}"
-        )
+        url = f"{endpoint.rstrip('/')}/openai/deployments/{self.model}/chat/completions?api-version={api_version}"
         body = {
             "max_tokens": max_tokens,
             "temperature": 0.0,
@@ -373,10 +365,7 @@ class AzureOpenAIEmbedder:
         if not api_key:
             raise RuntimeError("AZURE_OPENAI_API_KEY not set")
         api_version = _env("AZURE_OPENAI_API_VERSION") or "2024-06-01"
-        url = (
-            f"{endpoint.rstrip('/')}/openai/deployments/{self.model}/embeddings"
-            f"?api-version={api_version}"
-        )
+        url = f"{endpoint.rstrip('/')}/openai/deployments/{self.model}/embeddings?api-version={api_version}"
         headers = {"api-key": api_key}
         vectors = self._embed_with_split(texts, url, headers)
         return np.asarray(vectors, dtype=np.float32)
@@ -438,9 +427,7 @@ def build_embedder(spec: str):
         return OpenAIEmbedder(model or "text-embedding-3-small").embed
     if provider == "azure":
         return AzureOpenAIEmbedder(model or "text-embedding-3-small").embed
-    raise NotImplementedError(
-        f"embedder backend {provider!r} not implemented yet; add it in build_embedder()"
-    )
+    raise NotImplementedError(f"embedder backend {provider!r} not implemented yet; add it in build_embedder()")
 
 
 def cosine(a, b) -> float:
