@@ -94,8 +94,7 @@ import json
 import sys
 from pathlib import Path
 
-from fireflyframework_agentic.evaluation import RetrieverMetrics, compute_retrieval_metrics
-
+from fireflyframework_agentic.evaluation import RetrieverMetrics
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -171,10 +170,7 @@ def _print_metrics_table(metrics: RetrieverMetrics, baseline: dict | None) -> No
         if value is None:
             continue
         # Format floats as 4 decimal places; ints as plain integers.
-        if isinstance(value, float):
-            cur_str = f"{value:.4f}"
-        else:
-            cur_str = str(value)
+        cur_str = f"{value:.4f}" if isinstance(value, float) else str(value)
 
         row = f"{key:<{col_w}} {cur_str:>{num_w}}"
         if baseline and key in baseline and isinstance(value, float):
@@ -353,10 +349,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--baseline",
         default=None,
-        help=(
-            "Path to baseline.json (champion store).  When absent, scores are printed "
-            "without comparison."
-        ),
+        help=("Path to baseline.json (champion store).  When absent, scores are printed without comparison."),
     )
     p.add_argument(
         "--promote-if-better",
