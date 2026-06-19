@@ -16,15 +16,10 @@
 
 from __future__ import annotations
 
-import math
-
-import pytest
-
 from fireflyframework_agentic.lab.retrieval_metrics import (
     RetrieverMetrics,
     compute_retrieval_metrics,
 )
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -37,11 +32,13 @@ def _row(gold_rank: int | None = None, total: int = 5, n_gold: int = 1) -> dict:
     """
     retrieved = []
     for rank in range(1, total + 1):
-        retrieved.append({
-            "rank": rank,
-            "source_id": f"doc-{rank}",
-            "is_gold": rank == gold_rank,
-        })
+        retrieved.append(
+            {
+                "rank": rank,
+                "source_id": f"doc-{rank}",
+                "is_gold": rank == gold_rank,
+            }
+        )
     gold_ids = [f"doc-{gold_rank}"] if gold_rank is not None else []
     return {
         "retrieved": retrieved,

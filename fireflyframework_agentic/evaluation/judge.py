@@ -685,12 +685,12 @@ def _make_ragas_llm(ctx: EvalContext):
         from langchain_anthropic import ChatAnthropic  # type: ignore[import]  # noqa: PLC0415
 
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        return ChatAnthropic(model=model, api_key=api_key, temperature=0.0)
+        return ChatAnthropic(model=model, api_key=api_key, temperature=0.0)  # type: ignore[call-arg,arg-type]
     if provider in ("openai", "azure"):
         from langchain_openai import ChatOpenAI  # type: ignore[import]  # noqa: PLC0415
 
         api_key = os.environ.get("OPENAI_API_KEY", "")
-        return ChatOpenAI(model=model, api_key=api_key, temperature=0.0)
+        return ChatOpenAI(model=model, api_key=api_key, temperature=0.0)  # type: ignore[call-arg,arg-type]
     if provider == "ollama":
         from langchain_ollama import ChatOllama  # type: ignore[import]  # noqa: PLC0415
 
@@ -740,7 +740,7 @@ async def _ragas_score(metric_name: str, item: dict, ctx: EvalContext) -> float 
         sample = _make_ragas_sample(item)
         dataset = EvaluationDataset(samples=[sample])
         result = evaluate(dataset=dataset, metrics=[metric])
-        df = result.to_pandas()
+        df = result.to_pandas()  # type: ignore[attr-defined]
         col = df.columns[df.columns.str.contains(metric_name.replace("_ragas", ""), case=False)]
         if col.empty:
             return None
