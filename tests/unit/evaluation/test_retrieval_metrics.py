@@ -12,233 +12,193 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for lab.retrieval_metrics: compute_retrieval_metrics and RetrieverMetrics."""
+"""Unit tests for evaluation.retrieval_metrics."""
 
 from __future__ import annotations
 
-from fireflyframework_agentic.lab.retrieval_metrics import (
-    RetrieverMetrics,
+from fireflyframework_agentic.evaluation.retrieval_metrics import (
+    citation_precision,
     compute_retrieval_metrics,
+    hit_at_k,
+    map_score,
+    mean_latency_ms,
+    mrr,
+    ndcg,
+    no_answer_rate,
+    precision_at_k,
+    recall_at_k,
 )
-
-# ── helpers ───────────────────────────────────────────────────────────────────
 
 
 def _row(gold_rank: int | None = None, total: int = 5, n_gold: int = 1) -> dict:
-    """Build one result row with ``total`` retrieved items.
-
-    If ``gold_rank`` is not None, the item at that rank is marked as gold.
-    All items get a unique ``source_id`` so dedup leaves them all.
-    """
     retrieved = []
     for rank in range(1, total + 1):
-        retrieved.append(
-            {
-                "rank": rank,
-                "source_id": f"doc-{rank}",
-                "is_gold": rank == gold_rank,
-            }
-        )
+        retrieved.append({"rank": rank, "source_id": f"doc-{rank}", "is_gold": rank == gold_rank})
     gold_ids = [f"doc-{gold_rank}"] if gold_rank is not None else []
-    return {
-        "retrieved": retrieved,
-        "gold": gold_ids * n_gold,
-    }
+    return {"retrieved": retrieved, "gold": gold_ids * n_gold}
 
 
-# ── hit@k ─────────────────────────────────────────────────────────────────────
+# ── hit_at_k ──────────────────────────────────────────────────────────────────
 
 
-def test_hit_at_1_perfect_when_gold_is_rank1():
-    results = [_row(gold_rank=1)]
-    m = compute_retrieval_metrics(results)
-    assert m["hit@1"] == 1.0
+def test_hit_at_k_gold_at_rank1():
+    assert hit_at_k([_row(gold_rank=1)], k=1) == 1.0
 
 
-def test_hit_at_1_zero_when_gold_not_in_top1():
-    results = [_row(gold_rank=2)]
-    m = compute_retrieval_metrics(results)
-    assert m["hit@1"] == 0.0
+def test_hit_at_k_miss_at_rank1():
+    assert hit_at_k([_row(gold_rank=2)], k=1) == 0.0
 
 
-def test_hit_at_5_one_when_gold_at_rank5():
-    results = [_row(gold_rank=5)]
-    m = compute_retrieval_metrics(results)
-    assert m["hit@5"] == 1.0
+def test_hit_at_k_gold_at_rank5():
+    assert hit_at_k([_row(gold_rank=5)], k=5) == 1.0
 
 
-def test_hit_at_5_zero_when_gold_not_in_top5():
-    # Gold is at rank 10 — outside top-5 window with only 5 items, make 10.
-    results = [_row(gold_rank=None, total=10)]  # no gold in retrieved
-    m = compute_retrieval_metrics(results)
-    assert m["hit@5"] == 0.0
+def test_hit_at_k_gold_at_rank10():
+    assert hit_at_k([_row(gold_rank=10, total=10)], k=10) == 1.0
 
 
-def test_hit_at_10_one_when_gold_at_rank10():
-    results = [_row(gold_rank=10, total=10)]
-    m = compute_retrieval_metrics(results)
-    assert m["hit@10"] == 1.0
+def test_hit_at_k_empty():
+    assert hit_at_k([], k=5) == 0.0
 
 
-# ── recall@k ──────────────────────────────────────────────────────────────────
+# ── recall_at_k ───────────────────────────────────────────────────────────────
+
+
+def test_recall_at_k_full_when_gold_at_rank1():
+    assert recall_at_k([_row(gold_rank=1, n_gold=1)], k=1) == 1.0
+
+
+def test_recall_at_k_zero_when_gold_outside_k():
+    assert recall_at_k([_row(gold_rank=5)], k=1) == 0.0
 
 
 def test_recall_at_k_increases_with_k():
-    # Gold at rank 3: recall@1=0, recall@5>=recall@1.
-    results = [_row(gold_rank=3)]
-    m = compute_retrieval_metrics(results)
-    assert m["recall@1"] <= m["recall@5"] <= m["recall@10"]
+    rows = [_row(gold_rank=3)]
+    assert recall_at_k(rows, k=1) <= recall_at_k(rows, k=5) <= recall_at_k(rows, k=10)
 
 
-def test_recall_at_1_full_when_single_gold_at_rank1():
-    results = [_row(gold_rank=1, n_gold=1)]
-    m = compute_retrieval_metrics(results)
-    assert m["recall@1"] == 1.0
+# ── precision_at_k ────────────────────────────────────────────────────────────
 
 
-def test_recall_at_1_zero_when_no_gold_in_rank1():
-    results = [_row(gold_rank=5)]
-    m = compute_retrieval_metrics(results)
-    assert m["recall@1"] == 0.0
+def test_precision_at_k_gold_at_rank1():
+    assert precision_at_k([_row(gold_rank=1)], k=1) == 1.0
 
 
-# ── MRR ───────────────────────────────────────────────────────────────────────
+def test_precision_at_k_decreases_when_k_larger():
+    rows = [_row(gold_rank=1)]
+    assert precision_at_k(rows, k=5) < precision_at_k(rows, k=1)
 
 
-def test_mrr_is_1_when_gold_at_rank1():
-    results = [_row(gold_rank=1)]
-    m = compute_retrieval_metrics(results)
-    assert m["mrr@10"] == 1.0
+# ── mrr ───────────────────────────────────────────────────────────────────────
 
 
-def test_mrr_is_half_when_gold_at_rank2():
-    results = [_row(gold_rank=2)]
-    m = compute_retrieval_metrics(results)
-    assert abs(m["mrr@10"] - 0.5) < 1e-9
+def test_mrr_gold_at_rank1():
+    assert mrr([_row(gold_rank=1)]) == 1.0
 
 
-def test_mrr_is_zero_when_no_gold():
-    results = [_row(gold_rank=None)]
-    m = compute_retrieval_metrics(results)
-    assert m["mrr@10"] == 0.0
+def test_mrr_gold_at_rank2():
+    assert abs(mrr([_row(gold_rank=2)]) - 0.5) < 1e-9
+
+
+def test_mrr_no_gold():
+    assert mrr([_row(gold_rank=None)]) == 0.0
 
 
 def test_mrr_average_across_queries():
-    # Query 1: gold at rank 1 (MRR=1.0); Query 2: gold at rank 2 (MRR=0.5).
-    results = [_row(gold_rank=1), _row(gold_rank=2)]
-    m = compute_retrieval_metrics(results)
-    assert abs(m["mrr@10"] - 0.75) < 1e-3
+    rows = [_row(gold_rank=1), _row(gold_rank=2)]
+    assert abs(mrr(rows) - 0.75) < 1e-3
 
 
-# ── nDCG ──────────────────────────────────────────────────────────────────────
+# ── ndcg ──────────────────────────────────────────────────────────────────────
 
 
-def test_ndcg_is_1_when_gold_at_rank1():
-    results = [_row(gold_rank=1, n_gold=1)]
-    m = compute_retrieval_metrics(results)
-    assert abs(m["ndcg@10"] - 1.0) < 1e-9
+def test_ndcg_gold_at_rank1():
+    assert abs(ndcg([_row(gold_rank=1, n_gold=1)]) - 1.0) < 1e-9
 
 
-def test_ndcg_is_less_than_1_when_gold_not_at_rank1():
-    results = [_row(gold_rank=3, n_gold=1)]
-    m = compute_retrieval_metrics(results)
-    assert m["ndcg@10"] < 1.0
-    assert m["ndcg@10"] > 0.0
+def test_ndcg_less_than_1_when_not_at_rank1():
+    score = ndcg([_row(gold_rank=3, n_gold=1)])
+    assert 0.0 < score < 1.0
 
 
-def test_ndcg_is_zero_when_no_gold():
-    results = [_row(gold_rank=None)]
-    m = compute_retrieval_metrics(results)
-    assert m["ndcg@10"] == 0.0
+def test_ndcg_zero_when_no_gold():
+    assert ndcg([_row(gold_rank=None)]) == 0.0
 
 
-# ── n_queries ─────────────────────────────────────────────────────────────────
+# ── map_score ─────────────────────────────────────────────────────────────────
 
 
-def test_n_queries_matches_input_length():
-    results = [_row(gold_rank=1), _row(gold_rank=2), _row(gold_rank=3)]
-    m = compute_retrieval_metrics(results)
-    assert m["n_queries"] == 3
+def test_map_score_perfect_when_gold_at_rank1():
+    assert map_score([_row(gold_rank=1, n_gold=1)]) == 1.0
 
 
-def test_empty_results_returns_zero_n_queries():
+def test_map_score_zero_when_no_gold():
+    assert map_score([_row(gold_rank=None)]) == 0.0
+
+
+# ── no_answer_rate ────────────────────────────────────────────────────────────
+
+
+def test_no_answer_rate_zero_when_answer_present():
+    rows = [{**_row(gold_rank=1), "answer": "some answer"}]
+    assert no_answer_rate(rows) == 0.0
+
+
+def test_no_answer_rate_one_when_no_answer_field():
+    assert no_answer_rate([_row(gold_rank=1)]) == 1.0
+
+
+def test_no_answer_rate_none_when_empty():
+    assert no_answer_rate([]) is None
+
+
+# ── citation_precision ────────────────────────────────────────────────────────
+
+
+def test_citation_precision_none_when_no_citations():
+    assert citation_precision([_row(gold_rank=1)]) is None
+
+
+def test_citation_precision_1_when_all_gold():
+    rows = [{**_row(gold_rank=1), "citations": [{"is_gold": True}, {"is_gold": True}]}]
+    assert citation_precision(rows) == 1.0
+
+
+def test_citation_precision_half_when_half_gold():
+    rows = [{**_row(gold_rank=1), "citations": [{"is_gold": True}, {"is_gold": False}]}]
+    assert citation_precision(rows) == 0.5
+
+
+# ── mean_latency_ms ───────────────────────────────────────────────────────────
+
+
+def test_mean_latency_none_when_field_absent():
+    assert mean_latency_ms([_row(gold_rank=1)], "search_ms") is None
+
+
+def test_mean_latency_computed_when_present():
+    rows = [{**_row(gold_rank=1), "search_ms": 100.0, "answer_ms": 200.0}]
+    assert mean_latency_ms(rows, "search_ms") == 100
+    assert mean_latency_ms(rows, "answer_ms") == 200
+
+
+# ── compute_retrieval_metrics (aggregate) ─────────────────────────────────────
+
+
+def test_compute_retrieval_metrics_n_queries():
+    assert compute_retrieval_metrics([_row(1), _row(2), _row(3)])["n_queries"] == 3
+
+
+def test_compute_retrieval_metrics_empty():
     m = compute_retrieval_metrics([])
     assert m["n_queries"] == 0
+    assert m["hit@1"] == 0.0
 
 
-# ── optional fields ───────────────────────────────────────────────────────────
-
-
-def test_no_answer_rate_is_zero_when_answer_present():
-    # Rows with a non-empty answer string are counted as answered.
-    results = [{**_row(gold_rank=1), "answer": "some answer text"}]
-    m = compute_retrieval_metrics(results)
-    assert m["no_answer_rate"] == 0.0
-
-
-def test_no_answer_rate_is_one_when_no_answer_field():
-    # Rows without an answer field are treated as no-answer by the implementation.
-    results = [_row(gold_rank=1)]
-    m = compute_retrieval_metrics(results)
-    assert m["no_answer_rate"] == 1.0
-
-
-def test_citation_precision_is_none_when_no_citations():
-    results = [_row(gold_rank=1)]
-    m = compute_retrieval_metrics(results)
-    assert m["citation_precision"] is None
-
-
-def test_latency_fields_are_none_when_absent():
-    results = [_row(gold_rank=1)]
-    m = compute_retrieval_metrics(results)
-    assert m["mean_search_ms"] is None
-    assert m["mean_answer_ms"] is None
-
-
-def test_mean_search_ms_computed_when_present():
-    results = [{**_row(gold_rank=1), "search_ms": 100.0, "answer_ms": 200.0}]
-    m = compute_retrieval_metrics(results)
-    assert m["mean_search_ms"] == 100
-    assert m["mean_answer_ms"] == 200
-
-
-# ── RetrieverMetrics.from_results ─────────────────────────────────────────────
-
-
-def test_retriever_metrics_from_results_hit_at_1():
-    results = [_row(gold_rank=1)]
-    rm = RetrieverMetrics.from_results(results)
-    assert rm.hit_at_1 == 1.0
-
-
-def test_retriever_metrics_from_results_n_queries():
-    results = [_row(gold_rank=1), _row(gold_rank=2)]
-    rm = RetrieverMetrics.from_results(results)
-    assert rm.n_queries == 2
-
-
-def test_retriever_metrics_from_results_mrr():
-    results = [_row(gold_rank=1)]
-    rm = RetrieverMetrics.from_results(results)
-    assert rm.mrr_at_10 == 1.0
-
-
-def test_retriever_metrics_from_results_defaults_on_empty():
-    rm = RetrieverMetrics.from_results([])
-    assert rm.n_queries == 0
-    assert rm.hit_at_1 == 0.0
-    assert rm.mrr_at_10 == 0.0
-
-
-def test_retriever_metrics_is_pydantic_model():
-    rm = RetrieverMetrics()
-    assert rm.n_queries == 0
-    assert rm.hit_at_1 == 0.0
-    assert rm.no_answer_rate is None
-
-
-def test_retriever_metrics_recall_increases_with_k():
-    results = [_row(gold_rank=3)]
-    rm = RetrieverMetrics.from_results(results)
-    assert rm.recall_at_1 <= rm.recall_at_5 <= rm.recall_at_10
+def test_compute_retrieval_metrics_matches_individual_functions():
+    rows = [_row(gold_rank=1), _row(gold_rank=2)]
+    m = compute_retrieval_metrics(rows)
+    assert m["hit@1"] == hit_at_k(rows, 1)
+    assert m["recall@5"] == recall_at_k(rows, 5)
+    assert m["mrr@10"] == mrr(rows)
+    assert m["ndcg@10"] == ndcg(rows)
