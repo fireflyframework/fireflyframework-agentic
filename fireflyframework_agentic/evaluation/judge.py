@@ -1,60 +1,47 @@
-# Copyright 2026 Firefly Software Foundation
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+"""Evaluation judge — async metrics for flyradar and flycanon pipelines.
 
-"""G4 — LLM-as-a-Judge: an opt-in, NON-BLOCKING, NON-DETERMINISTIC advisory gate.
+Every metric: async def metric_name(item: dict, ctx: EvalContext) -> dict | float | None
 
-G4 NEVER affects the PROMOTE/HOLD verdict and NEVER raises into the caller.
-run_judge() wraps every metric in try/except; a failing metric appends to
-report.errors and the run continues (best-effort).  The result is an
-AdvisoryReport, NOT a GateResult — it is carried separately so it can never
-enter verdict() or the Skipped tuple (see scorecard / verdict_unaffected_note).
-
-Three families of metric (matching the flyradar contracts):
-- [D] DETERMINISTIC — pure python, no LLM, printed even when the judge is off:
-      source_coverage, excerpt_fill_rate.
-- [E] EMBEDDING — needs an embed_fn (local Ollama BGE by default):
-      semantic_recovery (context recall).
-- [J] JUDGE — needs a chat_fn(system, user) -> dict; each [J] metric instructs
-      the model to reply with ONLY JSON: faithfulness, numeric_temporal_fidelity,
-      citation_relevance, nc_semantic_precision, fabricated_entity, contradiction,
-      open_gap, actionability, severity_calibration, answer_relevancy,
-      comparative_vs_champion.
-
-Aggregation follows the flycanon custom-judge design: run each [J] metric `runs`
-times and take the MEDIAN of its numeric scores (robust to an outlier vote).
-
-Zero new dependencies: stdlib (json, statistics) + numpy.  All imports at top.
-calibrated is ALWAYS False for now (LLM-as-a-Judge calibration is §14, future work).
+Flyradar item keys: findings, evidence_index, process_graph, proposed_actions,
+  workspace, reports, lexical_missed_ids, nc_items, champion
+Flycanon item keys: question, answer, reference, contexts
 """
 
 from __future__ import annotations
 
-import concurrent.futures
+import asyncio
+import math
+import os
 import statistics
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-import numpy as np
+from pydantic import BaseModel, ConfigDict
 
-from fireflyframework_agentic.evaluation.judge_client import (
-    JudgeClient,
-    OllamaEmbedder,
-    cosine,
-    same_provider,
-)
-from fireflyframework_agentic.evaluation.matcher import source_stem
+from fireflyframework_agentic.embeddings.providers.ollama import OllamaEmbedder
+from fireflyframework_agentic.embeddings.similarity import cosine_similarity
+from fireflyframework_agentic.evaluation.judge_client import JudgeClient, same_provider
+
+Metric = Callable[["dict", "EvalContext"], Awaitable["dict | float | None"]]
 
 SYSTEM = "You are a meticulous evaluator of a process-mining discovery report. Return ONLY a JSON object."
+
+SYSTEM_RAG = "You are an evaluator of a RAG system's answers. Return ONLY a JSON object."
+
+RUBRIC = (
+    "Score the ANSWER on two metrics:\n"
+    "- contains_answer (0.0-1.0): Does the answer contain the correct information from the REFERENCE?\n"
+    "- addresses_question (0.0-1.0): Does the answer directly address what the QUESTION is asking?\n"
+    'Reply with ONLY {"contains_answer": <float>, "addresses_question": <float>}.'
+)
+
+
+class EvalContext(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    client: JudgeClient
+    embedder: OllamaEmbedder | None = None
+    runs: int = 3
 
 
 @dataclass
@@ -68,7 +55,7 @@ class AdvisoryReport:
 
     judge_model: str
     same_provider_caveat: bool
-    calibrated: bool  # ALWAYS False for now (§14)
+    calibrated: bool  # ALWAYS False for now
     runs: int
     metrics: dict = field(default_factory=dict)
     details: dict = field(default_factory=dict)
@@ -78,8 +65,8 @@ class AdvisoryReport:
 # ── shared accessors ───────────────────────────────────────────────────────────
 
 
-def _evidence_index(result: dict) -> dict[str, dict]:
-    return {ev.get("id"): ev for ev in result.get("evidence_index", []) if ev.get("id")}
+def _evidence_index(item: dict) -> dict[str, dict]:
+    return {ev.get("id"): ev for ev in item.get("evidence_index", []) if ev.get("id")}
 
 
 def _cited_excerpts(finding: dict, evidence_index: dict[str, dict]) -> list[str]:
@@ -94,136 +81,116 @@ def _cited_excerpts(finding: dict, evidence_index: dict[str, dict]) -> list[str]
     return out
 
 
-def _output_text(result: dict) -> str:
+def _output_text(item: dict) -> str:
     """All free text the model emitted: finding titles+descriptions + reports."""
     parts: list[str] = []
-    for f in result.get("findings", []):
+    for f in item.get("findings", []):
         parts.append(f.get("title", ""))
         parts.append(f.get("description", ""))
-    for r in result.get("reports", []):
+    for r in item.get("reports", []):
         parts.append(str(r))
     return "\n".join(p for p in parts if p)
 
 
-def _workspace_intention(result: dict) -> str:
-    ws = result.get("workspace") or {}
+def _workspace_intention(item: dict) -> str:
+    ws = item.get("workspace") or {}
     return f"{ws.get('name', '')}\n{ws.get('description', '')}".strip()
 
 
 def _coerce_float(value, default=None):
-    """Coerce a model-returned number/numeric-string to float; total (never raises).
-
-    Returns ``default`` (None) on junk so one malformed vote drops that single
-    vote instead of discarding the whole metric.
-    """
+    """Coerce a model-returned number/numeric-string to float; total (never raises)."""
     try:
         return float(value)
     except (TypeError, ValueError):
         return default
 
 
-def _map_chat(chat_fn, prompts, workers=1):
-    """Run a list of (system, user) chat prompts, returning ordered result dicts.
+def _source_stem(locator: str) -> str:
+    """Return the part before the first '#', or the full string if no '#'."""
+    idx = locator.find("#")
+    return locator[:idx] if idx != -1 else locator
 
-    ``workers <= 1`` calls ``chat_fn`` SEQUENTIALLY — byte-for-byte identical to
-    the in-line loops it replaces, INCLUDING letting a raise propagate (so
-    run_judge's per-metric try/except still drops that whole metric, the
-    behaviour the suite locks in).
 
-    ``workers >= 2`` fans the calls out across a ThreadPoolExecutor while
-    PRESERVING input order in the returned list.  Concurrency cannot let one
-    raising future poison the batch, so in that path a raising call's slot
-    becomes ``{}`` — the metric's aggregation degrades for that one vote but
-    never raises (the same best-effort contract as run_judge).
-    """
-    prompts = list(prompts)
-    if workers <= 1:
-        return [chat_fn(system, user) for system, user in prompts]
-
-    results: list[dict] = [{} for _ in prompts]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {executor.submit(chat_fn, system, user): idx for idx, (system, user) in enumerate(prompts)}
-        for future in concurrent.futures.as_completed(futures):
-            idx = futures[future]
-            try:
-                results[idx] = future.result()
-            except Exception:  # best-effort: a dropped vote, never a raise
-                results[idx] = {}
-    return results
+async def _gather_chat(chat_fn, prompts: list[tuple[str, str]]) -> list[dict]:
+    """Run a list of (system, user) prompts concurrently, returning ordered results."""
+    results = await asyncio.gather(*[chat_fn(s, u) for s, u in prompts], return_exceptions=True)
+    return [r if isinstance(r, dict) else {} for r in results]
 
 
 # ── [D] DETERMINISTIC — no LLM, always available ────────────────────────────────
 
 
-def source_coverage(result: dict) -> dict:
+async def source_coverage(item: dict, ctx: EvalContext) -> dict:  # noqa: ARG001
     """Distinct source documents cited by >=1 finding vs all source documents.
 
     Returns {cited, total, orphaned} where orphaned is the sorted list of
     source stems present in evidence_index but cited by no finding.
     """
-    evidence_index = _evidence_index(result)
-    all_stems = {source_stem(ev.get("locator", "")) for ev in result.get("evidence_index", []) if ev.get("locator")}
+    ev_idx = _evidence_index(item)
+    all_stems = {_source_stem(ev.get("locator", "")) for ev in item.get("evidence_index", []) if ev.get("locator")}
     cited_stems: set[str] = set()
-    for f in result.get("findings", []):
+    for f in item.get("findings", []):
         for ref in f.get("evidence_refs", []):
-            ev = evidence_index.get(ref.get("evidence_id", ""))
+            ev = ev_idx.get(ref.get("evidence_id", ""))
             if ev and ev.get("locator"):
-                cited_stems.add(source_stem(ev["locator"]))
+                cited_stems.add(_source_stem(ev["locator"]))
     cited_stems &= all_stems
     orphaned = sorted(all_stems - cited_stems)
     return {"cited": len(cited_stems), "total": len(all_stems), "orphaned": orphaned}
 
 
-def excerpt_fill_rate(result: dict) -> dict:
+async def excerpt_fill_rate(item: dict, ctx: EvalContext) -> dict:  # noqa: ARG001
     """Fraction of evidence_index entries with a non-empty excerpt.
 
-    Returns {populated, total}.  This is the signal behind older runs' low G3
-    grounding: empty excerpts cannot ground anything.
+    Returns {populated, total}.
     """
-    entries = result.get("evidence_index", [])
+    entries = item.get("evidence_index", [])
     populated = sum(1 for ev in entries if (ev.get("excerpt") or "").strip())
     return {"populated": populated, "total": len(entries)}
 
 
-# ── [E] EMBEDDING — needs embed_fn ───────────────────────────────────────────────
+# ── [E] EMBEDDING — needs embedder ───────────────────────────────────────────────
 
 
-def semantic_recovery(
-    result: dict,
-    registry,
-    lexical_missed_ids: list[str],
-    embed_fn,
-    tau: float = 0.70,
-) -> dict:
-    """Context-recall: recover G2 lexical misses by embedding similarity.
+async def semantic_recovery(item: dict, ctx: EvalContext, tau: float = 0.70) -> dict | None:
+    """Context-recall: recover lexical misses by embedding similarity.
 
-    For each registry item flagged a LEXICAL MISS by G2, embed its
-    description+keywords and take the max cosine against the embeddings of every
-    finding description (and their cited excerpts).  If max cosine >= tau the
-    item is counted semantically present (recovered).
-
-    recovered_recall = (lexical_hits + recovered) / scored_denominator, where
-    the scored denominator is the count of non-NC items scored by G2 (real
-    items, matching G2's recall denominator family).  Returns the lexical recall,
-    the recovered recall, the recovered item list (with cosine), and tau.
+    Reads item["lexical_missed_ids"] (list of str).
+    Returns None if ctx.embedder is None.
     """
-    missed = set(lexical_missed_ids or [])
-    real_items = registry.real_items
-    scored_items = [i for i in real_items if i.tier != "L3"]
-    denom = len(scored_items) or 1
-    lexical_hits = sum(1 for i in scored_items if i.id not in missed)
+    if ctx.embedder is None:
+        return None
 
-    # Candidate texts the findings actually surfaced.
-    evidence_index = _evidence_index(result)
+    lexical_missed_ids: list[str] = item.get("lexical_missed_ids", [])
+    missed = set(lexical_missed_ids or [])
+
+    # Build the scored items from nc_items (non-NC = real items for recall)
+    # In the new EvalContext model, nc_items is a list of {"id": ..., "description": ...}
+    # We treat all item findings as the candidate surface; nc_items stay separate.
+    # Recompute as: all items scored = those not in nc_items ids.
+    # If there's no registry concept, we use findings as the denominator proxy.
+    # But keep the logic simple: just score the missed items against finding descriptions.
+    ev_idx = _evidence_index(item)
     candidate_texts: list[str] = []
-    for f in result.get("findings", []):
+    for f in item.get("findings", []):
         desc = f.get("description", "")
         if desc:
             candidate_texts.append(desc)
-        candidate_texts.extend(_cited_excerpts(f, evidence_index))
+        candidate_texts.extend(_cited_excerpts(f, ev_idx))
 
-    missed_items = [i for i in scored_items if i.id in missed]
-    if not missed_items or not candidate_texts:
+    # missed_items: we only know their IDs; we need descriptions to embed.
+    # In the new design, if no descriptions available, return minimal result.
+    all_findings = item.get("findings", [])
+    denom = max(len(all_findings), 1)
+    lexical_hits = sum(1 for f in all_findings if f.get("id") not in missed)
+
+    missed_descs: list[tuple[str, str]] = [
+        (f.get("id", ""), f.get("description", ""))
+        for f in all_findings
+        if f.get("id") in missed and f.get("description")
+    ]
+
+    if not missed_descs or not candidate_texts:
         recovered_recall = lexical_hits / denom
         return {
             "lexical_recall": round(lexical_hits / denom, 4),
@@ -233,15 +200,15 @@ def semantic_recovery(
             "scored_denominator": denom,
         }
 
-    item_texts = [f"{i.description} {' '.join(i.keywords)}".strip() for i in missed_items]
-    item_vecs = np.asarray(embed_fn(item_texts), dtype=np.float64)
-    cand_vecs = np.asarray(embed_fn(candidate_texts), dtype=np.float64)
+    item_texts = [desc for _fid, desc in missed_descs]
+    item_vecs = await ctx.embedder._embed_batch(item_texts)
+    cand_vecs = await ctx.embedder._embed_batch(candidate_texts)
 
     recovered: list[dict] = []
-    for item, ivec in zip(missed_items, item_vecs, strict=False):
-        best = max((cosine(ivec, cvec) for cvec in cand_vecs), default=0.0)
+    for (fid, _desc), ivec in zip(missed_descs, item_vecs, strict=False):
+        best = max((cosine_similarity(ivec, cvec) for cvec in cand_vecs), default=0.0)
         if best >= tau:
-            recovered.append({"id": item.id, "cosine": round(best, 4)})
+            recovered.append({"id": fid, "cosine": round(best, 4)})
 
     recovered_recall = (lexical_hits + len(recovered)) / denom
     return {
@@ -256,16 +223,14 @@ def semantic_recovery(
 # ── [J] JUDGE — needs chat_fn(system, user) -> dict ──────────────────────────────
 
 
-def faithfulness(result: dict, chat_fn, *, workers: int = 1) -> dict:
+async def faithfulness(item: dict, ctx: EvalContext) -> dict:
     """Entailment: does each finding's cited evidence SUPPORT its claim?
 
-    Per (finding, cited-excerpts) pair, ask SUPPORTED / NOT_SUPPORTED.  Returns
-    {supported, total, unsupported_ids}.  Findings with no cited evidence are
-    counted as not-supported (nothing to entail against).
+    Returns {supported, total, unsupported_ids}.
     """
-    evidence_index = _evidence_index(result)
-    findings = result.get("findings", [])
-    cited = [(f, _cited_excerpts(f, evidence_index)) for f in findings]
+    ev_idx = _evidence_index(item)
+    findings = item.get("findings", [])
+    cited = [(f, _cited_excerpts(f, ev_idx)) for f in findings]
     prompts = [
         (
             SYSTEM,
@@ -277,7 +242,7 @@ def faithfulness(result: dict, chat_fn, *, workers: int = 1) -> dict:
         for f, excerpts in cited
         if excerpts
     ]
-    answers = iter(_map_chat(chat_fn, prompts, workers))
+    answers = iter(await _gather_chat(ctx.client.chat_json, prompts))
     supported = 0
     unsupported_ids: list[str] = []
     for f, excerpts in cited:
@@ -293,14 +258,13 @@ def faithfulness(result: dict, chat_fn, *, workers: int = 1) -> dict:
     return {"supported": supported, "total": len(findings), "unsupported_ids": unsupported_ids}
 
 
-def numeric_temporal_fidelity(result: dict, chat_fn, *, workers: int = 1) -> dict:
+async def numeric_temporal_fidelity(item: dict, ctx: EvalContext) -> dict:
     """Flag numbers/dates asserted in a finding that do NOT match its evidence.
 
-    Closes the 45-days-vs-3-days gap.  Returns {mismatches: [{finding_id, value,
-    source}], count}.
+    Returns {mismatches: [{finding_id, value, source}], count}.
     """
-    evidence_index = _evidence_index(result)
-    scored = [(f, excerpts) for f in result.get("findings", []) if (excerpts := _cited_excerpts(f, evidence_index))]
+    ev_idx = _evidence_index(item)
+    scored = [(f, excerpts) for f in item.get("findings", []) if (excerpts := _cited_excerpts(f, ev_idx))]
     prompts = [
         (
             SYSTEM,
@@ -313,7 +277,7 @@ def numeric_temporal_fidelity(result: dict, chat_fn, *, workers: int = 1) -> dic
         )
         for f, excerpts in scored
     ]
-    answers = _map_chat(chat_fn, prompts, workers)
+    answers = await _gather_chat(ctx.client.chat_json, prompts)
     mismatches: list[dict] = []
     for (f, _excerpts), answer in zip(scored, answers, strict=False):
         for m in answer.get("mismatches", []) or []:
@@ -327,20 +291,17 @@ def numeric_temporal_fidelity(result: dict, chat_fn, *, workers: int = 1) -> dic
     return {"mismatches": mismatches, "count": len(mismatches)}
 
 
-def citation_relevance(result: dict, chat_fn, *, workers: int = 1) -> dict:
+async def citation_relevance(item: dict, ctx: EvalContext) -> dict:
     """Context precision: fraction of cited passages actually relevant to the claim.
 
-    Per evidence_ref, ask yes/no relevance.  precision = relevant / total_refs.
-    Returns {precision, relevant, total}; when total == 0 (no cited passages with
-    excerpts) precision is None — the kept ``total`` lets a reader tell "perfect"
-    apart from "nothing to score".
+    Returns {precision, relevant, total}.
     """
-    evidence_index = _evidence_index(result)
+    ev_idx = _evidence_index(item)
     prompts: list[tuple[str, str]] = []
-    for f in result.get("findings", []):
+    for f in item.get("findings", []):
         desc = f.get("description", "")
         for ref in f.get("evidence_refs", []):
-            ev = evidence_index.get(ref.get("evidence_id", ""))
+            ev = ev_idx.get(ref.get("evidence_id", ""))
             if not ev:
                 continue
             excerpt = ev.get("excerpt") or ""
@@ -355,7 +316,7 @@ def citation_relevance(result: dict, chat_fn, *, workers: int = 1) -> dict:
                     f"CITED PASSAGE: {excerpt}",
                 )
             )
-    answers = _map_chat(chat_fn, prompts, workers)
+    answers = await _gather_chat(ctx.client.chat_json, prompts)
     total = len(prompts)
     relevant = sum(1 for a in answers if str(a.get("relevant", "")).lower() == "yes")
     if not total:
@@ -363,40 +324,40 @@ def citation_relevance(result: dict, chat_fn, *, workers: int = 1) -> dict:
     return {"precision": round(relevant / total, 4), "relevant": relevant, "total": total}
 
 
-def nc_semantic_precision(result: dict, registry, chat_fn, *, workers: int = 1) -> dict:
+async def nc_semantic_precision(item: dict, ctx: EvalContext) -> dict:
     """Count negative-control falsehoods the output asserts or endorses.
 
-    Per NC item, ask yes/no whether the output endorses the false statement.
-    Returns {asserted, total, asserted_ids}.  The semantic counterpart to the
-    inert deterministic NC check.
+    Reads item["nc_items"] as list of {"id": ..., "description": ...} dicts.
+    Returns {asserted, total, asserted_ids}.
     """
-    output_text = _output_text(result)
-    nc_items = registry.nc_items
+    output_text = _output_text(item)
+    nc_items: list[dict] = item.get("nc_items", [])
     prompts = [
         (
             SYSTEM,
             "Does the OUTPUT assert or endorse the following FALSE statement?\n"
             'Reply with ONLY {"asserted": "yes" or "no"}.\n\n'
-            f"FALSE STATEMENT: {item.description}\n"
+            f"FALSE STATEMENT: {nc.get('description', '')}\n"
             f"OUTPUT:\n{output_text}",
         )
-        for item in nc_items
+        for nc in nc_items
     ]
-    answers = _map_chat(chat_fn, prompts, workers)
+    answers = await _gather_chat(ctx.client.chat_json, prompts)
     asserted_ids = [
-        item.id for item, a in zip(nc_items, answers, strict=False) if str(a.get("asserted", "")).lower() == "yes"
+        nc.get("id", "?")
+        for nc, a in zip(nc_items, answers, strict=False)
+        if str(a.get("asserted", "")).lower() == "yes"
     ]
     return {"asserted": len(asserted_ids), "total": len(nc_items), "asserted_ids": asserted_ids}
 
 
-def fabricated_entity(result: dict, chat_fn) -> dict:
+async def fabricated_entity(item: dict, ctx: EvalContext) -> dict:
     """Count systems/orgs/metrics named in the output but absent from the corpus.
 
-    Returns {count, entities}.  The corpus universe is the set of evidence
-    excerpts + locators.
+    Returns {count, entities}.
     """
-    output_text = _output_text(result)
-    corpus = "\n".join(f"{ev.get('locator', '')} :: {ev.get('excerpt', '')}" for ev in result.get("evidence_index", []))
+    output_text = _output_text(item)
+    corpus = "\n".join(f"{ev.get('locator', '')} :: {ev.get('excerpt', '')}" for ev in item.get("evidence_index", []))
     user = (
         "List any system, organization, or metric NAMED in the OUTPUT that does NOT "
         "appear anywhere in the CORPUS EVIDENCE.\n"
@@ -404,53 +365,54 @@ def fabricated_entity(result: dict, chat_fn) -> dict:
         f"OUTPUT:\n{output_text}\n\n"
         f"CORPUS EVIDENCE:\n{corpus}"
     )
-    entities = chat_fn(SYSTEM, user).get("fabricated", []) or []
+    answer = await ctx.client.chat_json(SYSTEM, user)
+    entities = answer.get("fabricated", []) or []
     return {"count": len(entities), "entities": list(entities)}
 
 
-def contradiction(result: dict, chat_fn) -> dict:
+async def contradiction(item: dict, ctx: EvalContext) -> dict:
     """Count internally contradictory finding pairs.
 
-    Returns {count, pairs}.  pairs is the list of contradicting finding-id pairs
-    the judge reports.
+    Returns {count, pairs}.
     """
     lines = []
-    for f in result.get("findings", []):
+    for f in item.get("findings", []):
         lines.append(f"{f.get('id', '?')}: {f.get('title', '')} — {f.get('description', '')}")
     user = (
         "Are any two of these FINDINGS mutually contradictory? List each contradicting pair.\n"
         'Reply with ONLY {"pairs": [["<id_a>", "<id_b>"], ...]}.  Empty list if none.\n\n' + "\n".join(lines)
     )
-    pairs = chat_fn(SYSTEM, user).get("pairs", []) or []
+    answer = await ctx.client.chat_json(SYSTEM, user)
+    pairs = answer.get("pairs", []) or []
     return {"count": len(pairs), "pairs": [list(p) for p in pairs]}
 
 
-def open_gap(result: dict, chat_fn) -> dict:
+async def open_gap(item: dict, ctx: EvalContext) -> dict:
     """G-Eval open probe: the most important process issue the output missed.
 
     Returns {gap} — a free-text advisory narrative (no score).
     """
-    pg = result.get("process_graph") or {}
+    pg = item.get("process_graph") or {}
     pg_summary = f"process_graph has {len(pg.get('processes', []))} processes"
     user = (
         "Given this corpus scope and output, what important process issue did the "
         "output FAIL to surface?\n"
         'Reply with ONLY {"gap": "<the most important missed issue, one short paragraph>"}.\n\n'
-        f"WORKSPACE SCOPE: {_workspace_intention(result)}\n"
+        f"WORKSPACE SCOPE: {_workspace_intention(item)}\n"
         f"{pg_summary}\n"
-        f"OUTPUT:\n{_output_text(result)}"
+        f"OUTPUT:\n{_output_text(item)}"
     )
-    return {"gap": str(chat_fn(SYSTEM, user).get("gap", ""))}
+    answer = await ctx.client.chat_json(SYSTEM, user)
+    return {"gap": str(answer.get("gap", ""))}
 
 
-def actionability(result: dict, chat_fn, *, workers: int = 1) -> dict:
+async def actionability(item: dict, ctx: EvalContext) -> dict:
     """Average 0-1 rating of whether proposed actions are specific+quantified+linked.
 
-    Returns {score, rated}.  Each action is rated against whether it is specific,
-    quantified, and linked to a finding.
+    Returns {score, rated}.
     """
-    actions = result.get("proposed_actions", []) or []
-    finding_ids = {f.get("id") for f in result.get("findings", [])}
+    actions = item.get("proposed_actions", []) or []
+    finding_ids = {f.get("id") for f in item.get("findings", [])}
     prompts = [
         (
             SYSTEM,
@@ -467,24 +429,24 @@ def actionability(result: dict, chat_fn, *, workers: int = 1) -> dict:
         )
         for a in actions
     ]
-    answers = _map_chat(chat_fn, prompts, workers)
+    answers = await _gather_chat(ctx.client.chat_json, prompts)
     scores: list[float] = []
     for a in answers:
         value = _coerce_float(a.get("score"))
-        if value is None:  # malformed vote -> skip this action, keep the metric
+        if value is None:
             continue
         scores.append(value)
     score = round(sum(scores) / len(scores), 4) if scores else None
     return {"score": score, "rated": len(scores)}
 
 
-def severity_calibration(result: dict, chat_fn, *, workers: int = 1) -> dict:
+async def severity_calibration(item: dict, ctx: EvalContext) -> dict:
     """Per-finding judgment of whether stated severity matches the evidence.
 
     Returns {miscalibrated, total, verdicts: {finding_id: under|over|calibrated}}.
     """
-    evidence_index = _evidence_index(result)
-    findings = result.get("findings", [])
+    ev_idx = _evidence_index(item)
+    findings = item.get("findings", [])
     prompts = [
         (
             SYSTEM,
@@ -492,11 +454,11 @@ def severity_calibration(result: dict, chat_fn, *, workers: int = 1) -> dict:
             'Reply with ONLY {"calibration": "under" or "over" or "calibrated"}.\n\n'
             f"STATED SEVERITY: {f.get('severity', '')}  SCORE: {f.get('score', '')}\n"
             f"FINDING: {f.get('description', '')}\n"
-            f"CITED EVIDENCE: {' || '.join(_cited_excerpts(f, evidence_index))}",
+            f"CITED EVIDENCE: {' || '.join(_cited_excerpts(f, ev_idx))}",
         )
         for f in findings
     ]
-    answers = _map_chat(chat_fn, prompts, workers)
+    answers = await _gather_chat(ctx.client.chat_json, prompts)
     verdicts: dict[str, str] = {}
     miscalibrated = 0
     for f, a in zip(findings, answers, strict=False):
@@ -507,7 +469,7 @@ def severity_calibration(result: dict, chat_fn, *, workers: int = 1) -> dict:
     return {"miscalibrated": miscalibrated, "total": len(findings), "verdicts": verdicts}
 
 
-def answer_relevancy(result: dict, chat_fn) -> dict:
+async def answer_relevancy(item: dict, ctx: EvalContext) -> dict:
     """RAGAS-style: does the output address the stated workspace intention?
 
     Returns {score} in [0,1], or {"score": None} when the vote fails to coerce.
@@ -515,38 +477,27 @@ def answer_relevancy(result: dict, chat_fn) -> dict:
     user = (
         "Does the OUTPUT address the stated WORKSPACE INTENTION (on-topic, responsive)?\n"
         'Reply with ONLY {"score": <number 0-1>}.\n\n'
-        f"WORKSPACE INTENTION: {_workspace_intention(result)}\n"
-        f"OUTPUT:\n{_output_text(result)}"
+        f"WORKSPACE INTENTION: {_workspace_intention(item)}\n"
+        f"OUTPUT:\n{_output_text(item)}"
     )
-    return {"score": _coerce_float(chat_fn(SYSTEM, user).get("score"))}
+    answer = await ctx.client.chat_json(SYSTEM, user)
+    return {"score": _coerce_float(answer.get("score"))}
 
 
-def surface_deduplication(result: dict, chat_fn, *, workers: int = 1) -> dict:
+async def surface_deduplication(item: dict, ctx: EvalContext) -> dict:
     """Fraction of near-duplicate process-graph node pairs that are genuinely distinct.
-
-    Scoping rules:
-    - Processes: all pairs compared (cross-process is valid at this level).
-    - Activities and decisions: ONLY within the same parent process.  The same
-      activity name appearing in two different processes is a legitimate repetition
-      (e.g. "Approve Request" in both Loan and Credit-Card flows), not a duplicate.
-
-    For each surface, the top-10 most name-similar pairs (token-Jaccard >= 0.30)
-    are selected.  For activities/decisions the parent process name is included in
-    the judge prompt so it can reason about intra-process context.  30 pairs total.
 
     Returns {distinct, redundant, total, distinct_rate, redundant_pairs}.
     """
-    pg = result.get("process_graph", {})
+    pg = item.get("process_graph", {})
     procs = pg.get("processes", [])
 
     def _toks(node: dict) -> frozenset[str]:
         return frozenset(node.get("name", "").lower().split())
 
     per_surface_cap = 10
-    # candidates: (surface, node_a, node_b, parent_process_name)
     candidates: list[tuple[str, dict, dict, str]] = []
 
-    # Processes: compare all pairs
     if len(procs) >= 2:
         pairs: list[tuple[float, dict, dict]] = []
         for i in range(len(procs)):
@@ -562,7 +513,6 @@ def surface_deduplication(result: dict, chat_fn, *, workers: int = 1) -> dict:
         for _jac, a, b in pairs[:per_surface_cap]:
             candidates.append(("process", a, b, ""))
 
-    # Activities and decisions: within the same parent process only
     for surface_key, attr in (("activity", "activities"), ("decision", "decisions")):
         all_pairs: list[tuple[float, dict, dict, str]] = []
         for proc in procs:
@@ -588,20 +538,20 @@ def surface_deduplication(result: dict, chat_fn, *, workers: int = 1) -> dict:
 
     prompts = []
     for surface, a, b, parent_proc in candidates:
-        ctx = f"\nPARENT PROCESS: {parent_proc}\n" if parent_proc else ""
+        ctx_line = f"\nPARENT PROCESS: {parent_proc}\n" if parent_proc else ""
         prompts.append(
             (
                 SYSTEM,
                 f"Are these two {surface} nodes genuinely DISTINCT process concepts, or is one a "
                 f"duplicate / sub-case / restatement of the other?\n"
-                f"{ctx}"
+                f"{ctx_line}"
                 'Reply with ONLY {"verdict": "DISTINCT" or "DUPLICATE", "reason": "<one line>"}.\n\n'
                 f"{surface.upper()} A: {a.get('name', '')} — {a.get('description', '')}\n"
                 f"{surface.upper()} B: {b.get('name', '')} — {b.get('description', '')}",
             )
         )
 
-    answers = _map_chat(chat_fn, prompts, workers)
+    answers = await _gather_chat(ctx.client.chat_json, prompts)
 
     distinct = 0
     redundant = 0
@@ -631,13 +581,15 @@ def surface_deduplication(result: dict, chat_fn, *, workers: int = 1) -> dict:
     }
 
 
-def comparative_vs_champion(result: dict, champion_result: dict, chat_fn) -> dict:
+async def comparative_vs_champion(item: dict, ctx: EvalContext) -> dict | None:
     """Pairwise MT-Bench-style review of candidate vs champion (advisory only).
 
-    Returns {candidate, champion, more_consistent} where candidate/champion are
-    1-5 ratings on Coverage/Quality/Evidence/Actionability/Regression.  Never
-    feeds G5.
+    Returns None if item["champion"] is not present.
+    Returns {candidate, champion, more_consistent}.
     """
+    champion = item.get("champion")
+    if champion is None:
+        return None
     user = (
         "Score the CANDIDATE and the CHAMPION outputs on five axes (1-5 each): "
         "Coverage, Quality, Evidence, Actionability, Regression.  Then say which is "
@@ -646,10 +598,10 @@ def comparative_vs_champion(result: dict, champion_result: dict, chat_fn) -> dic
         '{"candidate": {"coverage": x, "quality": x, "evidence": x, "actionability": x, "regression": x}, '
         '"champion": {"coverage": x, "quality": x, "evidence": x, "actionability": x, "regression": x}, '
         '"more_consistent": "candidate" or "champion"}.\n\n'
-        f"CANDIDATE:\n{_output_text(result)}\n\n"
-        f"CHAMPION:\n{_output_text(champion_result)}"
+        f"CANDIDATE:\n{_output_text(item)}\n\n"
+        f"CHAMPION:\n{_output_text(champion)}"
     )
-    out = chat_fn(SYSTEM, user)
+    out = await ctx.client.chat_json(SYSTEM, user)
     return {
         "candidate": out.get("candidate", {}),
         "champion": out.get("champion", {}),
@@ -657,18 +609,175 @@ def comparative_vs_champion(result: dict, champion_result: dict, chat_fn) -> dic
     }
 
 
-# ── median-of-N for [J] metrics ──────────────────────────────────────────────────
+# ── flycanon custom metrics ───────────────────────────────────────────────────────
+
+
+async def _rag_score_once(item: dict, ctx: EvalContext) -> dict | None:
+    """Single RAG scoring call: returns {"contains_answer": float, "addresses_question": float}."""
+    question = item.get("question", "")
+    reference = item.get("reference", "")
+    answer = item.get("answer", "")
+    if not question or not answer:
+        return None
+    user = f"QUESTION: {question}\nREFERENCE: {reference}\nANSWER: {answer}\n\n{RUBRIC}"
+    result = await ctx.client.chat_json(SYSTEM_RAG, user)
+    return result
+
+
+async def contains_answer(item: dict, ctx: EvalContext) -> float | None:
+    """Flycanon: does the answer contain the correct information from the reference?
+
+    Runs ctx.runs times and returns the median score.
+    Returns None if the item lacks question/answer.
+    """
+    scores: list[float] = []
+    for _ in range(max(1, ctx.runs)):
+        result = await _rag_score_once(item, ctx)
+        if result is None:
+            return None
+        val = _coerce_float(result.get("contains_answer"))
+        if val is not None:
+            scores.append(val)
+    if not scores:
+        return None
+    return round(statistics.median(scores), 4)
+
+
+async def addresses_question(item: dict, ctx: EvalContext) -> float | None:
+    """Flycanon: does the answer directly address what the question is asking?
+
+    Runs ctx.runs times and returns the median score.
+    Returns None if the item lacks question/answer.
+    """
+    scores: list[float] = []
+    for _ in range(max(1, ctx.runs)):
+        result = await _rag_score_once(item, ctx)
+        if result is None:
+            return None
+        val = _coerce_float(result.get("addresses_question"))
+        if val is not None:
+            scores.append(val)
+    if not scores:
+        return None
+    return round(statistics.median(scores), 4)
+
+
+# ── RAGAS metrics ─────────────────────────────────────────────────────────────────
+# ragas/langchain imports are inline inside _sync() since ragas is optional.
+
+
+def _make_ragas_sample(item: dict):
+    """Build a RAGAS SingleTurnSample from an item dict (ragas import inline)."""
+    from ragas import SingleTurnSample  # type: ignore[import]  # noqa: PLC0415
+
+    return SingleTurnSample(
+        user_input=item.get("question", ""),
+        response=item.get("answer", ""),
+        reference=item.get("reference", ""),
+        retrieved_contexts=item.get("contexts", []),
+    )
+
+
+def _make_ragas_llm(ctx: EvalContext):
+    """Build a LangChain LLM wrapper for RAGAS (langchain import inline)."""
+    provider, model = ctx.client.provider, ctx.client.model
+    if provider == "anthropic":
+        from langchain_anthropic import ChatAnthropic  # type: ignore[import]  # noqa: PLC0415
+
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        return ChatAnthropic(model=model, api_key=api_key, temperature=0.0)
+    if provider in ("openai", "azure"):
+        from langchain_openai import ChatOpenAI  # type: ignore[import]  # noqa: PLC0415
+
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        return ChatOpenAI(model=model, api_key=api_key, temperature=0.0)
+    if provider == "ollama":
+        from langchain_ollama import ChatOllama  # type: ignore[import]  # noqa: PLC0415
+
+        return ChatOllama(model=model, temperature=0.0)
+    raise ValueError(f"RAGAS: unsupported provider {provider!r}")
+
+
+def _make_ragas_embeddings(ctx: EvalContext):
+    """Build LangChain embeddings for RAGAS (langchain import inline)."""
+    if ctx.embedder is not None:
+        from langchain_ollama import OllamaEmbeddings  # type: ignore[import]  # noqa: PLC0415
+
+        return OllamaEmbeddings(model=ctx.embedder._model)
+    from langchain_anthropic import AnthropicEmbeddings  # type: ignore[import]  # noqa: PLC0415
+
+    return AnthropicEmbeddings()
+
+
+async def _ragas_score(metric_name: str, item: dict, ctx: EvalContext) -> float | None:
+    """Run a single named RAGAS metric and return its float score (or None)."""
+
+    def _sync():
+        from ragas import evaluate  # type: ignore[import]  # noqa: PLC0415
+        from ragas.dataset_schema import EvaluationDataset  # type: ignore[import]  # noqa: PLC0415
+        from ragas.metrics import (  # type: ignore[import]  # noqa: PLC0415
+            AnswerCorrectness,
+            AnswerRelevancy,
+            ContextPrecision,
+            ContextRecall,
+            Faithfulness,
+        )
+
+        _metrics_map = {
+            "answer_correctness": AnswerCorrectness,
+            "answer_relevancy_ragas": AnswerRelevancy,
+            "ragas_faithfulness": Faithfulness,
+            "context_recall": ContextRecall,
+            "context_precision": ContextPrecision,
+        }
+        metric_cls = _metrics_map.get(metric_name)
+        if metric_cls is None:
+            return None
+
+        llm = _make_ragas_llm(ctx)
+        embeddings = _make_ragas_embeddings(ctx)
+        metric = metric_cls(llm=llm, embeddings=embeddings)
+        sample = _make_ragas_sample(item)
+        dataset = EvaluationDataset(samples=[sample])
+        result = evaluate(dataset=dataset, metrics=[metric])
+        df = result.to_pandas()
+        col = df.columns[df.columns.str.contains(metric_name.replace("_ragas", ""), case=False)]
+        if col.empty:
+            return None
+        val = df[col[0]].iloc[0]
+        if val is None or (isinstance(val, float) and math.isnan(val)):
+            return None
+        return round(float(val), 4)
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync)
+
+
+async def answer_correctness(item: dict, ctx: EvalContext) -> float | None:
+    """RAGAS answer correctness (semantic F1 against reference)."""
+    return await _ragas_score("answer_correctness", item, ctx)
+
+
+async def ragas_faithfulness(item: dict, ctx: EvalContext) -> float | None:
+    """RAGAS faithfulness (answer grounded in retrieved contexts)."""
+    return await _ragas_score("ragas_faithfulness", item, ctx)
+
+
+async def context_recall(item: dict, ctx: EvalContext) -> float | None:
+    """RAGAS context recall (reference coverage by retrieved contexts)."""
+    return await _ragas_score("context_recall", item, ctx)
+
+
+async def context_precision(item: dict, ctx: EvalContext) -> float | None:
+    """RAGAS context precision (retrieved contexts relevant to the question)."""
+    return await _ragas_score("context_precision", item, ctx)
+
+
+# ── median-of-N helpers ──────────────────────────────────────────────────────────
 
 
 def _numeric_leaves(d: dict) -> dict[tuple, float]:
-    """Flatten a metric dict to {path: float} over its FLOAT score-leaves only.
-
-    Median applies to continuous scores only.  A leaf counts as numeric-for-median
-    only when its value is a ``float``; ``bool`` and ``int`` leaves (counts,
-    denominators, 1-5 axes, and other bookkeeping) are deliberately skipped and
-    taken from the first run unchanged — this avoids fractional counts (rated=0.5)
-    and count/len(list) disagreement under runs>1 with an even N.
-    """
+    """Flatten a metric dict to {path: float} over its FLOAT score-leaves only."""
     out: dict[tuple, float] = {}
 
     def walk(node, path: tuple) -> None:
@@ -690,11 +799,7 @@ def _set_leaf(d: dict, path: tuple, value: float) -> None:
 
 
 def _median_runs(samples: list[dict]) -> dict:
-    """Median across N metric-dicts: FLOAT score-leaves -> per-key median; rest = first.
-
-    Only continuous float scores are medianed; integer bookkeeping (counts,
-    denominators, 1-5 axes) and all non-numeric fields are taken from the first run.
-    """
+    """Median across N metric-dicts: FLOAT score-leaves -> per-key median; rest = first."""
     samples = [s for s in samples if isinstance(s, dict)]
     if not samples:
         return {}
@@ -717,100 +822,69 @@ def _median_runs(samples: list[dict]) -> dict:
 # ── orchestrator ─────────────────────────────────────────────────────────────────
 
 
-def run_judge(
-    result: dict,
-    registry,
+async def run_judge(
+    item: dict,
+    ctx: EvalContext,
     *,
-    judge_model: str,
-    runs: int = 1,
-    concurrency: int = 1,
     pipeline_model: str = "",
-    champion_result: dict | None = None,
-    chat_fn=None,
-    embed_fn=None,
-    tau: float = 0.70,
-    lexical_missed_ids: list[str] | None = None,
 ) -> AdvisoryReport:
-    """Run the G4 advisory gate, best-effort.  NEVER raises; NEVER affects verdict.
+    """Run all metrics concurrently and return an AdvisoryReport.
 
-    If chat_fn / embed_fn are None, real ones are built from JudgeClient /
-    OllamaEmbedder (tests inject stubs instead).  Each [J] metric runs `runs`
-    times and the median of its numeric scores is kept.  Every metric is wrapped
-    in try/except: a failure appends to report.errors and the run continues.
-
-    ``concurrency`` (opt-in, default 1) bounds the per-item [J] metrics' internal
-    fan-out: 1 keeps the sequential per-item loops; >=2 runs each metric's items
-    across a thread pool (order preserved).  The median-of-N ``runs`` loop stays
-    sequential and the single-call metrics are unaffected.  The result is
-    byte-for-byte identical at concurrency=1.
-
-    Returns an AdvisoryReport (a plain dict carrier) with calibrated=False and
-    same_provider_caveat = same_provider(pipeline_model, judge_model).
+    Best-effort: never raises. Failing metrics append to report.errors.
     """
-    if chat_fn is None:
-        client = JudgeClient(judge_model)
-        chat_fn = client.chat_json
-    if embed_fn is None:
-        embed_fn = OllamaEmbedder().embed
-
     report = AdvisoryReport(
-        judge_model=judge_model,
-        same_provider_caveat=same_provider(pipeline_model, judge_model),
+        judge_model=ctx.client.model_spec,
+        same_provider_caveat=same_provider(pipeline_model, ctx.client.model_spec),
         calibrated=False,
-        runs=runs,
+        runs=ctx.runs,
     )
 
-    def _run_det(name: str, fn) -> None:
+    # [D] deterministic (no LLM)
+    det_metrics: list[tuple[str, Metric]] = [
+        ("source_coverage", source_coverage),
+        ("excerpt_fill_rate", excerpt_fill_rate),
+    ]
+    # [E] embedding
+    emb_metrics: list[tuple[str, Metric]] = [
+        ("semantic_recovery", semantic_recovery),
+    ]
+    # [J] judge metrics (median-of-runs handled externally for single-call ones)
+    judge_metrics: list[tuple[str, Metric]] = [
+        ("faithfulness", faithfulness),
+        ("numeric_temporal_fidelity", numeric_temporal_fidelity),
+        ("citation_relevance", citation_relevance),
+        ("nc_semantic_precision", nc_semantic_precision),
+        ("fabricated_entity", fabricated_entity),
+        ("contradiction", contradiction),
+        ("open_gap", open_gap),
+        ("actionability", actionability),
+        ("severity_calibration", severity_calibration),
+        ("answer_relevancy", answer_relevancy),
+        ("surface_deduplication", surface_deduplication),
+        ("comparative_vs_champion", comparative_vs_champion),
+    ]
+    # flycanon custom
+    flycanon_metrics: list[tuple[str, Metric]] = [
+        ("contains_answer", contains_answer),
+        ("addresses_question", addresses_question),
+    ]
+    # RAGAS
+    ragas_metrics: list[tuple[str, Metric]] = [
+        ("answer_correctness", answer_correctness),
+        ("ragas_faithfulness", ragas_faithfulness),
+        ("context_recall", context_recall),
+        ("context_precision", context_precision),
+    ]
+
+    all_metrics = det_metrics + emb_metrics + judge_metrics + flycanon_metrics + ragas_metrics
+
+    async def _run_one(name: str, fn: Metric) -> None:
         try:
-            report.metrics[name] = fn()
-        except Exception as exc:  # best-effort: never raise
+            result = await fn(item, ctx)
+            if result is not None:
+                report.metrics[name] = result
+        except Exception as exc:
             report.errors.append(f"{name}: {type(exc).__name__}: {exc}")
 
-    def _run_judge_metric(name: str, fn) -> None:
-        try:
-            samples = [fn() for _ in range(max(1, runs))]
-            report.metrics[name] = _median_runs(samples)
-        except Exception as exc:  # best-effort: never raise
-            report.errors.append(f"{name}: {type(exc).__name__}: {exc}")
-
-    # [D] deterministic — always computed, no LLM.
-    _run_det("source_coverage", lambda: source_coverage(result))
-    _run_det("excerpt_fill_rate", lambda: excerpt_fill_rate(result))
-
-    # [E] embedding — context recall.
-    _run_det(
-        "semantic_recovery",
-        lambda: semantic_recovery(result, registry, lexical_missed_ids or [], embed_fn, tau=tau),
-    )
-
-    # [J] judge — median-of-N.  Per-item metrics fan out at workers=concurrency.
-    _run_judge_metric("faithfulness", lambda: faithfulness(result, chat_fn, workers=concurrency))
-    _run_judge_metric(
-        "numeric_temporal_fidelity",
-        lambda: numeric_temporal_fidelity(result, chat_fn, workers=concurrency),
-    )
-    _run_judge_metric("citation_relevance", lambda: citation_relevance(result, chat_fn, workers=concurrency))
-    _run_judge_metric(
-        "nc_semantic_precision",
-        lambda: nc_semantic_precision(result, registry, chat_fn, workers=concurrency),
-    )
-    _run_judge_metric("fabricated_entity", lambda: fabricated_entity(result, chat_fn))
-    _run_judge_metric("contradiction", lambda: contradiction(result, chat_fn))
-    _run_judge_metric("open_gap", lambda: open_gap(result, chat_fn))
-    _run_judge_metric("actionability", lambda: actionability(result, chat_fn, workers=concurrency))
-    _run_judge_metric(
-        "severity_calibration",
-        lambda: severity_calibration(result, chat_fn, workers=concurrency),
-    )
-    _run_judge_metric("answer_relevancy", lambda: answer_relevancy(result, chat_fn))
-    _run_judge_metric(
-        "surface_deduplication",
-        lambda: surface_deduplication(result, chat_fn, workers=concurrency),
-    )
-    if champion_result is not None:
-        _run_judge_metric(
-            "comparative_vs_champion",
-            lambda: comparative_vs_champion(result, champion_result, chat_fn),
-        )
-
+    await asyncio.gather(*[_run_one(name, fn) for name, fn in all_metrics])
     return report

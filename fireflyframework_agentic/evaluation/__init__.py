@@ -1,102 +1,90 @@
-# Copyright 2026 Firefly Software Foundation
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""Evaluation subpackage -- gate-based quality gates, LLM-as-judge advisory, champion/challenger tracking, and retrieval metrics.
-
-Gate pipeline (flags, not vetoes):
-    G1 -- Structural & Safe (schema + PII + empty-registry guard)
-    G2 -- Must-finds & negative controls (recall + NC precision)
-    G3 -- Evidence (grounding / token-anchoring)
-    G4 -- LLM-as-a-Judge (advisory, opt-in, never decides promotion)
-    G5 -- No-regression / promotion (champion/challenger comparison)
-
-Retrieval metrics:
-    Precision@k, Recall@k, MRR, NDCG -- computed over ranked retrieval results.
-
-Champion tracking:
-    Persists the best-known run record so that promotion decisions can be made
-    against a stable baseline rather than the most recent run.
-"""
-
-from importlib.metadata import PackageNotFoundError, version
-
-from fireflyframework_agentic.evaluation.champion import (
-    ChampionRecord,
-    invalidate_champion,
-    load_champion,
-    save_champion,
+from fireflyframework_agentic.evaluation.judge import (
+    AdvisoryReport as AdvisoryReport,
 )
-from fireflyframework_agentic.evaluation.corpus import (
-    EMPTY,
-    FABRICATED,
-    SOURCE_UNKNOWN,
-    VERIFIED,
-    corpus_sha256,
-    load_corpus,
-    verify_evidence_index,
+from fireflyframework_agentic.evaluation.judge import (
+    EvalContext as EvalContext,
 )
-from fireflyframework_agentic.evaluation.gates import GateResult, Verdict, g2_recall_precision, run_gates
-from fireflyframework_agentic.evaluation.judge import AdvisoryReport, run_judge
-from fireflyframework_agentic.evaluation.judge_client import JudgeClient, OllamaEmbedder, build_embedder, cosine
-from fireflyframework_agentic.evaluation.matcher import anchored, matches, source_stem, tokens
-from fireflyframework_agentic.evaluation.registry import Registry, RegistryItem, load_registry, registry_sha256
-from fireflyframework_agentic.evaluation.scorecard import VERDICT_HOLD, VERDICT_PROMOTE, render_scorecard, verdict
-from fireflyframework_agentic.evaluation.stats import aa_band, aggregate_grounding, left_skew_flag
-from fireflyframework_agentic.lab.retrieval_metrics import RetrieverMetrics, compute_retrieval_metrics
-
-try:
-    __version__ = version("fireflyframework-agentic")
-except PackageNotFoundError:
-    __version__ = "0.0.0+dev"
-
-__all__ = [
-    "EMPTY",
-    "FABRICATED",
-    "SOURCE_UNKNOWN",
-    "VERIFIED",
-    "corpus_sha256",
-    "load_corpus",
-    "verify_evidence_index",
-    "GateResult",
-    "Verdict",
-    "g2_recall_precision",
-    "run_gates",
-    "render_scorecard",
-    "verdict",
-    "VERDICT_PROMOTE",
-    "VERDICT_HOLD",
-    "ChampionRecord",
-    "load_champion",
-    "save_champion",
-    "invalidate_champion",
-    "AdvisoryReport",
-    "run_judge",
-    "JudgeClient",
-    "OllamaEmbedder",
-    "build_embedder",
-    "cosine",
-    "Registry",
-    "RegistryItem",
-    "load_registry",
-    "registry_sha256",
-    "RetrieverMetrics",
-    "compute_retrieval_metrics",
-    "anchored",
-    "matches",
-    "source_stem",
-    "tokens",
-    "aa_band",
-    "aggregate_grounding",
-    "left_skew_flag",
-]
+from fireflyframework_agentic.evaluation.judge import (
+    Metric as Metric,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    actionability as actionability,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    addresses_question as addresses_question,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    answer_correctness as answer_correctness,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    answer_relevancy as answer_relevancy,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    citation_relevance as citation_relevance,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    comparative_vs_champion as comparative_vs_champion,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    contains_answer as contains_answer,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    context_precision as context_precision,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    context_recall as context_recall,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    contradiction as contradiction,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    excerpt_fill_rate as excerpt_fill_rate,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    fabricated_entity as fabricated_entity,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    faithfulness as faithfulness,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    nc_semantic_precision as nc_semantic_precision,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    numeric_temporal_fidelity as numeric_temporal_fidelity,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    open_gap as open_gap,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    ragas_faithfulness as ragas_faithfulness,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    run_judge as run_judge,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    semantic_recovery as semantic_recovery,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    severity_calibration as severity_calibration,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    source_coverage as source_coverage,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    surface_deduplication as surface_deduplication,
+)
+from fireflyframework_agentic.evaluation.judge_client import (
+    JudgeClient as JudgeClient,
+)
+from fireflyframework_agentic.evaluation.judge_client import (
+    parse_model as parse_model,
+)
+from fireflyframework_agentic.evaluation.judge_client import (
+    same_provider as same_provider,
+)
+from fireflyframework_agentic.lab.retrieval_metrics import (
+    RetrieverMetrics as RetrieverMetrics,
+)
+from fireflyframework_agentic.lab.retrieval_metrics import (
+    compute_retrieval_metrics as compute_retrieval_metrics,
+)
