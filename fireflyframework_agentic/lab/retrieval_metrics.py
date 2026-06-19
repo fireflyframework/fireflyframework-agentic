@@ -66,11 +66,7 @@ def _dedup(retrieved: list[dict]) -> list[dict]:
 
 def _ndcg(retrieved: list[dict], n_gold: int, k: int = 10) -> float:
     """Return nDCG@k for a single query."""
-    dcg = sum(
-        1.0 / math.log2(r["rank"] + 1)
-        for r in retrieved
-        if r.get("is_gold") and r["rank"] <= k
-    )
+    dcg = sum(1.0 / math.log2(r["rank"] + 1) for r in retrieved if r.get("is_gold") and r["rank"] <= k)
     ideal = sum(1.0 / math.log2(i + 2) for i in range(min(n_gold, k)))
     return dcg / ideal if ideal else 0.0
 
@@ -140,7 +136,7 @@ def compute_retrieval_metrics(results: list[dict]) -> dict:
         if row.get("answer_ms") is not None:
             answer_ms.append(row["answer_ms"])
 
-    out = {k: round(v / n, 4) for k, v in agg.items()} if n else {}
+    out: dict[str, object] = {k: round(v / n, 4) for k, v in agg.items()} if n else {}
     out["n_queries"] = n
     out["no_answer_rate"] = round(no_answer / n, 4) if n else None
     out["citation_precision"] = round(cite_num / cite_den, 4) if cite_den else None
@@ -176,7 +172,7 @@ class RetrieverMetrics(BaseModel):
     mean_answer_ms: float | None = None
 
     @classmethod
-    def from_results(cls, results: list[dict]) -> "RetrieverMetrics":
+    def from_results(cls, results: list[dict]) -> RetrieverMetrics:
         """Compute metrics from raw retrieval result rows and return a model instance."""
         m = compute_retrieval_metrics(results)
         return cls(
