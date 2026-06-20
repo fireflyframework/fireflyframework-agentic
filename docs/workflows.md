@@ -96,11 +96,18 @@ WorkflowBudget(
     max_concurrent_agents=8,   # asyncio.Semaphore; default min(16, cpu - 2)
     max_agents_total=1000,     # hard kill-switch (runaway-loop backstop)
     max_tokens=500_000,        # optional output-token ceiling for the whole run
+    max_cost_usd=2.50,         # optional USD ceiling (priced via genai-prices)
+    max_wall_seconds=120,      # optional wall-clock ceiling for the whole run
 )
 ```
 
-Exceeding `max_agents_total` or `max_tokens` raises `WorkflowBudgetError`. Token
-accounting is fed by each `AgentRunner` call's reported usage.
+Exceeding any ceiling raises `WorkflowBudgetError` — including **inside a
+`parallel`/`pipeline` fan-out** (a kill-switch aborts the run; only ordinary
+branch failures resolve to `None`). Token *and dollar* cost are fed by each
+`AgentRunner` call's reported usage, priced through the same `genai-prices` cost
+stack the rest of the framework uses; read live spend with
+`ctx.tokens_spent` / `ctx.cost_spent_usd` and the remaining headroom with
+`ctx.remaining_tokens()` / `ctx.remaining_cost_usd()`.
 
 ---
 
@@ -136,8 +143,8 @@ across processes — e.g. behind a pipeline `Checkpointer`.
 
 ```python
 class AgentRunner(Protocol):
-    async def run(self, prompt, *, model=None, output_type=None,
-                  instructions=None, deps=None) -> AgentCall: ...
+    async def run(self, prompt, *, model=None, output_type=None, instructions=None,
+                  deps=None, tools=None, toolsets=None) -> AgentCall: ...
 ```
 
 - **`DefaultAgentRunner`** (default) runs each call as a fresh
@@ -153,30 +160,103 @@ await deep_research(args, runner=MyFakeRunner())
 
 ---
 
+## Model routing & cost optimization
+
+The cheapest model that can do the job should do the job. Two complementary tools
+give a workflow automatic per-task model selection — the workflow body is
+unchanged; only *which* model runs each `agent()` call changes.
+
+### `SmartRoutingRunner` — cheapest capable model per call (a-priori)
+
+A drop-in `AgentRunner`: give it model tiers ordered cheap → expensive and a
+selection strategy. Each `agent()` call with **no explicit `model=`** is routed;
+an explicit `model=` always wins. A transient error escalates up the ladder.
+
+```python
+from fireflyframework_agentic.workflows import (
+    SmartRoutingRunner, ComplexityHeuristicStrategy, CostFloorStrategy,
+)
+
+runner = SmartRoutingRunner(
+    tiers=["anthropic:claude-haiku-4-5", "anthropic:claude-sonnet-4-5"],
+    strategy=ComplexityHeuristicStrategy(),   # training-free: routes by prompt length + cues
+    fallback=True,                            # escalate to the next tier on a transient error
+)
+report = await run_workflow("deep_research", args, runner=runner)
+```
+
+- **`ComplexityHeuristicStrategy`** (default) — no extra LLM call; short/simple
+  prompts route to the cheapest tier, long or reasoning-heavy prompts escalate.
+- **`CostFloorStrategy`** — always start at the genai-prices cheapest tier
+  (priced from the actual prompt length), leaving escalation to `fallback`.
+- **Custom** — implement `ModelSelectionStrategy.select(prompt, tiers) -> int`
+  (e.g. an embedding router or a cheap classifier model).
+
+Every decision emits a structured event (`route.select`, `route.escalate`), so a
+cheap-model quality regression is observable, not silent.
+
+### `cascade()` — escalate only on low confidence (a-posteriori)
+
+The FrugalGPT trade-off: run the cheapest tier, score its answer, and escalate
+only when confidence is below `threshold`. Typically the strongest cost lever.
+
+```python
+from fireflyframework_agentic.workflows import cascade
+
+result = await cascade(
+    "Summarise this contract clause: ...",
+    tiers=["anthropic:claude-haiku-4-5", "anthropic:claude-sonnet-4-5"],
+    threshold=0.7,            # accept the first tier scoring >= 0.7
+    # confidence=my_async_scorer(output)->float, or judge_model=... (defaults to the cheapest tier)
+)
+result.output, result.tier, result.model, result.confidence, result.escalations
+```
+
+When no `confidence` callable is given, a judge model rates each answer 0–1
+(defaulting to the cheapest tier as judge). Each tier emits a `cascade.tier`
+event. Cascades go through `agent()`, so they honour the run's budget and journal.
+
+### Pricing a model directly
+
+```python
+from fireflyframework_agentic.workflows import price_model
+usd = price_model("anthropic:claude-haiku-4-5", input_tokens=1000, output_tokens=500)
+```
+
+---
+
 ## Verify combinators
 
 Built on the primitives, these encode the "fan-out → reduce → decide" patterns
 that make multi-agent output trustworthy:
 
 ```python
-from fireflyframework_agentic.workflows import adversarial_verify, loop_until_dry
+from fireflyframework_agentic.workflows import adversarial_verify, judge_panel, loop_until_dry
 
 # Spawn N skeptics prompted to REFUTE; survives only if fewer than a majority refute.
 ok = await adversarial_verify("claim: X causes Y", model="openai:gpt-4o-mini", n=3)
 
+# A panel of DIFFERENT models votes; returns a structured Verdict.
+verdict = await judge_panel("X causes Y", judges=["openai:gpt-4o-mini", "anthropic:claude-haiku-4-5"])
+verdict.survived, verdict.support, verdict.votes   # bool, fraction, ((model, yes), ...)
+
 # Keep producing until K consecutive rounds surface nothing new (catches the tail).
 items = await loop_until_dry(produce_batch, dry_rounds=2, max_rounds=8, key=lambda x: x.id)
 ```
+
+A heterogeneous-model panel (`judge_panel`) is a stronger signal than asking one
+model repeatedly, and its `Verdict` doubles as a confidence oracle for `cascade()`.
 
 ---
 
 ## Telemetry
 
 Pass `events=callable` to a run to receive structured events:
-`workflow.start` / `workflow.end`, `phase.start` / `phase.end`,
-`agent.start` / `agent.end` (with `label`, `phase`, `seq`, `tokens`), and `log`.
-Wire this into the [observability](observability.md) layer for live per-phase
-token/agent/time counters.
+`workflow.start` / `workflow.end` (with `agents`, `tokens`, `cost_usd`),
+`phase.start` / `phase.end`, `agent.start` / `agent.end` (with `label`, `phase`,
+`seq`, `tokens`, `cost_usd`), `route.select` / `route.escalate`, `cascade.tier`,
+and `log`. Wire this into the [observability](observability.md) layer for live
+per-phase token/cost/agent/time counters.
 
 ---
 
@@ -188,10 +268,14 @@ token/agent/time counters.
 | `Workflow.run(args, *, budget, runner, journal, events, run_id)` | Execute; returns the body's return value. |
 | `run_workflow(name, args, **opts)` | Look up a registered workflow by name and run it. |
 | `agent` / `parallel` / `pipeline` / `phase` / `log` | The DSL primitives. |
-| `WorkflowBudget` | Concurrency / agent-count / token ceilings. |
+| `map_agents(items, fn, *, strict=False)` | Run `fn(item)` per item concurrently — sugar over `parallel` (no late-binding lambda). |
+| `WorkflowBudget` | Concurrency / agent-count / token / **USD cost** / **wall-clock** ceilings. |
 | `Journal` | Sequence-keyed cache for deterministic resume. |
-| `AgentRunner` / `DefaultAgentRunner` / `AgentCall` | The runner seam. |
-| `adversarial_verify` / `loop_until_dry` | Quality combinators. |
+| `AgentRunner` / `DefaultAgentRunner` / `AgentCall` | The runner seam (`AgentCall` carries `output`, `tokens`, `cost_usd`). |
+| `SmartRoutingRunner` / `ComplexityHeuristicStrategy` / `CostFloorStrategy` / `ModelSelectionStrategy` | Cheapest-capable model per call (with fallback). |
+| `cascade` / `CascadeResult` | Cheap-first, escalate on low confidence. |
+| `price_model(model, *, input_tokens, output_tokens)` | USD price for a model at a token shape. |
+| `adversarial_verify` / `judge_panel` / `Verdict` / `loop_until_dry` | Quality combinators. |
 | `workflow_registry` | The global `WorkflowRegistry` singleton. |
 | `current_workflow()` | The active `WorkflowContext` (raises outside a run). |
 

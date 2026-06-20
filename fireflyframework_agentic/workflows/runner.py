@@ -28,9 +28,35 @@ from typing import Any, Protocol, runtime_checkable
 
 from pydantic_ai import Agent as PydanticAgent
 
+from fireflyframework_agentic.model_utils import get_model_identifier
+from fireflyframework_agentic.observability.cost_resolvers import CostContext, resolve_cost
 from fireflyframework_agentic.observability.usage import resolve_run_usage
 
 logger = logging.getLogger(__name__)
+
+
+def price_call(model: Any, usage: Any) -> float:
+    """Best-effort USD cost for one model call, via the genai-prices cost stack.
+
+    Returns ``0.0`` for an unknown model or when usage is unavailable, so cost
+    accounting degrades gracefully rather than failing a run.
+    """
+    if usage is None:
+        return 0.0
+    try:
+        cost = resolve_cost(
+            CostContext(
+                model=get_model_identifier(model),
+                input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
+                output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
+                cache_creation_tokens=int(getattr(usage, "cache_write_tokens", 0) or 0),
+                cache_read_tokens=int(getattr(usage, "cache_read_tokens", 0) or 0),
+            )
+        )
+    except Exception:  # noqa: BLE001 - cost is best-effort; never break a run
+        logger.debug("workflow cost resolution failed", exc_info=True)
+        return 0.0
+    return float(cost) if cost else 0.0
 
 
 @dataclass(slots=True)
@@ -45,6 +71,7 @@ class AgentCall:
 
     output: Any
     tokens: int = 0
+    cost_usd: float = 0.0
     raw: Any = None
 
 
@@ -111,4 +138,4 @@ class DefaultAgentRunner:
         result = await ephemeral.run(prompt, deps=deps)
         usage = resolve_run_usage(result)
         tokens = int(getattr(usage, "total_tokens", 0) or 0) if usage is not None else 0
-        return AgentCall(output=result.output, tokens=tokens, raw=result)
+        return AgentCall(output=result.output, tokens=tokens, cost_usd=price_call(resolved, usage), raw=result)

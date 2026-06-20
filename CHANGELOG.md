@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.06.2] - 2026-06-20
+
+Dynamic Workflows: smart model routing, multi-model cost optimization, and the
+budget/quality wiring that makes them observable. Driven by a SOTA gap analysis
+(verdict: sound architecture, under-wired — the cost stack existed but wasn't
+connected to the engine).
+
+### Added
+
+- **`SmartRoutingRunner`** — a drop-in `AgentRunner` that picks the cheapest
+  *capable* model per call from ordered tiers, with fallback escalation on
+  transient errors. Pluggable `ModelSelectionStrategy` (`ComplexityHeuristicStrategy`
+  default — training-free; `CostFloorStrategy` — genai-prices cheapest). Emits
+  `route.select` / `route.escalate` events. An explicit `agent(model=…)` always wins.
+- **`cascade()`** — cheap-first, escalate-on-low-confidence (FrugalGPT-style),
+  returning a `CascadeResult`; a judge model scores each tier by default. Emits
+  `cascade.tier`.
+- **USD + wall-clock budgets** — `WorkflowBudget(max_cost_usd=…, max_wall_seconds=…)`;
+  `DefaultAgentRunner` now prices every call via `genai-prices` (`AgentCall.cost_usd`),
+  and `WorkflowContext` exposes `cost_spent_usd` / `remaining_cost_usd()`.
+- **`judge_panel()` / `Verdict`** — heterogeneous-model verification with a
+  structured verdict. **`map_agents()`** — concurrent `map` sugar over `parallel`
+  (removes the late-binding-lambda footgun). **`price_model()`** helper.
+
+### Fixed
+
+- **Budget kill-switch swallowed in `parallel`/`pipeline`.** A `WorkflowBudgetError`
+  raised inside a fan-out branch resolved to `None` instead of aborting the run;
+  structural/kill-switch errors now propagate (ordinary branch failures still
+  resolve to `None`).
+- **`run_id` collisions.** Default run id is now `f"{name}-{uuid4().hex[:8]}"`
+  (was `f"{name}-run"`), so concurrent runs no longer merge in logs/telemetry.
+
 ## [26.06.1] - 2026-06-20
 
 Completeness & wiring fixes for the new subsystems, validated end-to-end against a

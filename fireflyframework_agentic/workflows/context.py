@@ -66,6 +66,8 @@ class WorkflowBudget:
     max_concurrent_agents: int = field(default_factory=_default_concurrency)
     max_agents_total: int = _DEFAULT_MAX_AGENTS_TOTAL
     max_tokens: int | None = None
+    max_cost_usd: float | None = None
+    max_wall_seconds: float | None = None
 
     def __post_init__(self) -> None:
         if self.max_concurrent_agents < 1:
@@ -74,6 +76,10 @@ class WorkflowBudget:
             raise ValueError("max_agents_total must be >= 1")
         if self.max_tokens is not None and self.max_tokens < 1:
             raise ValueError("max_tokens must be >= 1 when set")
+        if self.max_cost_usd is not None and self.max_cost_usd <= 0:
+            raise ValueError("max_cost_usd must be > 0 when set")
+        if self.max_wall_seconds is not None and self.max_wall_seconds <= 0:
+            raise ValueError("max_wall_seconds must be > 0 when set")
 
 
 # The active workflow context for the current async task tree.
@@ -128,6 +134,7 @@ class WorkflowContext:
         self._semaphore = asyncio.Semaphore(budget.max_concurrent_agents)
         self._agents_started = 0
         self._tokens_spent = 0
+        self._cost_spent = 0.0
         self._call_seq = 0
         self._phase_stack: list[str] = []
 
@@ -166,11 +173,20 @@ class WorkflowContext:
             raise WorkflowBudgetError(
                 f"workflow '{self.name}' exhausted token budget={self.budget.max_tokens} (spent {self._tokens_spent})"
             )
+        if self.budget.max_cost_usd is not None and self._cost_spent >= self.budget.max_cost_usd:
+            raise WorkflowBudgetError(
+                f"workflow '{self.name}' exhausted cost budget=${self.budget.max_cost_usd:.4f} "
+                f"(spent ${self._cost_spent:.4f})"
+            )
         self._agents_started += 1
 
     def record_tokens(self, tokens: int) -> None:
         if tokens:
             self._tokens_spent += int(tokens)
+
+    def record_cost_usd(self, cost: float) -> None:
+        if cost:
+            self._cost_spent += float(cost)
 
     @property
     def agents_started(self) -> int:
@@ -180,10 +196,19 @@ class WorkflowContext:
     def tokens_spent(self) -> int:
         return self._tokens_spent
 
+    @property
+    def cost_spent_usd(self) -> float:
+        return self._cost_spent
+
     def remaining_tokens(self) -> int | None:
         if self.budget.max_tokens is None:
             return None
         return max(0, self.budget.max_tokens - self._tokens_spent)
+
+    def remaining_cost_usd(self) -> float | None:
+        if self.budget.max_cost_usd is None:
+            return None
+        return max(0.0, self.budget.max_cost_usd - self._cost_spent)
 
     @property
     def semaphore(self) -> asyncio.Semaphore:

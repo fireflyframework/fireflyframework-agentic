@@ -43,6 +43,7 @@ from fireflyframework_agentic.workflows.journal import Journal
 from fireflyframework_agentic.workflows.primitives import (
     agent,
     log,
+    map_agents,
     parallel,
     phase,
     pipeline,
@@ -54,30 +55,54 @@ from fireflyframework_agentic.workflows.registry import (
     workflow,
     workflow_registry,
 )
+from fireflyframework_agentic.workflows.routing import (
+    ComplexityHeuristicStrategy,
+    CostFloorStrategy,
+    ModelSelectionStrategy,
+    SmartRoutingRunner,
+    price_model,
+)
 from fireflyframework_agentic.workflows.runner import (
     AgentCall,
     AgentRunner,
     DefaultAgentRunner,
 )
-from fireflyframework_agentic.workflows.verify import adversarial_verify, loop_until_dry
+from fireflyframework_agentic.workflows.verify import (
+    CascadeResult,
+    Verdict,
+    adversarial_verify,
+    cascade,
+    judge_panel,
+    loop_until_dry,
+)
 
 __all__ = [
     "AgentCall",
     "AgentRunner",
+    "CascadeResult",
+    "ComplexityHeuristicStrategy",
+    "CostFloorStrategy",
     "DefaultAgentRunner",
     "Journal",
+    "ModelSelectionStrategy",
+    "SmartRoutingRunner",
+    "Verdict",
     "Workflow",
     "WorkflowBudget",
     "WorkflowContext",
     "WorkflowRegistry",
     "adversarial_verify",
     "agent",
+    "cascade",
     "current_workflow",
+    "judge_panel",
     "log",
     "loop_until_dry",
+    "map_agents",
     "parallel",
     "phase",
     "pipeline",
+    "price_model",
     "run_workflow",
     "workflow",
     "workflow_registry",
