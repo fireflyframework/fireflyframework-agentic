@@ -34,14 +34,20 @@ The engine enforces a :class:`WorkflowBudget` (concurrency / agent-count / token
 ceilings) and journals every agent call for deterministic resume.
 """
 
+from fireflyframework_agentic.exceptions import WorkflowInterrupt
 from fireflyframework_agentic.workflows.context import (
     WorkflowBudget,
     WorkflowContext,
     current_workflow,
 )
-from fireflyframework_agentic.workflows.journal import Journal
+from fireflyframework_agentic.workflows.journal import (
+    FileJournalBackend,
+    Journal,
+    JournalBackend,
+)
 from fireflyframework_agentic.workflows.primitives import (
     agent,
+    human,
     log,
     map_agents,
     parallel,
@@ -52,6 +58,7 @@ from fireflyframework_agentic.workflows.registry import (
     Workflow,
     WorkflowRegistry,
     run_workflow,
+    subworkflow,
     workflow,
     workflow_registry,
 )
@@ -83,18 +90,22 @@ __all__ = [
     "ComplexityHeuristicStrategy",
     "CostFloorStrategy",
     "DefaultAgentRunner",
+    "FileJournalBackend",
     "Journal",
+    "JournalBackend",
     "ModelSelectionStrategy",
     "SmartRoutingRunner",
     "Verdict",
     "Workflow",
     "WorkflowBudget",
     "WorkflowContext",
+    "WorkflowInterrupt",
     "WorkflowRegistry",
     "adversarial_verify",
     "agent",
     "cascade",
     "current_workflow",
+    "human",
     "judge_panel",
     "log",
     "loop_until_dry",
@@ -104,6 +115,7 @@ __all__ = [
     "pipeline",
     "price_model",
     "run_workflow",
+    "subworkflow",
     "workflow",
     "workflow_registry",
 ]

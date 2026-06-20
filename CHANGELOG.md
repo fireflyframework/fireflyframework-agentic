@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.06.3] - 2026-06-20
+
+Dynamic Workflows — the durable-composition wave: sub-workflows, durable resume,
+and human-in-the-loop (the top remaining SOTA gaps from the analysis).
+
+### Added
+
+- **Sub-workflows** — `subworkflow(name_or_wf, args)` runs another workflow inline,
+  inheriting the parent's budget, concurrency gate, journal and runner (one
+  deterministic sequence stream across the nested run). Emits `subworkflow.start` /
+  `subworkflow.end`.
+- **Durable resume** — `JournalBackend` protocol + `FileJournalBackend`. Attach one
+  to a `Journal` (`Journal(backend=…, run_key=…)`) and every completed call flushes
+  to durable storage, so an out-of-process crash resumes from the last call.
+- **Human-in-the-loop** — `human(prompt)` pauses a run by raising `WorkflowInterrupt`;
+  the caller `provide()`s the answer and re-runs with the same journal to resume past
+  the pause. Sequence-keyed, so resume is deterministic; pairs with a `JournalBackend`
+  for approvals that survive a restart. Emits `human.pause`.
+
+### Fixed
+
+- `WorkflowInterrupt` is in the never-swallow set, so a `human()` pause inside a
+  `parallel`/`pipeline` branch propagates instead of being silenced.
+
 ## [26.06.2] - 2026-06-20
 
 Dynamic Workflows: smart model routing, multi-model cost optimization, and the

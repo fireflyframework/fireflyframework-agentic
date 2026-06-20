@@ -38,14 +38,18 @@ import logging
 from collections.abc import Awaitable, Callable, Iterable, Iterator
 from typing import Any
 
-from fireflyframework_agentic.exceptions import WorkflowBudgetError, WorkflowContextError
+from fireflyframework_agentic.exceptions import (
+    WorkflowBudgetError,
+    WorkflowContextError,
+    WorkflowInterrupt,
+)
 from fireflyframework_agentic.workflows.context import current_workflow
 
 logger = logging.getLogger(__name__)
 
-# Structural/kill-switch errors must abort the run, not be swallowed to ``None``
-# by a parallel branch or a pipeline stage.
-_NEVER_SWALLOW = (WorkflowBudgetError, WorkflowContextError)
+# Structural / kill-switch / control-flow signals must abort the run, not be
+# swallowed to ``None`` by a parallel branch or a pipeline stage.
+_NEVER_SWALLOW = (WorkflowBudgetError, WorkflowContextError, WorkflowInterrupt)
 
 
 async def agent(
@@ -111,6 +115,31 @@ async def agent(
         },
     )
     return call.output
+
+
+async def human(prompt: str, *, label: str | None = None) -> Any:
+    """Pause the workflow for human input (human-in-the-loop).
+
+    On first reach this raises :class:`WorkflowInterrupt` carrying ``prompt``. The
+    caller obtains the answer, calls ``interrupt.provide(answer)``, and re-runs the
+    workflow with the **same journal** — this ``human()`` call then returns the
+    recorded answer and execution continues past it. Like ``agent()``, the call is
+    sequence-keyed, so resume is deterministic.
+
+    Example::
+
+        try:
+            result = await wf.run(args, journal=journal)
+        except WorkflowInterrupt as it:
+            it.provide(input(it.prompt))          # collect the answer however you like
+            result = await wf.run(args, journal=journal)   # resume
+    """
+    ctx = current_workflow()
+    seq = ctx.next_call_seq()
+    if ctx.journal.has(seq):
+        return ctx.journal.get(seq)
+    ctx.emit("human.pause", {"prompt": prompt, "seq": seq, "label": label, "phase": ctx.current_phase})
+    raise WorkflowInterrupt(prompt, seq=seq, journal=ctx.journal)
 
 
 async def parallel(thunks: Iterable[Callable[[], Awaitable[Any]]]) -> list[Any]:
