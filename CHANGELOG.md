@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.06.4] - 2026-06-21
+
+Dynamic Workflows — the final SOTA wave: token-level streaming and end-to-end
+static typing of the DSL.
+
+### Added
+
+- **Streaming** — `stream(prompt, ...)` is an async context manager that streams one
+  sub-agent's output token-by-token: iterate `handle.text()` for deltas, then read
+  `handle.output` for the full result after the block. It honours the budget,
+  concurrency gate, journal (a resumed call yields its cached output once) and cost
+  accounting exactly like `agent()`. Backed by a `StreamingAgentRunner` protocol that
+  `DefaultAgentRunner` implements via pydantic-ai's `run_stream`; a non-streaming
+  runner raises `WorkflowError`. Streamed calls emit `agent.start` / `agent.end` with
+  `stream: True`. New exports: `stream`, `StreamHandle`, `StreamingAgentRunner`.
+- **Typed generics** — `agent(output_type=T)` is now typed to return `T` (via
+  `@overload`) instead of `Any`, and `@workflow` produces a `Workflow[OutputT]`
+  inferred from the function's return annotation, so `await my_workflow(args)` is
+  statically typed end-to-end with no casts.
+
 ## [26.06.3] - 2026-06-20
 
 Dynamic Workflows — the durable-composition wave: sub-workflows, durable resume,

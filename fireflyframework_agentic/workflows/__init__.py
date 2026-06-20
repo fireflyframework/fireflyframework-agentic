@@ -53,6 +53,7 @@ from fireflyframework_agentic.workflows.primitives import (
     parallel,
     phase,
     pipeline,
+    stream,
 )
 from fireflyframework_agentic.workflows.registry import (
     Workflow,
@@ -73,6 +74,8 @@ from fireflyframework_agentic.workflows.runner import (
     AgentCall,
     AgentRunner,
     DefaultAgentRunner,
+    StreamHandle,
+    StreamingAgentRunner,
 )
 from fireflyframework_agentic.workflows.verify import (
     CascadeResult,
@@ -95,6 +98,8 @@ __all__ = [
     "JournalBackend",
     "ModelSelectionStrategy",
     "SmartRoutingRunner",
+    "StreamHandle",
+    "StreamingAgentRunner",
     "Verdict",
     "Workflow",
     "WorkflowBudget",
@@ -115,6 +120,7 @@ __all__ = [
     "pipeline",
     "price_model",
     "run_workflow",
+    "stream",
     "subworkflow",
     "workflow",
     "workflow_registry",
