@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.06.1] - 2026-06-20
+
+Completeness & wiring fixes for the new subsystems, validated end-to-end against a
+real model (structured output, parallel fan-out, pipeline, a sub-agent calling a
+toolset tool, budget enforcement, journal resume, adversarial verify, and a
+connected workflow + secure-execution run).
+
+### Added
+
+- **Workflow sub-agents can use tools.** `agent()` (and the `AgentRunner` seam /
+  `DefaultAgentRunner`) now accept `tools=` and `toolsets=`, so a workflow
+  sub-agent can use a `ToolKit.as_toolset()`, an MCP server, or raw tools — just
+  like a top-level agent. `deps` now also sets the underlying agent's `deps_type`.
+
+### Fixed
+
+- **Code Mode async tools.** `MontyEnvironment.run_code` now bridges async
+  external functions (e.g. Firefly tools exposed via `toolkit_external_functions`)
+  to sync, so sandboxed guest code calls them naturally without `await`. Previously
+  an async tool returned an unresolved coroutine to the script.
+
 ## [26.06.0] - 2026-06-20
 
 pydantic-ai modernization program (phase 1): dependency upgrade + deprecation /

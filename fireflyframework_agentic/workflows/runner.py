@@ -60,6 +60,8 @@ class AgentRunner(Protocol):
         output_type: Any | None = None,
         instructions: str | None = None,
         deps: Any = None,
+        tools: Any | None = None,
+        toolsets: Any | None = None,
     ) -> AgentCall:
         """Execute one workflow agent call and return its result."""
         raise NotImplementedError
@@ -85,6 +87,8 @@ class DefaultAgentRunner:
         output_type: Any | None = None,
         instructions: str | None = None,
         deps: Any = None,
+        tools: Any | None = None,
+        toolsets: Any | None = None,
     ) -> AgentCall:
         resolved = model or self._default_model
         if resolved is None:
@@ -96,6 +100,13 @@ class DefaultAgentRunner:
             kwargs["output_type"] = output_type
         if instructions is not None:
             kwargs["instructions"] = instructions
+        if tools:
+            kwargs["tools"] = list(tools)
+        if toolsets:
+            kwargs["toolsets"] = list(toolsets)
+        if deps is not None:
+            # pydantic-ai validates deps against deps_type; infer it from the value.
+            kwargs["deps_type"] = type(deps)
         ephemeral = PydanticAgent(resolved, **kwargs)
         result = await ephemeral.run(prompt, deps=deps)
         usage = resolve_run_usage(result)

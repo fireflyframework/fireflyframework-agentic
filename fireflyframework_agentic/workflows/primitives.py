@@ -51,6 +51,8 @@ async def agent(
     output_type: Any | None = None,
     instructions: str | None = None,
     deps: Any = None,
+    tools: Any | None = None,
+    toolsets: Any | None = None,
 ) -> Any:
     """Run one isolated sub-agent and return its output.
 
@@ -64,7 +66,9 @@ async def agent(
         model: Per-call model override (else the runner's default).
         output_type: A pydantic model / type to constrain structured output.
         instructions: Per-call system instructions.
-        deps: Dependency object passed to the underlying agent.
+        deps: Dependency object passed to the underlying agent (also sets its deps_type).
+        tools: Tool callables / ``pydantic_ai.Tool`` objects for this sub-agent.
+        toolsets: Toolsets for this sub-agent (e.g. ``ToolKit.as_toolset()`` or an MCP server).
 
     Returns:
         The sub-agent's ``output`` (a ``str`` or a validated ``output_type``).
@@ -79,7 +83,15 @@ async def agent(
     display = label or (prompt[:40] if isinstance(prompt, str) else f"agent#{seq}")
     ctx.emit("agent.start", {"label": display, "phase": ctx.current_phase, "seq": seq})
     async with ctx.semaphore:
-        call = await ctx.runner.run(prompt, model=model, output_type=output_type, instructions=instructions, deps=deps)
+        call = await ctx.runner.run(
+            prompt,
+            model=model,
+            output_type=output_type,
+            instructions=instructions,
+            deps=deps,
+            tools=tools,
+            toolsets=toolsets,
+        )
     ctx.record_tokens(call.tokens)
     ctx.journal.record(seq, call.output)
     ctx.emit(

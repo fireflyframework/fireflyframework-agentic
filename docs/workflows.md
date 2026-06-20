@@ -74,7 +74,7 @@ or by name through `run_workflow("deep_research", args)`.
 
 | Primitive | Signature | Semantics |
 |---|---|---|
-| `agent` | `await agent(prompt, *, label, model, output_type, instructions, deps)` | Run one isolated sub-agent; returns its `output` (a `str` or a validated `output_type`). Honours the budget, the concurrency gate, and the resume journal. |
+| `agent` | `await agent(prompt, *, label, model, output_type, instructions, deps, tools, toolsets)` | Run one isolated sub-agent; returns its `output` (a `str` or a validated `output_type`). A sub-agent can use `tools=`/`toolsets=` (e.g. `ToolKit.as_toolset()` or an MCP server) just like a top-level agent. Honours the budget, the concurrency gate, and the resume journal. |
 | `parallel` | `await parallel(thunks)` | **Barrier.** Run zero-arg async thunks concurrently; a thunk that raises resolves to `None` (the call never propagates). Returns a list aligned to `thunks`. |
 | `pipeline` | `await pipeline(items, *stages)` | **No inter-stage barrier.** Each item flows through every stage independently (item A can be in stage 3 while B is in stage 1). Each stage receives `(prev, item, index)` — declare only the params you need. A stage that raises drops *that* item to `None`. |
 | `phase` | `with phase("title"):` | Group enclosed work for telemetry (`phase.start` / `phase.end` events). |
