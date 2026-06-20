@@ -35,21 +35,52 @@ import asyncio
 import contextlib
 import inspect
 import logging
-from collections.abc import Awaitable, Callable, Iterable, Iterator
-from typing import Any
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Iterator
+from typing import Any, TypeVar, overload
 
 from fireflyframework_agentic.exceptions import (
     WorkflowBudgetError,
     WorkflowContextError,
+    WorkflowError,
     WorkflowInterrupt,
 )
 from fireflyframework_agentic.workflows.context import current_workflow
+from fireflyframework_agentic.workflows.runner import AgentCall, StreamingAgentRunner
 
 logger = logging.getLogger(__name__)
+_T = TypeVar("_T")
 
 # Structural / kill-switch / control-flow signals must abort the run, not be
 # swallowed to ``None`` by a parallel branch or a pipeline stage.
 _NEVER_SWALLOW = (WorkflowBudgetError, WorkflowContextError, WorkflowInterrupt)
+
+
+@overload
+async def agent(
+    prompt: Any,
+    *,
+    label: str | None = ...,
+    model: Any | None = ...,
+    output_type: type[_T],
+    instructions: str | None = ...,
+    deps: Any = ...,
+    tools: Any | None = ...,
+    toolsets: Any | None = ...,
+) -> _T: ...
+
+
+@overload
+async def agent(
+    prompt: Any,
+    *,
+    label: str | None = ...,
+    model: Any | None = ...,
+    output_type: None = ...,
+    instructions: str | None = ...,
+    deps: Any = ...,
+    tools: Any | None = ...,
+    toolsets: Any | None = ...,
+) -> Any: ...
 
 
 async def agent(
@@ -140,6 +171,88 @@ async def human(prompt: str, *, label: str | None = None) -> Any:
         return ctx.journal.get(seq)
     ctx.emit("human.pause", {"prompt": prompt, "seq": seq, "label": label, "phase": ctx.current_phase})
     raise WorkflowInterrupt(prompt, seq=seq, journal=ctx.journal)
+
+
+class _CachedStream:
+    """Stream handle for a journal-cached call: yields the full output once."""
+
+    def __init__(self, output: Any) -> None:
+        self._output = output
+        self.call = AgentCall(output=output)
+
+    async def text(self) -> AsyncIterator[str]:
+        yield str(self._output)
+
+    @property
+    def output(self) -> Any:
+        return self._output
+
+
+@contextlib.asynccontextmanager
+async def stream(
+    prompt: Any,
+    *,
+    label: str | None = None,
+    model: Any | None = None,
+    output_type: Any | None = None,
+    instructions: str | None = None,
+    deps: Any = None,
+    tools: Any | None = None,
+    toolsets: Any | None = None,
+) -> AsyncIterator[Any]:
+    """Stream one sub-agent's output token-by-token, as a context manager.
+
+    Iterate ``handle.text()`` for deltas; after the block, ``handle.output`` holds
+    the full output. Honours the budget, concurrency gate, journal (a resumed call
+    yields its cached output once) and cost accounting, exactly like ``agent()``.
+    Requires the run's runner to support streaming (``DefaultAgentRunner`` does).
+
+    Example::
+
+        async with stream("write a cited report", model=args.model) as s:
+            async for delta in s.text():
+                print(delta, end="", flush=True)
+        report = s.output
+    """
+    ctx = current_workflow()
+    seq = ctx.next_call_seq()
+    if ctx.journal.has(seq):
+        yield _CachedStream(ctx.journal.get(seq))
+        return
+
+    runner = ctx.runner
+    if not isinstance(runner, StreamingAgentRunner):
+        raise WorkflowError(f"the active runner {type(runner).__name__} does not support streaming")
+
+    ctx.reserve_agent()
+    display = label or (prompt[:40] if isinstance(prompt, str) else f"stream#{seq}")
+    ctx.emit("agent.start", {"label": display, "phase": ctx.current_phase, "seq": seq, "stream": True})
+    async with ctx.semaphore:
+        async with runner.run_stream(
+            prompt,
+            model=model,
+            output_type=output_type,
+            instructions=instructions,
+            deps=deps,
+            tools=tools,
+            toolsets=toolsets,
+        ) as handle:
+            yield handle
+        call = handle.call if handle.call is not None else AgentCall(output=handle.output)
+    ctx.record_tokens(call.tokens)
+    ctx.record_cost_usd(call.cost_usd)
+    ctx.journal.record(seq, call.output)
+    ctx.emit(
+        "agent.end",
+        {
+            "label": display,
+            "phase": ctx.current_phase,
+            "seq": seq,
+            "tokens": call.tokens,
+            "cost_usd": call.cost_usd,
+            "stream": True,
+        },
+    )
 
 
 async def parallel(thunks: Iterable[Callable[[], Awaitable[Any]]]) -> list[Any]:

@@ -28,7 +28,8 @@ import inspect
 import logging
 import threading
 import uuid
-from typing import Any
+from collections.abc import Awaitable, Callable
+from typing import Any, Generic, TypeVar
 
 from fireflyframework_agentic.exceptions import WorkflowBudgetError, WorkflowNotFoundError
 from fireflyframework_agentic.workflows.context import (
@@ -43,6 +44,7 @@ from fireflyframework_agentic.workflows.runner import AgentRunner, DefaultAgentR
 logger = logging.getLogger(__name__)
 
 EventHandler = Any  # Callable[[str, dict], None]
+OutputT = TypeVar("OutputT")
 
 
 def _wants_context(fn: Any) -> bool:
@@ -58,13 +60,13 @@ def _wants_context(fn: Any) -> bool:
     return len(params) >= 2
 
 
-class Workflow:
-    """A registered, runnable workflow."""
+class Workflow(Generic[OutputT]):
+    """A registered, runnable workflow (generic over its return type)."""
 
     def __init__(
         self,
         name: str,
-        fn: Any,
+        fn: Callable[..., Awaitable[OutputT]],
         *,
         args_schema: Any | None = None,
         description: str = "",
@@ -83,7 +85,7 @@ class Workflow:
         journal: Journal | None = None,
         events: EventHandler | None = None,
         run_id: str | None = None,
-    ) -> Any:
+    ) -> OutputT:
         """Execute the workflow, returning whatever its body returns.
 
         Pass the same ``journal`` from a prior run to resume: completed agent
@@ -127,7 +129,7 @@ class Workflow:
         finally:
             _current.reset(token)
 
-    async def __call__(self, args: Any = None, **kwargs: Any) -> Any:
+    async def __call__(self, args: Any = None, **kwargs: Any) -> OutputT:
         return await self.run(args, **kwargs)
 
 
@@ -177,20 +179,23 @@ def workflow(
     args_schema: Any | None = None,
     description: str = "",
     register: bool = True,
-) -> Any:
+) -> Callable[[Callable[..., Awaitable[OutputT]]], Workflow[OutputT]]:
     """Decorator: turn an async function into a registered :class:`Workflow`.
+
+    The returned :class:`Workflow` is generic over the function's return type, so
+    ``await my_workflow(args)`` is typed as that return type rather than ``Any``.
 
     Example::
 
         @workflow(name="deep_research", args_schema=ResearchArgs)
-        async def deep_research(args, ctx):
+        async def deep_research(args, ctx) -> Report:
             with phase("search"):
                 hits = await parallel([lambda q=q: agent(f"search: {q}") for q in args.queries])
-            return await agent("synthesize", deps=hits)
+            return await agent("synthesize", deps=hits, output_type=Report)
     """
 
-    def decorator(fn: Any) -> Workflow:
-        wf_name = name or fn.__name__
+    def decorator(fn: Callable[..., Awaitable[OutputT]]) -> Workflow[OutputT]:
+        wf_name = name or getattr(fn, "__name__", "workflow")
         wf = Workflow(wf_name, fn, args_schema=args_schema, description=description)
         if register:
             workflow_registry.register(wf_name, wf)

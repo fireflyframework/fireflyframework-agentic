@@ -23,6 +23,8 @@ run path in :mod:`fireflyframework_agentic.reasoning.base`).
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -94,6 +96,51 @@ class AgentRunner(Protocol):
         raise NotImplementedError
 
 
+class StreamHandle:
+    """Yielded by a streaming agent call. Iterate :meth:`text` for token deltas;
+    after the stream context exits, read :attr:`output` / :attr:`call`."""
+
+    def __init__(self, response: Any, model: Any) -> None:
+        self._response = response
+        self._model = model
+        self.call: AgentCall | None = None
+
+    async def text(self) -> AsyncIterator[str]:
+        """Yield text deltas as the model produces them."""
+        async for delta in self._response.stream_text(delta=True):
+            yield delta
+
+    @property
+    def output(self) -> Any:
+        """The full output (available after the stream context exits)."""
+        return self.call.output if self.call is not None else None
+
+    async def finalize(self) -> None:
+        usage = resolve_run_usage(self._response)
+        out = await self._response.get_output()
+        tokens = int(getattr(usage, "total_tokens", 0) or 0) if usage is not None else 0
+        self.call = AgentCall(output=out, tokens=tokens, cost_usd=price_call(self._model, usage), raw=self._response)
+
+
+@runtime_checkable
+class StreamingAgentRunner(Protocol):
+    """An :class:`AgentRunner` that can also stream a call's output."""
+
+    def run_stream(
+        self,
+        prompt: Any,
+        *,
+        model: Any | None = None,
+        output_type: Any | None = None,
+        instructions: str | None = None,
+        deps: Any = None,
+        tools: Any | None = None,
+        toolsets: Any | None = None,
+    ) -> AbstractAsyncContextManager[StreamHandle]:
+        """Open a streaming run; the context yields a :class:`StreamHandle`."""
+        ...
+
+
 class DefaultAgentRunner:
     """Runs each call as a fresh ``pydantic_ai.Agent``.
 
@@ -117,11 +164,23 @@ class DefaultAgentRunner:
         tools: Any | None = None,
         toolsets: Any | None = None,
     ) -> AgentCall:
+        resolved = self._resolve(model)
+        ephemeral = PydanticAgent(resolved, **self._agent_kwargs(output_type, instructions, tools, toolsets, deps))
+        result = await ephemeral.run(prompt, deps=deps)
+        usage = resolve_run_usage(result)
+        tokens = int(getattr(usage, "total_tokens", 0) or 0) if usage is not None else 0
+        return AgentCall(output=result.output, tokens=tokens, cost_usd=price_call(resolved, usage), raw=result)
+
+    def _resolve(self, model: Any | None) -> Any:
         resolved = model or self._default_model
         if resolved is None:
             raise ValueError(
                 "DefaultAgentRunner requires a model; pass model= to agent() or default_model= to the runner"
             )
+        return resolved
+
+    @staticmethod
+    def _agent_kwargs(output_type: Any, instructions: Any, tools: Any, toolsets: Any, deps: Any) -> dict[str, Any]:
         kwargs: dict[str, Any] = {}
         if output_type is not None:
             kwargs["output_type"] = output_type
@@ -134,8 +193,23 @@ class DefaultAgentRunner:
         if deps is not None:
             # pydantic-ai validates deps against deps_type; infer it from the value.
             kwargs["deps_type"] = type(deps)
-        ephemeral = PydanticAgent(resolved, **kwargs)
-        result = await ephemeral.run(prompt, deps=deps)
-        usage = resolve_run_usage(result)
-        tokens = int(getattr(usage, "total_tokens", 0) or 0) if usage is not None else 0
-        return AgentCall(output=result.output, tokens=tokens, cost_usd=price_call(resolved, usage), raw=result)
+        return kwargs
+
+    @asynccontextmanager
+    async def run_stream(
+        self,
+        prompt: Any,
+        *,
+        model: Any | None = None,
+        output_type: Any | None = None,
+        instructions: str | None = None,
+        deps: Any = None,
+        tools: Any | None = None,
+        toolsets: Any | None = None,
+    ) -> AsyncIterator[StreamHandle]:
+        resolved = self._resolve(model)
+        ephemeral = PydanticAgent(resolved, **self._agent_kwargs(output_type, instructions, tools, toolsets, deps))
+        async with ephemeral.run_stream(prompt, deps=deps) as response:
+            handle = StreamHandle(response, resolved)
+            yield handle
+            await handle.finalize()

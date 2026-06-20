@@ -77,6 +77,7 @@ or by name through `run_workflow("deep_research", args)`.
 | `agent` | `await agent(prompt, *, label, model, output_type, instructions, deps, tools, toolsets)` | Run one isolated sub-agent; returns its `output` (a `str` or a validated `output_type`). A sub-agent can use `tools=`/`toolsets=` (e.g. `ToolKit.as_toolset()` or an MCP server) just like a top-level agent. Honours the budget, the concurrency gate, and the resume journal. |
 | `parallel` | `await parallel(thunks)` | **Barrier.** Run zero-arg async thunks concurrently; a thunk that raises resolves to `None` (the call never propagates). Returns a list aligned to `thunks`. |
 | `pipeline` | `await pipeline(items, *stages)` | **No inter-stage barrier.** Each item flows through every stage independently (item A can be in stage 3 while B is in stage 1). Each stage receives `(prev, item, index)` — declare only the params you need. A stage that raises drops *that* item to `None`. |
+| `stream` | `async with stream(prompt, ...) as s:` | Stream one sub-agent token-by-token: iterate `s.text()` for deltas; `s.output` holds the full output after the block. Same budget/journal/cost accounting as `agent`. Requires a streaming runner. See [Streaming](#streaming). |
 | `phase` | `with phase("title"):` | Group enclosed work for telemetry (`phase.start` / `phase.end` events). |
 | `log` | `log("message")` | Emit a narrator line to the run's event handler. |
 
@@ -84,6 +85,30 @@ or by name through `run_workflow("deep_research", args)`.
 glue between agent calls — dedup, rank, filter, branch — is ordinary
 deterministic Python. Reach for an `agent()` only when you genuinely need a
 model.
+
+### Type safety
+
+The DSL is statically typed end-to-end. `agent(output_type=T)` is typed to
+return `T` (not `Any`), and `@workflow` produces a `Workflow[OutputT]` inferred
+from the function's return annotation — so the awaited result is typed too:
+
+```python
+from pydantic import BaseModel
+from fireflyframework_agentic.workflows import workflow, agent
+
+class Report(BaseModel):
+    summary: str
+    sources: list[str]
+
+@workflow(name="research")
+async def research(args, ctx) -> Report:
+    return await agent("write the report", output_type=Report)   # typed Report
+
+report: Report = await research(args)   # research is Workflow[Report]; result is Report
+```
+
+Without `output_type`, `agent()` returns `Any` (the raw string output). Pyright
+infers all of the above with no casts.
 
 ---
 
@@ -174,6 +199,29 @@ class AgentRunner(Protocol):
 ```python
 await deep_research(args, runner=MyFakeRunner())
 ```
+
+---
+
+## Streaming
+
+Stream a single sub-agent's output token-by-token with the `stream()` context
+manager (requires a streaming-capable runner — `DefaultAgentRunner` is). It
+honours the budget, concurrency gate, journal and cost accounting exactly like
+`agent()`:
+
+```python
+from fireflyframework_agentic.workflows import workflow, stream
+
+@workflow(name="live_report")
+async def live_report(args, ctx):
+    async with stream("write a cited report", model=args.model) as s:
+        async for delta in s.text():
+            print(delta, end="", flush=True)   # surface tokens as they arrive
+    return s.output                            # the full text, available after the block
+```
+
+On resume, a cached `stream()` call yields its full output once (the model is not
+re-invoked). A runner that doesn't support streaming raises `WorkflowError`.
 
 ---
 
@@ -326,7 +374,8 @@ process restart.
 Pass `events=callable` to a run to receive structured events:
 `workflow.start` / `workflow.end` (with `agents`, `tokens`, `cost_usd`),
 `phase.start` / `phase.end`, `agent.start` / `agent.end` (with `label`, `phase`,
-`seq`, `tokens`, `cost_usd`), `route.select` / `route.escalate`, `cascade.tier`,
+`seq`, `tokens`, `cost_usd`; streamed calls also carry `stream: True`),
+`route.select` / `route.escalate`, `cascade.tier`,
 `subworkflow.start` / `subworkflow.end`, `human.pause`, and `log`. Wire this into
 the [observability](observability.md) layer for live per-phase token/cost/agent/time
 counters.
@@ -342,6 +391,8 @@ counters.
 | `run_workflow(name, args, **opts)` | Look up a registered workflow by name and run it. |
 | `subworkflow(name_or_wf, args)` | Run another workflow inline, inheriting the parent's budget/journal/runner. |
 | `agent` / `parallel` / `pipeline` / `phase` / `log` | The DSL primitives. |
+| `stream(prompt, ...)` | Async context manager → a `StreamHandle` (`.text()` deltas, `.output`); streams one sub-agent. |
+| `StreamHandle` / `StreamingAgentRunner` | The streaming result handle and the runner protocol a runner implements to support `stream`. |
 | `human(prompt)` | Pause for external input (raises `WorkflowInterrupt`; resume via the same journal). |
 | `map_agents(items, fn, *, strict=False)` | Run `fn(item)` per item concurrently — sugar over `parallel` (no late-binding lambda). |
 | `WorkflowBudget` | Concurrency / agent-count / token / **USD cost** / **wall-clock** ceilings. |
