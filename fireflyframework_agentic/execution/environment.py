@@ -40,7 +40,7 @@ class ExecutionEnvironment(Protocol):
     @property
     def capabilities(self) -> frozenset[Capability]:
         """The host capabilities this environment can grant."""
-        ...
+        raise NotImplementedError
 
     async def run_code(
         self,
@@ -64,4 +64,4 @@ class ExecutionEnvironment(Protocol):
             An :class:`ExecutionResult`; backends report guest exceptions as
             ``success=False`` rather than raising.
         """
-        ...
+        raise NotImplementedError

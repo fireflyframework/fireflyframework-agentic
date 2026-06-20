@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.toolsets import FunctionToolset
@@ -37,9 +39,11 @@ class _AddTool(BaseTool):
         )
         self.called = False
 
-    async def _execute(self, x: int, y: int) -> int:
+    async def _execute(self, **kwargs: Any) -> int:
+        # Signature-compatible with BaseTool._execute(self, **kwargs); the handler
+        # passes declared params (x, y) through as keyword arguments.
         self.called = True
-        return x + y
+        return int(kwargs.get("x", 0)) + int(kwargs.get("y", 0))
 
 
 def test_as_toolset_returns_function_toolset_with_tools():

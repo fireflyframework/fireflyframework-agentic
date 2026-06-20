@@ -60,7 +60,9 @@ class AgentRunner(Protocol):
         output_type: Any | None = None,
         instructions: str | None = None,
         deps: Any = None,
-    ) -> AgentCall: ...
+    ) -> AgentCall:
+        """Execute one workflow agent call and return its result."""
+        raise NotImplementedError
 
 
 class DefaultAgentRunner:
