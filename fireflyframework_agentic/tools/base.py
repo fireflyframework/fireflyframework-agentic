@@ -37,11 +37,7 @@ from collections.abc import Sequence
 from typing import Annotated, Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
-
-try:
-    from pydantic_ai import ModelRetry  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - optional dep
-    ModelRetry = None  # type: ignore[assignment,misc]
+from pydantic_ai import ModelRetry
 
 from fireflyframework_agentic.exceptions import ToolError, ToolTimeoutError
 
@@ -51,13 +47,9 @@ logger = logging.getLogger(__name__)
 def _is_model_retry(exc: BaseException) -> bool:
     """Return True when ``exc`` is a ``pydantic_ai.ModelRetry`` instance.
 
-    Imported lazily so hosts that bundle the toolkit without
-    pydantic-ai still load cleanly. When pydantic-ai is unavailable
-    nothing can be a ``ModelRetry``, so the helper just returns False
-    and the legacy wrap-as-``ToolError`` behaviour stays intact.
+    ``ModelRetry`` is re-raised (not wrapped) so pydantic-ai's retry
+    machinery sees it; every other exception is wrapped as ``ToolError``.
     """
-    if ModelRetry is None:
-        return False
     return isinstance(exc, ModelRetry)
 
 
@@ -294,6 +286,35 @@ class BaseTool(ABC):
 # ---------------------------------------------------------------------------
 
 
+def _resolve_param_type(type_str: str) -> Any:
+    """Resolve a :attr:`ParameterSpec.type_annotation` string to a Python type.
+
+    Handles optional forms (``X | None``, ``Optional[X]``) and generic
+    subscripts (``list[str]`` -> ``list``, ``dict[str, Any]`` -> ``dict``) so the
+    generated JSON schema is nullable/typed where it should be. Previously any
+    string not in ``_TYPE_MAP`` (including every ``... | None`` form) fell back to
+    ``str``, producing incorrect non-nullable schemas. Unknown bases now fall
+    back to ``Any`` (a permissive schema) rather than ``str`` (a wrong one).
+    """
+    s = type_str.strip()
+    optional = False
+    if s.startswith("Optional[") and s.endswith("]"):
+        s = s[len("Optional[") : -1].strip()
+        optional = True
+    else:
+        parts = [p.strip() for p in s.split("|")]
+        if len(parts) == 2 and "None" in parts:
+            optional = True
+            s = next(p for p in parts if p != "None")
+    base = _TYPE_MAP.get(s)
+    if base is None:
+        head = s.split("[", 1)[0].strip()  # list[str] -> list; dict[str, Any] -> dict
+        base = _TYPE_MAP.get(head, Any)
+    if optional and base is not Any:
+        return base | None
+    return base
+
+
 def _build_typed_handler(tool: BaseTool) -> Any:
     """Create a wrapper with a proper signature from *tool.parameters*.
 
@@ -307,7 +328,7 @@ def _build_typed_handler(tool: BaseTool) -> Any:
     annotations: dict[str, Any] = {}
 
     for spec in tool.parameters:
-        py_type = _TYPE_MAP.get(spec.type_annotation, str)
+        py_type = _resolve_param_type(spec.type_annotation)
         annotated_type = Annotated[py_type, Field(description=spec.description)]  # type: ignore[valid-type]
 
         if spec.required:

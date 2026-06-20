@@ -20,8 +20,8 @@ OpenTelemetry spans and latency metrics.
 
 from __future__ import annotations
 
-import asyncio
 import functools
+import inspect
 import time
 from collections.abc import Callable
 from typing import Any, TypeVar
@@ -64,7 +64,7 @@ def traced(name: str | None = None, **span_attrs: Any) -> Callable[[F], F]:
         # Detect whether the original function is async or sync at decoration
         # time, then return the matching wrapper so callers see the same
         # calling convention as the unwrapped function.
-        if asyncio.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
             return async_wrapper  # type: ignore[return-value]
         return sync_wrapper  # type: ignore[return-value]
 
@@ -107,7 +107,7 @@ def metered(operation: str | None = None) -> Callable[[F], F]:
                 elapsed = (time.perf_counter() - start) * 1000
                 default_metrics.record_latency(elapsed, operation=op_name)
 
-        if asyncio.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
             return async_wrapper  # type: ignore[return-value]
         return sync_wrapper  # type: ignore[return-value]
 

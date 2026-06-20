@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import contextlib
 import logging
 import re
 import time
@@ -51,7 +52,7 @@ from fireflyframework_agentic.observability.quota import (
     AdaptiveBackoff,
     default_quota_manager,
 )
-from fireflyframework_agentic.observability.usage import default_usage_tracker
+from fireflyframework_agentic.observability.usage import default_usage_tracker, resolve_run_usage
 from fireflyframework_agentic.reasoning.trace import ReasoningResult
 from fireflyframework_agentic.tools.base import BaseTool
 from fireflyframework_agentic.tools.toolkit import ToolKit
@@ -106,6 +107,9 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         output_type: The Pydantic model (or scalar type) for structured output.
         deps_type: The dependency type expected at run time.
         tools: Sequence of tool functions or :class:`pydantic_ai.Tool` objects.
+        toolsets: Sequence of pydantic-ai toolsets (e.g. a ``ToolKit.as_toolset()``
+            result, ``WrapperToolset``/``ApprovalRequiredToolset``, or an MCP
+            server) made available to the agent alongside ``tools``.
         description: Free-form description shown in documentation and agent
             discovery listings.
         version: Semantic version string for this agent definition.
@@ -130,6 +134,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         output_type: type[OutputT] = str,  # type: ignore[assignment]
         deps_type: type[AgentDepsT] = type(None),  # type: ignore[assignment]
         tools: Sequence[Any] = (),
+        toolsets: Sequence[Any] = (),
         description: str = "",
         version: str = "0.1.0",
         tags: Sequence[str] = (),
@@ -171,6 +176,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             output_type=output_type,
             deps_type=deps_type,
             tools=self._resolve_tools(tools),
+            toolsets=list(toolsets),
             retries=resolved_retries,
             model_settings=resolved_settings,
             name=name,
@@ -273,7 +279,9 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         t0 = time.monotonic()
         self._inject_memory(conversation_id, kwargs)
 
-        result = await self._run_with_rate_limit_retry(mw_ctx.prompt, deps=deps, timeout=timeout, **kwargs)
+        result = await self._run_with_rate_limit_retry(
+            mw_ctx.prompt, deps=deps, timeout=timeout, retry_override=mw_ctx.metadata.get("_retry_config"), **kwargs
+        )
 
         elapsed_ms = (time.monotonic() - t0) * 1000
         self._persist_memory(conversation_id, prompt, result)
@@ -317,7 +325,11 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
 
         t0 = time.monotonic()
         self._inject_memory(conversation_id, kwargs)
-        result = _run_sync_coro(self._run_with_rate_limit_retry(mw_ctx.prompt, deps=deps, timeout=timeout, **kwargs))
+        result = _run_sync_coro(
+            self._run_with_rate_limit_retry(
+                mw_ctx.prompt, deps=deps, timeout=timeout, retry_override=mw_ctx.metadata.get("_retry_config"), **kwargs
+            )
+        )
         elapsed_ms = (time.monotonic() - t0) * 1000
         self._persist_memory(conversation_id, prompt, result)
         self._record_usage(result, elapsed_ms, correlation_id=context.correlation_id)
@@ -433,20 +445,20 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         if not cfg.cost_tracking_enabled:
             return
         try:
-            usage = result.usage() if callable(getattr(result, "usage", None)) else None
+            usage = resolve_run_usage(result)
             if usage is None:
                 return
 
             input_tokens = getattr(usage, "input_tokens", 0) or 0
             output_tokens = getattr(usage, "output_tokens", 0) or 0
             request_count = getattr(usage, "requests", 0) or 0
-            # pydantic-ai's ``Usage`` exposes ``cache_write_tokens`` (the
-            # number of tokens written to the prompt cache); fall back to
-            # ``cache_creation_tokens`` for older SDKs that used that name.
+            # pydantic-ai's ``RunUsage`` exposes ``cache_write_tokens`` (tokens
+            # written to the prompt cache); ``cache_creation_tokens`` is the
+            # historical fallback for custom/legacy usage objects.
             cache_creation = getattr(usage, "cache_write_tokens", 0) or getattr(usage, "cache_creation_tokens", 0) or 0
             cache_read = getattr(usage, "cache_read_tokens", 0) or 0
 
-            default_usage_tracker.record_call(
+            record = default_usage_tracker.record_call(
                 model=self.model_identifier,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
@@ -462,6 +474,12 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
                     correlation_id=correlation_id,
                 ),
             )
+            # Expose the computed cost on the result so downstream middleware
+            # (e.g. LoggingMiddleware's usage suffix) can surface it. Best-effort:
+            # result types that forbid attribute assignment are simply skipped.
+            if record is not None:
+                with contextlib.suppress(AttributeError, TypeError):
+                    result._firefly_cost_usd = record.cost_usd
         except BudgetExceededError:
             raise
         except Exception:  # noqa: BLE001
@@ -579,25 +597,32 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         *,
         deps: AgentDepsT = None,  # type: ignore[assignment]
         timeout: float | None = None,
+        retry_override: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> Any:
         """Execute ``self._agent.run()`` with automatic 429 retry using AdaptiveBackoff.
 
-        Reads retry parameters from :func:`get_config` and uses the
+        Reads retry parameters from :func:`get_config`, but a per-agent
+        :class:`RetryMiddleware` may supply ``retry_override`` (its declared
+        ``max_retries`` / ``base_delay`` / ``max_delay``), which takes
+        precedence. Uses the
         :class:`~fireflyframework_agentic.observability.quota.AdaptiveBackoff`
-        instance on the default :class:`QuotaManager` when quota is enabled,
-        or creates a standalone backoff otherwise.
+        on the default :class:`QuotaManager` when quota is enabled and no
+        override is given, or a standalone backoff otherwise.
         """
         cfg = get_config()
-        max_retries = cfg.rate_limit_max_retries
-        max_delay = cfg.rate_limit_max_delay
+        override = retry_override or {}
+        max_retries = override.get("max_retries", cfg.rate_limit_max_retries)
+        max_delay = override.get("max_delay", cfg.rate_limit_max_delay)
+        base_delay = override.get("base_delay", cfg.rate_limit_base_delay)
 
-        # Reuse the QuotaManager's backoff if available, else standalone
-        if default_quota_manager is not None and default_quota_manager._backoff is not None:
+        # Reuse the QuotaManager's shared backoff only when there's no per-agent
+        # override; an override needs its own backoff so its delays take effect.
+        if not override and default_quota_manager is not None and default_quota_manager._backoff is not None:
             backoff = default_quota_manager._backoff
         else:
             backoff = AdaptiveBackoff(
-                base_delay=cfg.rate_limit_base_delay,
+                base_delay=base_delay,
                 max_delay=max_delay,
             )
 

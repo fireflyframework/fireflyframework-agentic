@@ -46,7 +46,7 @@ from fireflyframework_agentic.exceptions import (
 )
 from fireflyframework_agentic.memory.manager import MemoryManager
 from fireflyframework_agentic.observability.budget import ScopeContext
-from fireflyframework_agentic.observability.usage import default_usage_tracker
+from fireflyframework_agentic.observability.usage import default_usage_tracker, resolve_run_usage
 from fireflyframework_agentic.prompts.template import Prompt, PromptTemplate
 from fireflyframework_agentic.reasoning.models import (
     BranchEvaluation,
@@ -482,7 +482,7 @@ class AbstractReasoningPattern(ABC):
             if not cfg.cost_tracking_enabled:
                 return
 
-            usage = result.usage() if callable(getattr(result, "usage", None)) else None
+            usage = resolve_run_usage(result)
             if usage is None:
                 return
 

@@ -233,6 +233,9 @@ class ContentBasedStrategy:
 
     def __init__(self, model: str = "openai:gpt-4o-mini") -> None:
         self._model = model
+        # Lazily-built, reused router agent (the model is fixed for the
+        # strategy's lifetime, so one instance serves every routing call).
+        self._router: PydanticAgent | None = None
 
     async def decide(
         self,
@@ -267,8 +270,9 @@ class ContentBasedStrategy:
         )
 
         try:
-            router = PydanticAgent(self._model, system_prompt="You pick the best agent.")
-            result = await router.run(routing_prompt)
+            if self._router is None:
+                self._router = PydanticAgent(self._model, instructions="You pick the best agent.")
+            result = await self._router.run(routing_prompt)
         except Exception:
             logger.warning("Content-based routing LLM call failed", exc_info=True)
             return RoutingDecision.empty(name, error="llm_failure")

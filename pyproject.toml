@@ -1,6 +1,6 @@
 [project]
 name = "fireflyframework-agentic"
-version = "26.05.33"
+version = "26.06.0"
 description = "A GenAI metaframework built on Pydantic AI for building production-grade GenAI applications with agents, reasoning patterns, prompt engineering, observability, and more."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -25,9 +25,14 @@ classifiers = [
 ]
 keywords = ["genai", "agents", "pydantic-ai", "llm", "reasoning", "observability", "framework"]
 dependencies = [
-    "pydantic-ai>=1.99.0",
-    "pydantic>=2.10.0",
-    "pydantic-settings>=2.7.0",
+    # Pinned to the API-stable pydantic-ai 1.x line. The ``<2`` ceiling is
+    # deliberate: a 2.0 line with breaking changes (capabilities=[...] redesign,
+    # openai->Responses default, to_ag_ui/to_a2a removal) exists, and an
+    # unbounded ``>=`` would let a resolver silently pull it and break the Agent
+    # construction seam in agents/base.py. 2.0 migration is a separate epic.
+    "pydantic-ai>=1.107.0,<2",
+    "pydantic>=2.13,<3",
+    "pydantic-settings>=2.14.2,<3",
     "jinja2>=3.1.0",
     "httpx>=0.28.0",
     "opentelemetry-api>=1.29.0",
@@ -55,6 +60,13 @@ mongodb = [
 ]
 security = [
     "cryptography>=48.0.1",
+]
+# Secure self-hosted script execution (fireflyframework_agentic.execution): the
+# Monty backend is a Rust micro-interpreter with a deny-by-default capability
+# model (no FS/network/env; host access only via explicitly registered external
+# functions). Pure wheel, no system deps.
+script-execution = [
+    "pydantic-monty>=0.0.18",
 ]
 embeddings = [
     "numpy>=1.26.0",
@@ -117,7 +129,7 @@ binary = [
     "extract-msg>=0.51",
 ]
 all = [
-    "fireflyframework-agentic[postgres,mongodb,security,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,vectorstores-pgvector,vectorstores-sqlite-vec,watch,binary]",
+    "fireflyframework-agentic[postgres,mongodb,security,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,vectorstores-pgvector,vectorstores-sqlite-vec,watch,binary,script-execution]",
 ]
 dev = [
     "pytest>=8.3.0",
@@ -160,6 +172,10 @@ ignore = ["E501", "TC001", "TC002", "TC003", "UP040", "UP046", "B008"]
 # module imports cleanly without the ``[binary]`` extra; the deferred import
 # IS the design (degrade to a typed error only when a format is encountered).
 "fireflyframework_agentic/content/binary/*.py" = ["PLC0415"]
+# execution.monty_env lazy-imports pydantic_monty (the ``[script-execution]``
+# extra) inside its methods so the module imports cleanly without the extra and
+# degrades to a typed SandboxUnavailableError only when actually used.
+"fireflyframework_agentic/execution/monty_env.py" = ["PLC0415"]
 # Tests use inline imports for fixture isolation and to control import timing
 # around mocks of optional dependencies (asyncpg, motor, qdrant, pinecone, ...).
 "tests/**" = ["PLC0415"]
@@ -185,4 +201,13 @@ pythonpath = ["."]
 markers = [
     "nightly: runs only in nightly CI. Long-running tests: benchmarks, real LLM/DB/HTTP, or anything not suitable for the PR gate.",
     "integration: runs against the real DatabaseStore / vector-store stack (no external network — embedders / LLM agents are stubbed or mocked).",
+]
+filterwarnings = [
+    # SP-9 deprecation gate: promote any pydantic / pydantic-ai deprecation to an
+    # error so a dependency bump that introduces one fails CI immediately. The
+    # framework's own intentional deprecations (e.g. BranchStep / FanOutStep) are
+    # plain DeprecationWarning asserted via pytest.warns, so they are unaffected.
+    # Paths are stable across the pinned pydantic-ai 1.x line.
+    "error::pydantic.warnings.PydanticDeprecationWarning",
+    "error::pydantic_ai._warnings.PydanticAIDeprecationWarning",
 ]

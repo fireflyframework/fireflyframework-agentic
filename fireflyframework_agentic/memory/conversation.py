@@ -32,6 +32,7 @@ from pydantic_ai.messages import ModelMessage
 
 from fireflyframework_agentic.content.compression import TokenEstimator
 from fireflyframework_agentic.memory.types import ConversationTurn
+from fireflyframework_agentic.model_utils import deserialize_model_messages, serialize_model_messages
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +218,9 @@ class ConversationMemory:
                     "assistant_response": t.assistant_response,
                     "token_estimate": t.token_estimate,
                     "metadata": t.metadata,
+                    # Canonical pydantic-ai serialization preserves the typed
+                    # ModelMessage structure so imports can replay them verbatim.
+                    "raw_messages": serialize_model_messages(t.raw_messages),
                 }
                 for t in turns
             ],
@@ -257,7 +261,7 @@ class ConversationMemory:
                     turn_id=t.get("turn_id", len(turns)),
                     user_prompt=user_prompt,
                     assistant_response=assistant_response,
-                    raw_messages=[],  # Raw messages are not portable
+                    raw_messages=deserialize_model_messages(t.get("raw_messages", [])),
                     token_estimate=token_estimate,
                     metadata=t.get("metadata", {}),
                 )

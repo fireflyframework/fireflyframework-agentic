@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.06.0] - 2026-06-20
+
+pydantic-ai modernization program (phase 1): dependency upgrade + deprecation /
+stability fixes, two new headline subsystems (Dynamic Workflows, Secure Script
+Execution), and native-capability adoption (message persistence, toolsets).
+
+### Added
+
+- **Dynamic Workflows engine** (`fireflyframework_agentic.workflows`) — a
+  code-defined orchestration DSL over pydantic-ai agents, mirroring Claude's
+  Workflow mechanism: `@workflow`, `agent`, `parallel` (barrier; failures → None),
+  `pipeline` (streaming, no inter-stage barrier), `phase`, `log`; `WorkflowBudget`
+  (concurrency / agent-count / token ceilings); `Journal` deterministic resume;
+  pluggable `AgentRunner` (`DefaultAgentRunner` + test fakes); `workflow_registry`
+  / `run_workflow`; verify combinators (`adversarial_verify`, `loop_until_dry`).
+  See `docs/workflows.md`.
+- **Secure Script Execution** (`fireflyframework_agentic.execution`, new
+  `[script-execution]` extra) — run untrusted/generated Python in a self-hosted,
+  deny-by-default sandbox. `ExecutionEnvironment` protocol; `MontyEnvironment`
+  (pydantic-monty Rust micro-interpreter — no FS/network/env, host access only via
+  registered external functions); `SecureScriptRunner` (validate → execute →
+  capture with optional output scrubbing); `analyze_code`/`SafetyPolicy` AST
+  pre-screen; `ExecutionLimits`; Firefly Code Mode (`toolkit_external_functions`).
+  See `docs/execution.md`.
+- **Native message persistence** — `model_utils.serialize_model_messages` /
+  `deserialize_model_messages` (built on pydantic-ai's `ModelMessagesTypeAdapter`);
+  `ConversationMemory` export/import now round-trips typed `ModelMessage` history
+  losslessly (previously dropped as "not portable"). Backward-compatible with
+  pre-existing exports.
+- **Native toolsets** — `ToolKit.as_toolset()` returns a composable pydantic-ai
+  `FunctionToolset`; `FireflyAgent(toolsets=...)` passes toolsets through to the
+  underlying agent (enables `WrapperToolset`/`ApprovalRequiredToolset`/MCP servers).
+- **Deprecation CI gate** — pytest promotes `pydantic`/`pydantic-ai` deprecation
+  warnings to errors so a future dependency bump that reintroduces one fails CI
+  immediately (the framework's own intentional `DeprecationWarning`s are unaffected).
+
+### Changed
+
+- **Upgraded pydantic-ai 1.99.0 → 1.107.0** and pinned `>=1.107.0,<2` (the
+  previously-unbounded requirement could resolve to the breaking 2.0 line);
+  `pydantic>=2.13,<3`; `pydantic-settings>=2.14.2,<3`.
+- `AgentRunResult.usage` is now read as a property via the new
+  `observability.usage.resolve_run_usage` helper (no `PydanticAIDeprecationWarning`),
+  with forward-compatible support for method-style/legacy usage objects.
+- `observability/decorators` use `inspect.iscoroutinefunction` (the `asyncio`
+  variant is removed in Python 3.16); the content-based delegation router uses
+  `instructions=` and is cached.
+
+### Fixed
+
+- **OutputGuardMiddleware** output sanitisation degraded results to a bare string
+  (its `_replace` guard never matched the dataclass `AgentRunResult`), dropping
+  usage/messages/type — now preserved via `dataclasses.replace`/NamedTuple/mutable
+  handling.
+- **RetryMiddleware** was a silent no-op — its configuration never reached the
+  retry loop; a per-agent `RetryMiddleware` now takes effect.
+- Cost (`_firefly_cost_usd`) was read for logging but never written — now wired
+  from the recorded `UsageRecord`.
+- Nullable/generic tool parameter annotations (`"str | None"`,
+  `"dict[str, Any] | None"`) fell back to `str`, producing incorrect non-nullable
+  JSON schemas for the LLM — now resolved correctly (`Optional`/union/generic forms).
+- Removed the dead `ModelRetry` optional-import guard (pydantic-ai is a hard
+  dependency).
+
 ## [26.05.33] - 2026-05-31
 
 ### Removed
