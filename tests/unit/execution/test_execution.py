@@ -224,6 +224,17 @@ async def test_monty_external_function_call():
 
 
 @pytest.mark.asyncio
+async def test_monty_async_external_function_is_bridged():
+    # Async host functions (e.g. Firefly tools via Code Mode) are bridged to sync
+    # so guest code calls them naturally, without `await`.
+    async def adouble(x):
+        return x * 2
+
+    result = await _monty_env().run_code("y = adouble(n)\ny", inputs={"n": 21}, external_functions={"adouble": adouble})
+    assert result.success and result.output == 42
+
+
+@pytest.mark.asyncio
 async def test_monty_runtime_error_is_captured_not_raised():
     result = await _monty_env().run_code("1 / 0")
     assert result.success is False

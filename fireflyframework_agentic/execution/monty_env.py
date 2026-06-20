@@ -26,6 +26,8 @@ This backend requires the ``script-execution`` extra
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -34,6 +36,20 @@ from fireflyframework_agentic.exceptions import SandboxUnavailableError
 from fireflyframework_agentic.execution.types import Capability, ExecutionLimits, ExecutionResult
 
 logger = logging.getLogger(__name__)
+
+
+def _sync_bridge(coro_fn: Callable[..., Any], loop: asyncio.AbstractEventLoop) -> Callable[..., Any]:
+    """Wrap an async external function so guest code can call it without ``await``.
+
+    Monty invokes external functions from a worker thread during ``run_async``; an
+    async one would otherwise return an unawaited coroutine. This runs the
+    coroutine on the host event loop and blocks the worker thread for its result.
+    """
+
+    def _call(*args: Any, **kwargs: Any) -> Any:
+        return asyncio.run_coroutine_threadsafe(coro_fn(*args, **kwargs), loop).result()
+
+    return _call
 
 
 class MontyEnvironment:
@@ -116,12 +132,22 @@ class MontyEnvironment:
         except (MontySyntaxError, MontyTypingError) as exc:
             return ExecutionResult(success=False, error=str(exc), error_type=type(exc).__name__)
 
+        # Async external functions (e.g. Firefly tools via Code Mode) are bridged
+        # to sync so guest code can call them naturally, without `await`.
+        bridged = external_functions
+        if external_functions:
+            loop = asyncio.get_running_loop()
+            bridged = {
+                name: (_sync_bridge(fn, loop) if inspect.iscoroutinefunction(fn) else fn)
+                for name, fn in external_functions.items()
+            }
+
         collector = CollectStreams()
         try:
             output = await interp.run_async(
                 inputs=inputs or None,
                 limits=self._resource_limits(limits),
-                external_functions=external_functions or None,
+                external_functions=bridged or None,
                 print_callback=collector,
             )
         except MontyError as exc:

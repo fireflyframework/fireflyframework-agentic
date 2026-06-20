@@ -59,11 +59,17 @@ class FakeRunner:
         self._tokens = tokens
         self._delay = delay
         self.calls: list[Any] = []
+        self.kwargs: list[dict] = []
         self.active = 0
         self.max_active = 0
 
-    async def run(self, prompt, *, model=None, output_type=None, instructions=None, deps=None) -> AgentCall:
+    async def run(
+        self, prompt, *, model=None, output_type=None, instructions=None, deps=None, tools=None, toolsets=None
+    ) -> AgentCall:
         self.calls.append(prompt)
+        self.kwargs.append(
+            {"model": model, "output_type": output_type, "deps": deps, "tools": tools, "toolsets": toolsets}
+        )
         self.active += 1
         self.max_active = max(self.max_active, self.active)
         try:
@@ -109,6 +115,22 @@ async def test_agent_records_tokens_and_count():
 async def test_primitive_outside_context_raises():
     with pytest.raises(WorkflowContextError):
         await agent("hi")
+
+
+@pytest.mark.asyncio
+async def test_agent_forwards_tools_toolsets_and_deps():
+    runner = FakeRunner()
+    tools = [object()]
+    toolsets = [object()]
+
+    @workflow(register=False)
+    async def wf(args, ctx):
+        return await agent("hi", tools=tools, toolsets=toolsets, deps={"k": 1})
+
+    await wf.run(None, runner=runner)
+    assert runner.kwargs[0]["tools"] is tools
+    assert runner.kwargs[0]["toolsets"] is toolsets
+    assert runner.kwargs[0]["deps"] == {"k": 1}
 
 
 # -- parallel() --------------------------------------------------------------
