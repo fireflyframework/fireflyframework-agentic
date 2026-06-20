@@ -23,12 +23,14 @@ and execute the body.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 import threading
+import uuid
 from typing import Any
 
-from fireflyframework_agentic.exceptions import WorkflowNotFoundError
+from fireflyframework_agentic.exceptions import WorkflowBudgetError, WorkflowNotFoundError
 from fireflyframework_agentic.workflows.context import WorkflowBudget, WorkflowContext, _current
 from fireflyframework_agentic.workflows.journal import Journal
 from fireflyframework_agentic.workflows.runner import AgentRunner, DefaultAgentRunner
@@ -85,7 +87,7 @@ class Workflow:
         budget = budget or WorkflowBudget()
         runner = runner or DefaultAgentRunner()
         journal = journal if journal is not None else Journal()
-        run_id = run_id or f"{self.name}-run"
+        run_id = run_id or f"{self.name}-{uuid.uuid4().hex[:8]}"
 
         if self.args_schema is not None and args is not None and not isinstance(args, self.args_schema):
             args = self.args_schema.model_validate(args)
@@ -102,13 +104,19 @@ class Workflow:
         token = _current.set(ctx)
         try:
             ctx.emit("workflow.start", {})
-            if _wants_context(self._fn):
-                result = await self._fn(args, ctx)
-            else:
-                result = await self._fn(args)
+            body = self._fn(args, ctx) if _wants_context(self._fn) else self._fn(args)
+            try:
+                if budget.max_wall_seconds is not None:
+                    result = await asyncio.wait_for(body, budget.max_wall_seconds)
+                else:
+                    result = await body
+            except TimeoutError as exc:
+                raise WorkflowBudgetError(
+                    f"workflow '{self.name}' exceeded max_wall_seconds={budget.max_wall_seconds}"
+                ) from exc
             ctx.emit(
                 "workflow.end",
-                {"agents": ctx.agents_started, "tokens": ctx.tokens_spent},
+                {"agents": ctx.agents_started, "tokens": ctx.tokens_spent, "cost_usd": ctx.cost_spent_usd},
             )
             return result
         finally:

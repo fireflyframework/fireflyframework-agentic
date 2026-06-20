@@ -38,9 +38,14 @@ import logging
 from collections.abc import Awaitable, Callable, Iterable, Iterator
 from typing import Any
 
+from fireflyframework_agentic.exceptions import WorkflowBudgetError, WorkflowContextError
 from fireflyframework_agentic.workflows.context import current_workflow
 
 logger = logging.getLogger(__name__)
+
+# Structural/kill-switch errors must abort the run, not be swallowed to ``None``
+# by a parallel branch or a pipeline stage.
+_NEVER_SWALLOW = (WorkflowBudgetError, WorkflowContextError)
 
 
 async def agent(
@@ -93,10 +98,17 @@ async def agent(
             toolsets=toolsets,
         )
     ctx.record_tokens(call.tokens)
+    ctx.record_cost_usd(call.cost_usd)
     ctx.journal.record(seq, call.output)
     ctx.emit(
         "agent.end",
-        {"label": display, "phase": ctx.current_phase, "seq": seq, "tokens": call.tokens},
+        {
+            "label": display,
+            "phase": ctx.current_phase,
+            "seq": seq,
+            "tokens": call.tokens,
+            "cost_usd": call.cost_usd,
+        },
     )
     return call.output
 
@@ -112,11 +124,30 @@ async def parallel(thunks: Iterable[Callable[[], Awaitable[Any]]]) -> list[Any]:
     async def _safe(thunk: Callable[[], Awaitable[Any]]) -> Any:
         try:
             return await thunk()
+        except _NEVER_SWALLOW:
+            raise
         except Exception:  # noqa: BLE001 - isolate one branch's failure
             logger.debug("workflow parallel thunk failed", exc_info=True)
             return None
 
     return await asyncio.gather(*[_safe(t) for t in thunks])
+
+
+async def map_agents(items: Iterable[Any], fn: Callable[[Any], Awaitable[Any]], *, strict: bool = False) -> list[Any]:
+    """Run ``fn(item)`` for every item concurrently — sugar over :func:`parallel`.
+
+    Removes the late-binding ``lambda x=x:`` footgun. By default a failing item
+    resolves to ``None`` (like :func:`parallel`); ``strict=True`` fails fast on the
+    first exception.
+
+    Example::
+
+        summaries = await map_agents(urls, lambda u: agent(f"summarize {u}"))
+    """
+    materialised = list(items)
+    if strict:
+        return list(await asyncio.gather(*[fn(x) for x in materialised]))
+    return await parallel([(lambda x=x: fn(x)) for x in materialised])
 
 
 def _stage_arity(stage: Callable[..., Any]) -> int:
@@ -152,6 +183,8 @@ async def pipeline(items: Iterable[Any], *stages: Callable[..., Awaitable[Any]])
         for stage in stages:
             try:
                 prev = await _call_stage(stage, prev, item, index)
+            except _NEVER_SWALLOW:
+                raise
             except Exception:  # noqa: BLE001 - drop just this item
                 logger.debug("workflow pipeline stage failed for item %d", index, exc_info=True)
                 return None
