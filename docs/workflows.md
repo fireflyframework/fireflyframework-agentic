@@ -127,7 +127,24 @@ await run_workflow("deep_research", args, journal=journal)   # cached calls repl
 ```
 
 Persist `journal.to_dict()` (and rebuild with `Journal.from_dict(...)`) to resume
-across processes — e.g. behind a pipeline `Checkpointer`.
+manually. For **durable, crash-resilient** resume, attach a `JournalBackend` — the
+journal then flushes after every completed call, so an out-of-process crash
+resumes from the last one:
+
+```python
+from fireflyframework_agentic.workflows import Journal, FileJournalBackend
+
+backend = FileJournalBackend("/var/lib/firefly/workflows")
+journal = Journal(backend=backend, run_key="research-job-42")   # loads if present
+await run_workflow("deep_research", args, journal=journal)      # auto-flushes each call
+# ... process crashes; in a fresh process, the same run_key reloads progress:
+await run_workflow("deep_research", args,
+                   journal=Journal(backend=backend, run_key="research-job-42"))
+```
+
+`FileJournalBackend` stores each run as JSON (strings/numbers/lists/dicts
+round-trip exactly; structured outputs round-trip as their serialized form).
+Implement the `JournalBackend` protocol (`load`/`save`) for Postgres/Redis/S3.
 
 > **Determinism contract.** Replay is correct only when the orchestration code is
 > deterministic. The call sequence number is assigned synchronously at the top of
@@ -249,14 +266,70 @@ model repeatedly, and its `Verdict` doubles as a confidence oracle for `cascade(
 
 ---
 
+## Sub-workflows
+
+Compose workflows by running one inline as a step of another with `subworkflow`.
+The child inherits the parent's **budget, concurrency gate, journal and runner** —
+its `agent()` calls count against the same budget and resume from the same journal
+(one deterministic sequence stream across the whole nested run):
+
+```python
+from fireflyframework_agentic.workflows import workflow, agent, subworkflow
+
+@workflow(name="summarize")
+async def summarize(args, ctx):
+    return await agent(f"summarize: {args}")
+
+@workflow(name="report")
+async def report(args, ctx):
+    bullets = await subworkflow("summarize", args)   # by name, or pass the Workflow object
+    return await agent(f"turn into a report: {bullets}")
+```
+
+To run a workflow in *isolation* (its own fresh budget), call `other_wf.run(...)`
+directly instead.
+
+---
+
+## Human-in-the-loop
+
+`human(prompt)` pauses a run for external input. It raises `WorkflowInterrupt`;
+you collect the answer, `provide()` it, and re-run with the **same journal** to
+resume past the pause — the answer is journaled, so resume is deterministic:
+
+```python
+from fireflyframework_agentic.workflows import workflow, agent, human, Journal, WorkflowInterrupt
+
+@workflow(name="triage")
+async def triage(args, ctx):
+    draft = await agent(f"draft a reply to: {args}")
+    decision = await human(f"Approve this reply?\n\n{draft}")
+    if decision.lower().startswith("y"):
+        return draft
+    return await agent(f"revise per feedback '{decision}': {draft}")
+
+journal = Journal()
+try:
+    result = await triage.run(ticket, journal=journal)
+except WorkflowInterrupt as it:
+    it.provide(input(it.prompt))                         # a human reviews and answers
+    result = await triage.run(ticket, journal=journal)   # resumes past human()
+```
+
+Pair `human()` with a `JournalBackend` for durable approvals that survive a
+process restart.
+
+---
+
 ## Telemetry
 
 Pass `events=callable` to a run to receive structured events:
 `workflow.start` / `workflow.end` (with `agents`, `tokens`, `cost_usd`),
 `phase.start` / `phase.end`, `agent.start` / `agent.end` (with `label`, `phase`,
 `seq`, `tokens`, `cost_usd`), `route.select` / `route.escalate`, `cascade.tier`,
-and `log`. Wire this into the [observability](observability.md) layer for live
-per-phase token/cost/agent/time counters.
+`subworkflow.start` / `subworkflow.end`, `human.pause`, and `log`. Wire this into
+the [observability](observability.md) layer for live per-phase token/cost/agent/time
+counters.
 
 ---
 
@@ -267,10 +340,12 @@ per-phase token/cost/agent/time counters.
 | `workflow(name=None, *, args_schema=None, description="", register=True)` | Decorator → a registered, runnable `Workflow`. |
 | `Workflow.run(args, *, budget, runner, journal, events, run_id)` | Execute; returns the body's return value. |
 | `run_workflow(name, args, **opts)` | Look up a registered workflow by name and run it. |
+| `subworkflow(name_or_wf, args)` | Run another workflow inline, inheriting the parent's budget/journal/runner. |
 | `agent` / `parallel` / `pipeline` / `phase` / `log` | The DSL primitives. |
+| `human(prompt)` | Pause for external input (raises `WorkflowInterrupt`; resume via the same journal). |
 | `map_agents(items, fn, *, strict=False)` | Run `fn(item)` per item concurrently — sugar over `parallel` (no late-binding lambda). |
 | `WorkflowBudget` | Concurrency / agent-count / token / **USD cost** / **wall-clock** ceilings. |
-| `Journal` | Sequence-keyed cache for deterministic resume. |
+| `Journal` / `JournalBackend` / `FileJournalBackend` | Sequence-keyed resume cache; attach a backend for durable, crash-resilient resume. |
 | `AgentRunner` / `DefaultAgentRunner` / `AgentCall` | The runner seam (`AgentCall` carries `output`, `tokens`, `cost_usd`). |
 | `SmartRoutingRunner` / `ComplexityHeuristicStrategy` / `CostFloorStrategy` / `ModelSelectionStrategy` | Cheapest-capable model per call (with fallback). |
 | `cascade` / `CascadeResult` | Cheap-first, escalate on low confidence. |
@@ -280,4 +355,5 @@ per-phase token/cost/agent/time counters.
 | `current_workflow()` | The active `WorkflowContext` (raises outside a run). |
 
 Exceptions live in `fireflyframework_agentic.exceptions`: `WorkflowError` (base),
-`WorkflowNotFoundError`, `WorkflowBudgetError`, `WorkflowContextError`.
+`WorkflowNotFoundError`, `WorkflowBudgetError`, `WorkflowContextError`, and
+`WorkflowInterrupt` (the human-in-the-loop pause signal).

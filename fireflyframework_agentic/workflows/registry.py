@@ -31,7 +31,12 @@ import uuid
 from typing import Any
 
 from fireflyframework_agentic.exceptions import WorkflowBudgetError, WorkflowNotFoundError
-from fireflyframework_agentic.workflows.context import WorkflowBudget, WorkflowContext, _current
+from fireflyframework_agentic.workflows.context import (
+    WorkflowBudget,
+    WorkflowContext,
+    _current,
+    current_workflow,
+)
 from fireflyframework_agentic.workflows.journal import Journal
 from fireflyframework_agentic.workflows.runner import AgentRunner, DefaultAgentRunner
 
@@ -207,3 +212,26 @@ async def run_workflow(
     """Look up a registered workflow by name and run it."""
     wf = workflow_registry.get(name)
     return await wf.run(args, budget=budget, runner=runner, journal=journal, events=events, run_id=run_id)
+
+
+async def subworkflow(workflow_or_name: str | Workflow, args: Any = None) -> Any:
+    """Run another workflow inline as a step of the current one, inheriting its
+    budget, concurrency gate, journal, runner and event sink.
+
+    The child's body executes in the **parent's** :class:`WorkflowContext`, so its
+    ``agent()`` calls count against the same budget and resume from the same
+    journal (one deterministic sequence stream across the whole nested run).
+    Returns whatever the child returns. Must be called inside an active workflow;
+    to run a workflow in *isolation* (its own budget) call ``other_wf.run(...)``
+    directly instead.
+
+    (The child reads its own ``args`` parameter; ``ctx.args`` remains the parent's.)
+    """
+    ctx = current_workflow()
+    wf = workflow_or_name if isinstance(workflow_or_name, Workflow) else workflow_registry.get(workflow_or_name)
+    if wf.args_schema is not None and args is not None and not isinstance(args, wf.args_schema):
+        args = wf.args_schema.model_validate(args)
+    ctx.emit("subworkflow.start", {"name": wf.name})
+    result = await (wf._fn(args, ctx) if _wants_context(wf._fn) else wf._fn(args))
+    ctx.emit("subworkflow.end", {"name": wf.name})
+    return result
