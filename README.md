@@ -1,30 +1,52 @@
-# fireflyframework-agentic
-**The production-grade GenAI metaframework built on [Pydantic AI](https://ai.pydantic.dev/).**
+<p align="center">
+  <img src="assets/banner.svg" alt="Firefly Agentic — production-grade agents, reasoning and pipelines, built on Pydantic AI" width="100%">
+</p>
 
-[![PR gate](https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/pr-gate.yml/badge.svg?branch=main)](https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/pr-gate.yml)
-[![Nightly](https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/nightly.yml/badge.svg?branch=main)](https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/nightly.yml)
-[![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)]()
-[![Ruff](https://img.shields.io/badge/linting-ruff-orange.svg)](https://docs.astral.sh/ruff/)
+<h1 align="center">Firefly Agentic</h1>
 
-Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
+<p align="center">
+  <strong>The production-grade agentic metaframework, built on <a href="https://ai.pydantic.dev/">Pydantic AI</a>.</strong>
+</p>
 
----
+<p align="center">
+  <a href="https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/pr-gate.yml"><img src="https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/pr-gate.yml/badge.svg?branch=main" alt="PR gate"></a>
+  <a href="https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/nightly.yml"><img src="https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/nightly.yml/badge.svg?branch=main" alt="Nightly"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.13%2B-blue.svg" alt="Python 3.13+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green.svg" alt="License: Apache 2.0"></a>
+  <a href="https://ai.pydantic.dev/"><img src="https://img.shields.io/badge/built%20on-pydantic--ai-8b5cf6.svg" alt="Built on Pydantic AI"></a>
+  <a href="https://docs.astral.sh/ruff/"><img src="https://img.shields.io/badge/linting-ruff-orange.svg" alt="Ruff"></a>
+  <a href="https://microsoft.github.io/pyright/"><img src="https://img.shields.io/badge/type--checked-pyright-2c8a1c.svg" alt="Type checked: pyright"></a>
+</p>
 
-## Table of Contents
+<p align="center">
+  <em>Keep Pydantic AI's <code>Agent</code>, <code>Tool</code> and <code>RunContext</code> — gain lifecycle hooks, delegation, memory, reasoning patterns, validation loops, RAG, and DAG pipelines, all protocol-driven and swappable.</em>
+</p>
 
-- [Why fireflyframework-agentic?](#why-fireflyframework-agentic)
+<p align="center">
+  <a href="docs/tutorial.md"><b>📘 The Tutorial</b></a> &nbsp;·&nbsp;
+  <a href="#5-minute-quick-start"><b>Quick Start</b></a> &nbsp;·&nbsp;
+  <a href="#why-fireflyframework-agentic">Why</a> &nbsp;·&nbsp;
+  <a href="#architecture-at-a-glance">Architecture</a> &nbsp;·&nbsp;
+  <a href="#feature-highlights">Features</a> &nbsp;·&nbsp;
+  <a href="#learn-the-framework">Docs</a> &nbsp;·&nbsp;
+  <a href="#the-firefly-ecosystem">Ecosystem</a> &nbsp;·&nbsp;
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
+
+<p align="center">
+  <sub>Copyright 2026 Firefly Software Foundation · Licensed under the Apache License 2.0</sub>
+</p>
+
+<details>
+<summary><b>Table of contents</b></summary>
+
+- [Why Firefly Agentic?](#why-fireflyframework-agentic)
 - [Key Principles](#key-principles)
 - [Architecture at a Glance](#architecture-at-a-glance)
 - [Feature Highlights](#feature-highlights)
+- [The Firefly Ecosystem](#the-firefly-ecosystem)
 - [Requirements](#requirements)
 - [Installation](#installation)
-  - [One-Line Installer (Recommended)](#one-line-installer-recommended)
-  - [Install from Source](#install-from-source)
-  - [Optional Extras](#optional-extras)
-  - [Verify Installation](#verify-installation)
-  - [Uninstall](#uninstall)
 - [5-Minute Quick Start](#5-minute-quick-start)
 - [Using in Jupyter Notebooks](#using-in-jupyter-notebooks)
 - [Learn the Framework](#learn-the-framework)
@@ -32,12 +54,14 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 - [Contributing](#contributing)
 - [License](#license)
 
+</details>
+
 ---
 
 ## Why fireflyframework-agentic?
 
 [Pydantic AI](https://ai.pydantic.dev/) provides an excellent foundation: type-safe,
-model-agnostic agents with structured output. But a production GenAI system demands
+model-agnostic agents with structured output. But a production agentic system demands
 far more than a single agent call. You need to orchestrate multi-step reasoning,
 validate and retry LLM outputs against schemas, manage conversation memory across
 turns, observe every call with traces and metrics, and run A/B experiments to compare
@@ -90,180 +114,18 @@ You write your business logic; the framework provides the architecture.
 
 ## Architecture at a Glance
 
-```mermaid
-graph TD
-    subgraph Orchestration Layer
-        PIPE["Pipeline / DAG Engine<br/><small>DAG · DAGNode · DAGEdge<br/>PipelineEngine · PipelineBuilder<br/>AgentStep · ReasoningStep · CallableStep<br/>FanOutStep · FanInStep · BranchStep<br/>BatchLLMStep · EmbeddingStep · RetrievalStep<br/>Checkpointer · AuditLog · state reducers</small>"]
-    end
-
-    subgraph Embeddings / Vector Stores
-        EMB["Embeddings<br/><small>EmbeddingProtocol · BaseEmbedder<br/>OpenAI · Azure · Cohere · Google<br/>Mistral · Voyage · Bedrock · Ollama<br/>EmbedderRegistry · similarity</small>"]
-        VS["Vector Stores<br/><small>VectorStoreProtocol · BaseVectorStore<br/>InMemory · ChromaDB · Pinecone · Qdrant<br/>pgvector · sqlite-vec<br/>Scoped/Tenant-scoped layer<br/>VectorStoreRegistry · search_text</small>"]
-    end
-
-    subgraph Experimentation Layer
-        EXP["Experiments<br/><small>Experiment · Variant<br/>ExperimentRunner · VariantComparator<br/>ExperimentTracker</small>"]
-        LAB["Lab<br/><small>LabSession · Benchmark<br/>EvalOrchestrator · EvalDataset<br/>ModelComparison</small>"]
-    end
-
-    subgraph Intelligence Layer
-        REASON["Reasoning Patterns<br/><small>ReAct · CoT · PlanAndExecute<br/>Reflexion · ToT · GoalDecomposition<br/>ReasoningPipeline</small>"]
-        VAL["Validation & QoS<br/><small>OutputReviewer · OutputValidator<br/>ConfidenceScorer · ConsistencyChecker<br/>GroundingChecker · 5 rule types</small>"]
-        OBS["Observability<br/><small>FireflyTracer · FireflyMetrics<br/>FireflyEvents · UsageTracker<br/>resolve_cost · BudgetGate<br/>@traced · @metered</small>"]
-        EXPL["Explainability<br/><small>TraceRecorder · ExplanationGenerator<br/>AuditTrail · ReportBuilder</small>"]
-    end
-
-    subgraph Agent Layer
-        AGT["Agents<br/><small>FireflyAgent · AgentRegistry<br/>DelegationRouter · 7 strategies<br/>MiddlewareChain · 10 middleware<br/>FallbackModelWrapper · ResultCache<br/>AgentLifecycle · @firefly_agent · 5 templates</small>"]
-        TOOLS["Tools<br/><small>BaseTool · ToolBuilder · ToolKit<br/>5 guards · 3 composers<br/>ToolRegistry · 9 built-ins</small>"]
-        PROMPTS["Prompts<br/><small>PromptTemplate · PromptRegistry<br/>3 composers · PromptValidator<br/>PromptLoader</small>"]
-        CONTENT["Content<br/><small>TextChunker · DocumentSplitter<br/>ImageTiler · BatchProcessor<br/>ContextCompressor · SlidingWindowManager</small>"]
-        MEM["Memory<br/><small>MemoryManager · ConversationMemory<br/>WorkingMemory · TokenEstimator<br/>InMemoryStore · FileStore · SQLiteStore</small>"]
-    end
-
-    subgraph Core Layer
-        CFG["Config<br/><small>FireflyAgenticConfig<br/>get_config · reset_config</small>"]
-        TYPES["Types & Protocols<br/><small>AgentLike protocol<br/>TypeVars · type aliases<br/>(other protocols live in their modules)</small>"]
-        EXC["Exceptions<br/><small>FireflyAgenticError hierarchy<br/>34 exception classes</small>"]
-        PLUG["Plugin System<br/><small>PluginDiscovery<br/>3 entry-point groups</small>"]
-        RESIL["Resilience<br/><small>CircuitBreaker<br/>CircuitBreakerMiddleware<br/>CircuitState</small>"]
-        STORE["Storage<br/><small>DatabaseStore · LocalBackend<br/>StorageBackend · WriteSession<br/>LockToken · RetryPolicy</small>"]
-        SEC["Security<br/><small>PromptGuard · OutputGuard<br/>AESEncryptionProvider<br/>EncryptedMemoryStore</small>"]
-    end
-
-    PIPE --> AGT
-    PIPE --> REASON
-    PIPE --> VAL
-    PIPE --> EMB
-    PIPE --> VS
-    VS --> EMB
-    EMB --> CFG
-    VS --> CFG
-    EXP --> AGT
-    LAB --> EXP
-    REASON --> AGT
-    OBS --> AGT
-    EXPL --> OBS
-    VAL --> AGT
-    AGT --> TOOLS
-    AGT --> PROMPTS
-    AGT --> CONTENT
-    AGT --> MEM
-    AGT --> CFG
-    TOOLS --> CFG
-    PROMPTS --> CFG
-    CONTENT --> CFG
-    MEM --> CFG
-    REASON --> CFG
-    VAL --> CFG
-    AGT --> RESIL
-    AGT --> SEC
-    MEM --> STORE
-    SEC --> CFG
-    RESIL --> CFG
-    STORE --> CFG
-```
+<p align="center">
+  <img src="assets/architecture.svg" alt="Firefly Agentic architecture: one front door (pip install fireflyframework-agentic, @firefly_agent) over five layers — Orchestration, Experimentation, Intelligence, Agent, Core — on the Pydantic AI engine." width="100%">
+</p>
 
 ### Protocol Hierarchy
 
 Every extension point is a `@runtime_checkable` protocol. Implement the protocol to
 create your own components; the framework discovers them via duck typing.
 
-```mermaid
-classDiagram
-    class AgentLike {
-        <<Protocol>>
-        +run(prompt, **kwargs) Any
-    }
-    class ToolProtocol {
-        <<Protocol>>
-        +name: str
-        +description: str
-        +execute(**kwargs) Any
-    }
-    class GuardProtocol {
-        <<Protocol>>
-        +check(tool_name, kwargs) GuardResult
-    }
-    class ReasoningPattern {
-        <<Protocol>>
-        +execute(agent, input, **kwargs) ReasoningResult
-    }
-    class StepExecutor {
-        <<Protocol>>
-        +execute(context, inputs) Any
-    }
-    class DelegationStrategy {
-        <<Protocol>>
-        +select(agents, prompt, **kwargs) Any
-    }
-    class CompressionStrategy {
-        <<Protocol>>
-        +compress(text, max_tokens) str
-    }
-    class MemoryStore {
-        <<Protocol>>
-        +save(namespace, entry)
-        +load(namespace) list
-        +delete(namespace, entry_id)
-        +clear(namespace)
-    }
-    class ValidationRule {
-        <<Protocol>>
-        +name: str
-        +validate(value) ValidationRuleResult
-    }
-    class EmbeddingProtocol {
-        <<Protocol>>
-        +embed(texts) EmbeddingResult
-        +embed_one(text) list~float~
-    }
-    class VectorStoreProtocol {
-        <<Protocol>>
-        +upsert(documents, namespace)
-        +search(query_embedding, top_k) list~SearchResult~
-        +search_text(query, top_k) list~SearchResult~
-        +delete(ids, namespace)
-    }
-
-    AgentLike <|.. FireflyAgent
-    AgentLike <|.. pydantic_ai.Agent
-    ToolProtocol <|.. BaseTool
-    ToolProtocol <|.. SequentialComposer
-    ToolProtocol <|.. FallbackComposer
-    ToolProtocol <|.. ConditionalComposer
-    GuardProtocol <|.. ValidationGuard
-    GuardProtocol <|.. RateLimitGuard
-    GuardProtocol <|.. ApprovalGuard
-    GuardProtocol <|.. SandboxGuard
-    GuardProtocol <|.. CompositeGuard
-    ReasoningPattern <|.. AbstractReasoningPattern
-    ReasoningPattern <|.. ReasoningPipeline
-    StepExecutor <|.. AgentStep
-    StepExecutor <|.. ReasoningStep
-    StepExecutor <|.. CallableStep
-    StepExecutor <|.. FanOutStep
-    StepExecutor <|.. FanInStep
-    DelegationStrategy <|.. RoundRobinStrategy
-    DelegationStrategy <|.. CapabilityStrategy
-    DelegationStrategy <|.. ContentBasedStrategy
-    DelegationStrategy <|.. CostAwareStrategy
-    DelegationStrategy <|.. ChainStrategy
-    DelegationStrategy <|.. FallbackStrategy
-    DelegationStrategy <|.. WeightedStrategy
-    CompressionStrategy <|.. TruncationStrategy
-    CompressionStrategy <|.. SummarizationStrategy
-    CompressionStrategy <|.. MapReduceStrategy
-    MemoryStore <|.. InMemoryStore
-    MemoryStore <|.. FileStore
-    ValidationRule <|.. RegexRule
-    ValidationRule <|.. FormatRule
-    ValidationRule <|.. RangeRule
-    ValidationRule <|.. EnumRule
-    ValidationRule <|.. CustomRule
-    EmbeddingProtocol <|.. BaseEmbedder
-    VectorStoreProtocol <|.. BaseVectorStore
-```
+<p align="center">
+  <img src="assets/protocols.svg" alt="The twelve runtime-checkable protocols — AgentLike, ToolProtocol, GuardProtocol, ReasoningPattern, StepExecutor, DelegationStrategy, CompressionStrategy, MemoryStore, ValidationRule, Chunker, EmbeddingProtocol, VectorStoreProtocol — each with its swappable implementations." width="100%">
+</p>
 
 ---
 
@@ -285,6 +147,10 @@ classDiagram
   (`create_summarizer_agent`, `create_classifier_agent`, `create_extractor_agent`,
   `create_conversational_agent`, `create_router_agent`) cover common use cases out of
   the box.
+
+<p align="center">
+  <img src="assets/agent-anatomy.svg" alt="Anatomy of an agent run: a FireflyAgent wrapping pydantic_ai.Agent inside a ten-stage middleware chain, with delegation, fallback, caching and memory." width="100%">
+</p>
 
 - **Tools** — `ToolProtocol` (duck-typed) and `BaseTool` (inheritance) let you choose
   your extensibility style. `ToolBuilder` provides a fluent API for building tools
@@ -311,6 +177,10 @@ classDiagram
   All produce structured `ReasoningResult` with `ReasoningTrace`. Prompts are
   slot-overridable. `OutputReviewer` can validate final outputs. `ReasoningPipeline`
   chains patterns sequentially.
+
+<p align="center">
+  <img src="assets/reasoning.svg" alt="Six reasoning patterns — ReAct, Chain of Thought, Plan-and-Execute, Reflexion, Tree of Thoughts, Goal Decomposition — on one reason/act/observe loop." width="100%">
+</p>
 
 - **Content** — `TextChunker` splits by tokens, sentences, or paragraphs with
   configurable overlap; `MarkdownChunker` chunks structure-aware on Markdown
@@ -357,6 +227,10 @@ classDiagram
   long runs, and a pluggable audit-log family (`AuditLog`, `FileAuditLog`,
   `LoggingAuditLog`, `OtelAuditLog`, `QueryableAuditLog` over `AuditEntry`) records
   execution traces.
+
+<p align="center">
+  <img src="assets/pipeline.svg" alt="A typed DAG pipeline: a seven-phase IDP flow with fan-out/fan-in, a human-in-the-loop pause, checkpointing and an audit log." width="100%">
+</p>
 
 - **Observability** — `FireflyTracer` creates OpenTelemetry spans scoped to agents,
   tools, and reasoning steps. `FireflyMetrics` records tokens (total, prompt,
@@ -440,12 +314,30 @@ classDiagram
   manages named instances. `EmbeddingStep` and `RetrievalStep` integrate directly
   into DAG pipelines for retrieval-augmented workflows.
 
+<p align="center">
+  <img src="assets/rag.svg" alt="Retrieval-augmented generation: eight embedding providers and six vector-store backends behind the EmbeddingProtocol and VectorStoreProtocol." width="100%">
+</p>
+
 - **Studio** — moved to its own repository:
   [fireflyframework-agentic-studio](https://github.com/fireflyframework/fireflyframework-agentic-studio).
   A browser-based visual IDE for building agent pipelines (drag-and-drop
   canvas, code generation, AI assistant, time-travel debugging). Install
   with `pip install fireflyframework-agentic-studio` and launch with
   `firefly studio`.
+
+---
+
+## The Firefly Ecosystem
+
+Firefly Agentic is the **agentic member** of the [Firefly Framework](https://github.com/fireflyframework) — a polyglot platform that brings one cohesive programming model to many runtimes. Each member shares the same firefly-in-the-dark identity, recolored per language.
+
+<p align="center">
+  <img src="assets/ecosystem.svg" alt="The Firefly Framework family: Java/Spring Boot, .NET, PyFly (Python), Rust, Go, the Angular frontend, and Firefly Agentic — around a shared core." width="100%">
+</p>
+
+- **[PyFly](https://github.com/fireflyframework/fireflyframework-pyfly)** — the Python implementation (Spring-Boot DX, async-native).
+- **[Firefly for Rust](https://github.com/fireflyframework/fireflyframework-rust)** — reactive, `tokio` + `axum` microservices.
+- **[Firefly Studio](https://github.com/fireflyframework/fireflyframework-agentic-studio)** — a browser-based visual IDE for building agent pipelines.
 
 ---
 
@@ -812,9 +704,11 @@ Detailed guides for each module:
 - [Embeddings](docs/embeddings.md) — 8 providers, auto-batching, similarity, registry
 - [Vector Stores](docs/vectorstores.md) — 6 backends, tenant scoping, auto-embedding, search_text, namespaces
 - [Pipeline](docs/pipeline.md) — DAG orchestrator, parallel execution, checkpointing, audit log, retries
+- [Dynamic Workflows](docs/workflows.md) — Code-defined orchestration DSL over agents: `@workflow`, `agent`/`parallel`/`pipeline`/`stream`, budgets, journal resume, smart routing, sub-workflows, HITL, `FireflyAgentRunner`
 - [Observability](docs/observability.md) — Tracing, metrics, events, cost resolvers, budget gates
 - [Explainability](docs/explainability.md) — Decision recording, audit trails, reports
 - [Security](docs/security.md) — Prompt/output guards, at-rest encryption
+- [Secure Script Execution](docs/execution.md) — Deny-by-default Monty sandbox, static safety pre-screen, `SecureScriptRunner`, Firefly Code Mode
 - [Experiments](docs/experiments.md) — A/B testing, variant comparison
 - [Lab](docs/lab.md) — Benchmarks, datasets, evaluators
 - Studio — moved to [fireflyframework-agentic-studio](https://github.com/fireflyframework/fireflyframework-agentic-studio)

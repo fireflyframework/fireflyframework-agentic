@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="452" viewBox="0 0 1000 452" role="img" aria-label="Firefly Agentic retrieval: eight embedding providers and six vector-store backends behind one API." font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">
+  <defs>
+    <linearGradient id="hdr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8b5cf6"/><stop offset="1" stop-color="#6d28d9"/></linearGradient>
+    <linearGradient id="door" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
+    <linearGradient id="bed" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#241a3a"/><stop offset="1" stop-color="#150f26"/></linearGradient>
+    <radialGradient id="amb" cx="500" cy="64" r="520" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8b5cf6" stop-opacity="0.12"/><stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/></radialGradient>
+    <filter id="sh" x="-25%" y="-25%" width="150%" height="170%"><feDropShadow dx="0" dy="2" stdDeviation="3.2" flood-color="#4c1d95" flood-opacity="0.16"/></filter>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="6.2" refY="3.2" orient="auto"><path d="M0 0L7 3.2L0 6.4Z" fill="#6d28d9"/></marker>
+    <marker id="arrb" markerWidth="9" markerHeight="9" refX="6.2" refY="3.2" orient="auto"><path d="M0 0L7 3.2L0 6.4Z" fill="#6366f1"/></marker>
+    <marker id="arra" markerWidth="9" markerHeight="9" refX="6.2" refY="3.2" orient="auto"><path d="M0 0L7 3.2L0 6.4Z" fill="#c2722a"/></marker>
+    <g id="fly"><circle r="8.5" fill="#a78bfa" opacity="0.10"/><circle r="4.6" fill="#c4b5fd" opacity="0.22"/><circle r="2.4" fill="#ddd6fe" opacity="0.75"/><circle r="1.2" fill="#f5f3ff"/></g>
+    <g id="ffly"><circle r="8.5" fill="#f6a821" opacity="0.10"/><circle r="4.6" fill="#ffc24a" opacity="0.22"/><circle r="2.4" fill="#ffd980" opacity="0.78"/><circle r="1.2" fill="#fff6e0"/></g>
+  <radialGradient id="dot" cx="42%" cy="34%" r="72%"><stop offset="0" stop-color="#FFF9C1"/><stop offset="1" stop-color="#F68000"/></radialGradient></defs>
+  <rect width="1000" height="452" fill="#ffffff"/><rect x="3" y="3" width="994" height="446" rx="18" fill="#ffffff" stroke="#e4def5" stroke-width="1.5"/><rect x="3" y="3" width="994" height="446" rx="18" fill="url(#amb)"/>
+  <g transform="translate(40,30) scale(1.25)"><circle r="11" fill="#f6a821" opacity="0.16"/><circle r="6.5" fill="#ffc24a" opacity="0.30"/><circle r="3.4" fill="url(#dot)"/><circle r="1.5" fill="#fff6e0"/></g>
+  <text x="64" y="45" font-size="21" font-weight="800" fill="#1e1633" font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" letter-spacing="0.2">Retrieval-augmented — eight embedders × six vector stores, one API</text>
+  <text x="974" y="42" text-anchor="end" font-size="12" font-weight="600" fill="#b29ddb" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace">fireflyframework-agentic</text>
+  <line x1="26" y1="62" x2="974" y2="62" stroke="#7c3aed" stroke-width="1.4" opacity="0.42"/>
+  <text x="26" y="84" font-size="12.5" font-style="italic" fill="#8b82a3" font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">EmbeddingProtocol and VectorStoreProtocol make providers and backends fully swappable.</text>
+  <g filter="url(#sh)"><rect x="44.0" y="112.0" width="212.0" height="278" rx="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1.8"/><path d="M44.0 122a10 10 0 0 1 10 -10h192.0a10 10 0 0 1 10 10v13H44.0Z" fill="url(#hdr)"/></g><text x="56.0" y="127" font-size="11" font-weight="700" fill="#fff" font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">EMBEDDERS</text>
+  <rect x="56" y="137" width="188" height="24" rx="6" fill="#f5f2fe" stroke="#e4def5"/>
+  <text x="66" y="153" font-size="10.5" fill="#322b45" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace">OpenAI</text>
+  <rect x="56" y="167" width="188" height="24" rx="6" fill="#f5f2fe" stroke="#e4def5"/>
+  <text x="66" y="183" font-size="10.5" fill="#322b45" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace">Azure OpenAI</text>
+  <rect x="56" y="197" width="188" height="24" rx="6" fill="#f5f2fe" stroke="#e4def5"/>
+  <text x="66" y="213" font-size="10.5" fill="#322b45" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace">Cohere</text>
+  <rect x="56" y="227" width="188" height="24" rx="6" fill="#f5f2fe" stroke="#e4def5"/>
+  <text x="66" y="243" font-size="10.5" fill="#322b45" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace">Google</text>
+  <rect x="56" y="257" width="188" height="24" rx="6" fill="#f5f2fe" stroke="#e4def5"/>
+  <text x="66" y="273" font-size="10.5" fill="#322b45" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace">Mistral</text>
+  <rect x="56" y="287" width="188" height="24" rx="6" fill="#f5f2fe" stroke="#e4def5"/>
+  <text x="66" y="303" font-size="10.5" fill="#322b45" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace">Voyage AI</text>
+  <rect x="56" y="317" width="188" height="24" rx="6" fill="#f5f2fe" stroke="#e4def5"/>
+  <text x="66" y="333" font-size="10.5" fill="#322b45" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace">AWS Bedrock</text>
+  <rect x="56" y="347" width="188" height="24" rx="6" fill="#f5f2fe" stroke="#e4def5"/>
+  <text x="66" y="363" font-size="10.5" fill="#322b45" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace">Ollama</text>
+  <text x="150" y="406" text-anchor="middle" font-size="9.5" fill="#8b82a3" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace">EmbeddingProtocol · BaseEmbedder</text>
+  <g filter="url(#sh)"><rect x="744.0" y="112.0" width="212.0" height="278" rx="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1.8"/><path d="M744.0 122a10 10 0 0 1 10 -10h192.0a10 10 0 0 1 10 10v13H744.0Z" fill="url(#hdr)"/></g><text x="756.0" y="127" font-size="11" font-weight="700" fill="#fff" font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">VECTOR STORES</text>
+  <rect x="756" y="137" width="188" height="24" rx="6" fill="#f5f2fe" stroke="#e4def5"/>
+  <text x="766" y="153" font-size="10.5" fill="#322b45" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace">InMemory</text>
+  <rect x="756" y="167" width="188" height="24" rx="6" fill="#f5f2fe" stroke="#e4def5"/>
+  <text x="766" y="183" font-size="10.5" fill="#322b45" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace">ChromaDB</text>
+  <rect x="756" y="197" width="188" height="24" rx="6" fill="#f5f2fe" stroke="#e4def5"/>
+  <text x="766" y="213" font-size="10.5" fill="#322b45" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace">Pinecone</text>
+  <rect x="756" y="227" width="188" height="24" rx="6" fill="#f5f2fe" stroke="#e4def5"/>
+  <text x="766" y="243" font-size="10.5" fill="#322b45" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace">Qdrant</text>
+  <rect x="756" y="257" width="188" height="24" rx="6" fill="#f5f2fe" stroke="#e4def5"/>
+  <text x="766" y="273" font-size="10.5" fill="#322b45" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace">pgvector</text>
+  <rect x="756" y="287" width="188" height="24" rx="6" fill="#f5f2fe" stroke="#e4def5"/>
+  <text x="766" y="303" font-size="10.5" fill="#322b45" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace">sqlite-vec</text>
+  <text x="850" y="406" text-anchor="middle" font-size="9.5" fill="#8b82a3" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace">VectorStoreProtocol · BaseVectorStore</text>
+  <g filter="url(#sh)"><rect x="422.0" y="112.0" width="156.0" height="40" rx="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1.8"/><path d="M422.0 122a10 10 0 0 1 10 -10h136.0a10 10 0 0 1 10 10v13H422.0Z" fill="url(#hdr)"/></g><text x="434.0" y="127" font-size="11" font-weight="700" fill="#fff" font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">text</text><text x="434.0" y="151" font-size="10" fill="#322b45" font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">raw documents</text>
+  <line x1="500.0" y1="152.0" x2="500.0" y2="164.0" stroke="#6d28d9" stroke-width="1.8" marker-end="url(#arr)"/>
+  <g filter="url(#sh)"><rect x="422.0" y="164.0" width="156.0" height="40" rx="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1.8"/><path d="M422.0 174a10 10 0 0 1 10 -10h136.0a10 10 0 0 1 10 10v13H422.0Z" fill="url(#hdr)"/></g><text x="434.0" y="179" font-size="11" font-weight="700" fill="#fff" font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">embed</text><text x="434.0" y="203" font-size="10" fill="#322b45" font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">BaseEmbedder</text>
+  <line x1="500.0" y1="204.0" x2="500.0" y2="216.0" stroke="#6d28d9" stroke-width="1.8" marker-end="url(#arr)"/>
+  <g filter="url(#sh)"><rect x="422.0" y="216.0" width="156.0" height="40" rx="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1.8"/><path d="M422.0 226a10 10 0 0 1 10 -10h136.0a10 10 0 0 1 10 10v13H422.0Z" fill="url(#hdr)"/></g><text x="434.0" y="231" font-size="11" font-weight="700" fill="#fff" font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">upsert</text><text x="434.0" y="255" font-size="10" fill="#322b45" font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">auto-embed</text>
+  <line x1="500.0" y1="256.0" x2="500.0" y2="268.0" stroke="#6d28d9" stroke-width="1.8" marker-end="url(#arr)"/>
+  <g filter="url(#sh)"><rect x="422.0" y="268.0" width="156.0" height="40" rx="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1.8"/><path d="M422.0 278a10 10 0 0 1 10 -10h136.0a10 10 0 0 1 10 10v13H422.0Z" fill="url(#hdr)"/></g><text x="434.0" y="283" font-size="11" font-weight="700" fill="#fff" font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">search_text</text><text x="434.0" y="307" font-size="10" fill="#322b45" font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">query · top_k</text>
+  <line x1="500.0" y1="308.0" x2="500.0" y2="320.0" stroke="#6d28d9" stroke-width="1.8" marker-end="url(#arr)"/>
+  <g filter="url(#sh)"><rect x="422.0" y="320.0" width="156.0" height="40" rx="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1.8"/><path d="M422.0 330a10 10 0 0 1 10 -10h136.0a10 10 0 0 1 10 10v13H422.0Z" fill="url(#hdr)"/></g><text x="434.0" y="335" font-size="11" font-weight="700" fill="#fff" font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">SearchResult</text><text x="434.0" y="359" font-size="10" fill="#322b45" font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">scored hits</text>
+  <line x1="256.0" y1="251.0" x2="419.0" y2="184.0" stroke="#6d28d9" stroke-width="1.8" stroke-dasharray="4 3" marker-end="url(#arr)"/>
+  <line x1="744.0" y1="251.0" x2="581.0" y2="288.0" stroke="#6366f1" stroke-width="1.8" stroke-dasharray="4 3" marker-end="url(#arrb)"/>
+  <text x="500" y="434" text-anchor="middle" font-size="10" font-style="italic" fill="#8b82a3">ScopedVectorStore / TenantScopedVectorStore isolate per tenant · EmbeddingStep / RetrievalStep drop straight into pipelines</text>
+</svg>
