@@ -193,7 +193,8 @@ def build_banner():
   <text x="84" y="280" fill="#ece3ff" font-size="22" font-weight="600" font-family="{SANS}">Production-grade agents, reasoning &amp; pipelines</text>
   <text x="84" y="305" fill="#9d8fc4" font-size="16" font-weight="500" font-family="{SANS}" letter-spacing="0.3">type-safe · model-agnostic · built on Pydantic AI · async-native</text>
   <text x="{W-26}" y="34" text-anchor="end" font-family="{MONO}" font-size="12" fill="#7c6aa6" opacity="0.9" letter-spacing="0.4">fireflyframework-agentic</text>
-</svg>'''
+</svg>
+'''
     (ASSETS/"banner.svg").write_text(svg)
 
 # --------------------------------------------------------------------------- architecture
