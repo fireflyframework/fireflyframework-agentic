@@ -14,6 +14,7 @@ shared family firefly; everything else carries the member's violet identity.
 | [`architecture.svg`](architecture.svg) | "Architecture at a glance" — one front door over five layers (Orchestration → Core) on the Pydantic AI engine. |
 | [`protocols.svg`](protocols.svg) | The twelve `@runtime_checkable` protocols, each with its swappable implementations. |
 | [`reasoning.svg`](reasoning.svg) | The reason/act/observe loop feeding six pluggable reasoning patterns. |
+| [`workflows.svg`](workflows.svg) | The `@workflow` DSL primitives over a `WorkflowContext` (runner, journal, budget, routing) + verification helpers. |
 | [`pipeline.svg`](pipeline.svg) | A seven-phase IDP DAG with fan-out/fan-in, a human-in-the-loop pause, checkpointing and an audit log. |
 | [`rag.svg`](rag.svg) | Eight embedding providers × six vector-store backends behind one API. |
 | [`agent-anatomy.svg`](agent-anatomy.svg) | A `FireflyAgent` wrapping `pydantic_ai.Agent` inside a ten-stage middleware chain. |
@@ -48,9 +49,9 @@ uv pip install fonttools                    # build-time only; not a runtime dep
 ```
 
 It embeds the `firefly` wordmark from [`tools/wordmark.py`](tools/wordmark.py)
-(extracted from the brand logo), draws the banner and seven diagrams from the
+(extracted from the brand logo), draws the banner and eight diagrams from the
 shared kit (measured text → guaranteed fit, plus an automatic overlap check that
-prints `WARNINGS: none`), and writes all eight SVGs. The brand icons are vendored
+prints `WARNINGS: none`), and writes all nine SVGs. The brand icons are vendored
 in [`tools/icons.py`](tools/icons.py), so the build is fully network-free.
 
 ### Previewing / verifying
