@@ -32,6 +32,19 @@ from fireflyframework_agentic.tools.base import ToolProtocol
 from fireflyframework_agentic.tools.registry import ToolRegistry
 
 
+def to_pydantic_handler(tool: ToolProtocol) -> Any:
+    """Return the best pydantic-ai handler callable for a Firefly tool.
+
+    Prefers the tool's ``pydantic_handler()`` (a wrapper with a real, typed
+    signature — and a ``RunContext``-first parameter for ``takes_ctx`` tools — so
+    pydantic-ai generates a correct schema), falling back to ``execute`` for any
+    duck-typed tool that does not implement it. Either way the returned callable
+    routes through the tool's guard/cache/timeout path.
+    """
+    handler_fn = getattr(tool, "pydantic_handler", None)
+    return handler_fn() if handler_fn is not None else tool.execute
+
+
 class ToolKit:
     """A named group of tools that operates as a single unit.
 
@@ -95,11 +108,9 @@ class ToolKit:
         """
         pydantic_tools: list[PydanticTool[Any]] = []
         for tool in self._tools:
-            pydantic_handler_fn = getattr(tool, "pydantic_handler", None)
-            handler = pydantic_handler_fn() if pydantic_handler_fn is not None else tool.execute
             pydantic_tools.append(
                 PydanticTool(
-                    handler,
+                    to_pydantic_handler(tool),
                     name=tool.name,
                     description=tool.description,
                 )
@@ -117,9 +128,9 @@ class ToolKit:
         """
         toolset: FunctionToolset[Any] = FunctionToolset()
         for tool in self._tools:
-            pydantic_handler_fn = getattr(tool, "pydantic_handler", None)
-            handler = pydantic_handler_fn() if pydantic_handler_fn is not None else tool.execute
-            toolset.add_function(handler, name=tool.name)
+            # Forward the description too — add_function drops it otherwise, so the
+            # LLM would see a toolset tool with no description (a real fidelity loss).
+            toolset.add_function(to_pydantic_handler(tool), name=tool.name, description=tool.description)
         return toolset
 
     def __len__(self) -> int:

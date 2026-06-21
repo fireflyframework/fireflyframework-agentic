@@ -186,12 +186,15 @@ Implement the `JournalBackend` protocol (`load`/`save`) for Postgres/Redis/S3.
 ```python
 class AgentRunner(Protocol):
     async def run(self, prompt, *, model=None, output_type=None, instructions=None,
-                  deps=None, tools=None, toolsets=None) -> AgentCall: ...
+                  deps=None, tools=None, toolsets=None, using=None) -> AgentCall: ...
 ```
 
-- **`DefaultAgentRunner`** (default) runs each call as a fresh
-  `pydantic_ai.Agent` with no shared message history — isolation by construction.
-  Pass a per-call `model=` or a runner-wide `default_model=`.
+- **`FireflyAgentRunner`** (**default**) runs each call through a **`FireflyAgent`**,
+  so sub-agents inherit the full framework stack — see below.
+- **`DefaultAgentRunner`** (lightweight alternative) runs each call as a fresh bare
+  `pydantic_ai.Agent` with no shared message history — isolation by construction
+  and zero coupling. Choose it explicitly (`runner=DefaultAgentRunner()`) when you
+  want the minimal path with none of the FireflyAgent middleware.
 - **Custom runners** make workflows trivially testable: inject a deterministic
   fake that returns canned `AgentCall(output=..., tokens=...)` and no network is
   touched.
@@ -200,12 +203,76 @@ class AgentRunner(Protocol):
 await deep_research(args, runner=MyFakeRunner())
 ```
 
+### `FireflyAgentRunner` — sub-agents with the full FireflyAgent stack
+
+This is the **default** runner: every workflow sub-agent runs through a
+`FireflyAgent`, inheriting its **middleware chain** (logging, prompt/output
+guards, cost guard, caching, observability, explainability, validation, retry),
+the **429 rate-limit retry** loop, the **global usage tracker / budget gate**, and
+**model fallback** — the same enrichment your top-level agents get. You only
+construct it explicitly to configure it (a default model, or a specific agent
+source):
+
+```python
+from fireflyframework_agentic.workflows import workflow, agent, FireflyAgentRunner
+
+# The default — no runner needed; sub-agents are FireflyAgents already:
+await my_workflow(args)
+
+# Give every ephemeral sub-agent a default model (built auto_register=False, memory=None):
+await my_workflow(args, runner=FireflyAgentRunner(default_model="anthropic:claude-haiku-4-5"))
+
+# Or reuse one configured agent for every call (keeps its model/tools/middleware):
+await my_workflow(args, runner=FireflyAgentRunner(my_configured_agent))
+```
+
+The `agent=` source decides how each call's agent is obtained: `None` → a fresh
+**ephemeral** agent per call (isolated, mirrors `DefaultAgentRunner`); a
+`FireflyAgent` instance → **reuse** it; a **registry name** (`str`) → resolve it
+per call; a zero-arg **factory** → build a fresh agent per call.
+
+**Per-call targeting with `using=`** — a single workflow can route different
+calls to different configured agents (multi-model sub-agents and per-task cost
+optimisation):
+
+```python
+@workflow(name="triage")
+async def triage(args, ctx):
+    # cheap, fast model for the easy classification...
+    label = await agent("classify the ticket", using="cheap-classifier")
+    # ...escalate the hard synthesis to a configured premium agent
+    return await agent("write the resolution", using="premium-writer")
+
+await triage(args, runner=FireflyAgentRunner())   # both agents come from the registry
+```
+
+`using` accepts a `FireflyAgent` instance or a registry name and overrides the
+runner's source for that one call. With any non-`FireflyAgentRunner` runner,
+`using=` raises a clear error.
+
+Notes:
+
+- **Two disjoint ledgers, each billed once.** Per-call tokens/cost feed the
+  per-run `WorkflowBudget`; `FireflyAgent` records the same call once to the
+  *global* usage tracker. No double counting; a journal-resumed call bills neither.
+- **Isolation.** Ephemeral/factory agents are built `auto_register=False`,
+  `memory=None`, and never receive a `conversation_id` — no shared history, no
+  registry churn. A *reused* agent that carries a `ResultCache` or memory
+  intentionally opts into shared state; use the ephemeral/factory form for strict
+  per-call isolation.
+- **`tools=` vs `toolsets=`.** Per-call `tools=` only applies on the ephemeral
+  path (pydantic-ai has no per-call `tools` parameter); for a reused agent,
+  configure tools on the agent or pass `toolsets=`.
+- Composes with everything: `SmartRoutingRunner(base_runner=FireflyAgentRunner(...))`,
+  `cascade()`, budgets and the journal all work unchanged.
+
 ---
 
 ## Streaming
 
 Stream a single sub-agent's output token-by-token with the `stream()` context
-manager (requires a streaming-capable runner — `DefaultAgentRunner` is). It
+manager (requires a streaming-capable runner — `DefaultAgentRunner` and
+`FireflyAgentRunner` both are). It
 honours the budget, concurrency gate, journal and cost accounting exactly like
 `agent()`:
 
@@ -397,7 +464,9 @@ counters.
 | `map_agents(items, fn, *, strict=False)` | Run `fn(item)` per item concurrently — sugar over `parallel` (no late-binding lambda). |
 | `WorkflowBudget` | Concurrency / agent-count / token / **USD cost** / **wall-clock** ceilings. |
 | `Journal` / `JournalBackend` / `FileJournalBackend` | Sequence-keyed resume cache; attach a backend for durable, crash-resilient resume. |
-| `AgentRunner` / `DefaultAgentRunner` / `AgentCall` | The runner seam (`AgentCall` carries `output`, `tokens`, `cost_usd`). |
+| `AgentRunner` / `AgentCall` | The runner seam (`AgentCall` carries `output`, `tokens`, `cost_usd`). |
+| `FireflyAgentRunner` | **Default** runner: each call runs through a `FireflyAgent` (full middleware/observability/guards/retry/global-cost/fallback). Pair with `agent(..., using=)` for multi-model sub-agents. |
+| `DefaultAgentRunner` | Lightweight alternative: each call is a bare `pydantic_ai.Agent`. Pass it explicitly for the zero-coupling path. |
 | `SmartRoutingRunner` / `ComplexityHeuristicStrategy` / `CostFloorStrategy` / `ModelSelectionStrategy` | Cheapest-capable model per call (with fallback). |
 | `cascade` / `CascadeResult` | Cheap-first, escalate on low confidence. |
 | `price_model(model, *, input_tokens, output_tokens)` | USD price for a model at a token shape. |

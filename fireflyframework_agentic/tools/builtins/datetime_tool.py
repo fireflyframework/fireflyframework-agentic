@@ -61,21 +61,21 @@ class DateTimeTool(BaseTool):
             parameters=[
                 ParameterSpec(
                     name="action",
-                    type_annotation="str",
+                    python_type=str,
                     description="One of: now, date, time, timestamp, timezones",
                     required=False,
                     default="now",
                 ),
                 ParameterSpec(
                     name="timezone",
-                    type_annotation="str",
+                    python_type=str,
                     description="IANA timezone name (e.g. 'America/New_York')",
                     required=False,
                     default=default_timezone,
                 ),
                 ParameterSpec(
                     name="format",
-                    type_annotation="str",
+                    python_type=str,
                     description="strftime format string",
                     required=False,
                     default=default_format,

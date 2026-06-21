@@ -1,6 +1,6 @@
 [project]
 name = "fireflyframework-agentic"
-version = "26.06.4"
+version = "26.06.5"
 description = "A GenAI metaframework built on Pydantic AI for building production-grade GenAI applications with agents, reasoning patterns, prompt engineering, observability, and more."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -161,6 +161,12 @@ module-root = ""
 [tool.ruff]
 target-version = "py313"
 line-length = 120
+# Brand assets under assets/ are generated SVG art plus a self-contained build
+# script (dense, terse drawing code) — tooling, not framework source. Skip them
+# in lint/format; force-exclude so the pre-commit ruff hook skips them too, even
+# when files are passed to it explicitly.
+extend-exclude = ["assets"]
+force-exclude = true
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "TC", "PLC0415"]
@@ -176,6 +182,10 @@ ignore = ["E501", "TC001", "TC002", "TC003", "UP040", "UP046", "UP047", "B008"]
 # extra) inside its methods so the module imports cleanly without the extra and
 # degrades to a typed SandboxUnavailableError only when actually used.
 "fireflyframework_agentic/execution/monty_env.py" = ["PLC0415"]
+# workflows.runner lazy-imports FireflyAgent / the agent registry inside
+# FireflyAgentRunner so the workflows package stays agents-free at import time
+# (only this opt-in runner needs them); the deferred import IS the design.
+"fireflyframework_agentic/workflows/runner.py" = ["PLC0415"]
 # Tests use inline imports for fixture isolation and to control import timing
 # around mocks of optional dependencies (asyncpg, motor, qdrant, pinecone, ...).
 "tests/**" = ["PLC0415"]

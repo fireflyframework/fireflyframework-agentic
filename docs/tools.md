@@ -96,11 +96,18 @@ async def calculator(expression: str) -> str:
 
 The fluent `ToolBuilder` lets you construct tools step by step. Beyond `description()`,
 `handler()`, and `guard()`, it also exposes `tag()`, `tags()`, and
-`parameter(name, type_annotation, *, description, required, default)` — declared
+`parameter(name, python_type, *, description, required, default)` — declared
 parameters generate the JSON schema the LLM uses to call the tool. `build()` raises
 `ValueError` if no handler was set.
 
+`python_type` is a **real Python type object** — `str`, `list[str]`,
+`Literal["a", "b"]`, a nested `BaseModel`, `dict[str, Any] | None`, … pydantic-ai
+introspects it directly, so nested models, enums and element types all reach the
+LLM's schema intact.
+
 ```python
+from typing import Literal
+
 from fireflyframework_agentic.tools import ToolBuilder
 from fireflyframework_agentic.tools.guards import RateLimitGuard
 
@@ -108,12 +115,52 @@ tool = (
     ToolBuilder("weather")
     .description("Get current weather for a city")
     .tags(["web", "geo"])
-    .parameter("city", "str", description="City name", required=True)
+    .parameter("city", str, description="City name", required=True)
+    .parameter("units", Literal["metric", "imperial"], default="metric", required=False)
     .guard(RateLimitGuard(max_calls=10, period_seconds=60))
     .handler(get_weather_fn)
     .build()
 )
 ```
+
+### Full-fidelity schemas & RunContext
+
+A `BaseTool` subclass declares its parameters as `ParameterSpec(name=..., python_type=...)`.
+Because `python_type` is a real type, the generated schema is exact — `list[str]`
+keeps its element type, a `Literal` becomes an `enum`, a nested model becomes a
+`$ref`. Opt a tool into pydantic-ai's `RunContext` (agent deps, usage, retry count)
+with `takes_ctx=True`; the context arrives as the keyword-only `_ctx` in `_execute`,
+and **guards and the cache never see it** (so it can't poison a cache key):
+
+```python
+from typing import Any, Literal
+
+from fireflyframework_agentic.tools.base import BaseTool, ParameterSpec
+
+class SetPriority(BaseTool):
+    def __init__(self) -> None:
+        super().__init__(
+            "set_priority",
+            description="Set a ticket's priority.",
+            takes_ctx=True,                                  # opt into RunContext
+            parameters=[ParameterSpec(name="level", python_type=Literal["low", "medium", "high"])],
+        )
+
+    async def _execute(self, *, _ctx: Any = None, **kwargs: Any) -> str:
+        tenant = _ctx.deps                                   # reach the agent's deps
+        return f"{tenant}: priority set to {kwargs['level']}"
+```
+
+### Toolsets and native combinators
+
+`ToolKit.as_toolset()` returns a pydantic-ai `FunctionToolset` (descriptions and
+schemas included) for `Agent(toolsets=[...])` / `FireflyAgent(toolsets=[...])`. For
+convenience the tools package re-exports pydantic-ai's native toolset combinators —
+`FilteredToolset`, `PrefixedToolset`, `RenamedToolset`, `CombinedToolset`,
+`WrapperToolset`, `PreparedToolset`, `ApprovalRequiredToolset` — plus `RunContext`,
+so you can wrap/filter/combine a kit's toolset without importing from `pydantic_ai`
+directly. `to_pydantic_handler(tool)` returns the guard/cache-routing handler for a
+single tool.
 
 ---
 

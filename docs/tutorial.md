@@ -724,7 +724,7 @@ async def fetch_exchange_rate(currency: str) -> float:
 exchange_tool = (
     ToolBuilder("exchange_rate")
     .description("Get exchange rate for a currency code")
-    .parameter("currency", "str", description="Three-letter currency code")
+    .parameter("currency", str, description="Three-letter currency code")
     .handler(fetch_exchange_rate)
     .build()
 )

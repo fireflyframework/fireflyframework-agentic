@@ -48,15 +48,11 @@ class FileSystemTool(BaseTool):
             tags=["filesystem", "io"],
             guards=guards,
             parameters=[
-                ParameterSpec(
-                    name="action", type_annotation="str", description="One of: read, write, list", required=True
-                ),
-                ParameterSpec(
-                    name="path", type_annotation="str", description="Relative path within base_dir", required=True
-                ),
+                ParameterSpec(name="action", python_type=str, description="One of: read, write, list", required=True),
+                ParameterSpec(name="path", python_type=str, description="Relative path within base_dir", required=True),
                 ParameterSpec(
                     name="content",
-                    type_annotation="str | None",
+                    python_type=str | None,
                     description="Content to write (for 'write' action)",
                     required=False,
                     default=None,

@@ -39,7 +39,7 @@ from fireflyframework_agentic.workflows.context import (
     current_workflow,
 )
 from fireflyframework_agentic.workflows.journal import Journal
-from fireflyframework_agentic.workflows.runner import AgentRunner, DefaultAgentRunner
+from fireflyframework_agentic.workflows.runner import AgentRunner, FireflyAgentRunner
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,12 @@ class Workflow(Generic[OutputT]):
         calls return cached outputs and only new calls run live.
         """
         budget = budget or WorkflowBudget()
-        runner = runner or DefaultAgentRunner()
+        # FireflyAgentRunner is the default so workflow sub-agents inherit the full
+        # FireflyAgent stack (middleware, observability, guards, retry, global cost,
+        # fallback). For the lightweight bare-pydantic-ai path, pass
+        # ``runner=DefaultAgentRunner()`` explicitly. Constructing it is cheap and
+        # imports no agents code until a call actually runs (lazy import inside).
+        runner = runner or FireflyAgentRunner()
         journal = journal if journal is not None else Journal()
         run_id = run_id or f"{self.name}-{uuid.uuid4().hex[:8]}"
 

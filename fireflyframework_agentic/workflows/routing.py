@@ -33,7 +33,7 @@ from typing import Any, Protocol, runtime_checkable
 from fireflyframework_agentic.model_utils import get_model_identifier
 from fireflyframework_agentic.observability.cost_resolvers import CostContext, resolve_cost
 from fireflyframework_agentic.workflows.context import current_workflow
-from fireflyframework_agentic.workflows.runner import AgentCall, AgentRunner, DefaultAgentRunner
+from fireflyframework_agentic.workflows.runner import AgentCall, AgentRunner, FireflyAgentRunner
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,8 @@ class SmartRoutingRunner:
         fallback: when ``True`` (default), a transient error escalates to the next
             tier up the ladder.
         base_runner: the runner that executes the chosen model (default
-            :class:`DefaultAgentRunner`).
+            :class:`FireflyAgentRunner`; pass :class:`DefaultAgentRunner` for the
+            lightweight bare-pydantic-ai path).
     """
 
     def __init__(
@@ -147,7 +148,7 @@ class SmartRoutingRunner:
         self._tiers = list(tiers)
         self._strategy = strategy or ComplexityHeuristicStrategy()
         self._fallback = fallback
-        self._base = base_runner or DefaultAgentRunner()
+        self._base = base_runner or FireflyAgentRunner()
 
     async def run(
         self,
@@ -159,6 +160,7 @@ class SmartRoutingRunner:
         deps: Any = None,
         tools: Any | None = None,
         toolsets: Any | None = None,
+        using: Any = None,
     ) -> AgentCall:
         kw: dict[str, Any] = {
             "output_type": output_type,
@@ -167,6 +169,8 @@ class SmartRoutingRunner:
             "tools": tools,
             "toolsets": toolsets,
         }
+        if using is not None:  # forward only when set, for base runners without the param
+            kw["using"] = using
         if model is not None:  # an explicit per-call model always wins
             return await self._base.run(prompt, model=model, **kw)
 

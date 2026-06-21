@@ -12,47 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""SP-1 regression: nullable/generic tool parameter schema resolution.
+"""Typed tool-parameter handler: a real ``python_type`` reaches the schema intact.
 
-Previously any ``type_annotation`` not in ``_TYPE_MAP`` (including every
-``... | None`` and generic ``dict[...]`` form) fell back to ``str``, producing
-incorrect non-nullable JSON schemas for the LLM.
+``ParameterSpec.python_type`` is a real type object, so nullable/generic/nested
+forms flow straight into the generated handler's annotations — there is no lossy
+string resolution step. (Supersedes the old SP-1 ``_resolve_param_type`` test:
+``dict[str, Any] | None`` used to collapse to a non-nullable ``str``.)
 """
 
 from __future__ import annotations
 
 import typing
+from typing import Any
 
-from fireflyframework_agentic.tools.base import (
-    BaseTool,
-    ParameterSpec,
-    _build_typed_handler,
-    _resolve_param_type,
-)
-
-
-class TestResolveParamType:
-    def test_plain_scalar(self):
-        assert _resolve_param_type("str") is str
-        assert _resolve_param_type("int") is int
-        assert _resolve_param_type("bool") is bool
-
-    def test_optional_pipe_form(self):
-        assert _resolve_param_type("str | None") == (str | None)
-
-    def test_optional_bracket_form(self):
-        assert _resolve_param_type("Optional[int]") == (int | None)
-
-    def test_generic_subscript_stripped(self):
-        assert _resolve_param_type("list[str]") is list
-        assert _resolve_param_type("dict[str, Any]") is dict
-
-    def test_optional_generic(self):
-        # The reported bug: HttpTool.body / DatabaseTool.params were "dict | None".
-        assert _resolve_param_type("dict[str, Any] | None") == (dict | None)
-
-    def test_unknown_falls_back_to_any_not_str(self):
-        assert _resolve_param_type("SomeCustomType") is typing.Any
+from fireflyframework_agentic.tools.base import BaseTool, ParameterSpec, _build_typed_handler
 
 
 class _ParamTool(BaseTool):
@@ -60,29 +33,25 @@ class _ParamTool(BaseTool):
         return kwargs
 
 
-class TestBuildTypedHandlerNullable:
-    def test_optional_param_annotation_is_nullable(self):
-        tool = _ParamTool(
-            "demo",
-            parameters=[
-                ParameterSpec(
-                    name="body",
-                    type_annotation="dict[str, Any] | None",
-                    required=False,
-                    default=None,
-                ),
-            ],
-        )
-        handler = _build_typed_handler(tool)
-        annotated = handler.__annotations__["body"]
-        # Annotated[dict | None, Field(...)] — first arg is the resolved type.
-        assert typing.get_args(annotated)[0] == (dict | None)
+def test_optional_generic_is_preserved():
+    # The historical bug: HttpTool.body / DatabaseTool.params were dict | None.
+    tool = _ParamTool(
+        "demo",
+        parameters=[ParameterSpec(name="body", python_type=dict[str, Any] | None, required=False, default=None)],
+    )
+    handler = _build_typed_handler(tool)
+    annotated = handler.__annotations__["body"]
+    # Annotated[dict[str, Any] | None, Field(...)] — first arg is the real type.
+    assert typing.get_args(annotated)[0] == (dict[str, Any] | None)
 
-    def test_required_scalar_unchanged(self):
-        tool = _ParamTool(
-            "demo2",
-            parameters=[ParameterSpec(name="q", type_annotation="str", required=True)],
-        )
-        handler = _build_typed_handler(tool)
-        annotated = handler.__annotations__["q"]
-        assert typing.get_args(annotated)[0] is str
+
+def test_required_scalar_preserved():
+    tool = _ParamTool("demo2", parameters=[ParameterSpec(name="q", python_type=str, required=True)])
+    handler = _build_typed_handler(tool)
+    assert typing.get_args(handler.__annotations__["q"])[0] is str
+
+
+def test_no_parameters_returns_plain_execute():
+    tool = _ParamTool("demo3")
+    # No declared params and no ctx -> the plain execute, not a synthesized wrapper.
+    assert tool.pydantic_handler() == tool.execute
