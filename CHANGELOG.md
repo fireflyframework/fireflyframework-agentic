@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.06.6] - 2026-06-21
+
+Provider-agnosticism, cross-subsystem cohesion and correctness hardening, driven
+by a framework-wide audit (6 lenses, adversarially verified) and validated against
+a **live Anthropic model** end to end. All nine confirmed P0/P1 findings addressed.
+
+### Fixed
+
+- **Provider identity for `Model` objects** — `model_utils.extract_model_info` now
+  reads the provider from the model's own `_provider.name`, so `OpenAIResponsesModel`,
+  `GoogleModel`, `XaiModel`, `OpenRouterModel`, Azure/DeepSeek, etc. resolve to the
+  correct `provider:model` instead of dropping the provider (which corrupted cost
+  lookup, quota keys and usage grouping for any non-string model).
+- **Model-family detection** — match on the model *name* only, fixing
+  `ollama:…`/`groq:…` being misclassified as `meta` (the substring `llama` lived
+  inside `ollama`); added `grok`→`xai`; multi-vendor proxies fall back to `unknown`.
+- **Structured-output streaming no longer crashes** — `StreamHandle.text()` falls
+  back to stringified `stream_output()` snapshots and `stream_tokens()` raises a
+  clear `AgentError` when a run is non-text, instead of an opaque pydantic-ai
+  `UserError`.
+- **Middleware error lifecycle** — added an `on_error` hook to the middleware
+  protocol/chain and wired it into `run`/`run_sync`/`run_stream`. The
+  `CircuitBreakerMiddleware` can now actually open, and `ObservabilityMiddleware`
+  ends its OTel span on a failed run instead of leaking it.
+- **Reasoning runs through `FireflyAgent`** — a reasoning pattern's structured
+  calls now route through the source `FireflyAgent` (middleware, 429 retry, usage
+  recording) when available, instead of a bare ephemeral `pydantic_ai.Agent`; the
+  recorded model identifier is normalised (no more `str(Model)` reprs in cost).
+- **`cost_strict` is honoured on every path** — the workflow `price_call` and the
+  agent usage path no longer swallow `UnknownModelCostError`, so an unpriceable
+  model fails closed under `cost_strict` instead of being billed as `$0`.
+- **`retryable()` applies where it matters** — wraps the `_execute` hook, so
+  retries now cover the pydantic-ai handler path and `RunContext`-aware tools (not
+  just a direct `tool.execute()` call).
+
+### Changed
+
+- **`default_temperature` is wired and provider-safe** — now defaults to `None`
+  (use the provider's own default) and is merged into an agent's model settings
+  only when configured and the caller omits it; previously the knob was silently
+  ignored. This avoids forcing a temperature on models that reject one (e.g. OpenAI
+  `o1`/`o3`).
+- `config.budget_limit_usd` docstring corrected (it raises `BudgetExceededError`,
+  not "logs a warning") and documents that the gate enforces only over priceable
+  models.
+
+### Added
+
+- **Live end-to-end test suite** (`tests/integration/test_real_anthropic_e2e.py`,
+  `@pytest.mark.nightly`, skipped without a real `ANTHROPIC_API_KEY`) covering the
+  whole stack against a real Anthropic model: agent + tools, structured output,
+  streaming, multi-turn memory, a reasoning pattern, a pipeline, a Dynamic Workflow
+  (`FireflyAgentRunner` + `using=`) and cost tracking. Closes the previous gap where
+  every provider-facing behaviour was validated only against mocks; `tests/README.md`
+  corrected to match.
+
 ## [26.06.5] - 2026-06-21
 
 Framework alignment: the Dynamic Workflows engine and the tools system now run on

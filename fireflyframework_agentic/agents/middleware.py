@@ -31,6 +31,7 @@ Usage::
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
@@ -92,6 +93,16 @@ class AgentMiddleware(Protocol):
         """
         ...
 
+    async def on_error(self, context: MiddlewareContext, exc: BaseException) -> None:
+        """Called when the agent run raises (optional).
+
+        Use it to release resources acquired in ``before_run`` — end an
+        observability span, record a circuit-breaker failure. It must not
+        suppress the error: the original exception is always re-raised after
+        the error hooks run.
+        """
+        ...
+
 
 class MiddlewareChain:
     """Ordered chain of middleware that wraps an agent run."""
@@ -119,6 +130,19 @@ class MiddlewareChain:
             if hasattr(mw, "after_run"):
                 result = await mw.after_run(context, result)
         return result
+
+    async def run_error(self, context: MiddlewareContext, exc: BaseException) -> None:
+        """Execute all error hooks in reverse order (mirrors :meth:`run_after`).
+
+        Each middleware's ``on_error`` (or a legacy ``run_error``) is invoked so
+        it can release what ``before_run`` acquired. A hook that itself raises is
+        suppressed so cleanup never masks the original exception.
+        """
+        for mw in reversed(self._middlewares):
+            hook = getattr(mw, "on_error", None) or getattr(mw, "run_error", None)
+            if hook is not None:
+                with contextlib.suppress(Exception):
+                    await hook(context, exc)
 
     def __len__(self) -> int:
         return len(self._middlewares)

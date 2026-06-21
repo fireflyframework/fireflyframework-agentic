@@ -48,8 +48,11 @@ class FireflyAgenticConfig(BaseSettings):
     default_model: str = "openai:gpt-4o"
     """The default Pydantic AI model identifier used when no model is specified."""
 
-    default_temperature: float = 0.7
-    """Default sampling temperature for LLM calls."""
+    default_temperature: float | None = None
+    """Default sampling temperature applied to every agent's model settings when
+    the caller does not specify one. ``None`` (default) leaves it unset so each
+    provider uses its own default — important because some models (e.g. OpenAI
+    ``o1``/``o3`` reasoning models) reject an explicit temperature."""
 
     max_retries: int = 3
     """Default maximum number of retries for agent runs and tool calls."""
@@ -102,7 +105,13 @@ class FireflyAgenticConfig(BaseSettings):
     """Whether usage and cost tracking is active."""
 
     budget_limit_usd: float | None = None
-    """Hard budget limit in USD.  When exceeded, a warning is logged."""
+    """Hard budget limit in USD. When exceeded, a ``BudgetExceededError`` is
+    raised (it is a hard gate, not a warning).
+
+    The gate enforces only over models that can be **priced** — a model
+    ``genai-prices`` cannot price contributes $0 and is not counted. For
+    budget-critical deployments set ``cost_strict=True`` to fail closed
+    (``UnknownModelCostError``) on any unpriceable model instead."""
 
     cost_strict: bool = False
     """When true, :func:`resolve_cost` raises :class:`UnknownModelCostError`

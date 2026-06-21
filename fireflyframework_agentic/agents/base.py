@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any, Generic, cast
 
 from pydantic_ai import Agent
 from pydantic_ai import Tool as PydanticTool
+from pydantic_ai.exceptions import UserError
 from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
 
@@ -45,9 +46,10 @@ from fireflyframework_agentic.agents.context import AgentContext as _AgentContex
 from fireflyframework_agentic.agents.middleware import MiddlewareChain, MiddlewareContext
 from fireflyframework_agentic.agents.registry import agent_registry
 from fireflyframework_agentic.config import get_config
-from fireflyframework_agentic.exceptions import BudgetExceededError, RateLimitError
+from fireflyframework_agentic.exceptions import AgentError, BudgetExceededError, RateLimitError
 from fireflyframework_agentic.model_utils import get_model_identifier
 from fireflyframework_agentic.observability.budget import ScopeContext
+from fireflyframework_agentic.observability.cost_resolvers import UnknownModelCostError
 from fireflyframework_agentic.observability.quota import (
     AdaptiveBackoff,
     default_quota_manager,
@@ -166,9 +168,14 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
 
         self._middleware = MiddlewareChain(self._build_middleware(middleware, default_middleware=default_middleware))
 
-        resolved_settings: ModelSettings | None = (
-            cast("ModelSettings", model_settings) if isinstance(model_settings, dict) else model_settings
-        )
+        # Merge the framework default temperature when the caller omits one.
+        # ``ModelSettings`` is a TypedDict, so both forms are plain dicts at
+        # runtime. Caller-provided settings always win; the config default is
+        # only filled in when ``temperature`` is absent (and configured).
+        merged_settings: dict[str, Any] = dict(model_settings) if model_settings else {}
+        if cfg.default_temperature is not None and "temperature" not in merged_settings:
+            merged_settings["temperature"] = cfg.default_temperature
+        resolved_settings: ModelSettings | None = cast("ModelSettings", merged_settings) if merged_settings else None
 
         self._agent: Agent[AgentDepsT, OutputT] = Agent(
             resolved_model,
@@ -279,13 +286,18 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         t0 = time.monotonic()
         self._inject_memory(conversation_id, kwargs)
 
-        result = await self._run_with_rate_limit_retry(
-            mw_ctx.prompt, deps=deps, timeout=timeout, retry_override=mw_ctx.metadata.get("_retry_config"), **kwargs
-        )
-
-        elapsed_ms = (time.monotonic() - t0) * 1000
-        self._persist_memory(conversation_id, prompt, result)
-        self._record_usage(result, elapsed_ms, correlation_id=context.correlation_id)
+        try:
+            result = await self._run_with_rate_limit_retry(
+                mw_ctx.prompt, deps=deps, timeout=timeout, retry_override=mw_ctx.metadata.get("_retry_config"), **kwargs
+            )
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            self._persist_memory(conversation_id, prompt, result)
+            self._record_usage(result, elapsed_ms, correlation_id=context.correlation_id)
+        except Exception as exc:
+            # Let middleware release what before_run acquired (end the span,
+            # record the breaker failure), then re-raise the original error.
+            await self._middleware.run_error(mw_ctx, exc)
+            raise
 
         result = await self._middleware.run_after(mw_ctx, result)
         return result
@@ -325,14 +337,23 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
 
         t0 = time.monotonic()
         self._inject_memory(conversation_id, kwargs)
-        result = _run_sync_coro(
-            self._run_with_rate_limit_retry(
-                mw_ctx.prompt, deps=deps, timeout=timeout, retry_override=mw_ctx.metadata.get("_retry_config"), **kwargs
+        try:
+            result = _run_sync_coro(
+                self._run_with_rate_limit_retry(
+                    mw_ctx.prompt,
+                    deps=deps,
+                    timeout=timeout,
+                    retry_override=mw_ctx.metadata.get("_retry_config"),
+                    **kwargs,
+                )
             )
-        )
-        elapsed_ms = (time.monotonic() - t0) * 1000
-        self._persist_memory(conversation_id, prompt, result)
-        self._record_usage(result, elapsed_ms, correlation_id=context.correlation_id)
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            self._persist_memory(conversation_id, prompt, result)
+            self._record_usage(result, elapsed_ms, correlation_id=context.correlation_id)
+        except Exception as exc:
+            if len(self._middleware) > 0:
+                _run_sync_coro(self._middleware.run_error(mw_ctx, exc))
+            raise
 
         if len(self._middleware) > 0:
             result = _run_sync_coro(self._middleware.run_after(mw_ctx, result))
@@ -480,7 +501,9 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             if record is not None:
                 with contextlib.suppress(AttributeError, TypeError):
                     result._firefly_cost_usd = record.cost_usd
-        except BudgetExceededError:
+        except (BudgetExceededError, UnknownModelCostError):
+            # Budget breaches and (under cost_strict) unpriceable models must
+            # fail the run, not be swallowed into a debug log.
             raise
         except Exception:  # noqa: BLE001
             logger.debug("Failed to record usage for agent '%s'", self._name, exc_info=True)
@@ -762,6 +785,12 @@ class _UsageTrackingStreamContext:
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> Any:
         result = await self._stream_ctx.__aexit__(exc_type, exc_val, exc_tb)
         elapsed_ms = (time.monotonic() - self._t0) * 1000
+        # On a failed stream, fire error hooks (end span, record the breaker
+        # failure) and skip usage/after-hooks — there is no usable result.
+        if exc_type is not None:
+            if self._mw_ctx is not None:
+                await self._agent._middleware.run_error(self._mw_ctx, exc_val)
+            return result
         # After the stream closes, usage() is available on the stream handle.
         if self._stream is not None:
             self._agent._record_usage(
@@ -819,6 +848,11 @@ class _IncrementalStreamContext:
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> Any:
         result = await self._stream_ctx.__aexit__(exc_type, exc_val, exc_tb)
         elapsed_ms = (time.monotonic() - self._t0) * 1000
+        # On a failed stream, fire error hooks and skip usage/after-hooks.
+        if exc_type is not None:
+            if self._mw_ctx is not None:
+                await self._agent._middleware.run_error(self._mw_ctx, exc_val)
+            return result
         # After the stream closes, usage() is available on the stream handle.
         if self._stream is not None:
             self._agent._record_usage(
@@ -867,22 +901,32 @@ class _IncrementalStreamWrapper:
         """
         self._prev_text = ""
 
-        async for chunk in self._stream.stream_text(delta=True):
-            # The delta=True gives us incremental text
-            if chunk:
-                if debounce_ms > 0:
-                    # Batch rapid tokens with debouncing
-                    self._buffer.append(chunk)
-                    await asyncio.sleep(debounce_ms / 1000.0)
+        try:
+            async for chunk in self._stream.stream_text(delta=True):
+                # The delta=True gives us incremental text
+                if chunk:
+                    if debounce_ms > 0:
+                        # Batch rapid tokens with debouncing
+                        self._buffer.append(chunk)
+                        await asyncio.sleep(debounce_ms / 1000.0)
 
-                    if self._buffer:
-                        # Yield batched tokens
-                        batched = "".join(self._buffer)
-                        self._buffer.clear()
-                        yield batched
-                else:
-                    # Yield immediately without debouncing
-                    yield chunk
+                        if self._buffer:
+                            # Yield batched tokens
+                            batched = "".join(self._buffer)
+                            self._buffer.clear()
+                            yield batched
+                    else:
+                        # Yield immediately without debouncing
+                        yield chunk
+        except UserError as exc:
+            # pydantic-ai forbids stream_text() for a non-text (structured) run.
+            # Token-by-token streaming is meaningless for structured output, so
+            # fail fast with an actionable message instead of an opaque UserError.
+            raise AgentError(
+                "incremental token streaming (stream_tokens) requires a text output_type; "
+                "this agent produces structured output. Use streaming_mode='buffered' and "
+                "iterate get_output() / stream_output() instead."
+            ) from exc
 
         # Flush any remaining buffered tokens
         if self._buffer:

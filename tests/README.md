@@ -9,6 +9,16 @@ The test suite is organized by **purpose** (Recommenders-style categories) and s
 
 A test opts into nightly-only by adding `@pytest.mark.nightly` to its function or class. Anything without the marker stays in both runs.
 
+### Live model tests
+
+`tests/integration/test_real_anthropic_e2e.py` exercises the whole stack — agent + tools, structured output, streaming, multi-turn memory, a reasoning pattern, a pipeline, a Dynamic Workflow, and cost tracking — against a **real Anthropic model**. These tests are `@pytest.mark.nightly` and **skip** unless a real `ANTHROPIC_API_KEY` is present (the suite's conftest defaults the value to `"test"` for offline runs, which the live tests treat as "no key"). Run them with:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... uv run pytest tests/integration/test_real_anthropic_e2e.py -m nightly
+```
+
+The rest of the nightly bucket (benchmarks, integration tests) is offline and uses pydantic-ai's `TestModel`; only the live suite above hits a provider.
+
 ## Categories
 
 The taxonomy is adapted from [Recommenders](https://github.com/recommenders-team/recommenders). Definitions follow Recommenders' wording, narrowed to an agentic framework.

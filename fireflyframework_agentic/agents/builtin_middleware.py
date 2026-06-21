@@ -40,6 +40,7 @@ Usage::
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import logging
 import time
@@ -368,6 +369,19 @@ class ObservabilityMiddleware:
             span.end()
 
         return result
+
+    async def on_error(self, context: MiddlewareContext, exc: BaseException) -> None:
+        """End the span on a failed run so it does not leak; mark it errored.
+
+        Without this, a span opened in :meth:`before_run` would never be closed
+        when the model call raises (``after_run`` runs only on success).
+        """
+        span = context.metadata.pop("_otel_span", None)
+        if span is not None:
+            with contextlib.suppress(Exception):
+                span.record_exception(exc)
+                span.set_status(_trace.Status(_trace.StatusCode.ERROR, str(exc)))
+            span.end()
 
 
 # -- ExplainabilityMiddleware ------------------------------------------------

@@ -30,9 +30,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 from pydantic_ai import Agent as PydanticAgent
+from pydantic_ai.exceptions import UserError
 
 from fireflyframework_agentic.model_utils import get_model_identifier
-from fireflyframework_agentic.observability.cost_resolvers import CostContext, resolve_cost
+from fireflyframework_agentic.observability.cost_resolvers import CostContext, UnknownModelCostError, resolve_cost
 from fireflyframework_agentic.observability.usage import resolve_run_usage
 
 if TYPE_CHECKING:
@@ -60,6 +61,10 @@ def price_call(model: Any, usage: Any) -> float:
                 cache_read_tokens=int(getattr(usage, "cache_read_tokens", 0) or 0),
             )
         )
+    except UnknownModelCostError:
+        # Honour cost_strict on the workflow path: an unpriceable model must
+        # fail closed rather than be silently billed as $0.
+        raise
     except Exception:  # noqa: BLE001 - cost is best-effort; never break a run
         logger.debug("workflow cost resolution failed", exc_info=True)
         return 0.0
@@ -118,9 +123,19 @@ class StreamHandle:
         self.call: AgentCall | None = None
 
     async def text(self) -> AsyncIterator[str]:
-        """Yield text deltas as the model produces them."""
-        async for delta in self._response.stream_text(delta=True):
-            yield delta
+        """Yield text deltas as the model produces them.
+
+        For a text run this yields incremental token deltas. For a structured
+        (non-text) run, pydantic-ai's ``stream_text`` is unavailable, so this
+        falls back to emitting stringified partial-object snapshots from
+        ``stream_output`` (whole snapshots, not deltas) rather than crashing.
+        """
+        try:
+            async for delta in self._response.stream_text(delta=True):
+                yield delta
+        except UserError:
+            async for obj in self._response.stream_output():
+                yield str(obj)
 
     @property
     def output(self) -> Any:
