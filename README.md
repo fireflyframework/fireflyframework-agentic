@@ -87,11 +87,13 @@ You write your business logic; the framework provides the architecture.
 ## Key Principles
 
 1. **Protocol-driven contracts** — Every extension point is defined as a
-   `@runtime_checkable` `Protocol` or abstract base class. The framework ships twelve
-   protocols (`AgentLike`, `ToolProtocol`, `GuardProtocol`, `ReasoningPattern`,
-   `DelegationStrategy`, `StepExecutor`, `CompressionStrategy`, `MemoryStore`,
-   `ValidationRule`, `Chunker`, `EmbeddingProtocol`, `VectorStoreProtocol`) so you can
-   swap or extend any component without modifying framework internals.
+   `@runtime_checkable` `Protocol` or abstract base class. The framework ships **28**
+   such protocols across every layer — `AgentLike`, `ToolProtocol`, `GuardProtocol`,
+   `AgentMiddleware`, `DelegationStrategy`, `ReasoningPattern`, `ValidationRule`,
+   `StepExecutor`, `Checkpointer`, `Chunker`, `MemoryStore`, `EmbeddingProtocol`,
+   `VectorStoreProtocol`, plus the new workflow ports (`AgentRunner`, `JournalBackend`,
+   `ModelSelectionStrategy`) and more — so you can swap or extend any component without
+   modifying framework internals.
 
 2. **Convention over configuration** — Sensible defaults everywhere.
    `FireflyAgenticConfig` is a Pydantic Settings singleton that reads from environment
@@ -140,7 +142,7 @@ create your own components; the framework discovers them via duck typing.
   run — `LoggingMiddleware` is always wired and `ObservabilityMiddleware` is added when
   `observability_enabled`, with `PromptGuardMiddleware`, `OutputGuardMiddleware`,
   `CostGuardMiddleware`, `CacheMiddleware`, `PromptCacheMiddleware`,
-  `ExplainabilityMiddleware`, `ValidationMiddleware`, and `RetryMiddleware` available to
+  `ExplainabilityMiddleware`, `ValidationMiddleware`, `RetryMiddleware`, and `CircuitBreakerMiddleware` available to
   add. `FallbackModelWrapper` / `run_with_fallback` provide automatic model failover, and
   `ResultCache` / `CacheStatistics` back response caching. The `@firefly_agent`
   decorator defines an agent in one statement. Five template factories
@@ -230,6 +232,24 @@ create your own components; the framework discovers them via duck typing.
 
 <p align="center">
   <img src="assets/pipeline.svg" alt="A typed DAG pipeline: a seven-phase IDP flow with fan-out/fan-in, a human-in-the-loop pause, checkpointing and an audit log." width="100%">
+</p>
+
+- **Workflows** — `@workflow` / `@subworkflow` define a **code-defined, deterministic
+  orchestration DSL** over your agents — a complement to the declarative `pipeline` DAG,
+  both living in the Orchestration layer. Compose async primitives — `agent()`,
+  `parallel()`, `pipeline()`, `stream()`, `phase()`, `human()` (human-in-the-loop),
+  `map_agents()` and `log()` — inside a `WorkflowContext` that carries a `WorkflowBudget`
+  (concurrency, agent-count and token/cost ceilings), a `Journal` (`JournalBackend` /
+  `FileJournalBackend`) for **deterministic resume**, and a pluggable `AgentRunner`.
+  `FireflyAgentRunner` (the default) runs every sub-agent call through a full
+  `FireflyAgent` (middleware, guards, budget, model fallback); `DefaultAgentRunner` is the
+  lightweight path. `SmartRoutingRunner` selects the cheapest capable model via a
+  `ModelSelectionStrategy` (`ComplexityHeuristicStrategy`, `CostFloorStrategy`), and
+  verification helpers (`cascade`, `adversarial_verify`, `judge_panel`, `loop_until_dry`)
+  add refute-by-default quality gates. See [docs/workflows.md](docs/workflows.md).
+
+<p align="center">
+  <img src="assets/workflows.svg" alt="Dynamic Workflows: the @workflow DSL primitives (agent, parallel, pipeline, stream, phase, human, map_agents, log) over a WorkflowContext carrying runner, journal, budget and routing, with verification helpers." width="100%">
 </p>
 
 - **Observability** — `FireflyTracer` creates OpenTelemetry spans scoped to agents,
