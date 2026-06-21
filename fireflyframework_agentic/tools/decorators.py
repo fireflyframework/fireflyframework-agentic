@@ -149,13 +149,18 @@ def retryable(
     """
 
     def decorator(tool: BaseTool) -> BaseTool:
-        original_execute = tool.execute
+        # Wrap the subclass hook ``_execute`` (not the public ``execute``) so the
+        # retry sits *inside* ``_guarded_execute``: guards run once, then only the
+        # tool body is retried, and BOTH the plain ``execute`` and the ctx-aware
+        # ``execute_with_ctx`` paths (and the pydantic-ai handler built from them)
+        # are covered uniformly. ``kwargs`` may carry ``_ctx`` for takes_ctx tools.
+        original_execute = tool._execute
 
         @functools.wraps(original_execute)
         async def _retrying_execute(**kwargs: Any) -> Any:
             delay = backoff
             last_exc: Exception | None = None
-            # Attempt the original execute up to (max_retries + 1) times
+            # Attempt the original _execute up to (max_retries + 1) times
             # with exponential backoff (delay doubles after each failure).
             for attempt in range(max_retries + 1):
                 try:
@@ -174,7 +179,7 @@ def retryable(
                         delay *= 2  # exponential backoff
             raise last_exc  # type: ignore[misc]
 
-        tool.execute = _retrying_execute  # type: ignore[assignment]
+        tool._execute = _retrying_execute  # type: ignore[method-assign]
         return tool
 
     return decorator

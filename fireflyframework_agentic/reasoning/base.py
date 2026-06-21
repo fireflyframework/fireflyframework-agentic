@@ -45,6 +45,7 @@ from fireflyframework_agentic.exceptions import (
     ReasoningStepLimitError,
 )
 from fireflyframework_agentic.memory.manager import MemoryManager
+from fireflyframework_agentic.model_utils import get_model_identifier
 from fireflyframework_agentic.observability.budget import ScopeContext
 from fireflyframework_agentic.observability.usage import default_usage_tracker, resolve_run_usage
 from fireflyframework_agentic.prompts.template import Prompt, PromptTemplate
@@ -194,6 +195,16 @@ class AbstractReasoningPattern(ABC):
         _result_holder: list[Any] = []  # capture result for usage tracking
 
         async def _call() -> T:
+            # FireflyAgent-like wrapper: route the structured call THROUGH it
+            # (per-call output_type) so reasoning inherits the agent's middleware
+            # chain, 429 retry and usage recording. It records its own usage, so
+            # the bare-result path below (which double-records) is skipped.
+            if getattr(agent, "agent", None) is not None and hasattr(agent, "run"):
+                run_kwargs: dict[str, Any] = {"output_type": output_type}
+                if self._model is not None:
+                    run_kwargs["model"] = self._model
+                result = await agent.run(prompt, **run_kwargs)
+                return result.output if hasattr(result, "output") else result
             if resolved_model is not None:
                 ephemeral = PydanticAgent(resolved_model, output_type=output_type)
                 result = await ephemeral.run(prompt)
@@ -222,7 +233,7 @@ class AbstractReasoningPattern(ABC):
             self._record_structured_usage(
                 _result_holder[0],
                 elapsed_ms,
-                model=str(resolved_model) if resolved_model else "",
+                model=get_model_identifier(resolved_model),
                 correlation_id=correlation_id,
             )
 
