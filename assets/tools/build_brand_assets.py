@@ -81,11 +81,18 @@ def frame(w,h):
             f'<rect x="3" y="3" width="{w-6}" height="{h-6}" rx="18" fill="{WHITE}" stroke="{STROKE}" stroke-width="1.5"/>'
             f'<rect x="3" y="3" width="{w-6}" height="{h-6}" rx="18" fill="url(#amb)"/>')
 def mote(x,y,s=1.0,k="fly"): return f'<use href="#{k}" transform="translate({x},{y}) scale({s})"/>'
-def firefly_mark(x,y,s=1.0):
-    """The family firefly — a warm amber glow dot, used as the diagram header mark."""
-    return (f'<g transform="translate({x},{y}) scale({s})">'
-            f'<circle r="11" fill="#f6a821" opacity="0.16"/><circle r="6.5" fill="#ffc24a" opacity="0.30"/>'
-            f'<circle r="3.4" fill="url(#dot)"/><circle r="1.5" fill="#fff6e0"/></g>')
+def logo_w(h): return 469.0*h/138.0
+def firefly_logo(x, cy, h=24, fill=VIOLET2, anchor="left"):
+    """The real Firefly wordmark logo — the embedded 'firefly' word + the amber
+    glow-dot, recolored. Vertical centre at cy; x is the left edge (anchor='left')
+    or the horizontal centre (anchor='mid'). Used as the brand mark in diagrams."""
+    s=h/138.0; w=469.0*s
+    left=x-w/2 if anchor=="mid" else x
+    tx=left-4.0*s; ty=cy-105.45*s             # bbox y mid = (36.5+174.4)/2
+    dcx=tx+DOT_CX*s; dcy=ty+DOT_CY*s
+    return (f'<circle cx="{dcx:.2f}" cy="{dcy:.2f}" r="{27*s:.2f}" fill="#f6a821" opacity="0.18"/>'
+            f'<g transform="translate({tx:.2f},{ty:.2f}) scale({s:.4f})"><path d="{FIREFLY_PATH}" fill="{fill}"/></g>'
+            f'<circle cx="{dcx:.2f}" cy="{dcy:.2f}" r="{15*s:.2f}" fill="url(#dot)"/>')
 def badge(x,y,n,r=10.5):
     return (f'<circle cx="{x}" cy="{y}" r="{r}" fill="{DARK}"/>'
             f'<text x="{x}" y="{y+3.6}" text-anchor="middle" fill="#fff" font-size="{r}" font-weight="700" font-family="{SANS}">{n}</text>')
@@ -96,8 +103,8 @@ def icon(name,cx,cy,size,color=None):
     return (f'<g transform="translate({cx:.1f},{cy:.1f}) scale({s:.4f}) translate({-vw/2:.1f},{-vh/2:.1f})">'
             f'<path d="{ic["d"]}" fill="{color or ic["color"]}"/></g>')
 def title(w,t,sub=None,repo="fireflyframework-agentic"):
-    s=[firefly_mark(40,30,1.25),
-       f'<text x="64" y="45" font-size="21" font-weight="800" fill="{INK}" font-family="{SANS}" letter-spacing="0.2">{esc(t)}</text>',
+    s=[firefly_logo(26,31,25),
+       f'<text x="{26+logo_w(25)+13:.0f}" y="44" font-size="20" font-weight="800" fill="{INK}" font-family="{SANS}" letter-spacing="0.2">{esc(t)}</text>',
        f'<text x="{w-26}" y="42" text-anchor="end" font-size="12" font-weight="600" fill="#b29ddb" font-family="{MONO}">{repo}</text>',
        f'<line x1="26" y1="62" x2="{w-26}" y2="62" stroke="{VIOLET2}" stroke-width="1.4" opacity="0.42"/>']
     if sub: s.append(f'<text x="26" y="84" font-size="12.5" font-style="italic" fill="{MUTED}" font-family="{SANS}">{esc(sub)}</text>')
@@ -220,9 +227,9 @@ def architecture():
         b.append(f'<text x="{X+22}" y="{y+49:.1f}" fill="{BODY}" font-size="11" font-family="{MONO}">{esc(mods)}</text>')
     yb=by+5*(BH+GAP)+4
     b.append(f'<rect x="{X}" y="{yb:.1f}" width="{WD}" height="46" rx="12" fill="url(#bed)"/>')
-    b.append(firefly_mark(X+30,yb+23,1.25))
-    b.append(f'<text x="{X+56}" y="{yb+20:.1f}" font-size="13" font-weight="800" fill="#efe8ff" font-family="{MONO}">Pydantic AI engine</text>')
-    b.append(f'<text x="{X+56}" y="{yb+36:.1f}" font-size="10.5" fill="#c3b6e6">pydantic-ai · pydantic — the type-safe agent core every layer builds on</text>')
+    b.append(firefly_logo(X+20,yb+23,20,fill="#efe8ff")); etx=X+20+logo_w(20)+12
+    b.append(f'<text x="{etx:.0f}" y="{yb+20:.1f}" font-size="13" font-weight="800" fill="#efe8ff" font-family="{MONO}">Pydantic AI engine</text>')
+    b.append(f'<text x="{etx:.0f}" y="{yb+36:.1f}" font-size="10.5" fill="#c3b6e6">pydantic-ai · pydantic — the type-safe agent core every layer builds on</text>')
     b.append(f'<text x="{X+WD-14}" y="{yb+27:.1f}" text-anchor="end" font-size="10.5" fill="#a896d6" font-weight="600">Agent · Tool · RunContext</text>')
     b.append(f'<text x="{X+26}" y="{H-20}" font-size="9.5" font-style="italic" fill="{MUTED}">Embeddings (8 providers) · Vector Stores (6 backends) — a cross-cutting RAG capability wired into the Agent &amp; Orchestration layers.</text>')
     (ASSETS/"architecture.svg").write_text(svgdoc(W,H,"Firefly Agentic architecture: one front door over five layers on the Pydantic AI engine.","\n  ".join(b),amb=(720,72)))
@@ -362,9 +369,9 @@ def agent_anatomy():
     # the wrapped core
     coy=y0+2*(46+rgy)+8; cwd=420; cox=(W-cwd)/2
     b.append(f'<g filter="url(#sh)"><rect x="{cox}" y="{coy}" width="{cwd}" height="58" rx="11" fill="url(#bed)"/></g>')
-    b.append(firefly_mark(cox+30,coy+29,1.2))
-    b.append(f'<text x="{cox+54}" y="{coy+25}" font-size="13" font-weight="800" fill="#efe8ff" font-family="{MONO}">FireflyAgent  -&gt;  pydantic_ai.Agent</text>')
-    b.append(f'<text x="{cox+54}" y="{coy+43}" font-size="10.5" fill="#c3b6e6">the model call — tools, structured output, streaming</text>')
+    b.append(firefly_logo(cox+18,coy+29,22,fill="#efe8ff")); atx=cox+18+logo_w(22)+12
+    b.append(f'<text x="{atx:.0f}" y="{coy+25}" font-size="13" font-weight="800" fill="#efe8ff" font-family="{MONO}">FireflyAgent  -&gt;  pydantic_ai.Agent</text>')
+    b.append(f'<text x="{atx:.0f}" y="{coy+43}" font-size="10.5" fill="#c3b6e6">the model call — tools, structured output, streaming</text>')
     b.append(arrow(W/2,y0+2*(46+rgy)-4,W/2,coy-2,VIOLETD))
     # side modules
     sy=coy+86; sw=300; sg=20; sx0=(W-(3*sw+2*sg))/2
@@ -393,10 +400,9 @@ def ecosystem():
         b.append(f'<path d="M{cx+(x-cx)*0.16:.0f} {cy+(y-cy)*0.16:.0f} Q {(cx+x)/2:.0f} {(cy+y)/2-18:.0f} {x:.0f} {y:.0f}" fill="none" stroke="{VIOLET2}" stroke-width="1.2" stroke-dasharray="3 4" opacity="0.45"/>')
     b.append(f'<circle cx="{cx}" cy="{cy}" r="96" fill="url(#amb)"/>')
     b.append(f'<circle cx="{cx}" cy="{cy}" r="62" fill="{SUB}" stroke="{VIOLET2}" stroke-width="2"/>')
-    b.append(firefly_mark(cx,cy-22,1.2))
-    b.append(f'<text x="{cx}" y="{cy+4}" text-anchor="middle" font-size="13" font-weight="800" fill="{MID}">Firefly</text>')
-    b.append(f'<text x="{cx}" y="{cy+21}" text-anchor="middle" font-size="13" font-weight="800" fill="{MID}">Framework</text>')
-    b.append(f'<text x="{cx}" y="{cy+39}" text-anchor="middle" font-size="9" font-style="italic" fill="{MUTED}">one model · many runtimes</text>')
+    b.append(firefly_logo(cx,cy-18,28,fill=MID,anchor="mid"))
+    b.append(f'<text x="{cx}" y="{cy+18}" text-anchor="middle" font-size="11" font-weight="800" fill="{MID}" letter-spacing="2.5">FRAMEWORK</text>')
+    b.append(f'<text x="{cx}" y="{cy+35}" text-anchor="middle" font-size="9" font-style="italic" fill="{MUTED}">one model · many runtimes</text>')
     for name,meta,ic,me,x,y,w,h in nodes:
         fill="url(#hdr)" if me else WHITE; tcol="#fff" if me else INK; scol="#ede7fb" if me else MUTED
         b.append(f'<g filter="url(#sh)"><rect x="{x-w/2:.1f}" y="{y-h/2:.1f}" width="{w:.1f}" height="{h}" rx="13" fill="{fill}" stroke="{VIOLET2}" stroke-width="{2.6 if me else 1.6}"/></g>')
