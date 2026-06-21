@@ -85,6 +85,31 @@ def _run_sync_coro(coro: Any) -> Any:
         return pool.submit(asyncio.run, coro).result()
 
 
+def _suggested_retry_delay(exc: BaseException) -> float | None:
+    """Best-effort suggested retry delay (seconds) from a rate-limit error.
+
+    Prefers a provider's **structured** hint — Gemini ``ResourceExhausted``
+    carries ``retry_delay`` (a Duration with ``.seconds``); some SDKs expose a
+    numeric ``retry_after`` — then the OpenAI/Anthropic-shaped textual
+    ``"retry … Ns"`` body. Returns ``None`` when no hint is present (the caller
+    then uses exponential backoff).
+    """
+    for attr in ("retry_delay", "retry_after"):
+        val = getattr(exc, attr, None)
+        if val is None:
+            continue
+        seconds = getattr(val, "seconds", None)  # google Duration proto
+        if seconds is not None:
+            try:
+                return float(seconds)
+            except (TypeError, ValueError):
+                pass
+        if isinstance(val, int | float):
+            return float(val)
+    match = re.search(r"retry.*?(\d+\.?\d*)\s*s", str(exc).lower())
+    return float(match.group(1)) if match else None
+
+
 class FireflyAgent(Generic[AgentDepsT, OutputT]):
     """A managed agent that wraps a Pydantic AI :class:`Agent`.
 
@@ -506,7 +531,9 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             # fail the run, not be swallowed into a debug log.
             raise
         except Exception:  # noqa: BLE001
-            logger.debug("Failed to record usage for agent '%s'", self._name, exc_info=True)
+            # Usage recording is a should-work path; surface failures at warning
+            # so a silently-broken cost/budget pipeline is visible to operators.
+            logger.warning("Failed to record usage for agent '%s'", self._name, exc_info=True)
 
     # -- Reasoning integration ------------------------------------------------
 
@@ -640,13 +667,15 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         base_delay = override.get("base_delay", cfg.rate_limit_base_delay)
 
         # Reuse the QuotaManager's shared backoff only when there's no per-agent
-        # override; an override needs its own backoff so its delays take effect.
-        if not override and default_quota_manager is not None and default_quota_manager._backoff is not None:
-            backoff = default_quota_manager._backoff
+        # override; an override needs its own backoff so its declared delays AND
+        # backoff multiplier take effect.
+        if not override and default_quota_manager is not None and default_quota_manager.backoff is not None:
+            backoff = default_quota_manager.backoff
         else:
             backoff = AdaptiveBackoff(
                 base_delay=base_delay,
                 max_delay=max_delay,
+                multiplier=override.get("backoff_multiplier", 2.0),
             )
 
         key = self.model_identifier
@@ -668,10 +697,13 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
                 backoff.record_failure(key)
                 delay = backoff.get_delay(key)
 
-                # Try to parse a suggested delay from the error body
-                retry_match = re.search(r"retry.*?(\d+\.?\d*)\s*s", str(exc).lower())
-                if retry_match:
-                    delay = min(float(retry_match.group(1)), max_delay)
+                # Prefer a provider's structured retry hint (Gemini
+                # ResourceExhausted carries ``retry_delay``; some SDKs expose
+                # ``retry_after``); fall back to the OpenAI/Anthropic-shaped
+                # textual "retry … Ns" body, then to the exponential backoff.
+                hint = _suggested_retry_delay(exc)
+                if hint is not None:
+                    delay = min(hint, max_delay)
 
                 logger.warning(
                     "Rate limit hit on '%s' (attempt %d/%d), retrying in %.1fs…",

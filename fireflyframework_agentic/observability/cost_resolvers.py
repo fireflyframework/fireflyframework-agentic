@@ -146,6 +146,15 @@ def genai_prices_cost(ctx: CostContext) -> float | None:
     try:
         result = calc_price(usage, model_ref, provider_id=provider)
     except LookupError:
+        # Bedrock ids carry a vendor prefix (e.g. "anthropic.claude-3-5-sonnet-latest")
+        # and region/inference-profile variants genai-prices may not key on. Retry
+        # on the bare model name with the vendor as the provider before giving up.
+        if provider == "bedrock" and "." in model_ref:
+            vendor, base = model_ref.split(".", 1)
+            try:
+                return float(calc_price(usage, base, provider_id=vendor).total_price)
+            except LookupError:
+                pass
         _warn_unknown_model(ctx.model)
         return None
     except Exception:  # noqa: BLE001

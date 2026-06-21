@@ -152,4 +152,6 @@ async def run_with_fallback(
     agent.agent.model = original_model
     agent.model_identifier = original_identifier
     fallback.reset()
-    raise last_error  # type: ignore[misc]
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("run_with_fallback exhausted all models without capturing an error")

@@ -349,8 +349,13 @@ class TestPromptCacheMiddleware:
         await middleware.before_run(context)
         assert context.kwargs.get("model_settings", {}) == {}
 
-    async def test_before_hook_bedrock_anthropic_routes_to_anthropic_caching(self):
-        """Bedrock-hosted Claude should route to Anthropic caching."""
+    async def test_before_hook_bedrock_anthropic_skips_caching_visibly(self):
+        """Claude via Bedrock must NOT silently apply Anthropic cache settings.
+
+        Those settings are honoured only by the direct AnthropicModel; on
+        BedrockConverseModel they are a no-op, so the middleware skips (with a
+        warning) rather than writing dead settings.
+        """
         middleware = PromptCacheMiddleware(
             cache_system_prompt=True,
             cache_last_message=False,
@@ -362,9 +367,8 @@ class TestPromptCacheMiddleware:
 
         await middleware.before_run(context)
 
-        settings = context.kwargs["model_settings"]
-        assert settings["anthropic_cache_instructions"] == "5m"
-        assert "anthropic_cache_messages" not in settings
+        # No Anthropic cache settings were applied (the no-op path is skipped).
+        assert "model_settings" not in context.kwargs
 
     async def test_before_hook_azure_openai_routes_to_openai_caching(self):
         """Azure-hosted GPT should route to OpenAI caching."""
