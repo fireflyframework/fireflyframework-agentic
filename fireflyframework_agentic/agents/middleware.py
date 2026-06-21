@@ -101,7 +101,6 @@ class AgentMiddleware(Protocol):
         suppress the error: the original exception is always re-raised after
         the error hooks run.
         """
-        ...
 
 
 class MiddlewareChain:
