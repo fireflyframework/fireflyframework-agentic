@@ -29,10 +29,10 @@ Usage::
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
-import threading
 import time
 from typing import Any
 
@@ -54,6 +54,10 @@ class _CacheEntry:
 class CachedTool:
     """Caching decorator for any :class:`ToolProtocol` implementation.
 
+    Concurrent identical misses are **single-flighted**: the first caller runs
+    the underlying tool while the others await the same result, so an expensive
+    or rate-limited tool is not stampeded. Intended for use on one event loop.
+
     Parameters:
         tool: The underlying tool to wrap.
         ttl_seconds: Time-to-live in seconds for cached entries.
@@ -73,7 +77,8 @@ class CachedTool:
         self._ttl = ttl_seconds
         self._max_entries = max_entries
         self._cache: dict[str, _CacheEntry] = {}
-        self._lock = threading.Lock()
+        self._lock = asyncio.Lock()
+        self._inflight: dict[str, asyncio.Future[Any]] = {}
 
     # -- ToolProtocol conformance --------------------------------------------
 
@@ -86,44 +91,63 @@ class CachedTool:
         return self._tool.description
 
     async def execute(self, **kwargs: Any) -> Any:
-        """Execute the tool, returning a cached result when available."""
+        """Execute the tool, returning a cached result when available.
+
+        A fresh entry is served from cache. On a miss, the first caller for a
+        key computes the result while concurrent callers await the same future
+        (single-flight), so the underlying tool runs once per key.
+        """
         if self._ttl <= 0:
             return await self._tool.execute(**kwargs)
 
         key = self._make_key(kwargs)
-        now = time.monotonic()
 
-        with self._lock:
+        async with self._lock:
             entry = self._cache.get(key)
-            if entry is not None and entry.expires_at > now:
+            if entry is not None and entry.expires_at > time.monotonic():
                 logger.debug("Cache hit for tool '%s' (key=%s)", self.name, key[:12])
                 return entry.value
+            inflight = self._inflight.get(key)
+            is_leader = inflight is None
+            if is_leader:
+                inflight = asyncio.get_running_loop().create_future()
+                self._inflight[key] = inflight
 
-        result = await self._tool.execute(**kwargs)
-        with self._lock:
+        if not is_leader:
+            return await inflight  # a concurrent miss is already computing this key
+
+        try:
+            result = await self._tool.execute(**kwargs)
+        except BaseException as exc:
+            async with self._lock:
+                self._inflight.pop(key, None)
+            if not inflight.done():
+                inflight.set_exception(exc)
+            raise
+        async with self._lock:
             self._put(key, result, time.monotonic())
+            self._inflight.pop(key, None)
+        if not inflight.done():
+            inflight.set_result(result)
         return result
 
     # -- Cache management ----------------------------------------------------
+    # (single-event-loop usage; individual dict ops are atomic under the GIL)
 
     def invalidate(self, **kwargs: Any) -> bool:
         """Remove a specific entry from the cache.  Returns *True* if found."""
-        key = self._make_key(kwargs)
-        with self._lock:
-            return self._cache.pop(key, None) is not None
+        return self._cache.pop(self._make_key(kwargs), None) is not None
 
     def clear(self) -> int:
         """Drop all cached entries.  Returns the number evicted."""
-        with self._lock:
-            count = len(self._cache)
-            self._cache.clear()
-            return count
+        count = len(self._cache)
+        self._cache.clear()
+        return count
 
     @property
     def cache_size(self) -> int:
         """Number of entries currently in the cache (including expired)."""
-        with self._lock:
-            return len(self._cache)
+        return len(self._cache)
 
     # -- Internals -----------------------------------------------------------
 

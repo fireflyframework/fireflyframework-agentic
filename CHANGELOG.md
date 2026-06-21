@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.06.7] - 2026-06-21
+
+The deferred P2/P3 wave from the framework audit — provider robustness, durability,
+thread-safety and observability of failures.
+
+### Fixed
+
+- **Cache stampede** — `CachedTool` now **single-flights** concurrent identical
+  misses (the first caller computes; the rest await the same result), and uses an
+  `asyncio.Lock`, so an expensive/rate-limited tool runs once per key.
+- **Atomic durable writes** — `FileCheckpointer` (pipeline) and `FileJournalBackend`
+  (workflows) write to a temp file and `os.replace`, so a crash mid-write can't leave
+  a truncated checkpoint / resume journal.
+- **Delegation thread-safety** — `RoundRobinStrategy` (cursor) and
+  `ContentBasedStrategy` (lazy router build) are guarded by locks; concurrent routing
+  no longer races the cursor or constructs duplicate routers.
+- **Prompt-cache no longer silently no-ops on Bedrock/OpenRouter** — Claude via those
+  providers logs a warning and skips (the Anthropic cache settings only apply to the
+  direct `AnthropicModel`) instead of writing dead settings.
+- **Bedrock cost resolution** — on a genai-prices miss for a `bedrock:vendor.model`
+  id, retry on the bare model name with the vendor as the provider before giving up.
+- **Provider retry hints** — the rate-limit backoff prefers a provider's *structured*
+  retry hint (e.g. Gemini `ResourceExhausted.retry_delay`) before the
+  OpenAI/Anthropic-shaped textual body.
+- **`RetryMiddleware.backoff_multiplier`** is now honoured (it was dead config — the
+  override path never passed it to `AdaptiveBackoff`).
+- **Gemini-safe tool schema** — the built-in `DatabaseTool` `params` argument is now a
+  JSON-object *string* instead of a free-form `dict[str, Any]` (whose open object
+  schema Gemini's `FunctionDeclaration` rejects); a dict is still accepted from
+  non-LLM callers.
+- **Error context preserved** — `FallbackComposer` and `run_with_fallback` keep the
+  original traceback (`raise … from …`) instead of discarding it on exhaustion.
+- Usage-recording failures now log at **warning** (not debug), so a silently-broken
+  cost/budget pipeline is visible.
+
+### Changed
+
+- `QuotaManager` exposes a public `backoff` property; framework internals no longer
+  reach into the private `_backoff`.
+
+### Deferred (documented)
+
+- COST-001/COST-002 (provider-aware reasoning-token pricing + `provider_payload`
+  plumbing) remain open: a naive caller-side reasoning-token add would double-count
+  OpenAI (whose `output_tokens` already includes them), so the correct fix needs
+  provider-aware normalisation and is tracked separately.
+
 ## [26.06.6] - 2026-06-21
 
 Provider-agnosticism, cross-subsystem cohesion and correctness hardening, driven

@@ -21,6 +21,7 @@ SQL or NoSQL databases.  Users must subclass and implement
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from abc import abstractmethod
@@ -60,9 +61,12 @@ class DatabaseTool(BaseTool):
             parameters=[
                 ParameterSpec(name="query", python_type=str, description="SQL or query string", required=True),
                 ParameterSpec(
+                    # A JSON object *string*, not a free-form ``dict[str, Any]``:
+                    # an open object schema (additionalProperties, no properties)
+                    # is rejected by Gemini's stricter FunctionDeclaration schema.
                     name="params",
-                    python_type=dict[str, Any] | None,
-                    description="Query parameters",
+                    python_type=str | None,
+                    description="Query parameters as a JSON object string, e.g. '{\"id\": 1}'.",
                     required=False,
                     default=None,
                 ),
@@ -73,7 +77,17 @@ class DatabaseTool(BaseTool):
 
     async def _execute(self, **kwargs: Any) -> Any:
         query: str = kwargs["query"]
-        params: dict[str, Any] | None = kwargs.get("params")
+        # Accept a JSON object string (the LLM-facing schema) or a dict passed
+        # directly by non-LLM callers.
+        raw_params = kwargs.get("params")
+        params: dict[str, Any] | None
+        if raw_params is None or isinstance(raw_params, dict):
+            params = raw_params
+        else:
+            try:
+                params = json.loads(raw_params)
+            except (TypeError, ValueError) as exc:
+                raise ToolError(f"DatabaseTool 'params' must be a JSON object string: {exc}") from exc
 
         # SQL injection detection
         if self._enable_injection_detection:

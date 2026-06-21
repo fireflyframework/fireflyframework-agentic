@@ -68,7 +68,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from fireflyframework_agentic.model_utils import detect_model_family
+from fireflyframework_agentic.model_utils import detect_model_family, extract_model_info
 from fireflyframework_agentic.observability.usage import resolve_run_usage
 
 logger = logging.getLogger(__name__)
@@ -234,7 +234,19 @@ class PromptCacheMiddleware:
             return
 
         family = detect_model_family(model)
-        if family == "anthropic":
+        provider, _ = extract_model_info(model)
+        if family == "anthropic" and provider in ("bedrock", "openrouter"):
+            # The Anthropic cache settings are honoured only by the direct
+            # AnthropicModel; Claude via Bedrock/OpenRouter uses a different
+            # mechanism (CachePoint blocks / provider keys). Make the no-op
+            # visible instead of silently doing nothing.
+            logger.warning(
+                "PromptCacheMiddleware: prompt caching for Claude via '%s' is not yet wired; "
+                "skipping (no caching applied for model '%s').",
+                provider,
+                model,
+            )
+        elif family == "anthropic":
             await self._configure_anthropic_caching(context)
         elif family == "openai":
             await self._configure_openai_caching(context)

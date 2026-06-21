@@ -32,6 +32,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -146,4 +147,8 @@ class FileJournalBackend:
 
     def save(self, run_key: str, entries: dict[int, Any]) -> None:
         payload = {str(k): v for k, v in entries.items()}
-        self._path(run_key).write_text(json.dumps(payload, default=_jsonable))
+        path = self._path(run_key)
+        # Atomic write so a crash mid-flush can't corrupt the resume journal.
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload, default=_jsonable))
+        os.replace(tmp, path)
