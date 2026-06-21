@@ -33,8 +33,8 @@ class _AddTool(BaseTool):
             "add",
             description="Add two integers",
             parameters=[
-                ParameterSpec(name="x", type_annotation="int"),
-                ParameterSpec(name="y", type_annotation="int"),
+                ParameterSpec(name="x", python_type=int),
+                ParameterSpec(name="y", python_type=int),
             ],
         )
         self.called = False

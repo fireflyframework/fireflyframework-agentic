@@ -15,24 +15,29 @@
 """Pluggable agent runner for the workflow ``agent()`` primitive.
 
 The runner is the single seam between the orchestration DSL and the LLM. Tests
-inject a deterministic fake; production uses :class:`DefaultAgentRunner`, which
-runs each call as an ephemeral ``pydantic_ai.Agent`` (mirroring the structured
-run path in :mod:`fireflyframework_agentic.reasoning.base`).
+inject a deterministic fake. The default is :class:`FireflyAgentRunner`, which
+runs each call through a :class:`FireflyAgent` so sub-agents inherit the full
+framework stack; :class:`DefaultAgentRunner` is the lightweight alternative that
+runs each call as a bare ``pydantic_ai.Agent``.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 from pydantic_ai import Agent as PydanticAgent
 
 from fireflyframework_agentic.model_utils import get_model_identifier
 from fireflyframework_agentic.observability.cost_resolvers import CostContext, resolve_cost
 from fireflyframework_agentic.observability.usage import resolve_run_usage
+
+if TYPE_CHECKING:
+    from fireflyframework_agentic.agents.base import FireflyAgent
+    from fireflyframework_agentic.agents.registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +96,15 @@ class AgentRunner(Protocol):
         deps: Any = None,
         tools: Any | None = None,
         toolsets: Any | None = None,
+        using: Any = None,
     ) -> AgentCall:
-        """Execute one workflow agent call and return its result."""
+        """Execute one workflow agent call and return its result.
+
+        ``using`` lets a call target a specific configured agent (honoured by
+        :class:`FireflyAgentRunner`); runners that do not understand it ignore
+        or reject it. The DSL only forwards ``using`` when it is not ``None``,
+        so a runner without the parameter is never passed it.
+        """
         raise NotImplementedError
 
 
@@ -136,13 +148,19 @@ class StreamingAgentRunner(Protocol):
         deps: Any = None,
         tools: Any | None = None,
         toolsets: Any | None = None,
+        using: Any = None,
     ) -> AbstractAsyncContextManager[StreamHandle]:
         """Open a streaming run; the context yields a :class:`StreamHandle`."""
         ...
 
 
 class DefaultAgentRunner:
-    """Runs each call as a fresh ``pydantic_ai.Agent``.
+    """Runs each call as a fresh bare ``pydantic_ai.Agent`` (lightweight path).
+
+    The framework default is :class:`FireflyAgentRunner`; choose this one
+    explicitly (``runner=DefaultAgentRunner()``) when you want the minimal,
+    zero-coupling path with none of the FireflyAgent middleware/observability —
+    e.g. as a fast ``base_runner`` for routing, or in tests.
 
     Each call gets an isolated agent with no shared message history (mirroring
     the context isolation of Claude's workflow sub-agents); context is passed
@@ -163,13 +181,23 @@ class DefaultAgentRunner:
         deps: Any = None,
         tools: Any | None = None,
         toolsets: Any | None = None,
+        using: Any = None,
     ) -> AgentCall:
+        self._reject_using(using)
         resolved = self._resolve(model)
         ephemeral = PydanticAgent(resolved, **self._agent_kwargs(output_type, instructions, tools, toolsets, deps))
         result = await ephemeral.run(prompt, deps=deps)
         usage = resolve_run_usage(result)
         tokens = int(getattr(usage, "total_tokens", 0) or 0) if usage is not None else 0
         return AgentCall(output=result.output, tokens=tokens, cost_usd=price_call(resolved, usage), raw=result)
+
+    @staticmethod
+    def _reject_using(using: Any) -> None:
+        if using is not None:
+            raise ValueError(
+                "agent(..., using=) targets a configured FireflyAgent, but the active runner is "
+                "DefaultAgentRunner. Run the workflow with runner=FireflyAgentRunner(...) to honour using=."
+            )
 
     def _resolve(self, model: Any | None) -> Any:
         resolved = model or self._default_model
@@ -206,10 +234,205 @@ class DefaultAgentRunner:
         deps: Any = None,
         tools: Any | None = None,
         toolsets: Any | None = None,
+        using: Any = None,
     ) -> AsyncIterator[StreamHandle]:
+        self._reject_using(using)
         resolved = self._resolve(model)
         ephemeral = PydanticAgent(resolved, **self._agent_kwargs(output_type, instructions, tools, toolsets, deps))
         async with ephemeral.run_stream(prompt, deps=deps) as response:
             handle = StreamHandle(response, resolved)
+            yield handle
+            await handle.finalize()
+
+
+class FireflyAgentRunner:
+    """Runs each workflow call through a :class:`FireflyAgent`.
+
+    This is the runner that aligns Dynamic Workflows with the rest of the
+    framework, and is **the default**: every sub-agent inherits the full
+    :class:`FireflyAgent` stack — the middleware chain (logging, prompt/output
+    guards, cost guard, caching, observability, explainability, validation,
+    retry), the 429 rate-limit retry loop, the global usage tracker / budget
+    gate, and model fallback — instead of a bare ``pydantic_ai.Agent``. For the
+    lightweight, zero-coupling path, pass ``runner=DefaultAgentRunner()``
+    explicitly.
+
+    The ``agent`` source decides how the per-call agent is obtained:
+
+    * ``None`` (default) — build a fresh, **isolated** ephemeral ``FireflyAgent``
+      per call from ``default_model`` (or the call's ``model=``). Mirrors
+      ``DefaultAgentRunner``'s no-shared-history isolation, but with middleware.
+    * a :class:`FireflyAgent` instance — **reuse** it for every call (fastest;
+      keeps its configured model/tools/middleware). Per-call ``output_type`` /
+      ``instructions`` / ``toolsets`` / ``model`` are applied as run overrides.
+    * a registry name (``str``) — resolve it from the agent registry per call.
+    * a zero-arg factory — call it to build a fresh agent per call.
+
+    A workflow can also target a specific agent for one call via
+    ``agent(prompt, using=<FireflyAgent | name>)`` (multi-model sub-agents and
+    per-task cost optimisation) — ``using`` overrides this runner's source for
+    that call only.
+
+    Isolation & cost: ephemeral/factory agents are built with
+    ``auto_register=False`` and ``memory=None`` and never receive a
+    ``conversation_id``, so they share no history and never touch the registry.
+    Cost/tokens are read from the call's own ``RunUsage`` (per-run
+    :class:`WorkflowBudget` ledger); ``FireflyAgent`` records the same call once
+    to the *global* usage tracker — two disjoint ledgers, each written once.
+
+    .. note::
+       Per-call ``tools=`` cannot be applied to a *reused* configured agent
+       (pydantic-ai has no per-call ``tools`` parameter) — it is only honoured
+       on the ephemeral (``None``) path. Configure tools on the agent or pass
+       ``toolsets=`` instead. A reused agent that carries a stateful
+       ``ResultCache`` / memory intentionally opts into shared state across
+       calls; use the ephemeral or factory form for strict per-call isolation.
+    """
+
+    def __init__(
+        self,
+        agent: FireflyAgent | Callable[[], FireflyAgent] | str | None = None,
+        *,
+        registry: AgentRegistry | None = None,
+        default_model: Any | None = None,
+    ) -> None:
+        self._source = agent
+        self._registry = registry
+        self._default_model = default_model
+
+    def _get_registry(self) -> AgentRegistry:
+        if self._registry is not None:
+            return self._registry
+        # Lazy: importing agents at module load would drag the whole agents
+        # package into every workflows import; only FireflyAgentRunner needs it.
+        from fireflyframework_agentic.agents.registry import agent_registry
+
+        return agent_registry
+
+    def _prepare(
+        self,
+        *,
+        model: Any,
+        output_type: Any,
+        instructions: Any,
+        tools: Any,
+        toolsets: Any,
+        deps: Any,
+        using: Any,
+    ) -> tuple[FireflyAgent, dict[str, Any], Any]:
+        """Resolve the target agent and the per-call ``run`` overrides.
+
+        Returns ``(agent, run_kwargs, resolved_model)``. ``run_kwargs`` is empty
+        for the ephemeral path (everything is baked into construction).
+        """
+        # Lazy (see _get_registry): keep the workflows package import agents-free.
+        from fireflyframework_agentic.agents.base import FireflyAgent
+
+        source = using if using is not None else self._source
+        resolved_model = model if model is not None else self._default_model
+
+        if source is None:
+            # Ephemeral, fully isolated agent — bake every per-call option in.
+            if resolved_model is None:
+                raise ValueError(
+                    "FireflyAgentRunner requires a model on the ephemeral path; pass model= to agent(), "
+                    "default_model= to the runner, or a configured agent / using=."
+                )
+            ephemeral = FireflyAgent(
+                "workflow-subagent",
+                model=resolved_model,
+                output_type=output_type if output_type is not None else str,
+                instructions=instructions if instructions is not None else (),
+                tools=list(tools) if tools else (),
+                toolsets=list(toolsets) if toolsets else (),
+                deps_type=type(deps) if deps is not None else type(None),
+                auto_register=False,
+                memory=None,
+            )
+            return ephemeral, {}, resolved_model
+
+        fa: FireflyAgent
+        if isinstance(source, str):
+            fa = self._get_registry().get(source)
+        elif isinstance(source, FireflyAgent):
+            fa = source
+        elif callable(source):
+            fa = cast("FireflyAgent", source())
+        else:
+            raise TypeError(
+                "FireflyAgentRunner agent / using must be a FireflyAgent, a registry name, a zero-arg "
+                f"factory, or None; got {type(source).__name__}"
+            )
+
+        if tools:
+            raise ValueError(
+                "per-call tools= cannot be applied to a configured FireflyAgent (pydantic-ai has no "
+                "per-call tools parameter); configure tools on the agent or pass toolsets= instead."
+            )
+        run_kwargs: dict[str, Any] = {}
+        if output_type is not None:
+            run_kwargs["output_type"] = output_type
+        if instructions is not None:
+            run_kwargs["instructions"] = instructions
+        if toolsets:
+            run_kwargs["toolsets"] = list(toolsets)
+        if model is not None:
+            run_kwargs["model"] = model
+        return fa, run_kwargs, (model if model is not None else fa.model_identifier)
+
+    async def run(
+        self,
+        prompt: Any,
+        *,
+        model: Any | None = None,
+        output_type: Any | None = None,
+        instructions: str | None = None,
+        deps: Any = None,
+        tools: Any | None = None,
+        toolsets: Any | None = None,
+        using: Any = None,
+    ) -> AgentCall:
+        fa, run_kwargs, resolved_model = self._prepare(
+            model=model,
+            output_type=output_type,
+            instructions=instructions,
+            tools=tools,
+            toolsets=toolsets,
+            deps=deps,
+            using=using,
+        )
+        result = await fa.run(prompt, deps=deps, **run_kwargs)
+        usage = resolve_run_usage(result)
+        tokens = int(getattr(usage, "total_tokens", 0) or 0) if usage is not None else 0
+        return AgentCall(output=result.output, tokens=tokens, cost_usd=price_call(resolved_model, usage), raw=result)
+
+    @asynccontextmanager
+    async def run_stream(
+        self,
+        prompt: Any,
+        *,
+        model: Any | None = None,
+        output_type: Any | None = None,
+        instructions: str | None = None,
+        deps: Any = None,
+        tools: Any | None = None,
+        toolsets: Any | None = None,
+        using: Any = None,
+    ) -> AsyncIterator[StreamHandle]:
+        fa, run_kwargs, resolved_model = self._prepare(
+            model=model,
+            output_type=output_type,
+            instructions=instructions,
+            tools=tools,
+            toolsets=toolsets,
+            deps=deps,
+            using=using,
+        )
+        # FireflyAgent.run_stream is an async factory returning a context manager
+        # (the double-await idiom); buffered mode yields the raw pydantic-ai
+        # stream that StreamHandle.text()/finalize() already target.
+        stream_cm = await fa.run_stream(prompt, deps=deps, streaming_mode="buffered", **run_kwargs)
+        async with stream_cm as raw_stream:
+            handle = StreamHandle(raw_stream, resolved_model)
             yield handle
             await handle.finalize()

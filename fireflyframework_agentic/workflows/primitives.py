@@ -36,7 +36,7 @@ import contextlib
 import inspect
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Iterator
-from typing import Any, TypeVar, overload
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 from fireflyframework_agentic.exceptions import (
     WorkflowBudgetError,
@@ -46,6 +46,9 @@ from fireflyframework_agentic.exceptions import (
 )
 from fireflyframework_agentic.workflows.context import current_workflow
 from fireflyframework_agentic.workflows.runner import AgentCall, StreamingAgentRunner
+
+if TYPE_CHECKING:
+    from fireflyframework_agentic.agents.base import FireflyAgent
 
 logger = logging.getLogger(__name__)
 _T = TypeVar("_T")
@@ -66,6 +69,7 @@ async def agent(
     deps: Any = ...,
     tools: Any | None = ...,
     toolsets: Any | None = ...,
+    using: FireflyAgent | str | None = ...,
 ) -> _T: ...
 
 
@@ -80,6 +84,7 @@ async def agent(
     deps: Any = ...,
     tools: Any | None = ...,
     toolsets: Any | None = ...,
+    using: FireflyAgent | str | None = ...,
 ) -> Any: ...
 
 
@@ -93,6 +98,7 @@ async def agent(
     deps: Any = None,
     tools: Any | None = None,
     toolsets: Any | None = None,
+    using: FireflyAgent | str | None = None,
 ) -> Any:
     """Run one isolated sub-agent and return its output.
 
@@ -109,6 +115,10 @@ async def agent(
         deps: Dependency object passed to the underlying agent (also sets its deps_type).
         tools: Tool callables / ``pydantic_ai.Tool`` objects for this sub-agent.
         toolsets: Toolsets for this sub-agent (e.g. ``ToolKit.as_toolset()`` or an MCP server).
+        using: Target a specific configured agent for this call — a ``FireflyAgent``
+            instance or a registry name. Honoured only when the run uses a
+            :class:`FireflyAgentRunner`; enables multi-model sub-agents and
+            per-task cost optimisation. Ignored shape: a plain runner rejects it.
 
     Returns:
         The sub-agent's ``output`` (a ``str`` or a validated ``output_type``).
@@ -122,6 +132,9 @@ async def agent(
     ctx.reserve_agent()
     display = label or (prompt[:40] if isinstance(prompt, str) else f"agent#{seq}")
     ctx.emit("agent.start", {"label": display, "phase": ctx.current_phase, "seq": seq})
+    # Forward ``using`` only when set, so runners/fakes without the parameter
+    # (the 6 test fakes, SmartRoutingRunner) keep their byte-identical call shape.
+    extra: dict[str, Any] = {"using": using} if using is not None else {}
     async with ctx.semaphore:
         call = await ctx.runner.run(
             prompt,
@@ -131,6 +144,7 @@ async def agent(
             deps=deps,
             tools=tools,
             toolsets=toolsets,
+            **extra,
         )
     ctx.record_tokens(call.tokens)
     ctx.record_cost_usd(call.cost_usd)
@@ -199,6 +213,7 @@ async def stream(
     deps: Any = None,
     tools: Any | None = None,
     toolsets: Any | None = None,
+    using: FireflyAgent | str | None = None,
 ) -> AsyncIterator[Any]:
     """Stream one sub-agent's output token-by-token, as a context manager.
 
@@ -227,6 +242,7 @@ async def stream(
     ctx.reserve_agent()
     display = label or (prompt[:40] if isinstance(prompt, str) else f"stream#{seq}")
     ctx.emit("agent.start", {"label": display, "phase": ctx.current_phase, "seq": seq, "stream": True})
+    extra: dict[str, Any] = {"using": using} if using is not None else {}
     async with ctx.semaphore:
         async with runner.run_stream(
             prompt,
@@ -236,6 +252,7 @@ async def stream(
             deps=deps,
             tools=tools,
             toolsets=toolsets,
+            **extra,
         ) as handle:
             yield handle
         call = handle.call if handle.call is not None else AgentCall(output=handle.output)

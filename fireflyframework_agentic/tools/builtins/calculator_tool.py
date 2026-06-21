@@ -132,7 +132,7 @@ class CalculatorTool(BaseTool):
             parameters=[
                 ParameterSpec(
                     name="expression",
-                    type_annotation="str",
+                    python_type=str,
                     description="Math expression to evaluate (e.g. '2 + 3 * 4', 'sqrt(144)')",
                     required=True,
                 ),

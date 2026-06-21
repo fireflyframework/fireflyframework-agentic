@@ -60,7 +60,7 @@ class SearchTool(BaseTool):
             tags=["search", "web"],
             guards=guards,
             parameters=[
-                ParameterSpec(name="query", type_annotation="str", description="Search query", required=True),
+                ParameterSpec(name="query", python_type=str, description="Search query", required=True),
             ],
         )
         self._max_results = max_results

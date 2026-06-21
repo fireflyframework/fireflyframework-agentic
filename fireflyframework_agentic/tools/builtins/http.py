@@ -73,16 +73,14 @@ class HttpTool(BaseTool):
             guards=guards,
             timeout=timeout,
             parameters=[
-                ParameterSpec(name="url", type_annotation="str", description="Request URL", required=True),
+                ParameterSpec(name="url", python_type=str, description="Request URL", required=True),
+                ParameterSpec(name="method", python_type=str, description="HTTP method", required=False, default="GET"),
                 ParameterSpec(
-                    name="method", type_annotation="str", description="HTTP method", required=False, default="GET"
-                ),
-                ParameterSpec(
-                    name="body", type_annotation="str | None", description="Request body", required=False, default=None
+                    name="body", python_type=str | None, description="Request body", required=False, default=None
                 ),
                 ParameterSpec(
                     name="headers",
-                    type_annotation="dict[str, str]",
+                    python_type=dict[str, str],
                     description="Additional headers",
                     required=False,
                     default=None,

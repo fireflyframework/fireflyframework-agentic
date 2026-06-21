@@ -182,6 +182,10 @@ ignore = ["E501", "TC001", "TC002", "TC003", "UP040", "UP046", "UP047", "B008"]
 # extra) inside its methods so the module imports cleanly without the extra and
 # degrades to a typed SandboxUnavailableError only when actually used.
 "fireflyframework_agentic/execution/monty_env.py" = ["PLC0415"]
+# workflows.runner lazy-imports FireflyAgent / the agent registry inside
+# FireflyAgentRunner so the workflows package stays agents-free at import time
+# (only this opt-in runner needs them); the deferred import IS the design.
+"fireflyframework_agentic/workflows/runner.py" = ["PLC0415"]
 # Tests use inline imports for fixture isolation and to control import timing
 # around mocks of optional dependencies (asyncpg, motor, qdrant, pinecone, ...).
 "tests/**" = ["PLC0415"]

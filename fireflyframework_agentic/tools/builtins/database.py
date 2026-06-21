@@ -58,10 +58,10 @@ class DatabaseTool(BaseTool):
             tags=["database", "sql"],
             guards=guards,
             parameters=[
-                ParameterSpec(name="query", type_annotation="str", description="SQL or query string", required=True),
+                ParameterSpec(name="query", python_type=str, description="SQL or query string", required=True),
                 ParameterSpec(
                     name="params",
-                    type_annotation="dict[str, Any] | None",
+                    python_type=dict[str, Any] | None,
                     description="Query parameters",
                     required=False,
                     default=None,

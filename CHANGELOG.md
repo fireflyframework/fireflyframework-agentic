@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.06.5] - 2026-06-21
+
+Framework alignment: the Dynamic Workflows engine and the tools system now run on
+the framework's own primitives and on pydantic-ai's native model — no parallel
+implementations, no lossy shims. Includes breaking changes; see the
+[Migration Guide](docs/migration.md).
+
+### Changed (BREAKING)
+
+- **Tool parameters use a real `python_type`.** `ParameterSpec` and
+  `ToolBuilder.parameter(name, python_type, …)` now take a real Python type object
+  (`list[str]`, `Literal[...]`, a nested `BaseModel`, `dict[str, Any] | None`, …)
+  instead of a string `type_annotation`. pydantic-ai introspects it directly, so the
+  LLM gets full-fidelity schemas (element types, enums and nested models are
+  preserved). The string `type_annotation` field and its resolver (`_TYPE_MAP`,
+  `_resolve_param_type`) are **removed**; all built-in tools were migrated.
+- **`FireflyAgentRunner` is the default workflow runner.** Workflow sub-agents now
+  run through a `FireflyAgent` (middleware, observability, guards, 429-retry, global
+  usage tracker / budget gate, model fallback) instead of a bare `pydantic_ai.Agent`.
+  Global cost tracking and a configured `budget_limit_usd` now apply to sub-agents.
+  The model-resolution contract is unchanged; pass `runner=DefaultAgentRunner()` for
+  the previous lightweight path.
+
+### Added
+
+- **`FireflyAgentRunner`** — runs each workflow call through a `FireflyAgent`; its
+  source may be `None` (a fresh isolated ephemeral agent per call), a `FireflyAgent`
+  instance (reused), a registry name, or a factory. Tokens/cost are booked once per
+  ledger (per-run `WorkflowBudget` and the global tracker, disjoint).
+- **`agent(..., using=<FireflyAgent | name>)`** (and `stream(..., using=)`) — target a
+  specific configured agent for one call: multi-model sub-agents and per-task cost
+  optimisation. Composes with `SmartRoutingRunner`.
+- **Tool `RunContext` opt-in** — `BaseTool(..., takes_ctx=True)` delivers pydantic-ai's
+  `RunContext` (agent deps, usage, retries) to `_execute` as the keyword-only `_ctx`;
+  guards and the cache never see it, so it cannot poison a cache key.
+- **Native toolset combinators re-exported** from `fireflyframework_agentic.tools`:
+  `RunContext`, `FilteredToolset`, `PrefixedToolset`, `RenamedToolset`,
+  `CombinedToolset`, `WrapperToolset`, `PreparedToolset`, `ApprovalRequiredToolset`,
+  plus the `to_pydantic_handler(tool)` helper.
+- **Migration guide** (`docs/migration.md`).
+
+### Fixed
+
+- `ToolKit.as_toolset()` now forwards each tool's **description** to the model
+  (pydantic-ai's `add_function` dropped it before), so toolset tools are no longer
+  description-less to the LLM.
+
 ## [26.06.4] - 2026-06-21
 
 Dynamic Workflows — the final SOTA wave: token-level streaming and end-to-end

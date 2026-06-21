@@ -43,7 +43,7 @@ below it, keeping the dependency graph acyclic and each module independently tes
 |---|---|
 | **[Agents](agents.md)** | `FireflyAgent`, `AgentRegistry`, `AgentLifecycle`, `@firefly_agent` decorator, middleware stack (`AgentMiddleware`, `MiddlewareChain`, `Logging`/`PromptGuard`/`CostGuard`/`Observability`/`Explainability`/`Cache`/`OutputGuard`/`Validation`/`Retry`/`PromptCache` middleware), 7 delegation strategies (round-robin, capability, content-based, cost-aware, chain, fallback, weighted), `FallbackModelWrapper` / `run_with_fallback`, `ResultCache` |
 | **[Template Agents](templates.md)** | Five factory functions: summarizer, classifier, extractor, conversational, router |
-| **[Tools](tools.md)** | `ToolProtocol`, `ToolBuilder`, guards, composition patterns, 9 built-in tools |
+| **[Tools](tools.md)** | `ToolProtocol`, `BaseTool`, `ToolBuilder`, guards, composition, caching, 9 built-in tools; full-fidelity schemas via `ParameterSpec(python_type=…)`, `RunContext` opt-in (`takes_ctx`), `ToolKit.as_toolset()` + re-exported native combinators (`FilteredToolset`, `WrapperToolset`, `ApprovalRequiredToolset`, …) |
 | **[Prompts](prompts.md)** | `PromptTemplate`, `PromptRegistry`, composers, validation, loaders |
 | **[Content](content.md)** | `TextChunker`, `MarkdownChunker`, `DocumentSplitter`, `ImageTiler`, `BatchProcessor`, compression; binary normalization (`content.binary`, `[binary]` extra: `BinaryNormalizer`, office/PDF/image/archive/email converters) |
 | **[Memory](memory.md)** | `ConversationMemory`, `WorkingMemory`, `MemoryManager`, `InMemoryStore` / `FileStore` / `SQLiteStore` backends, `MemoryScope`, LLM summarisation |
@@ -92,7 +92,7 @@ below it, keeping the dependency graph acyclic and each module independently tes
 | | |
 |---|---|
 | **[Pipeline](pipeline.md)** | `DAG`, `PipelineEngine`, `PipelineBuilder`, step types (`AgentStep`, `ReasoningStep`, `CallableStep`, `FanOutStep`/`FanInStep`, `BranchStep`, `BatchLLMStep`, `EmbeddingStep`, `RetrievalStep`), parallel execution, retries, `Checkpointer` / `FileCheckpointer`, audit logs (`AuditLog`, `FileAuditLog`, `OtelAuditLog`, `QueryableAuditLog`), state reducers (`append`, `extend`, `merge_dict`, `replace`), `Pause` / `Send` control signals |
-| **[Dynamic Workflows](workflows.md)** | Code-defined orchestration DSL over pydantic-ai agents — `@workflow`, `agent`, `parallel`, `pipeline`, `phase`, `log`; `WorkflowBudget` (concurrency / agent-count / token ceilings); `Journal` deterministic resume; pluggable `AgentRunner`; verify combinators (`adversarial_verify`, `loop_until_dry`); `workflow_registry`, `run_workflow` |
+| **[Dynamic Workflows](workflows.md)** | Code-defined orchestration DSL over pydantic-ai agents — `@workflow`, `agent`/`parallel`/`pipeline`/`stream`/`phase`/`log`/`map_agents`; typed `Workflow[OutputT]`; `WorkflowBudget` (concurrency / agent-count / **token & USD cost / wall-clock** ceilings); `Journal` deterministic resume + durable `JournalBackend`/`FileJournalBackend`; `FireflyAgentRunner` (default — sub-agents get the full FireflyAgent stack) with `agent(..., using=)` multi-model targeting; `SmartRoutingRunner` + `cascade` cost optimization; `subworkflow`, `human` (HITL); verify combinators (`adversarial_verify`, `judge_panel`, `loop_until_dry`); `workflow_registry`, `run_workflow` |
 
 ### Runtime & Infrastructure
 
@@ -137,6 +137,7 @@ standards, testing, and the pull request process.
 
 ## Additional Resources
 
+- **[Migration Guide](migration.md)** — Breaking & behavioural changes (tool `python_type`, `RunContext`, `FireflyAgentRunner` default) and how to update.
 - **[Changelog](../CHANGELOG.md)** — Notable changes by version.
 - **[License](../LICENSE)** — Apache License 2.0.
 - **[Repository](https://github.com/fireflyframework/fireflyframework-agentic)** — Source code on GitHub.

@@ -56,19 +56,19 @@ class JsonTool(BaseTool):
             parameters=[
                 ParameterSpec(
                     name="action",
-                    type_annotation="str",
+                    python_type=str,
                     description="One of: parse, validate, extract, format, keys",
                     required=True,
                 ),
                 ParameterSpec(
                     name="data",
-                    type_annotation="str",
+                    python_type=str,
                     description="JSON string to operate on",
                     required=True,
                 ),
                 ParameterSpec(
                     name="path",
-                    type_annotation="str | None",
+                    python_type=str | None,
                     description="Dot-separated path for extract action (e.g. 'address.city')",
                     required=False,
                     default=None,

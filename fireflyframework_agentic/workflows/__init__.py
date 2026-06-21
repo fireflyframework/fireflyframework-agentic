@@ -74,6 +74,7 @@ from fireflyframework_agentic.workflows.runner import (
     AgentCall,
     AgentRunner,
     DefaultAgentRunner,
+    FireflyAgentRunner,
     StreamHandle,
     StreamingAgentRunner,
 )
@@ -94,6 +95,7 @@ __all__ = [
     "CostFloorStrategy",
     "DefaultAgentRunner",
     "FileJournalBackend",
+    "FireflyAgentRunner",
     "Journal",
     "JournalBackend",
     "ModelSelectionStrategy",
