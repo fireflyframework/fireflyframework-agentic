@@ -46,6 +46,7 @@ import logging
 import time
 from typing import Any
 
+from opentelemetry import context as _otel_context
 from opentelemetry import trace as _trace
 from pydantic_ai import DeferredToolRequests
 
@@ -344,19 +345,40 @@ class ObservabilityMiddleware:
     """
 
     async def before_run(self, context: MiddlewareContext) -> None:
-        """Open an OTel span and emit the agent-started event."""
+        """Open an OTel span, make it the current context, and emit agent-started."""
         tracer = _trace.get_tracer("fireflyframework_agentic")
-        span = tracer.start_span(
-            f"agent.{context.agent_name}",
-            attributes={
-                "firefly.agent.name": context.agent_name,
-                "firefly.agent.method": context.method or "run",
-            },
-        )
+        attributes: dict[str, Any] = {
+            "firefly.agent.name": context.agent_name,
+            "firefly.agent.method": context.method or "run",
+        }
+        # Stamp the correlation id so native child spans (and any cost record keyed
+        # by the same id) can be joined back to this agent run.
+        correlation_id = getattr(getattr(context, "context", None), "correlation_id", None)
+        if correlation_id:
+            attributes["firefly.correlation_id"] = correlation_id
+
+        span = tracer.start_span(f"agent.{context.agent_name}", attributes=attributes)
         context.metadata["_otel_span"] = span
         context.metadata["_obs_t0"] = time.monotonic()
 
+        # Activate the span in the OTel context so spans created *during* the run
+        # — notably pydantic-ai's native instrumentation (SP-10), which uses
+        # ``start_as_current_span`` — nest UNDER this agent span instead of
+        # becoming disjoint roots in a separate trace. ``start_span`` (not
+        # ``start_as_current_span``) is kept because the span's lifetime straddles
+        # before/after/on_error and a context manager cannot. The attach token is
+        # detached in after_run and on_error (every exit path) to avoid leaking it.
+        context.metadata["_otel_ctx_token"] = _otel_context.attach(_trace.set_span_in_context(span))
+
         default_events.agent_started(context.agent_name)
+
+    @staticmethod
+    def _detach_context(context: MiddlewareContext) -> None:
+        """Detach the OTel context token attached in :meth:`before_run`, if any."""
+        token = context.metadata.pop("_otel_ctx_token", None)
+        if token is not None:
+            with contextlib.suppress(Exception):
+                _otel_context.detach(token)
 
     async def after_run(self, context: MiddlewareContext, result: Any) -> Any:
         """Record OTel metrics and close the span.
@@ -383,6 +405,7 @@ class ObservabilityMiddleware:
         if tokens > 0:
             default_metrics.record_tokens(tokens, agent=context.agent_name)
 
+        self._detach_context(context)
         span = context.metadata.pop("_otel_span", None)
         if span is not None:
             span.end()
@@ -395,6 +418,7 @@ class ObservabilityMiddleware:
         Without this, a span opened in :meth:`before_run` would never be closed
         when the model call raises (``after_run`` runs only on success).
         """
+        self._detach_context(context)
         span = context.metadata.pop("_otel_span", None)
         if span is not None:
             with contextlib.suppress(Exception):

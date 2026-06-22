@@ -80,6 +80,51 @@ async def process_request(prompt: str) -> str:
     ...
 ```
 
+### Native Instrumentation (pydantic-ai)
+
+Beyond the framework's single agent-level span, every `FireflyAgent` can enable
+**pydantic-ai's native OpenTelemetry instrumentation** — rich
+[GenAI-semantic-convention](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
+spans for **each model request** (`chat <model>`) and **each tool call**
+(`execute_tool <name>`), carrying provider, model, token usage, and (optionally)
+message content. It is enabled per-agent via the non-deprecated
+`capabilities=[Instrumentation(...)]` API (never the deprecated `Agent(instrument=)`),
+and is **off by default**:
+
+```bash
+export FIREFLY_AGENTIC_NATIVE_INSTRUMENTATION_ENABLED=true
+```
+
+| Config field | Env var | Default | Purpose |
+|---|---|---|---|
+| `native_instrumentation_enabled` | `FIREFLY_AGENTIC_NATIVE_INSTRUMENTATION_ENABLED` | `False` | Master switch (only effective when `observability_enabled` is also `True`). |
+| `instrumentation_include_content` | `FIREFLY_AGENTIC_INSTRUMENTATION_INCLUDE_CONTENT` | `False` | Whether prompt/response text and tool args/results are recorded as span attributes. Off by default so the framework never silently leaks prompts/PII into traces. |
+| `instrumentation_version` | `FIREFLY_AGENTIC_INSTRUMENTATION_VERSION` | `2` | GenAI semantic-convention version (`1`–`5`); `>=3` uses `invoke_agent <name>` / `execute_tool <name>` span names. |
+| `instrumentation_event_mode` | `FIREFLY_AGENTIC_INSTRUMENTATION_EVENT_MODE` | `attributes` | `attributes` keeps model-message events on the span; `logs` routes them to a separate OTel `LoggerProvider` (forces version 1). |
+
+**Two altitudes, one trace.** The native spans **nest under** the framework's
+`agent.{name}` span — `ObservabilityMiddleware` activates its span in the OTel
+context for the duration of the run, so the resulting trace is:
+
+```
+agent.{name}                     (firefly — name, method, correlation_id)
+└─ invoke_agent <name>           (pydantic-ai)
+   ├─ chat <model>               (per model request — gen_ai.* + token usage)
+   └─ execute_tool <name>        (per tool call)
+```
+
+The coarse firefly envelope carries `firefly.correlation_id` (the join key to cost
+records); the fine native tree carries the standardized `gen_ai.*` attributes the
+hand-rolled span structurally cannot. There is no duplicate model span —
+pydantic-ai de-dups the instrumentation internally.
+
+**API, not SDK.** As everywhere in the framework, native instrumentation emits
+through the **global** OpenTelemetry API (the tracer/meter providers are left
+unset) — the host application owns the SDK and exporter (see
+[Exporters and SDK Configuration](#exporters-and-sdk-configuration)). With no host
+exporter configured, the spans are produced against the no-op provider and simply
+not exported.
+
 ### Distributed Trace Correlation
 
 Cross-service trace-context propagation (e.g. W3C Trace Context over HTTP or

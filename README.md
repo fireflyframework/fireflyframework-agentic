@@ -265,9 +265,12 @@ create your own components; the framework discovers them via duck typing.
   tools, and reasoning steps. `FireflyMetrics` records tokens (total, prompt,
   completion), latency, cost, errors, and reasoning depth via the OTel metrics API.
   `FireflyEvents` emits structured log records. `@traced` and `@metered` decorators
-  instrument any function with one line. The framework emits model and agent
-  telemetry purely through the OpenTelemetry API; the host application owns OTel
-  SDK and exporter configuration. `UsageTracker` automatically records token usage, cost
+  instrument any function with one line. Opt into **native pydantic-ai
+  instrumentation** (`native_instrumentation_enabled`) for rich GenAI-convention
+  spans per model request and tool call — nested under the framework's agent span,
+  with prompt/response content stripped by default for privacy. The framework emits
+  model and agent telemetry purely through the OpenTelemetry API; the host
+  application owns OTel SDK and exporter configuration. `UsageTracker` automatically records token usage, cost
   estimates, and latency for every agent run, reasoning step, and pipeline
   execution. Cost is computed through a resolver chain (`resolve_cost`,
   `genai_prices_cost`, `provider_reported_cost`, `DEFAULT_RESOLVERS`); set
@@ -740,7 +743,7 @@ Detailed guides for each module:
 - [Vector Stores](docs/vectorstores.md) — 6 backends, tenant scoping, auto-embedding, search_text, namespaces
 - [Pipeline](docs/pipeline.md) — DAG orchestrator, parallel execution, checkpointing, audit log, retries
 - [Dynamic Workflows](docs/workflows.md) — Code-defined orchestration DSL over agents: `@workflow`, `agent`/`parallel`/`pipeline`/`stream`, budgets, journal resume, smart routing, sub-workflows, HITL, `FireflyAgentRunner`
-- [Observability](docs/observability.md) — Tracing, metrics, events, provider-agnostic cost resolvers, budget gates
+- [Observability](docs/observability.md) — Tracing, native pydantic-ai instrumentation, metrics, events, provider-agnostic cost resolvers, budget gates
 - [Resilience](docs/resilience.md) — Circuit breaker (state machine + middleware), fast-fail on cascading failures
 - [Storage](docs/storage.md) — Managed-SQLite durable layer: atomic writes, cross-process leasing
 - [Explainability](docs/explainability.md) — Decision recording, audit trails, reports
