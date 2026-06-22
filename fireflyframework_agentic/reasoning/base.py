@@ -47,7 +47,11 @@ from fireflyframework_agentic.exceptions import (
 from fireflyframework_agentic.memory.manager import MemoryManager
 from fireflyframework_agentic.model_utils import get_model_identifier
 from fireflyframework_agentic.observability.budget import ScopeContext
-from fireflyframework_agentic.observability.usage import default_usage_tracker, resolve_run_usage
+from fireflyframework_agentic.observability.usage import (
+    default_usage_tracker,
+    reasoning_tokens_not_in_output,
+    resolve_run_usage,
+)
 from fireflyframework_agentic.prompts.template import Prompt, PromptTemplate
 from fireflyframework_agentic.reasoning.models import (
     BranchEvaluation,
@@ -506,6 +510,7 @@ class AbstractReasoningPattern(ABC):
                 model=model,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                reasoning_tokens=reasoning_tokens_not_in_output(usage),
                 request_count=request_count,
                 agent=agent_label,
                 correlation_id=correlation_id,

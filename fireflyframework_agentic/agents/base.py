@@ -54,7 +54,11 @@ from fireflyframework_agentic.observability.quota import (
     AdaptiveBackoff,
     default_quota_manager,
 )
-from fireflyframework_agentic.observability.usage import default_usage_tracker, resolve_run_usage
+from fireflyframework_agentic.observability.usage import (
+    default_usage_tracker,
+    reasoning_tokens_not_in_output,
+    resolve_run_usage,
+)
 from fireflyframework_agentic.reasoning.trace import ReasoningResult
 from fireflyframework_agentic.tools.base import BaseTool
 from fireflyframework_agentic.tools.toolkit import ToolKit
@@ -510,6 +514,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
                 output_tokens=output_tokens,
                 cache_creation_tokens=cache_creation,
                 cache_read_tokens=cache_read,
+                reasoning_tokens=reasoning_tokens_not_in_output(usage),
                 request_count=request_count,
                 agent=self._name,
                 correlation_id=correlation_id,

@@ -34,7 +34,7 @@ from pydantic_ai.exceptions import UserError
 
 from fireflyframework_agentic.model_utils import get_model_identifier
 from fireflyframework_agentic.observability.cost_resolvers import CostContext, UnknownModelCostError, resolve_cost
-from fireflyframework_agentic.observability.usage import resolve_run_usage
+from fireflyframework_agentic.observability.usage import reasoning_tokens_not_in_output, resolve_run_usage
 
 if TYPE_CHECKING:
     from fireflyframework_agentic.agents.base import FireflyAgent
@@ -59,6 +59,7 @@ def price_call(model: Any, usage: Any) -> float:
                 output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
                 cache_creation_tokens=int(getattr(usage, "cache_write_tokens", 0) or 0),
                 cache_read_tokens=int(getattr(usage, "cache_read_tokens", 0) or 0),
+                reasoning_tokens=reasoning_tokens_not_in_output(usage),
             )
         )
     except UnknownModelCostError:

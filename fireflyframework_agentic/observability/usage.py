@@ -62,6 +62,24 @@ def resolve_run_usage(result: Any) -> Any | None:
     return usage
 
 
+def reasoning_tokens_not_in_output(usage: Any) -> int:
+    """Reasoning tokens that the provider does **not** already fold into
+    ``output_tokens`` (and that therefore must be priced separately).
+
+    Today this is exactly Gemini's ``details["thoughts_tokens"]``: Gemini's
+    ``output_tokens`` (``candidates_token_count``) excludes thinking. It is keyed
+    on the Gemini-specific ``thoughts_tokens`` detail deliberately — OpenAI's
+    ``details["reasoning_tokens"]`` is **already** counted in ``output_tokens``
+    (reading it would double-count), and Anthropic folds thinking into
+    ``output_tokens`` too. So every non-Gemini provider contributes ``0``.
+    """
+    details = getattr(usage, "details", None) or {}
+    try:
+        return int(details.get("thoughts_tokens", 0) or 0)
+    except (TypeError, ValueError, AttributeError):
+        return 0
+
+
 class UsageRecord(BaseModel):
     """A single LLM usage observation. Schema is intentionally stable."""
 
