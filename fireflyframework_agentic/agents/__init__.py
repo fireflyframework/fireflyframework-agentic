@@ -14,7 +14,7 @@
 
 """Agents subpackage -- creation, registration, lifecycle, and delegation."""
 
-from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.agents.base import ApprovalHandler, FireflyAgent, is_deferred
 from fireflyframework_agentic.agents.builtin_middleware import (
     BudgetExceededError,
     CacheMiddleware,
@@ -69,6 +69,7 @@ __all__ = [
     "agent_lifecycle",
     "AgentMiddleware",
     "AgentRegistry",
+    "ApprovalHandler",
     "BudgetExceededError",
     "CacheMiddleware",
     "CacheStatistics",
@@ -84,6 +85,7 @@ __all__ = [
     "FallbackModelWrapper",
     "FallbackStrategy",
     "FireflyAgent",
+    "is_deferred",
     "LoggingMiddleware",
     "MiddlewareChain",
     "MiddlewareContext",

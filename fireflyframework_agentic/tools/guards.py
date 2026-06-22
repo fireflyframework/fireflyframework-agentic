@@ -25,13 +25,10 @@ from __future__ import annotations
 import re
 import threading
 import time
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Sequence
 from typing import Any
 
 from fireflyframework_agentic.tools.base import GuardProtocol, GuardResult
-
-# Type alias for the human-in-the-loop approval callback
-ApprovalCallback = Callable[[str, dict[str, Any]], Awaitable[bool]]
 
 
 class ValidationGuard:
@@ -81,26 +78,6 @@ class RateLimitGuard:
                 )
             # Record this invocation timestamp to count against the window.
             self._timestamps.append(now)
-        return GuardResult(passed=True)
-
-
-class ApprovalGuard:
-    """Human-in-the-loop guard that delegates the decision to an async callback.
-
-    The callback receives the tool name and kwargs and must return ``True``
-    to approve execution.
-
-    Parameters:
-        callback: An async callable ``(tool_name, kwargs) -> bool``.
-    """
-
-    def __init__(self, callback: ApprovalCallback) -> None:
-        self._callback = callback
-
-    async def check(self, tool_name: str, kwargs: dict[str, Any]) -> GuardResult:
-        approved = await self._callback(tool_name, kwargs)
-        if not approved:
-            return GuardResult(passed=False, reason="Execution not approved")
         return GuardResult(passed=True)
 
 

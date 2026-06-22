@@ -38,8 +38,9 @@ from typing import Annotated, Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai.exceptions import ApprovalRequired, CallDeferred
 
-from fireflyframework_agentic.exceptions import ToolError, ToolTimeoutError
+from fireflyframework_agentic.exceptions import ToolError, ToolGuardError, ToolTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +152,12 @@ class BaseTool(ABC):
             ``RunContext`` (agent deps, usage, retry count, messages). The
             generated handler injects it; ``_execute`` then receives it as the
             keyword-only ``_ctx``. Guards and caching never see ``ctx``.
+        requires_approval: When ``True``, the tool is exposed to pydantic-ai as
+            an approval-required tool. The agent run pauses before this tool
+            executes and surfaces a ``DeferredToolRequests`` for human
+            sign-off (resolved natively via ``DeferredToolResults``); the tool
+            body runs only once the call is approved. See the agent's
+            human-in-the-loop docs.
     """
 
     def __init__(
@@ -163,6 +170,7 @@ class BaseTool(ABC):
         parameters: Sequence[ParameterSpec] = (),
         timeout: float | None = None,
         takes_ctx: bool = False,
+        requires_approval: bool = False,
     ) -> None:
         self._name = name
         self._description = description
@@ -171,6 +179,7 @@ class BaseTool(ABC):
         self._parameters = list(parameters)
         self._timeout = timeout
         self._takes_ctx = takes_ctx
+        self._requires_approval = requires_approval
 
     # -- Properties ----------------------------------------------------------
 
@@ -204,12 +213,18 @@ class BaseTool(ABC):
         """Whether this tool opts into a pydantic-ai ``RunContext``."""
         return self._takes_ctx
 
+    @property
+    def requires_approval(self) -> bool:
+        """Whether calls to this tool require human-in-the-loop approval."""
+        return self._requires_approval
+
     # -- Execution -----------------------------------------------------------
 
     async def execute(self, **kwargs: Any) -> Any:
         """Run the tool after evaluating all guards.
 
-        If any guard rejects, a :class:`ToolError` is raised immediately.
+        If any guard rejects, a :class:`ToolGuardError` (a ``ToolError``
+        subclass) is raised immediately.
         When a *timeout* is configured, wraps the execution in
         :func:`asyncio.wait_for` and raises :class:`ToolTimeoutError`
         on expiry.
@@ -230,7 +245,7 @@ class BaseTool(ABC):
         for guard in self._guards:
             result = await guard.check(self._name, kwargs)
             if not result.passed:
-                raise ToolError(f"Guard rejected execution of tool '{self._name}': {result.reason}")
+                raise ToolGuardError(f"Guard rejected execution of tool '{self._name}': {result.reason}")
 
         logger.debug("Executing tool '%s' with kwargs=%s", self._name, list(kwargs.keys()))
         # ``_ctx`` reaches ``_execute`` only for ctx-aware tools; it is never in
@@ -243,6 +258,12 @@ class BaseTool(ABC):
             return await coro
         except TimeoutError:
             raise ToolTimeoutError(f"Tool '{self._name}' timed out after {self._timeout}s") from None
+        except (ApprovalRequired, CallDeferred):
+            # pydantic-ai human-in-the-loop / deferral control signals. Like
+            # ``ModelRetry`` these are NOT errors: they must reach the agent graph
+            # untouched so the run pauses and surfaces a ``DeferredToolRequests``.
+            # Wrapping them as ``ToolError`` would break dynamic tool approval.
+            raise
         except ToolError:
             raise
         except Exception as exc:

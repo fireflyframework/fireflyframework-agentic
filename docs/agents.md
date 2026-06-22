@@ -137,6 +137,34 @@ agent = FireflyAgent(
 
 ---
 
+## Human-in-the-Loop Tool Approval
+
+When a tool declares `requires_approval=True` (or an `ApprovalRequiredToolset` gates the
+toolset), `run()` / `run_sync()` **pause before the tool executes** and return a
+`DeferredToolRequests` as `result.output`. Detect this with `is_deferred(result)`, then
+resume by calling the agent again with the paused messages and the human's decision:
+
+```python
+from fireflyframework_agentic.agents import FireflyAgent, is_deferred
+from fireflyframework_agentic.tools import DeferredToolResults
+
+result = await agent.run("Delete record 42.")
+if is_deferred(result):
+    approvals = {c.tool_call_id: True for c in result.output.approvals}  # True / ToolApproved / ToolDenied
+    result = await agent.run(
+        message_history=result.all_messages(),
+        deferred_tool_results=DeferredToolResults(approvals=approvals),
+    )
+```
+
+`FireflyAgent` auto-detects HITL from approval-requiring tools/toolsets (widening its output
+union only then); force it with `hitl=True`, or resolve approvals inline without pausing via
+`approval_handler=`. Post-run middleware (output guard, validation, cache) and memory all skip
+a paused result — it is a control object, not a final answer. See
+[Human-in-the-Loop Tool Approval](tools.md#human-in-the-loop-tool-approval) for the full guide.
+
+---
+
 ## Agent Registry
 
 The `AgentRegistry` is a singleton that maps agent names to `FireflyAgent` instances.

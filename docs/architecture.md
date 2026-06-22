@@ -61,7 +61,7 @@ graph TD
 
     subgraph Agent Layer
         AGT["Agents<br/><small>FireflyAgent · AgentRegistry<br/>DelegationRouter · AgentLifecycle<br/>@firefly_agent · 5 templates · 11 middleware<br/>7 delegation strategies · FallbackModelWrapper<br/>ResultCache · run timeout</small>"]
-        TOOLS["Tools<br/><small>BaseTool · ToolBuilder · ToolKit · CachedTool<br/>5 guards · 3 composers · tool timeout<br/>ToolRegistry · 9 built-ins</small>"]
+        TOOLS["Tools<br/><small>BaseTool · ToolBuilder · ToolKit · CachedTool<br/>4 guards · 3 composers · tool timeout · HITL approval<br/>ToolRegistry · 9 built-ins</small>"]
         PROMPTS["Prompts<br/><small>PromptTemplate · PromptRegistry<br/>3 composers · PromptValidator<br/>PromptLoader</small>"]
         CONTENT["Content<br/><small>TextChunker · DocumentSplitter · MarkdownChunker<br/>ImageTiler · BatchProcessor<br/>ContextCompressor · SlidingWindowManager<br/>content.binary (BinaryNormalizer · office converters)</small>"]
         MEM["Memory<br/><small>MemoryManager · ConversationMemory<br/>WorkingMemory · TokenEstimator<br/>InMemoryStore · FileStore · SQLiteStore<br/>summarization · create_llm_summarizer<br/>export/import · async wrappers</small>"]
@@ -166,7 +166,6 @@ classDiagram
     ToolProtocol <|.. ConditionalComposer
     GuardProtocol <|.. ValidationGuard
     GuardProtocol <|.. RateLimitGuard
-    GuardProtocol <|.. ApprovalGuard
     GuardProtocol <|.. SandboxGuard
     GuardProtocol <|.. CompositeGuard
     ReasoningPattern <|.. AbstractReasoningPattern
@@ -215,7 +214,7 @@ system. Every other module depends on at least one Core component.
   from environment variables and `.env` files. It actively rejects removed serving/exposure
   config fields (e.g. `otlp_endpoint`, `rbac_enabled`, `cors_allowed_origins`,
   `cost_calculator`) with a `ValueError`.
-- **exceptions.py** -- A structured exception hierarchy of 34 classes rooted at
+- **exceptions.py** -- A structured exception hierarchy of 42 classes rooted at
   `FireflyAgenticError`.
 - **plugin.py** -- `PluginDiscovery` discovers and loads entry-point plugins at startup.
 - **resilience/circuit_breaker.py** -- `CircuitBreaker` (with `CircuitState` and

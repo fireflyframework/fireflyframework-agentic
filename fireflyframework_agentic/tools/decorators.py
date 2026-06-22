@@ -54,8 +54,9 @@ class _DecoratedTool(BaseTool):
         description: str = "",
         tags: Sequence[str] = (),
         guards: Sequence[GuardProtocol] = (),
+        requires_approval: bool = False,
     ) -> None:
-        super().__init__(name, description=description, tags=tags, guards=guards)
+        super().__init__(name, description=description, tags=tags, guards=guards, requires_approval=requires_approval)
         self._handler = handler
 
     async def _execute(self, **kwargs: Any) -> Any:
@@ -86,6 +87,7 @@ def firefly_tool(
     description: str = "",
     tags: Sequence[str] = (),
     guards: Sequence[GuardProtocol] = (),
+    requires_approval: bool = False,
     auto_register: bool = True,
 ) -> Callable[[AsyncHandler], BaseTool]:
     """Create a :class:`BaseTool` from an async function and optionally register it.
@@ -95,6 +97,9 @@ def firefly_tool(
         description: Description (falls back to the function's docstring).
         tags: Tags for capability-based discovery.
         guards: Guards evaluated before execution.
+        requires_approval: When *True*, calls to this tool pause the agent run
+            for human-in-the-loop approval via pydantic-ai's native
+            deferred-tools protocol (see the agent HITL docs).
         auto_register: When *True*, the tool is added to the global registry.
 
     Returns:
@@ -109,6 +114,7 @@ def firefly_tool(
             description=description or func.__doc__ or "",
             tags=tags,
             guards=guards,
+            requires_approval=requires_approval,
         )
         if auto_register:
             tool_registry.register(tool)

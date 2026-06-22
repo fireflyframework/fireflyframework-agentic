@@ -47,6 +47,7 @@ import time
 from typing import Any
 
 from opentelemetry import trace as _trace
+from pydantic_ai import DeferredToolRequests
 
 from fireflyframework_agentic.agents.middleware import MiddlewareContext
 from fireflyframework_agentic.exceptions import BudgetExceededError, OutputReviewError
@@ -70,6 +71,14 @@ from fireflyframework_agentic.security.output_guard import OutputGuard
 from fireflyframework_agentic.security.prompt_guard import PromptGuard
 
 logger = logging.getLogger(__name__)
+
+
+def _is_deferred_output(result: Any) -> bool:
+    """Whether a run paused (output is a ``DeferredToolRequests``) rather than
+    completing. Output-consuming ``after_run`` hooks must skip such a result:
+    it is a HITL control object, not a final answer — scanning, validating, or
+    caching it is wrong (and would raise on a type mismatch)."""
+    return isinstance(getattr(result, "output", None), DeferredToolRequests)
 
 
 # -- Errors ------------------------------------------------------------------
@@ -140,6 +149,16 @@ class LoggingMiddleware:
         t0 = context.metadata.get("_log_t0")
         elapsed_ms = (time.monotonic() - t0) * 1000 if t0 is not None else 0.0
         method = context.method or "run"
+
+        if _is_deferred_output(result):
+            logger.log(
+                self._level,
+                "⏸ %s.%s paused after %.1fms awaiting tool approval",
+                context.agent_name,
+                method,
+                elapsed_ms,
+            )
+            return result
 
         suffix = self._usage_suffix(result) if self._include_usage else ""
         reasoning = self._reasoning_suffix(result)
@@ -420,7 +439,9 @@ class ExplainabilityMiddleware:
     async def after_run(self, context: MiddlewareContext, result: Any) -> Any:
         """Record a decision with output information."""
         output_text = ""
-        if hasattr(result, "output"):
+        if _is_deferred_output(result):
+            output_text = "<paused: awaiting tool approval>"
+        elif hasattr(result, "output"):
             output_text = str(result.output)[:200]
         self._get_recorder().record(
             "llm_call",
@@ -458,6 +479,10 @@ class CacheMiddleware:
 
     async def after_run(self, context: MiddlewareContext, result: Any) -> Any:
         """Store the result in the cache on miss."""
+        if _is_deferred_output(result):
+            # Never cache a paused run — a later identical prompt would be served
+            # a stale ``DeferredToolRequests`` instead of running for real.
+            return result
         if "_cache_result" not in context.metadata:
             prompt_str = str(context.prompt) if context.prompt is not None else ""
             self._cache.put(context.agent_name, prompt_str, result)
@@ -529,6 +554,8 @@ class OutputGuardMiddleware:
 
     async def after_run(self, context: MiddlewareContext, result: Any) -> Any:
         """Scan the output; reject or sanitise if unsafe."""
+        if _is_deferred_output(result):
+            return result
         output_text = ""
         if hasattr(result, "output"):
             output_text = str(result.output)
@@ -586,6 +613,8 @@ class ValidationMiddleware:
 
     async def after_run(self, context: MiddlewareContext, result: Any) -> Any:
         """Validate the output; raise on failure."""
+        if _is_deferred_output(result):
+            return result
         raw = result.output if hasattr(result, "output") else result
 
         parsed, parse_errors = self._reviewer._parse_output(raw)
