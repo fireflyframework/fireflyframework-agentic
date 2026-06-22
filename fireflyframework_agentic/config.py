@@ -72,6 +72,34 @@ class FireflyAgenticConfig(BaseSettings):
     observability_enabled: bool = True
     """Whether OpenTelemetry instrumentation is active."""
 
+    native_instrumentation_enabled: bool = False
+    """Whether to enable pydantic-ai's **native** OpenTelemetry instrumentation on
+    every agent — rich GenAI-semantic-convention spans for each model request
+    (``chat``) and tool call (``execute_tool``), nested under the framework's
+    ``agent.{name}`` span. Off by default: native spans embed prompt/response
+    content unless :attr:`instrumentation_include_content` is set, and one span
+    per model request / tool call is opt-in for high-throughput hosts. Only takes
+    effect when :attr:`observability_enabled` is also ``True``. The framework
+    leaves the tracer/meter providers unset (``None``) so spans flow through the
+    global OpenTelemetry API — the host owns the SDK/exporter."""
+
+    instrumentation_include_content: bool = False
+    """Whether native instrumentation records prompt/response **content** (and
+    tool args/results, binary content) as span attributes. ``False`` (default)
+    strips content so the framework never silently leaks prompts/PII into traces
+    — message events keep only their role/part-type skeleton. Overrides
+    pydantic-ai's own ``include_content=True`` default."""
+
+    instrumentation_version: Literal[1, 2, 3, 4, 5] = 2
+    """GenAI semantic-convention version for native instrumentation span names
+    and attributes. ``2`` (default) matches pydantic-ai; ``>=3`` uses
+    ``invoke_agent <name>`` / ``execute_tool <name>`` span names."""
+
+    instrumentation_event_mode: Literal["attributes", "logs"] = "attributes"
+    """Where native instrumentation puts model-message events. ``"attributes"``
+    (default) keeps them on the span; ``"logs"`` routes them to a separate OTel
+    ``LoggerProvider``. Note: ``"logs"`` forces convention version 1."""
+
     log_level: str = "INFO"
     """Logging level for the framework's internal logger."""
 

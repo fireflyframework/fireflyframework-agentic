@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.06.12] - 2026-06-22
+
+SP-10: native pydantic-ai OpenTelemetry instrumentation.
+
+### Added
+
+- **Native instrumentation** for FireflyAgents via pydantic-ai's
+  `capabilities=[Instrumentation(InstrumentationSettings(...))]` — rich
+  GenAI-semantic-convention spans for **each model request** (`chat <model>`) and
+  **each tool call** (`execute_tool <name>`), with provider, model, and token
+  usage. Off by default; enable with `native_instrumentation_enabled`. Four config
+  fields (env `FIREFLY_AGENTIC_*`):
+  - `native_instrumentation_enabled` (`False`) — master switch; effective only when
+    `observability_enabled` is also `True`.
+  - `instrumentation_include_content` (`False`) — privacy-safe default; prompt/response
+    text and tool args/results are stripped from spans unless opted in (overrides
+    pydantic-ai's own `include_content=True`).
+  - `instrumentation_version` (`2`) — GenAI convention version (`1`–`5`).
+  - `instrumentation_event_mode` (`attributes`) — span attributes vs OTel logs.
+  Uses the **non-deprecated** capabilities API (never `Agent(instrument=)`, which
+  emits a `PydanticAIDeprecationWarning` the SP-9 gate would reject). Providers left
+  unset → spans flow through the global OTel API; the host owns the SDK/exporter.
+
+### Changed
+
+- `ObservabilityMiddleware` now **activates** its `agent.{name}` span in the OTel
+  context (attach in `before_run`, detach in `after_run` and `on_error`) so spans
+  created during the run — notably the native instrumentation spans — **nest under**
+  it instead of becoming disjoint roots in a separate trace. The span also carries
+  `firefly.correlation_id` (the join key to cost records). The detach runs on every
+  exit path (success, error, streaming, HITL pause) with no context-token leak.
+
+### Notes
+
+- Two complementary altitudes per run: the coarse firefly `agent.{name}` envelope
+  (name/method/correlation_id) and the fine native `invoke_agent → chat / execute_tool`
+  tree (`gen_ai.*`). No duplicate model span — pydantic-ai de-dups internally.
+- Verified with an in-memory OTel exporter (nesting, gating, privacy, no deprecation
+  warning, one chat span per request) and live against Anthropic (real
+  `claude-haiku-4-5` spans with real token usage, nested, content stripped).
+- This closes the deferred SP-10: the memory's "blocked on pydantic-ai 2.0 capabilities
+  surface" was outdated — the `Instrumentation` capability is available and warning-free
+  on the pinned 1.x line.
+
 ## [26.06.11] - 2026-06-22
 
 SP-3: human-in-the-loop tool approval re-based onto pydantic-ai native deferred-tools.

@@ -73,7 +73,7 @@ below it, keeping the dependency graph acyclic and each module independently tes
 
 | | |
 |---|---|
-| **[Observability](observability.md)** | `FireflyTracer`, `FireflyMetrics`, `FireflyEvents`, `UsageTracker`, provider-agnostic cost resolvers (`resolve_cost`, `genai_prices_cost`, `provider_reported_cost`; provider-aware reasoning tokens), `BudgetGate`, `@traced`, `@metered` — emits model/agent spans & metrics via the OpenTelemetry API (the host owns OTel SDK/exporter configuration) |
+| **[Observability](observability.md)** | `FireflyTracer`, `FireflyMetrics`, `FireflyEvents`, `UsageTracker`, provider-agnostic cost resolvers (`resolve_cost`, `genai_prices_cost`, `provider_reported_cost`; provider-aware reasoning tokens), `BudgetGate`, `@traced`, `@metered`, opt-in native pydantic-ai instrumentation (`native_instrumentation_enabled` — GenAI spans per model request/tool call, nested under the agent span) — emits model/agent spans & metrics via the OpenTelemetry API (the host owns OTel SDK/exporter configuration) |
 | **[Resilience](resilience.md)** | `CircuitBreaker` (CLOSED/OPEN/HALF_OPEN state machine), `CircuitBreakerMiddleware` (records failures via the agent error lifecycle), `CircuitBreakerOpenError`, `CircuitState` |
 | **[Storage](storage.md)** | Managed-SQLite-file durable layer — `StorageBackend`, `LocalBackend`, `DatabaseStore`, `WriteSession`, `LockToken` leasing, atomic writes |
 | **[Explainability](explainability.md)** | `TraceRecorder`, `ExplanationGenerator`, `AuditTrail`, `ReportBuilder` |

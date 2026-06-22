@@ -34,9 +34,10 @@ from typing import TYPE_CHECKING, Any, Generic, cast
 
 from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults, RunContext
 from pydantic_ai import Tool as PydanticTool
-from pydantic_ai.capabilities import HandleDeferredToolCalls
+from pydantic_ai.capabilities import HandleDeferredToolCalls, Instrumentation
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.models import Model
+from pydantic_ai.models.instrumented import InstrumentationSettings
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.toolsets import ApprovalRequiredToolset
 
@@ -47,7 +48,7 @@ from fireflyframework_agentic.agents.builtin_middleware import (
 from fireflyframework_agentic.agents.context import AgentContext as _AgentContext
 from fireflyframework_agentic.agents.middleware import MiddlewareChain, MiddlewareContext
 from fireflyframework_agentic.agents.registry import agent_registry
-from fireflyframework_agentic.config import get_config
+from fireflyframework_agentic.config import FireflyAgenticConfig, get_config
 from fireflyframework_agentic.exceptions import AgentError, BudgetExceededError, RateLimitError
 from fireflyframework_agentic.model_utils import get_model_identifier
 from fireflyframework_agentic.observability.budget import ScopeContext
@@ -259,7 +260,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
                 existing.append(DeferredToolRequests)
             effective_output_type = existing
 
-        capabilities = [HandleDeferredToolCalls(approval_handler)] if approval_handler is not None else []
+        capabilities = self._build_capabilities(cfg, approval_handler)
 
         self._agent: Agent[AgentDepsT, OutputT] = Agent(
             resolved_model,
@@ -895,6 +896,35 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             if isinstance(ts_tools, dict) and any(getattr(t, "requires_approval", False) for t in ts_tools.values()):
                 return True
         return False
+
+    @staticmethod
+    def _build_capabilities(cfg: FireflyAgenticConfig, approval_handler: ApprovalHandler | None) -> list[Any]:
+        """Assemble the inner pydantic-ai ``Agent``'s capabilities.
+
+        Two opt-in capabilities: an inline HITL approval handler (SP-3) and native
+        OpenTelemetry instrumentation (SP-10). Native instrumentation emits rich
+        GenAI-convention spans for each model request / tool call and is gated by
+        ``observability_enabled`` *and* ``native_instrumentation_enabled``. The
+        tracer/meter/logger providers are left unset (``None``) so spans flow
+        through the global OpenTelemetry API — the host owns the SDK/exporter. The
+        deprecated ``Agent(instrument=...)`` path is never used (it would trip the
+        deprecation gate); ``capabilities=[Instrumentation(...)]`` is warning-free.
+        """
+        capabilities: list[Any] = []
+        if approval_handler is not None:
+            capabilities.append(HandleDeferredToolCalls(approval_handler))
+        if cfg.observability_enabled and cfg.native_instrumentation_enabled:
+            capabilities.append(
+                Instrumentation(
+                    InstrumentationSettings(
+                        include_content=cfg.instrumentation_include_content,
+                        include_binary_content=cfg.instrumentation_include_content,
+                        version=cfg.instrumentation_version,
+                        event_mode=cfg.instrumentation_event_mode,
+                    )
+                )
+            )
+        return capabilities
 
     # -- Dunder --------------------------------------------------------------
 
