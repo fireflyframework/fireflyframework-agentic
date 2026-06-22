@@ -247,8 +247,10 @@ await triage(args, runner=FireflyAgentRunner())   # both agents come from the re
 ```
 
 `using` accepts a `FireflyAgent` instance or a registry name and overrides the
-runner's source for that one call. With any non-`FireflyAgentRunner` runner,
-`using=` raises a clear error.
+runner's source for that one call. `DefaultAgentRunner` **rejects** `using=` with a
+clear error (it has no agent registry to resolve against); `SmartRoutingRunner`
+**forwards** it to its `base_runner`, so `using=` works when the base is a
+`FireflyAgentRunner`.
 
 Notes:
 
@@ -289,6 +291,12 @@ async def live_report(args, ctx):
 
 On resume, a cached `stream()` call yields its full output once (the model is not
 re-invoked). A runner that doesn't support streaming raises `WorkflowError`.
+
+**Structured output.** `stream()` accepts `output_type=` like `agent()`. Token
+deltas are inherently a *text* concept, so for a structured (non-text) run
+`s.text()` transparently falls back to yielding stringified partial-object
+**snapshots** (whole objects, not token deltas) instead of crashing; `s.output`
+still holds the validated model after the block.
 
 ---
 
@@ -340,6 +348,9 @@ result = await cascade(
     tiers=["anthropic:claude-haiku-4-5", "anthropic:claude-sonnet-4-5"],
     threshold=0.7,            # accept the first tier scoring >= 0.7
     # confidence=my_async_scorer(output)->float, or judge_model=... (defaults to the cheapest tier)
+    output_type=None,         # constrain each tier to a pydantic model (like agent())
+    instructions=None,        # per-call system instructions for every tier
+    max_escalations=None,     # cap how many tiers to climb (default: all of them)
 )
 result.output, result.tier, result.model, result.confidence, result.escalations
 ```

@@ -725,7 +725,9 @@ Detailed guides for each module:
 - [Vector Stores](docs/vectorstores.md) — 6 backends, tenant scoping, auto-embedding, search_text, namespaces
 - [Pipeline](docs/pipeline.md) — DAG orchestrator, parallel execution, checkpointing, audit log, retries
 - [Dynamic Workflows](docs/workflows.md) — Code-defined orchestration DSL over agents: `@workflow`, `agent`/`parallel`/`pipeline`/`stream`, budgets, journal resume, smart routing, sub-workflows, HITL, `FireflyAgentRunner`
-- [Observability](docs/observability.md) — Tracing, metrics, events, cost resolvers, budget gates
+- [Observability](docs/observability.md) — Tracing, metrics, events, provider-agnostic cost resolvers, budget gates
+- [Resilience](docs/resilience.md) — Circuit breaker (state machine + middleware), fast-fail on cascading failures
+- [Storage](docs/storage.md) — Managed-SQLite durable layer: atomic writes, cross-process leasing
 - [Explainability](docs/explainability.md) — Decision recording, audit trails, reports
 - [Security](docs/security.md) — Prompt/output guards, at-rest encryption
 - [Secure Script Execution](docs/execution.md) — Deny-by-default Monty sandbox, static safety pre-screen, `SecureScriptRunner`, Firefly Code Mode

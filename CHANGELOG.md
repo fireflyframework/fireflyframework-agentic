@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.06.9] - 2026-06-22
+
+Documentation coverage pass — every 26.06.x change is now explained, with two new
+reference guides and several corrected docs (driven by a per-doc audit verified
+against the source).
+
+### Added
+
+- **`docs/resilience.md`** — the circuit breaker (state machine, direct
+  `async with CircuitBreaker(...)` usage, `CircuitBreakerMiddleware` agent wiring,
+  inspection/reset, API reference).
+- **`docs/storage.md`** — the managed-SQLite durable layer (`StorageBackend`,
+  `LocalBackend`, `DatabaseStore`, `WriteSession`/`LockToken` leasing, atomic writes,
+  the `SqliteVecVectorStore` consumer, types/exceptions reference).
+- **Multi-Provider Support** section in `docs/architecture.md` consolidating the
+  "works with any provider" story (identity normalisation, provider-aware cost,
+  prompt-cache routing, tool-schema portability, failover/rate-limit handling).
+
+### Changed (docs)
+
+- `agents.md`: documented the middleware **error lifecycle** (`on_error` / LIFO
+  `run_error`), the `ObservabilityMiddleware` span-on-error and `CircuitBreaker`
+  failure-recording-via-`on_error`, `MiddlewareContext` fields, and
+  `model_settings`/`default_temperature` (provider-safe `None` default). Fixed a
+  **factual error**: corrected the OpenAI prompt-cache mechanism and documented that
+  Claude via Bedrock/OpenRouter is skipped with a warning.
+- `reasoning.md`: documented that structured runs route through the source
+  `FireflyAgent` (middleware/retry/usage) rather than a bare `pydantic_ai.Agent`.
+- `observability.md`: provider-agnostic identity → cost, provider-aware reasoning
+  tokens (Gemini `thoughts_tokens`), the strict-mode/Budget-priceable-only caveat,
+  and the Bedrock vendor-prefix retry; fixed the misleading reasoning-token claim.
+- `tools.md`: corrected `retryable` (wraps `_execute`), documented `CachedTool`
+  single-flight, the `FallbackComposer` chained traceback, and the Gemini
+  free-form-schema constraint.
+- `workflows.md`: `stream()` structured-output fallback, the precise `using=`
+  rejection/forwarding behaviour, and `cascade()` `output_type`/`instructions`/
+  `max_escalations`. `tutorial.md`: corrected the stale `default_temperature` default.
+- docs index + README Module Reference now list **Resilience** and **Storage**.
+
+### Fixed
+
+- The middleware **error lifecycle is now uniform**: `run_with_reasoning()` also
+  fires `on_error` on failure (previously only `run`/`run_sync`/`run_stream` did), so
+  circuit breakers and span cleanup work for reasoning runs too.
+
 ## [26.06.8] - 2026-06-22
 
 Provider-aware reasoning-token cost accounting (COST-001/COST-002) — the last

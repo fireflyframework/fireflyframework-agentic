@@ -69,6 +69,30 @@ async def test_on_error_fires_and_circuit_breaker_opens():
 
 
 @pytest.mark.asyncio
+async def test_run_with_reasoning_also_fires_on_error():
+    """The error lifecycle is uniform: run_with_reasoning fires on_error too."""
+    errors: list[BaseException] = []
+
+    class RecordingMW:
+        async def before_run(self, context: MiddlewareContext) -> None:
+            pass
+
+        async def on_error(self, context: MiddlewareContext, exc: BaseException) -> None:
+            errors.append(exc)
+
+    class _BoomPattern:
+        name = "boom"
+
+        async def execute(self, agent: Any, prompt: Any, **kwargs: Any) -> Any:
+            raise RuntimeError("pattern down")
+
+    agent = FireflyAgent("rwr", model="test", middleware=[RecordingMW()], default_middleware=False, auto_register=False)
+    with pytest.raises(RuntimeError, match="pattern down"):
+        await agent.run_with_reasoning(_BoomPattern(), "x")
+    assert len(errors) == 1
+
+
+@pytest.mark.asyncio
 async def test_run_error_invokes_hooks_in_reverse_and_suppresses_secondary_errors():
     order: list[str] = []
 

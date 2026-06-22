@@ -156,7 +156,7 @@ from fireflyframework_agentic import FireflyAgenticConfig, get_config
 # get_config() returns a thread-safe singleton
 config = get_config()
 print(config.default_model) # "openai:gpt-4o"
-print(config.default_temperature) # 0.7
+print(config.default_temperature) # None (no temperature forced; provider default)
 print(config.max_retries) # 3
 ```
 
@@ -182,7 +182,7 @@ FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true
 Here are the most commonly used configuration fields:
 
 - `default_model` — LLM model string (e.g. `"openai:gpt-4o"`, `"anthropic:claude-3-5-sonnet"`).
-- `default_temperature` — Sampling temperature (0.0–1.0).
+- `default_temperature` — Default sampling temperature. `None` (default) forces no temperature, so each provider uses its own default (some models, e.g. OpenAI `o1`/`o3`, reject an explicit temperature). When set, it's merged into an agent's settings only if the caller omits one.
 - `max_retries` — Default retry count for agent runs.
 - `observability_enabled` — Toggle OpenTelemetry instrumentation.
 - `prompt_templates_dir` — Directory for Jinja2 prompt files.

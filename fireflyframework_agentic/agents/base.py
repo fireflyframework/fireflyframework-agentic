@@ -589,7 +589,14 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         if self._memory is not None and "memory" not in kwargs:
             kwargs["memory"] = self._memory
 
-        result: ReasoningResult = await pattern.execute(self, mw_ctx.prompt, **kwargs)
+        try:
+            result: ReasoningResult = await pattern.execute(self, mw_ctx.prompt, **kwargs)
+        except Exception as exc:
+            # Same error lifecycle as run/run_sync/run_stream: let middleware
+            # release what before_run acquired (end the span, record the breaker
+            # failure), then re-raise.
+            await self._middleware.run_error(mw_ctx, exc)
+            raise
 
         # Persist the reasoning output as a conversation turn
         if self._memory is not None and conversation_id is not None:
