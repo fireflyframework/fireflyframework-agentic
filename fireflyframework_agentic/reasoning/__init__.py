@@ -16,6 +16,7 @@
 
 from fireflyframework_agentic.reasoning.base import (
     AbstractReasoningPattern,
+    OutputMode,
     ReasoningPattern,
 )
 from fireflyframework_agentic.reasoning.chain_of_thought import ChainOfThoughtPattern
@@ -82,6 +83,7 @@ __all__ = [
     "GoalDecompositionResult",
     "GoalPhase",
     "ObservationStep",
+    "OutputMode",
     "PLAN_GENERATION_PROMPT",
     "PLAN_REPLAN_PROMPT",
     "PLAN_STEP_EXECUTION_PROMPT",

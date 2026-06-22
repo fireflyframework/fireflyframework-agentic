@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.06.10] - 2026-06-22
+
+SP-5: native structured-output modes for reasoning patterns.
+
+### Added
+
+- **Selectable output modes on the real-model reasoning paths.** Reasoning's
+  structured calls (`_structured_run`) now wrap the `output_type` in a pydantic-ai
+  output mode chosen via a new per-pattern `output_mode=` argument or the
+  framework-wide `reasoning_output_mode` config value
+  (`FIREFLY_AGENTIC_REASONING_OUTPUT_MODE`):
+  - `None` (default) — pydantic-ai's default tool-calling output (no behaviour change).
+  - `"tool"` — force tool-based structured output (`ToolOutput`).
+  - `"native"` — provider-native JSON-schema output (`NativeOutput`; OpenAI/Google/…).
+  - `"prompted"` — schema-in-prompt JSON parsing (`PromptedOutput`); the portable
+    choice for models without tool-calling or native structured output.
+  Threaded through all six concrete patterns (ReAct, Chain-of-Thought,
+  Plan-and-Execute, Tree-of-Thoughts, Reflexion, Goal-Decomposition). New
+  `OutputMode` type alias exported from `fireflyframework_agentic.reasoning`.
+  Resolution order: per-pattern argument → config default → pydantic-ai default.
+
+### Notes
+
+- The model-less duck-typed fallback (`_fallback_parse`, used by mocks/agents
+  without a resolvable model) is unchanged — it cannot make an LLM call, so it
+  keeps its text-parsing graceful-degradation cascade. Output modes apply only
+  to the two real-model paths (FireflyAgent route + ephemeral agent).
+- Validated against a live Anthropic model: a Chain-of-Thought pattern with
+  `output_mode="prompted"` produces correct validated structured steps end to end.
+
 ## [26.06.9] - 2026-06-22
 
 Documentation coverage pass — every 26.06.x change is now explained, with two new

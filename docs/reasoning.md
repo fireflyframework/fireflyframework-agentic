@@ -162,6 +162,36 @@ The model is resolved from:
 2. The agent's underlying model (via `_resolve_model()`).
 3. If neither is available, the fallback parse cascade handles raw text.
 
+### Output Modes
+
+On the two real-model paths (the FireflyAgent route and the ephemeral agent), the
+structured `output_type` is wrapped in a pydantic-ai **output mode** that selects
+*how* the model is constrained to the schema. Pick the mode with the per-pattern
+`output_mode=` argument or the framework-wide `reasoning_output_mode` config value:
+
+| Mode | pydantic-ai spec | Strategy | Use when |
+|------|------------------|----------|----------|
+| `None` *(default)* | bare type | pydantic-ai's default (tool-calling for a `BaseModel`) | General use on tool-capable models. |
+| `"tool"` | `ToolOutput` | Forces tool-based structured output explicitly. | You want to pin tool-calling regardless of pydantic-ai defaults. |
+| `"native"` | `NativeOutput` | Provider-native JSON-schema / structured-output mode. | OpenAI, Google, and other providers with first-class structured output — strictest schema enforcement, no tool round-trip. |
+| `"prompted"` | `PromptedOutput` | Injects the schema into the prompt and parses the JSON reply. | The most **portable** choice — works on models without tool-calling or native JSON (open-weights, smaller local models). |
+
+```python
+from fireflyframework_agentic.reasoning import ChainOfThoughtPattern
+
+# Per-pattern: force prompt-engineered JSON (portable to any model).
+pattern = ChainOfThoughtPattern(output_mode="prompted")
+
+# Or globally, via env var (applies to every pattern that doesn't override it):
+#   FIREFLY_AGENTIC_REASONING_OUTPUT_MODE=native
+```
+
+Resolution order is **per-pattern argument → config default → pydantic-ai default**.
+The mode affects only the real-model paths; the model-less duck-typed fallback can
+make no LLM call, so it keeps parsing text through the fallback cascade regardless.
+The `OutputMode` type alias (`Literal["tool", "native", "prompted"]`) is exported
+from `fireflyframework_agentic.reasoning`.
+
 ### Model Catalogue
 
 - **`ReasoningThought`** — Content, confidence (0.0–1.0), `is_final` flag, and `final_answer`. Used by Chain of Thought and ReAct.
