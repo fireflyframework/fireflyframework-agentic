@@ -182,7 +182,7 @@ def _parse_grader_response(text: str, rubric: list[str]) -> ValidationReport:
 
 
 # ---------------------------------------------------------------------------
-# RubricReviewer (placeholder — full implementation in subsequent tasks)
+# RubricReviewer
 # ---------------------------------------------------------------------------
 
 

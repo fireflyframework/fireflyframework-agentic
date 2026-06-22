@@ -82,22 +82,27 @@ async def process_request(prompt: str) -> str:
 
 ### Native Instrumentation (pydantic-ai)
 
-Beyond the framework's single agent-level span, every `FireflyAgent` can enable
+Beyond the framework's single agent-level span, every `FireflyAgent` enables
 **pydantic-ai's native OpenTelemetry instrumentation** — rich
 [GenAI-semantic-convention](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
-spans for **each model request** (`chat <model>`) and **each tool call**
+spans (and metrics) for **each model request** (`chat <model>`) and **each tool call**
 (`execute_tool <name>`), carrying provider, model, token usage, and (optionally)
-message content. It is enabled per-agent via the non-deprecated
+message content. It is wired per-agent via the non-deprecated
 `capabilities=[Instrumentation(...)]` API (never the deprecated `Agent(instrument=)`),
-and is **off by default**:
+and is **on by default**.
+
+Because the framework leaves the tracer/meter providers unset (the host owns the
+SDK/exporter) and **strips prompt/response content by default**, default-on is safe
+and costs nothing until a host wires an exporter. Disable it (e.g. to cut span
+volume on very high-throughput hosts) with:
 
 ```bash
-export FIREFLY_AGENTIC_NATIVE_INSTRUMENTATION_ENABLED=true
+export FIREFLY_AGENTIC_NATIVE_INSTRUMENTATION_ENABLED=false
 ```
 
 | Config field | Env var | Default | Purpose |
 |---|---|---|---|
-| `native_instrumentation_enabled` | `FIREFLY_AGENTIC_NATIVE_INSTRUMENTATION_ENABLED` | `False` | Master switch (only effective when `observability_enabled` is also `True`). |
+| `native_instrumentation_enabled` | `FIREFLY_AGENTIC_NATIVE_INSTRUMENTATION_ENABLED` | `True` | Master switch (only effective when `observability_enabled` is also `True`). |
 | `instrumentation_include_content` | `FIREFLY_AGENTIC_INSTRUMENTATION_INCLUDE_CONTENT` | `False` | Whether prompt/response text and tool args/results are recorded as span attributes. Off by default so the framework never silently leaks prompts/PII into traces. |
 | `instrumentation_version` | `FIREFLY_AGENTIC_INSTRUMENTATION_VERSION` | `2` | GenAI semantic-convention version (`1`–`5`); `>=3` uses `invoke_agent <name>` / `execute_tool <name>` span names. |
 | `instrumentation_event_mode` | `FIREFLY_AGENTIC_INSTRUMENTATION_EVENT_MODE` | `attributes` | `attributes` keeps model-message events on the span; `logs` routes them to a separate OTel `LoggerProvider` (forces version 1). |

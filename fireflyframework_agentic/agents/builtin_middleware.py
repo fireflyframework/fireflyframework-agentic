@@ -62,7 +62,6 @@ from fireflyframework_agentic.observability.budget import (
     ScopeContext,
 )
 from fireflyframework_agentic.observability.events import default_events
-from fireflyframework_agentic.observability.metrics import default_metrics
 from fireflyframework_agentic.observability.usage import (
     UsageRecord,
     default_usage_tracker,
@@ -337,11 +336,17 @@ class CostGuardMiddleware:
 
 
 class ObservabilityMiddleware:
-    """Emits OpenTelemetry spans, metrics, and structured events for agent runs.
+    """Owns the agent-run OpenTelemetry span.
 
     Auto-wired by default when ``config.observability_enabled`` is ``True``.
-    Creates a span covering the entire agent run, records latency and token
-    metrics, and emits ``agent.started`` / ``agent.completed`` events.
+    Opens a span covering the entire agent run (`agent.{name}`, carrying
+    `firefly.agent.name` / `firefly.agent.method` / `firefly.correlation_id`),
+    **activates it in the OTel context** so pydantic-ai's native instrumentation
+    spans (model requests, tool calls) nest under it, emits the ``agent.started``
+    event, and ends the span on success or error. Metrics (tokens, latency, cost)
+    and the ``agent.completed`` event are the sole responsibility of the
+    usage/cost-sink path (``UsageTracker`` → ``OTelMetricsSink`` / ``EventBusSink``)
+    — a single source of truth, so nothing is double-counted.
     """
 
     async def before_run(self, context: MiddlewareContext) -> None:
@@ -359,7 +364,6 @@ class ObservabilityMiddleware:
 
         span = tracer.start_span(f"agent.{context.agent_name}", attributes=attributes)
         context.metadata["_otel_span"] = span
-        context.metadata["_obs_t0"] = time.monotonic()
 
         # Activate the span in the OTel context so spans created *during* the run
         # — notably pydantic-ai's native instrumentation (SP-10), which uses
@@ -381,30 +385,16 @@ class ObservabilityMiddleware:
                 _otel_context.detach(token)
 
     async def after_run(self, context: MiddlewareContext, result: Any) -> Any:
-        """Record OTel metrics and close the span.
+        """Close the agent span (detaching the OTel context first).
 
-        Note: the ``agent.completed`` **event** is intentionally NOT emitted
-        here.  ``UsageTracker._emit_event()`` already emits the same event
-        with strictly more detail (model name, cost, per-token breakdown).
-        Emitting it in both places caused every agent call to log duplicate
-        ``agent.completed`` entries.
+        Metrics (tokens, latency, cost) and the ``agent.completed`` event are the
+        sole responsibility of the usage/cost-sink path
+        (``UsageTracker`` → ``OTelMetricsSink`` / ``EventBusSink``), which has the
+        full picture (model, cost, per-token breakdown). Emitting them here too
+        double-counted ``firefly.tokens.total`` and ``firefly.latency`` in every
+        metrics backend, so this hook now owns only the span lifecycle — a single
+        source of truth, matching the existing ``agent.completed`` de-dup.
         """
-        t0 = context.metadata.get("_obs_t0")
-        elapsed_ms = (time.monotonic() - t0) * 1000 if t0 is not None else 0.0
-
-        tokens = 0
-        usage = resolve_run_usage(result)
-        if usage is not None:
-            tokens = getattr(usage, "total_tokens", 0) or 0
-
-        default_metrics.record_latency(
-            elapsed_ms,
-            operation="agent.run",
-            agent=context.agent_name,
-        )
-        if tokens > 0:
-            default_metrics.record_tokens(tokens, agent=context.agent_name)
-
         self._detach_context(context)
         span = context.metadata.pop("_otel_span", None)
         if span is not None:

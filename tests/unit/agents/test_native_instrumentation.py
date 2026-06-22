@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import warnings
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -106,6 +107,13 @@ def _firefly_span(spans: Any, name: str) -> Any:
 
 
 # -- Capability gating (no exporter needed) ----------------------------------
+
+
+def test_native_instrumentation_is_on_by_default():
+    cfg = FireflyAgenticConfig()  # defaults
+    assert cfg.native_instrumentation_enabled is True  # best observability, working by default
+    assert cfg.instrumentation_include_content is False  # but content stripped — privacy-safe
+    assert [type(c).__name__ for c in FireflyAgent._build_capabilities(cfg, None)] == ["Instrumentation"]
 
 
 def test_build_capabilities_gating():
@@ -261,3 +269,46 @@ async def test_observability_middleware_detaches_context_on_error():
     await mw.on_error(ctx, RuntimeError("boom"))
     assert "_otel_span" not in ctx.metadata  # span ended on error
     assert "_otel_ctx_token" not in ctx.metadata  # token detached on the error path too
+
+
+@pytest.mark.asyncio
+async def test_native_instrumentation_works_with_no_opt_in(
+    monkeypatch: pytest.MonkeyPatch, span_exporter: InMemorySpanExporter
+):
+    # No env override at all — the default config emits native spans out of the box.
+    monkeypatch.delenv("FIREFLY_AGENTIC_NATIVE_INSTRUMENTATION_ENABLED", raising=False)
+    monkeypatch.delenv("FIREFLY_AGENTIC_INSTRUMENTATION_INCLUDE_CONTENT", raising=False)
+    reset_config()
+    span_exporter.clear()
+    agent = FireflyAgent("defaultbot", model=_tool_then_text(), tools=[weather], auto_register=False)
+    await agent.run("Weather?")
+    ops = _ops(span_exporter.get_finished_spans())
+    assert "chat" in ops and "execute_tool" in ops  # native spans with zero configuration
+    # privacy still holds by default
+    blob = json.dumps(
+        [{k: str(v) for k, v in (s.attributes or {}).items()} for s in span_exporter.get_finished_spans()]
+    )
+    assert "Weather" not in blob
+    reset_config()
+
+
+@pytest.mark.asyncio
+async def test_observability_middleware_does_not_emit_metrics(monkeypatch: pytest.MonkeyPatch):
+    """Metrics are the sole responsibility of the usage/cost-sink path. The span
+    middleware must NOT also emit firefly.tokens / firefly.latency (that
+    double-counted every backend)."""
+    from unittest.mock import Mock
+
+    from fireflyframework_agentic.observability.metrics import default_metrics
+
+    rt, rl = Mock(), Mock()
+    monkeypatch.setattr(default_metrics, "record_tokens", rt)
+    monkeypatch.setattr(default_metrics, "record_latency", rl)
+
+    mw = ObservabilityMiddleware()
+    ctx = MiddlewareContext(agent_name="m", prompt="p", method="run")
+    await mw.before_run(ctx)
+    await mw.after_run(ctx, result=SimpleNamespace(output="done"))
+
+    rt.assert_not_called()
+    rl.assert_not_called()

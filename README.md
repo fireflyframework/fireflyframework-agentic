@@ -265,12 +265,12 @@ create your own components; the framework discovers them via duck typing.
   tools, and reasoning steps. `FireflyMetrics` records tokens (total, prompt,
   completion), latency, cost, errors, and reasoning depth via the OTel metrics API.
   `FireflyEvents` emits structured log records. `@traced` and `@metered` decorators
-  instrument any function with one line. Opt into **native pydantic-ai
-  instrumentation** (`native_instrumentation_enabled`) for rich GenAI-convention
-  spans per model request and tool call — nested under the framework's agent span,
-  with prompt/response content stripped by default for privacy. The framework emits
-  model and agent telemetry purely through the OpenTelemetry API; the host
-  application owns OTel SDK and exporter configuration. `UsageTracker` automatically records token usage, cost
+  instrument any function with one line. **Native pydantic-ai instrumentation is on
+  by default** — rich GenAI-convention spans (and metrics) per model request and
+  tool call, nested under the framework's agent span, with prompt/response content
+  stripped by default for privacy (toggle via `native_instrumentation_enabled`). The
+  framework emits model and agent telemetry purely through the OpenTelemetry API; the
+  host application owns OTel SDK and exporter configuration. `UsageTracker` automatically records token usage, cost
   estimates, and latency for every agent run, reasoning step, and pipeline
   execution. Cost is computed through a resolver chain (`resolve_cost`,
   `genai_prices_cost`, `provider_reported_cost`, `DEFAULT_RESOLVERS`); set
