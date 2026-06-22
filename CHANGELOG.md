@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.06.8] - 2026-06-22
+
+Provider-aware reasoning-token cost accounting (COST-001/COST-002) — the last
+open audit item.
+
+### Fixed
+
+- **Gemini thinking tokens are now priced.** Gemini reports thinking under
+  `usage.details["thoughts_tokens"]` and *excludes* them from `output_tokens`, so
+  they were previously uncounted (a ~4× undercount for thinking-heavy calls). The
+  agent, reasoning and workflow cost paths now fold them in at the output rate via
+  a shared `reasoning_tokens_not_in_output(usage)` helper.
+- **No double-counting on OpenAI/Anthropic.** The helper reads the Gemini-specific
+  `thoughts_tokens` key only — OpenAI's `reasoning_tokens` are already inside
+  `output_tokens` (reading them would inflate o-series cost ~53%) and Anthropic
+  folds thinking into `output_tokens` too, so both contribute `0`. Corrected the
+  stale resolver docstrings that implied otherwise.
+
+### Changed
+
+- **`genai-prices` pinned to `>=0.0.66,<0.1`.** It is a pre-1.0 package whose
+  `Usage`/`calc_price` surface could change between minors and break all cost
+  resolution at once; bumps are now deliberate.
+- `provider_reported_cost` (OpenRouter authoritative per-call USD) documented as a
+  seam for custom integrations — pydantic-ai 1.107 does not surface that cost on
+  the result/usage, so it is populated only when a caller passes `provider_payload`.
+
 ## [26.06.7] - 2026-06-21
 
 The deferred P2/P3 wave from the framework audit — provider robustness, durability,

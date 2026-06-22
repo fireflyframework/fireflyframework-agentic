@@ -1,6 +1,6 @@
 [project]
 name = "fireflyframework-agentic"
-version = "26.06.7"
+version = "26.06.8"
 description = "A GenAI metaframework built on Pydantic AI for building production-grade GenAI applications with agents, reasoning patterns, prompt engineering, observability, and more."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -37,7 +37,10 @@ dependencies = [
     "httpx>=0.28.0",
     "opentelemetry-api>=1.29.0",
     "opentelemetry-sdk>=1.29.0",
-    "genai-prices>=0.0.1",
+    # Pin to a known-good 0.0.x: this is a pre-1.0 package whose ``Usage``
+    # dataclass fields / ``calc_price`` signature could change between minors,
+    # which would break ALL cost resolution at once. Bump deliberately.
+    "genai-prices>=0.0.66,<0.1",
     # markdown-it-py backs content.markdown_chunker (structure-aware markdown
     # chunking). content/__init__ imports MarkdownChunker eagerly, which
     # imports markdown_it at module load, so this is a core dependency rather

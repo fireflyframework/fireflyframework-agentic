@@ -1148,7 +1148,7 @@ wheels = [
 
 [[package]]
 name = "fireflyframework-agentic"
-version = "26.6.7"
+version = "26.6.8"
 source = { editable = "." }
 dependencies = [
     { name = "genai-prices" },
@@ -1286,7 +1286,7 @@ requires-dist = [
     { name = "cryptography", marker = "extra == 'security'", specifier = ">=48.0.1" },
     { name = "extract-msg", marker = "extra == 'binary'", specifier = ">=0.51" },
     { name = "fireflyframework-agentic", extras = ["postgres", "mongodb", "security", "embeddings", "openai-embeddings", "cohere-embeddings", "google-embeddings", "mistral-embeddings", "voyage-embeddings", "azure-embeddings", "bedrock-embeddings", "ollama-embeddings", "vectorstores-chroma", "vectorstores-pinecone", "vectorstores-qdrant", "vectorstores-pgvector", "vectorstores-sqlite-vec", "watch", "binary", "script-execution"], marker = "extra == 'all'" },
-    { name = "genai-prices", specifier = ">=0.0.1" },
+    { name = "genai-prices", specifier = ">=0.0.66,<0.1" },
     { name = "google-generativeai", marker = "extra == 'google-embeddings'", specifier = ">=0.8.0" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.0" },
