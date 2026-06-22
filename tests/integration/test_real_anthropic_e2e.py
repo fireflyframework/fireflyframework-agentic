@@ -133,6 +133,17 @@ class TestRealAnthropicE2E:
         assert result.steps_taken >= 1
         assert "40" in str(result.output)
 
+    async def test_reasoning_prompted_output_mode(self):
+        """The 'prompted' output mode drives a real model through prompt-engineered
+        JSON (not tool-calling) and still produces validated structured steps."""
+        ag = FireflyAgent("e2e-reason-prompted", model=HAIKU, auto_register=False)
+        pattern = ChainOfThoughtPattern(max_steps=4, output_mode="prompted")
+        result = await pattern.execute(
+            ag, "A train travels 90 km in 1.5 hours. What is its average speed in km/h? Answer with the number."
+        )
+        assert result.steps_taken >= 1
+        assert "60" in str(result.output)
+
     async def test_pipeline_agent_step(self):
         """A DAG pipeline runs a real agent step end to end."""
         ag = FireflyAgent("e2e-pipe", model=HAIKU, instructions="Answer with a single word.", auto_register=False)

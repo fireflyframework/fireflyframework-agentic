@@ -663,6 +663,7 @@ environment variables prefixed with `FIREFLY_AGENTIC_`. For example:
 export FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o
 export FIREFLY_AGENTIC_LOG_LEVEL=DEBUG
 export FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true
+export FIREFLY_AGENTIC_REASONING_OUTPUT_MODE=prompted  # reasoning structured-output strategy (see reasoning.md)
 ```
 
 > The framework emits telemetry through the OpenTelemetry API but does **not** configure the

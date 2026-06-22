@@ -29,7 +29,10 @@ from typing import TYPE_CHECKING, Any
 from pydantic_ai.models import Model
 
 from fireflyframework_agentic.prompts.template import PromptTemplate
-from fireflyframework_agentic.reasoning.base import AbstractReasoningPattern
+from fireflyframework_agentic.reasoning.base import (
+    AbstractReasoningPattern,
+    OutputMode,
+)
 from fireflyframework_agentic.reasoning.models import BranchEvaluation, BranchList
 from fireflyframework_agentic.reasoning.prompts import TOT_BRANCH_PROMPT, TOT_EVALUATE_PROMPT
 from fireflyframework_agentic.reasoning.trace import (
@@ -72,6 +75,7 @@ class TreeOfThoughtsPattern(AbstractReasoningPattern):
         prompts: dict[str, PromptTemplate] | None = None,
         reviewer: OutputReviewer | None = None,
         step_timeout: float | None = None,
+        output_mode: OutputMode | None = None,
     ) -> None:
         super().__init__(
             "tree_of_thoughts",
@@ -80,6 +84,7 @@ class TreeOfThoughtsPattern(AbstractReasoningPattern):
             prompts=prompts,
             reviewer=reviewer,
             step_timeout=step_timeout,
+            output_mode=output_mode,
         )
         self._branching_factor = branching_factor
 

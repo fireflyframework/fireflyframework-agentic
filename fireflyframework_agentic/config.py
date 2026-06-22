@@ -22,7 +22,7 @@ in the environment will override the ``default_model`` field.
 from __future__ import annotations
 
 import threading
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -56,6 +56,17 @@ class FireflyAgenticConfig(BaseSettings):
 
     max_retries: int = 3
     """Default maximum number of retries for agent runs and tool calls."""
+
+    # -- Reasoning -----------------------------------------------------------
+    reasoning_output_mode: Literal["tool", "native", "prompted"] | None = None
+    """Structured-output strategy for reasoning patterns' internal LLM calls
+    (plan / thought / reflection / evaluation / decomposition). ``None``
+    (default) leaves pydantic-ai to use its tool-calling output. ``"tool"``
+    forces tool-based structured output; ``"native"`` uses provider-native
+    JSON-schema output (OpenAI, Google, ...); ``"prompted"`` injects the schema
+    into the prompt and parses the JSON reply — the most portable choice for
+    models without tool-calling or native structured-output support. A
+    per-pattern ``output_mode=`` argument overrides this default."""
 
     # -- Observability -------------------------------------------------------
     observability_enabled: bool = True

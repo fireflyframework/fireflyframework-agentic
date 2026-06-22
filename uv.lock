@@ -1148,7 +1148,7 @@ wheels = [
 
 [[package]]
 name = "fireflyframework-agentic"
-version = "26.6.9"
+version = "26.6.10"
 source = { editable = "." }
 dependencies = [
     { name = "genai-prices" },

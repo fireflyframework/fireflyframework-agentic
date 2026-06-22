@@ -30,7 +30,10 @@ from pydantic_ai.models import Model
 
 from fireflyframework_agentic.exceptions import ReasoningError
 from fireflyframework_agentic.prompts.template import PromptTemplate
-from fireflyframework_agentic.reasoning.base import AbstractReasoningPattern
+from fireflyframework_agentic.reasoning.base import (
+    AbstractReasoningPattern,
+    OutputMode,
+)
 from fireflyframework_agentic.reasoning.models import (
     PlanStepDef,
     ReasoningPlan,
@@ -81,6 +84,7 @@ class PlanAndExecutePattern(AbstractReasoningPattern):
         prompts: dict[str, PromptTemplate] | None = None,
         reviewer: OutputReviewer | None = None,
         step_timeout: float | None = None,
+        output_mode: OutputMode | None = None,
     ) -> None:
         super().__init__(
             "plan_and_execute",
@@ -89,6 +93,7 @@ class PlanAndExecutePattern(AbstractReasoningPattern):
             prompts=prompts,
             reviewer=reviewer,
             step_timeout=step_timeout,
+            output_mode=output_mode,
         )
         self._allow_replan = allow_replan
 
