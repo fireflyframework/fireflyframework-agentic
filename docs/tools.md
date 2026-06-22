@@ -151,6 +151,14 @@ class SetPriority(BaseTool):
         return f"{tenant}: priority set to {kwargs['level']}"
 ```
 
+> **Cross-provider schema portability.** Real `python_type`s keep tool schemas
+> portable across providers, but **Gemini's `FunctionDeclaration` rejects free-form
+> objects** — a `dict[str, Any]` parameter produces an open object schema (no
+> declared properties) that Google's API refuses (OpenAI/Anthropic/Bedrock accept
+> it). Prefer a **JSON-object string** (`python_type=str`, parsed in `_execute`) or a
+> constrained nested `BaseModel` for "bag of fields" inputs. The built-in
+> `DatabaseTool` does exactly this for its `params` argument.
+
 ### Toolsets and native combinators
 
 `ToolKit.as_toolset()` returns a pydantic-ai `FunctionToolset` (descriptions and
@@ -226,8 +234,11 @@ shell = ShellTool(
 ### Retry
 
 `retryable(max_retries=3, backoff=1.0)` is a cross-cutting decorator (alongside `guarded`)
-exported from `fireflyframework_agentic.tools`. It wraps a `BaseTool`'s `execute` so that
-failures are retried with exponential backoff — the call is attempted up to
+exported from `fireflyframework_agentic.tools`. It wraps the tool's `_execute` hook
+(not the public `execute`) so the retry sits *inside* the guard/timeout wrapper:
+guards run **once**, then only the tool body is retried — and the retry applies on
+the path pydantic-ai actually calls (the generated handler) and to `RunContext`-aware
+(`takes_ctx`) tools, not just a direct `tool.execute()`. The call is attempted up to
 `max_retries + 1` times, doubling the delay (starting at `backoff` seconds) after each
 failure. If every attempt fails, the last exception propagates.
 
@@ -251,7 +262,8 @@ Tools can be composed into higher-level operations. Each composer implements
   tools in order; the first receives the original kwargs, each subsequent tool receives a
   single `input=` kwarg set to the previous tool's return value.
 - **FallbackComposer** -- `FallbackComposer(name, tools, *, description="")` — tries tools
-  in priority order until one succeeds; raises `ToolError` if all fail.
+  in priority order until one succeeds; if all fail it raises `ToolError` **chained from
+  the last error** (`raise … from last_error`), so the original traceback is preserved.
 - **ConditionalComposer** -- `ConditionalComposer(name, router_fn, tool_map, *,
   description="")` — `router_fn(**kwargs)` returns the key of the tool in `tool_map` to run.
 
@@ -484,6 +496,12 @@ finally:
 memoises results using a TTL-based in-memory cache keyed on the tool's
 input arguments. This is ideal for deterministic tools (lookups, calculations)
 where repeated calls with the same arguments should avoid redundant work.
+
+Concurrent identical misses are **single-flighted**: the first caller for a key
+runs the underlying tool while the others `await` the same in-flight result, so an
+expensive or rate-limited tool is never stampeded (it runs once per key). A failure
+is not cached and clears the in-flight slot so the next call retries. (It uses an
+`asyncio.Lock`; intended for one event loop.)
 
 ```python
 from fireflyframework_agentic.tools.cached import CachedTool

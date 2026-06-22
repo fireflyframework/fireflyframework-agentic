@@ -270,11 +270,19 @@ into `PipelineResult.usage`.
 ## Cost Resolution
 
 Each LLM call is priced by a chain of resolver callables, each returning `float | None`.
-The default chain (`DEFAULT_RESOLVERS`) tries `provider_reported_cost` first (e.g.
-OpenRouter's `usage.cost` in the provider payload), then falls back to
-`genai_prices_cost` for token-by-token computation against the `genai-prices` price
-table. `CostContext` carries the token breakdown — cache and reasoning tokens are
-priced when the model's price record exposes the relevant fields:
+The default chain (`DEFAULT_RESOLVERS`) tries `provider_reported_cost` first (an
+authoritative per-call USD from the provider payload — e.g. OpenRouter's
+`usage.cost`; this is a **seam** for custom integrations, since pydantic-ai 1.x
+does not surface that cost on the result), then falls back to `genai_prices_cost`
+for token-by-token computation against the `genai-prices` price table.
+
+**Model identity is provider-agnostic.** Pricing keys off
+`get_model_identifier(model)` (`model_utils`), which normalises both
+`"provider:model"` strings and pydantic-ai `Model` objects (reading the provider
+from the model's own `_provider.name`) into a `provider:model` string — so any
+pydantic-ai provider (OpenAI, Anthropic, Google, Groq, Bedrock, Mistral, Cohere,
+DeepSeek, xAI, OpenRouter, Azure, …) prices uniformly. `CostContext` carries the
+token breakdown:
 
 ```python
 from fireflyframework_agentic.observability.cost_resolvers import resolve_cost, CostContext
@@ -291,11 +299,31 @@ cost = resolve_cost(CostContext(
 
 Custom strategies plug in by passing your own chain: `resolve_cost(ctx, [my_fixed_rate, *DEFAULT_RESOLVERS])`. See `examples/cost_tracking.py`.
 
+**Reasoning tokens are provider-aware.** `genai-prices` has no reasoning field;
+the resolver folds reasoning into output tokens (`output_tokens + reasoning_tokens`,
+priced at the output rate). Critically, `CostContext.reasoning_tokens` means
+*reasoning the provider does **not** already count in `output_tokens`* — which is
+**only Gemini's `thoughts_tokens`** (Gemini excludes them from `output_tokens`).
+The callers compute this via `reasoning_tokens_not_in_output(usage)`, which reads
+the Gemini-specific `thoughts_tokens` key, so OpenAI (whose `reasoning_tokens` are
+already in `output_tokens` — re-adding would inflate o-series cost ~53%) and
+Anthropic (which folds thinking into `output_tokens`) contribute `0`.
+
+**Bedrock model ids** carry a vendor prefix (`bedrock:anthropic.claude-…`); on a
+`genai-prices` miss the resolver retries on the bare model name with the vendor as
+the provider before giving up.
+
 When no resolver can price the model, `resolve_cost` returns `None`, increments the
 `cost_unknown` metric, and logs a WARNING on every such call. The default
 `UsageTracker` coerces `None` to `0.0`. In **strict mode** — `resolve_cost(ctx,
 strict=True)`, or globally via `config.cost_strict` / `FIREFLY_AGENTIC_COST_STRICT=true`
-— it raises `UnknownModelCostError` instead (a public export).
+— it raises `UnknownModelCostError` instead (a public export), failing the agent
+run (and the workflow `agent()` call) rather than silently billing `$0`.
+
+> **Budget caveat.** Because an unpriceable model contributes `$0`, the
+> `BudgetGate` enforces only over models `genai-prices` *can* price. For
+> budget-critical deployments, set `cost_strict=True` to fail closed on any model
+> the price table doesn't know.
 
 ## Budgets
 

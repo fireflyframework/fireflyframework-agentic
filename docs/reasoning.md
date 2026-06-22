@@ -124,13 +124,16 @@ When a pattern needs structured output, it calls `_structured_run(agent, prompt,
 
 ```mermaid
 flowchart TD
-    CALL["_structured_run(agent, prompt, OutputType)"] --> RESOLVE{Model available?}
+    CALL["_structured_run(agent, prompt, OutputType)"] --> ISFF{FireflyAgent?}
+    ISFF -->|yes| THRU["agent.run(prompt, output_type=OutputType)<br/>through the full FireflyAgent stack"]
+    THRU --> DONE([Return validated OutputType])
+    ISFF -->|no| RESOLVE{Model available?}
     RESOLVE -->|yes| EPHEMERAL["Create ephemeral Agent(model, output_type=OutputType)"]
     EPHEMERAL --> RUN_E["agent.run(prompt) → validated OutputType"]
     RESOLVE -->|no| FALLBACK["agent.run(prompt) → raw output"]
     FALLBACK --> PARSE["_fallback_parse(raw, OutputType)"]
     PARSE --> IS_TYPE{Already OutputType?}
-    IS_TYPE -->|yes| DONE([Return])
+    IS_TYPE -->|yes| DONE
     IS_TYPE -->|no| IS_DICT{dict?}
     IS_DICT -->|yes| VALIDATE["model_validate(raw)"]
     IS_DICT -->|no| IS_JSON{Valid JSON string?}
@@ -144,6 +147,15 @@ flowchart TD
     RUN_E --> DONE
     CONTENT --> DONE
 ```
+
+**Routing through the agent.** When the agent is a `FireflyAgent`, the structured
+call now runs **through it** — `agent.run(prompt, output_type=OutputType)` with a
+per-call output-type override — so the reasoning step inherits the agent's full
+stack (middleware chain, 429 rate-limit retry, usage/cost recording). An explicit
+pattern-level `model=` is forwarded as a per-call model override. The agent
+records its own usage in this path, so reasoning does not double-count it. The
+bare ephemeral `pydantic_ai.Agent` is used only for non-`FireflyAgent`,
+model-bearing inputs; the fallback parse cascade handles the rest.
 
 The model is resolved from:
 1. The pattern's constructor `model` parameter.

@@ -91,6 +91,23 @@ This also works with the `@firefly_agent` decorator and all template agents. See
 [tutorial](tutorial.md#model-providers--authentication) for full provider coverage
 including Azure OpenAI, Anthropic, Google, and OpenAI-compatible endpoints.
 
+### Model settings & default temperature
+
+Pass per-call model parameters through `model_settings=` (a pydantic-ai
+`ModelSettings` dict — `temperature`, `max_tokens`, …). The framework merges a
+**default temperature** from config when you don't supply one:
+
+```python
+agent = FireflyAgent(name="precise", model="openai:gpt-4o", model_settings={"temperature": 0.2})
+```
+
+`config.default_temperature` (env `FIREFLY_AGENTIC_DEFAULT_TEMPERATURE`) defaults
+to `None`, meaning **no temperature is forced** — each provider uses its own
+default. This matters because some models (e.g. OpenAI `o1`/`o3` reasoning
+models) reject an explicit temperature. When you *do* set
+`default_temperature`, it is filled into an agent's settings only when the caller
+omits `temperature` (a caller-supplied value always wins).
+
 ---
 
 ## Tool Auto-Conversion
@@ -438,8 +455,9 @@ See the [Observability Guide](observability.md#usage-tracking) for full details.
 
 `FireflyAgent` supports a pluggable middleware system for cross-cutting concerns
 (validation, guardrails, cost tracking, retries) without modifying the agent
-itself. Middleware hooks run **before** and **after** every execution path:
-`run()`, `run_sync()`, `run_stream()`, and `run_with_reasoning()`.
+itself. Middleware hooks run **before**, **after**, and — when a run raises —
+**on error**, across every execution path: `run()`, `run_sync()`, `run_stream()`,
+and `run_with_reasoning()`.
 
 ```mermaid
 flowchart LR
@@ -449,7 +467,8 @@ flowchart LR
 
 ### Defining Middleware
 
-Implement the `AgentMiddleware` protocol — both hooks are optional:
+Implement the `AgentMiddleware` protocol — all three hooks (`before_run`,
+`after_run`, `on_error`) are optional:
 
 ```python
 from fireflyframework_agentic.agents.middleware import AgentMiddleware, MiddlewareContext
@@ -463,6 +482,12 @@ class AuditMiddleware:
         elapsed = time.monotonic() - context.metadata["audit_start"]
         print(f"Agent {context.agent_name} took {elapsed*1000:.1f}ms")
         return result
+
+    async def on_error(self, context: MiddlewareContext, exc: BaseException) -> None:
+        # Fires when the run raises. Release whatever before_run acquired
+        # (end a span, record a failure). Do NOT suppress the error — the
+        # framework always re-raises the original exception afterwards.
+        print(f"Agent {context.agent_name} failed: {exc}")
 ```
 
 ### Attaching Middleware
@@ -489,10 +514,24 @@ def qa_instructions(ctx):
 agent.middleware.add(AuditMiddleware())
 ```
 
-`MiddlewareContext` carries the agent name, prompt, deps, kwargs, and an
-arbitrary `metadata` dict for sharing state between `before_run` and `after_run`.
-`before_run` hooks execute in order; `after_run` hooks execute in **reverse**
-order (LIFO).
+`MiddlewareContext` carries the `agent_name`, `prompt`, `deps`, `kwargs`, the
+`method` being run (`"run"` / `"run_sync"` / `"run_stream"`), the resolved
+`model` identifier, an optional `context` (correlation/scope), and an arbitrary
+`metadata` dict for sharing state across the hooks. `before_run` hooks execute in
+order; `after_run` and `on_error` hooks execute in **reverse** order (LIFO), so
+cleanup unwinds symmetrically with setup.
+
+### Error Lifecycle
+
+When a run raises, the chain's error hooks fire (each middleware's `on_error`,
+in reverse order) and then the original exception is **re-raised** — `on_error`
+is for cleanup, not for swallowing errors. A middleware that itself raises inside
+`on_error` is suppressed so cleanup can never mask the real failure. This lets a
+middleware release what `before_run` acquired: `ObservabilityMiddleware` ends the
+span it opened (recording the exception and marking the span status `ERROR`, so
+failed runs don't leak spans), and `CircuitBreakerMiddleware` records the failure
+(see below). The error lifecycle fires on `run()`, `run_sync()`, `run_stream()`
+(including a stream that raises mid-iteration), and `run_with_reasoning()`.
 
 ### Built-in Middleware: RetryMiddleware
 
@@ -689,7 +728,9 @@ agent = FireflyAgent(
 #### ObservabilityMiddleware
 
 Emits OpenTelemetry spans, metrics, and structured events for every agent run.
-Auto-wired by default when `config.observability_enabled` is `True`.
+Auto-wired by default when `config.observability_enabled` is `True`. On a **failed**
+run its `on_error` hook closes the span it opened, records the exception on it, and
+marks the span status `ERROR` — so a run that raises does not leak an unclosed span.
 
 #### ExplainabilityMiddleware
 
@@ -770,13 +811,19 @@ agent = FireflyAgent(
 )
 ```
 
-The middleware automatically configures caching based on the **model family**
-(resolved via `detect_model_family()`), not the provider string. This means
-proxy providers route correctly:
+The middleware configures caching based on the **model family** (resolved via
+`detect_model_family()`), not the provider string:
 
-- **Anthropic** (including `bedrock:anthropic.claude-*`): Uses `cache_control` blocks
-- **OpenAI** (including `azure:gpt-*`): Uses `cached_content` for supported models
-- **Google**: Uses `cachedContent` for Gemini models
+- **Anthropic** (the direct `AnthropicModel`): writes explicit `cache_control`
+  breakpoints into the request. **Claude via Bedrock or OpenRouter is skipped
+  with a warning** — those backends drive caching differently (Bedrock
+  `CachePoint` blocks), so the Anthropic settings would be a silent no-op; that
+  path is not yet wired.
+- **OpenAI** (including `azure:gpt-*`): OpenAI prompt caching is **automatic**
+  server-side, so the middleware only supplies a routing key
+  (`openai_cache_key`) to steer requests to the same cache — it does not inject
+  cache markers.
+- **Google**: supplies the Gemini `cachedContent` resource name for Gemini models.
 
 To monitor cache effectiveness, use the standalone `CacheStatistics` helper.
 Feed it the cache-creation / cache-read token counts from each result via
@@ -800,6 +847,11 @@ print(f"Estimated savings: ${stats.estimated_savings_usd():.2f}")
 
 Implements the circuit breaker pattern to prevent cascading failures by
 monitoring agent execution health and fast-failing when issues are detected.
+It records each **failure through its `on_error` hook** (so the failure count
+only advances because the [error lifecycle](#error-lifecycle) fires) and each
+success in `after_run`; the circuit opens once `failure_threshold` failures
+accumulate. See the [Resilience guide](resilience.md) for the full state machine
+and direct (non-middleware) usage.
 
 Parameters:
 
