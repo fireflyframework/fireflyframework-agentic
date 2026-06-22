@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.06.13] - 2026-06-22
+
+Best-in-class auto-instrumentation, on by default — plus an observability-metrics de-dup.
+
+### Changed (behavioural)
+
+- **Native pydantic-ai instrumentation is now ON by default** (`native_instrumentation_enabled`
+  defaults to `True`, gated by `observability_enabled`). Every agent emits rich
+  GenAI-convention spans + metrics for each model request (`chat`) and tool call
+  (`execute_tool`), nested under the framework's `agent.{name}` span. Default-on is
+  safe because the framework leaves the tracer/meter providers unset (telemetry flows
+  through the global OTel API and costs nothing until the host wires an exporter) and
+  **prompt/response content is stripped by default** (`instrumentation_include_content=False`).
+  Set `native_instrumentation_enabled=false` to opt out (e.g. to cut span volume on
+  very high-throughput hosts).
+- **Single source of truth for metrics.** `ObservabilityMiddleware` no longer emits
+  `firefly.tokens.total` / `firefly.latency` — these (and `firefly.cost.total`, the
+  prompt/completion token split) are emitted solely by the usage/cost-sink path
+  (`UsageTracker` → `OTelMetricsSink`), which previously **double-counted** them in
+  every metrics backend. The middleware now owns only the span lifecycle (matching the
+  existing `agent.completed` de-dup). Metrics flow when `cost_tracking_enabled` (default
+  `True`). The span also now carries `firefly.correlation_id`.
+
+### Fixed
+
+- Removed a stale `# RubricReviewer (placeholder — full implementation in subsequent
+  tasks)` comment — `RubricReviewer` is fully implemented and tested; the comment was
+  misleading.
+
 ## [26.06.12] - 2026-06-22
 
 SP-10: native pydantic-ai OpenTelemetry instrumentation.

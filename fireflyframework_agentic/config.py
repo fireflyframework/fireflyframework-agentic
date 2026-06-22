@@ -72,16 +72,18 @@ class FireflyAgenticConfig(BaseSettings):
     observability_enabled: bool = True
     """Whether OpenTelemetry instrumentation is active."""
 
-    native_instrumentation_enabled: bool = False
+    native_instrumentation_enabled: bool = True
     """Whether to enable pydantic-ai's **native** OpenTelemetry instrumentation on
     every agent — rich GenAI-semantic-convention spans for each model request
     (``chat``) and tool call (``execute_tool``), nested under the framework's
-    ``agent.{name}`` span. Off by default: native spans embed prompt/response
-    content unless :attr:`instrumentation_include_content` is set, and one span
-    per model request / tool call is opt-in for high-throughput hosts. Only takes
-    effect when :attr:`observability_enabled` is also ``True``. The framework
-    leaves the tracer/meter providers unset (``None``) so spans flow through the
-    global OpenTelemetry API — the host owns the SDK/exporter."""
+    ``agent.{name}`` span, plus native GenAI token/duration metrics. **On by
+    default** (gated by :attr:`observability_enabled`): the framework leaves the
+    tracer/meter providers unset (``None``) so telemetry flows through the global
+    OpenTelemetry API and costs nothing until the host wires an SDK/exporter, and
+    prompt/response content is stripped unless :attr:`instrumentation_include_content`
+    is set — so default-on is safe. Set to ``False`` to suppress the per-request /
+    per-tool-call span volume on very high-throughput hosts (the coarse
+    ``agent.{name}`` span and firefly metrics remain)."""
 
     instrumentation_include_content: bool = False
     """Whether native instrumentation records prompt/response **content** (and
