@@ -124,7 +124,7 @@ def _suggested_retry_delay(exc: BaseException) -> float | None:
 #: capability. Use ``requests.build_results(...)`` to construct the result.
 ApprovalHandler = Callable[
     [RunContext[Any], DeferredToolRequests],
-    "DeferredToolResults | None | Awaitable[DeferredToolResults | None]",
+    DeferredToolResults | None | Awaitable[DeferredToolResults | None],
 ]
 
 
