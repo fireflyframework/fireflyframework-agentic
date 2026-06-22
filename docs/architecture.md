@@ -166,7 +166,6 @@ classDiagram
     ToolProtocol <|.. ConditionalComposer
     GuardProtocol <|.. ValidationGuard
     GuardProtocol <|.. RateLimitGuard
-    GuardProtocol <|.. ApprovalGuard
     GuardProtocol <|.. SandboxGuard
     GuardProtocol <|.. CompositeGuard
     ReasoningPattern <|.. AbstractReasoningPattern

@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.06.11] - 2026-06-22
+
+SP-3: human-in-the-loop tool approval re-based onto pydantic-ai native deferred-tools.
+
+### Added
+
+- **Native tool approval / HITL.** Tools can declare `requires_approval=True`
+  (`firefly_tool(...)`, `BaseTool`, and threaded through `ToolKit.as_pydantic_tools()`
+  / `as_toolset()`). When the model calls such a tool, the agent run **pauses before
+  executing it** and returns a `DeferredToolRequests` as `result.output`. Detect with
+  the new `is_deferred(result)` helper; **resume** via
+  `agent.run(message_history=..., deferred_tool_results=DeferredToolResults(approvals={call_id: True | ToolApproved(override_args=...) | ToolDenied(message=...)}))`.
+  `FireflyAgent` auto-detects HITL (any approval-requiring tool/`ToolKit`/`as_toolset()`,
+  or an `ApprovalRequiredToolset` in `toolsets`) and widens its output union to allow the
+  pause **only then** — non-HITL agents are unchanged. Force with `hitl=True`.
+- **Inline (non-pausing) approval.** `FireflyAgent(approval_handler=...)` resolves
+  approvals *inside* the run via a native `HandleDeferredToolCalls` capability — for
+  programmatic / policy-based auto-approval.
+- **Native re-exports** from `fireflyframework_agentic.tools`: `DeferredToolRequests`,
+  `DeferredToolResults`, `ToolApproved`, `ToolDenied`, `ApprovalRequired` (plus the
+  already-exported `ApprovalRequiredToolset`). `is_deferred` and the `ApprovalHandler`
+  type are exported from `fireflyframework_agentic.agents`.
+
+### Changed
+
+- Post-run cross-cutting code now treats a paused run as a control object, not a final
+  answer: `_persist_memory`, the output-guard, validation, cache, logging, and
+  explainability middleware all **skip** a `DeferredToolRequests` output (preventing
+  corrupted memory turns, spurious `OutputGuardError`/`OutputReviewError`, and caching a
+  pause).
+- Tool **guard denials** (validation / rate-limit / sandbox) now raise `ToolGuardError`
+  instead of a plain `ToolError`. `ToolGuardError` subclasses `ToolError`, so existing
+  `except ToolError` handlers are unaffected.
+
+### Removed (breaking)
+
+- **`ApprovalGuard`** (and the `ApprovalCallback` alias). The bespoke guard-chain approval
+  (sync bool callback → `ToolError` on denial, no pause/resume/metadata) is replaced by the
+  native protocol above. Migration: `docs/migration.md` §6.
+
+### Notes
+
+- HITL stays three distinct layers by design: tool approval (native deferred-tools, agent
+  layer), workflow `human()` / `WorkflowInterrupt` (journal-replay), and pipeline `Pause`
+  / `approve_pause` (checkpoint). They are not collapsed.
+- Validated against a live Anthropic model: a `requires_approval` tool pauses the real run
+  (tool body does not execute), and resuming with approval runs it exactly once.
+
 ## [26.06.10] - 2026-06-22
 
 SP-5: native structured-output modes for reasoning patterns.

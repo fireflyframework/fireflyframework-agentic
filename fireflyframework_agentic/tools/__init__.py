@@ -22,8 +22,16 @@ pydantic-ai's native ``RunContext`` and toolset combinators so a ``ToolKit``'s
 ``pydantic_ai`` directly.
 """
 
-# Native pydantic-ai surface, re-exported so callers compose toolsets in one import.
-from pydantic_ai import RunContext
+# Native pydantic-ai surface, re-exported so callers compose toolsets, request
+# human approval, and resume deferred runs in one import.
+from pydantic_ai import (
+    DeferredToolRequests,
+    DeferredToolResults,
+    RunContext,
+    ToolApproved,
+    ToolDenied,
+)
+from pydantic_ai.exceptions import ApprovalRequired
 from pydantic_ai.toolsets import (
     ApprovalRequiredToolset,
     CombinedToolset,
@@ -52,7 +60,6 @@ from fireflyframework_agentic.tools.composer import (
 )
 from fireflyframework_agentic.tools.decorators import firefly_tool, guarded, retryable
 from fireflyframework_agentic.tools.guards import (
-    ApprovalGuard,
     CompositeGuard,
     RateLimitGuard,
     SandboxGuard,
@@ -62,13 +69,15 @@ from fireflyframework_agentic.tools.registry import ToolRegistry, tool_registry
 from fireflyframework_agentic.tools.toolkit import ToolKit, to_pydantic_handler
 
 __all__ = [
-    "ApprovalGuard",
+    "ApprovalRequired",
     "ApprovalRequiredToolset",
     "BaseTool",
     "CachedTool",
     "CombinedToolset",
     "CompositeGuard",
     "ConditionalComposer",
+    "DeferredToolRequests",
+    "DeferredToolResults",
     "FallbackComposer",
     "FilteredToolset",
     "FunctionToolset",
@@ -82,7 +91,9 @@ __all__ = [
     "RunContext",
     "SandboxGuard",
     "SequentialComposer",
+    "ToolApproved",
     "ToolBuilder",
+    "ToolDenied",
     "ToolInfo",
     "ToolKit",
     "ToolProtocol",

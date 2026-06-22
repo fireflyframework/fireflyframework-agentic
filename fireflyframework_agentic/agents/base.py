@@ -29,14 +29,16 @@ import contextlib
 import logging
 import re
 import time
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any, Generic, cast
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults, RunContext
 from pydantic_ai import Tool as PydanticTool
+from pydantic_ai.capabilities import HandleDeferredToolCalls
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
+from pydantic_ai.toolsets import ApprovalRequiredToolset
 
 from fireflyframework_agentic.agents.builtin_middleware import (
     LoggingMiddleware,
@@ -114,6 +116,32 @@ def _suggested_retry_delay(exc: BaseException) -> float | None:
     return float(match.group(1)) if match else None
 
 
+#: An inline human-in-the-loop approval handler. Receives the run context and the
+#: pending :class:`~pydantic_ai.DeferredToolRequests`, and returns a
+#: :class:`~pydantic_ai.DeferredToolResults` resolving some/all approvals so the
+#: run continues *without* pausing (return ``None`` to decline and let the run
+#: pause normally). Wired into the inner agent as a ``HandleDeferredToolCalls``
+#: capability. Use ``requests.build_results(...)`` to construct the result.
+ApprovalHandler = Callable[
+    [RunContext[Any], DeferredToolRequests],
+    "DeferredToolResults | None | Awaitable[DeferredToolResults | None]",
+]
+
+
+def is_deferred(result: Any) -> bool:
+    """Whether an agent run *paused* instead of completing.
+
+    Returns ``True`` when ``result.output`` is a pydantic-ai
+    :class:`~pydantic_ai.DeferredToolRequests` — i.e. the run hit a tool that
+    requires human-in-the-loop approval (``.approvals``) or external execution
+    (``.calls``) and is awaiting a :class:`~pydantic_ai.DeferredToolResults`
+    before it can continue. Resume by calling :meth:`FireflyAgent.run` (or
+    ``run_sync``) again with ``message_history=result.all_messages()`` and
+    ``deferred_tool_results=...``.
+    """
+    return isinstance(getattr(result, "output", None), DeferredToolRequests)
+
+
 class FireflyAgent(Generic[AgentDepsT, OutputT]):
     """A managed agent that wraps a Pydantic AI :class:`Agent`.
 
@@ -154,6 +182,14 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             messages back after each invocation.
         auto_register: When *True* (the default), the agent is automatically
             added to the global :class:`AgentRegistry`.
+        hitl: Force human-in-the-loop mode on. Normally HITL is auto-detected
+            from approval-requiring tools/toolsets; set this when tools defer
+            dynamically (raising ``ApprovalRequired``) so the output union is
+            widened to allow the ``DeferredToolRequests`` pause.
+        approval_handler: Optional inline approval handler (see
+            :data:`ApprovalHandler`). When supplied, approvals are resolved
+            *inside* the run via a ``HandleDeferredToolCalls`` capability instead
+            of pausing — useful for programmatic / policy-based auto-approval.
     """
 
     def __init__(
@@ -176,6 +212,8 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         middleware: list[AgentMiddleware] | None = None,
         default_middleware: bool = True,
         auto_register: bool = True,
+        hitl: bool = False,
+        approval_handler: ApprovalHandler | None = None,
     ) -> None:
         cfg = get_config()
 
@@ -206,15 +244,33 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             merged_settings["temperature"] = cfg.default_temperature
         resolved_settings: ModelSettings | None = cast("ModelSettings", merged_settings) if merged_settings else None
 
+        # Human-in-the-loop: when any tool requires approval (declared on a
+        # BaseTool/ToolKit, or via an ApprovalRequiredToolset in ``toolsets``),
+        # or HITL is forced, or an inline approval handler is supplied, the run
+        # may pause and surface a ``DeferredToolRequests``. pydantic-ai only
+        # allows that terminal when it is in ``output_type`` — otherwise it
+        # raises ``UserError`` — so widen the output union exactly once here,
+        # gated strictly on HITL so non-HITL agents keep their declared shape.
+        self._hitl_enabled = hitl or approval_handler is not None or self._detect_hitl(tools, toolsets)
+        effective_output_type: Any = output_type
+        if self._hitl_enabled:
+            existing = list(output_type) if isinstance(output_type, list) else [output_type]
+            if DeferredToolRequests not in existing:
+                existing.append(DeferredToolRequests)
+            effective_output_type = existing
+
+        capabilities = [HandleDeferredToolCalls(approval_handler)] if approval_handler is not None else []
+
         self._agent: Agent[AgentDepsT, OutputT] = Agent(
             resolved_model,
             instructions=instructions,
-            output_type=output_type,
+            output_type=effective_output_type,
             deps_type=deps_type,
             tools=self._resolve_tools(tools),
             toolsets=list(toolsets),
             retries=resolved_retries,
             model_settings=resolved_settings,
+            capabilities=capabilities,
             name=name,
         )
 
@@ -278,6 +334,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         conversation_id: str | None = None,
         timeout: float | None = None,
         context: AgentContext | None = None,
+        deferred_tool_results: DeferredToolResults | None = None,
         **kwargs: Any,
     ) -> Any:
         """Run the agent asynchronously.
@@ -290,8 +347,16 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         is provided, the agent automatically loads conversation history
         as ``message_history`` and stores new messages after the run.
 
+        To **resume** a run that paused for human-in-the-loop approval (see
+        :func:`is_deferred`), pass ``deferred_tool_results`` together with
+        ``message_history=<paused result>.all_messages()``; do not also set
+        *conversation_id* on the resume call (memory injection and an explicit
+        ``message_history`` are mutually exclusive).
+
         Delegates to ``pydantic_ai.Agent.run``.
         """
+        if deferred_tool_results is not None:
+            kwargs["deferred_tool_results"] = deferred_tool_results
         if context is None:
             context = _AgentContext()
 
@@ -339,9 +404,15 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         conversation_id: str | None = None,
         timeout: float | None = None,
         context: AgentContext | None = None,
+        deferred_tool_results: DeferredToolResults | None = None,
         **kwargs: Any,
     ) -> Any:
-        """Run the agent synchronously.  Delegates to ``pydantic_ai.Agent.run_sync``."""
+        """Run the agent synchronously.  Delegates to ``pydantic_ai.Agent.run_sync``.
+
+        Supports the same ``deferred_tool_results`` resume path as :meth:`run`.
+        """
+        if deferred_tool_results is not None:
+            kwargs["deferred_tool_results"] = deferred_tool_results
         if context is None:
             context = _AgentContext()
 
@@ -472,6 +543,11 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
     ) -> None:
         """After a run, store new messages in conversation memory."""
         if self._memory is None or conversation_id is None:
+            return
+        if is_deferred(result):
+            # The run paused for approval; its output is a control object, not a
+            # final answer. Persisting it would corrupt the conversation turn —
+            # the resumed run records the completed turn instead.
             return
         if not hasattr(result, "new_messages"):
             return
@@ -785,11 +861,40 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
                         item.pydantic_handler(),
                         name=item.name,
                         description=item.description,
+                        requires_approval=item.requires_approval,
                     )
                 )
             else:
                 resolved.append(item)
         return resolved
+
+    @staticmethod
+    def _detect_hitl(tools: Sequence[Any], toolsets: Sequence[Any]) -> bool:
+        """Whether any tool/toolset can pause the run for approval.
+
+        True if a :class:`BaseTool` (directly or inside a ``ToolKit``) declares
+        ``requires_approval``, a toolset is a native
+        :class:`~pydantic_ai.toolsets.ApprovalRequiredToolset`, or a toolset
+        (e.g. ``ToolKit.as_toolset()``) exposes a tool that declares
+        ``requires_approval``. Raw ``pydantic_ai.Tool`` objects with
+        ``requires_approval`` are also honoured; if introspection misses a case,
+        pass ``hitl=True`` explicitly.
+        """
+        for item in tools:
+            if isinstance(item, ToolKit):
+                if any(getattr(t, "requires_approval", False) for t in item.tools):
+                    return True
+            elif getattr(item, "requires_approval", False):
+                return True
+        for ts in toolsets:
+            if isinstance(ts, ApprovalRequiredToolset):
+                return True
+            # A FunctionToolset exposes its tools as a name -> Tool mapping; honour
+            # any that declare requires_approval (so as_toolset() HITL kits work).
+            ts_tools = getattr(ts, "tools", None)
+            if isinstance(ts_tools, dict) and any(getattr(t, "requires_approval", False) for t in ts_tools.values()):
+                return True
+        return False
 
     # -- Dunder --------------------------------------------------------------
 

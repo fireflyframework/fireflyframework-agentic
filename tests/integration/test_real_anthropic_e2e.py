@@ -35,8 +35,9 @@ from unittest.mock import patch
 
 import pytest
 from pydantic import BaseModel
+from pydantic_ai import DeferredToolResults
 
-from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.agents.base import FireflyAgent, is_deferred
 from fireflyframework_agentic.memory.manager import MemoryManager
 from fireflyframework_agentic.observability.usage import UsageTracker
 from fireflyframework_agentic.pipeline.builder import PipelineBuilder
@@ -143,6 +144,48 @@ class TestRealAnthropicE2E:
         )
         assert result.steps_taken >= 1
         assert "60" in str(result.output)
+
+    async def test_hitl_tool_approval_pause_resume(self):
+        """A requires_approval tool pauses the real run before executing; resuming
+        with approval runs the tool and the model uses its result."""
+        calls: list[str] = []
+
+        class DeleteTool(BaseTool):
+            def __init__(self) -> None:
+                super().__init__(
+                    "delete_record",
+                    description="Delete a record by its id. This is destructive.",
+                    parameters=[ParameterSpec(name="record_id", python_type=str)],
+                    requires_approval=True,
+                )
+
+            async def _execute(self, *, record_id: str) -> str:
+                calls.append(record_id)
+                return f"record {record_id} deleted"
+
+        ag = FireflyAgent(
+            "e2e-hitl",
+            model=HAIKU,
+            tools=[DeleteTool()],
+            instructions="To delete, call delete_record with the id. Then confirm to the user.",
+            auto_register=False,
+        )
+
+        paused = await ag.run("Please delete record 42.")
+        assert is_deferred(paused), "the approval-required tool should pause the run"
+        assert calls == [], "the tool body must NOT run before approval"
+        approvals = paused.output.approvals
+        assert [c.tool_name for c in approvals] == ["delete_record"]
+        call_id = approvals[0].tool_call_id
+
+        resumed = await ag.run(
+            None,
+            message_history=paused.all_messages(),
+            deferred_tool_results=DeferredToolResults(approvals={call_id: True}),
+        )
+        assert not is_deferred(resumed)
+        assert calls == ["42"], "the tool body must run exactly once, after approval"
+        assert "42" in str(resumed.output)
 
     async def test_pipeline_agent_step(self):
         """A DAG pipeline runs a real agent step end to end."""

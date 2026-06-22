@@ -188,7 +188,12 @@ flowchart LR
 
 Each guard implements `GuardProtocol.check(tool_name, kwargs) -> GuardResult`. When a
 guard returns `GuardResult(passed=False, reason=...)`, `BaseTool.execute()` raises a
-`ToolError` before the handler runs.
+`ToolGuardError` (a `ToolError` subclass) before the handler runs.
+
+> Guards are for **hard, synchronous policy** (validation, rate-limiting, sandboxing).
+> For **human-in-the-loop approval** — pausing a run until a person signs off — use the
+> native deferred-tools path described in
+> [Human-in-the-Loop Tool Approval](#human-in-the-loop-tool-approval), not a guard.
 
 ### Built-in Guards
 
@@ -196,8 +201,6 @@ guard returns `GuardResult(passed=False, reason=...)`, `BaseTool.execute()` rais
   required keyword argument is missing.
 - **RateLimitGuard** -- `RateLimitGuard(max_calls, period_seconds=60.0)` — sliding-window
   rate limiter that caps invocations per time window.
-- **ApprovalGuard** -- `ApprovalGuard(callback)` — human-in-the-loop gate; `callback` is
-  an async callable `(tool_name, kwargs) -> bool` that must return `True` to approve.
 - **SandboxGuard** -- `SandboxGuard(*, allowed_patterns=(), denied_patterns=())` — converts
   each kwarg value to a string and rejects it if it matches a `denied_patterns` regex
   (unless it also matches an `allowed_patterns` regex, which takes precedence).
@@ -250,6 +253,106 @@ from fireflyframework_agentic.tools import firefly_tool, retryable
 async def fetch(url: str) -> str:
     ...
 ```
+
+---
+
+## Human-in-the-Loop Tool Approval
+
+Destructive or sensitive tools can require a human to sign off **before** they run.
+Firefly delegates this to pydantic-ai's native **deferred-tools** protocol — no bespoke
+mechanism — so approval is per-tool-call, carries metadata, and survives durable
+execution.
+
+### Declaring a tool that needs approval
+
+Set `requires_approval=True` on the tool. It works on the decorator, `BaseTool`
+subclasses, and tools added to a `ToolKit` (via either `as_pydantic_tools()` or
+`as_toolset()`):
+
+```python
+from fireflyframework_agentic.tools import firefly_tool
+
+@firefly_tool("delete_record", description="Delete a database record", requires_approval=True)
+async def delete_record(record_id: str) -> str:
+    ...
+```
+
+### Pause → approve → resume
+
+When the model calls an approval-required tool, the run **pauses before executing it**
+and returns a `DeferredToolRequests` as `result.output`. Check this with `is_deferred()`,
+collect the human decision, then **resume** by calling `run()` again with the prior
+messages and a `DeferredToolResults`:
+
+```python
+from fireflyframework_agentic.agents import FireflyAgent, is_deferred
+from fireflyframework_agentic.tools import DeferredToolResults, ToolApproved, ToolDenied
+
+agent = FireflyAgent("ops", model="anthropic:claude-haiku-4-5", tools=[delete_record])
+
+result = await agent.run("Delete record 42.")
+if is_deferred(result):
+    requests = result.output                      # DeferredToolRequests
+    decisions = {}
+    for call in requests.approvals:               # each is a ToolCallPart
+        # call.tool_name, call.args, requests.metadata.get(call.tool_call_id)
+        decisions[call.tool_call_id] = True        # True / ToolApproved(override_args=...) / ToolDenied(message=...)
+    result = await agent.run(
+        message_history=result.all_messages(),     # required: thread the paused run's messages
+        deferred_tool_results=DeferredToolResults(approvals=decisions),
+    )
+# result.output is now the model's final answer
+```
+
+Decision values: `True` approves (equivalent to `ToolApproved()`); `ToolApproved(override_args={...})`
+approves but replaces the call arguments; `ToolDenied(message="...")` denies — the message is
+returned to the model, which continues (it is **not** a crash). On resume the tool's
+`RunContext.tool_call_approved` is `True` and `RunContext.tool_call_metadata` carries any
+`DeferredToolResults.metadata` you passed.
+
+> Do not set `conversation_id` on the resume call — an explicit `message_history` and
+> memory injection are mutually exclusive.
+
+### Auto-detection and forcing HITL
+
+`FireflyAgent` widens its output type to allow the `DeferredToolRequests` pause exactly when
+HITL is in play. It auto-detects this from any `requires_approval` tool (directly, inside a
+`ToolKit`, or inside a `ToolKit.as_toolset()`), or an `ApprovalRequiredToolset` in `toolsets`.
+If your tools defer **dynamically** (raising `pydantic_ai.exceptions.ApprovalRequired`) so
+detection can't see it statically, pass `hitl=True`.
+
+### Dynamic, predicate-based approval
+
+To gate **existing** tools by a runtime predicate (e.g. approve small amounts, hold large
+ones), wrap a toolset in the native `ApprovalRequiredToolset`:
+
+```python
+from fireflyframework_agentic.tools import ApprovalRequiredToolset
+
+gated = ApprovalRequiredToolset(
+    my_toolkit.as_toolset(),
+    approval_required_func=lambda ctx, tool_def, args: args.get("amount", 0) > 1000,
+)
+agent = FireflyAgent("payments", model="...", toolsets=[gated])
+```
+
+### Inline (non-pausing) approval
+
+For programmatic / policy-based auto-approval that resolves **inside** the run instead of
+pausing, pass an `approval_handler` — wired as a native `HandleDeferredToolCalls` capability:
+
+```python
+def auto_approve(ctx, requests):
+    return requests.build_results(approvals={c.tool_call_id: True for c in requests.approvals})
+
+agent = FireflyAgent("ops", model="...", tools=[delete_record], approval_handler=auto_approve)
+```
+
+> **Three distinct HITL layers, by design.** Tool approval (this section) is native
+> deferred-tools at the **agent** layer. A **workflow** pause uses `human()` /
+> `WorkflowInterrupt` (journal-replay). A **pipeline** node pauses by returning `Pause(...)`
+> and resumes via `approve_pause` (checkpoint). They solve different problems and are not
+> collapsed into one mechanism.
 
 ---
 

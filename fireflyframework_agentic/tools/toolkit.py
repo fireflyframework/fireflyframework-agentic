@@ -113,6 +113,7 @@ class ToolKit:
                     to_pydantic_handler(tool),
                     name=tool.name,
                     description=tool.description,
+                    requires_approval=getattr(tool, "requires_approval", False),
                 )
             )
         return pydantic_tools
@@ -130,7 +131,14 @@ class ToolKit:
         for tool in self._tools:
             # Forward the description too — add_function drops it otherwise, so the
             # LLM would see a toolset tool with no description (a real fidelity loss).
-            toolset.add_function(to_pydantic_handler(tool), name=tool.name, description=tool.description)
+            # ``requires_approval`` is forwarded so a kit's HITL tools keep pausing
+            # the run for approval even when the kit is added as a toolset.
+            toolset.add_function(
+                to_pydantic_handler(tool),
+                name=tool.name,
+                description=tool.description,
+                requires_approval=getattr(tool, "requires_approval", False),
+            )
         return toolset
 
     def __len__(self) -> int:

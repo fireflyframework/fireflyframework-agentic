@@ -134,6 +134,50 @@ await triage(args, runner=FireflyAgentRunner())   # both resolved from the regis
 
 ---
 
+## 6. `ApprovalGuard` removed — human-in-the-loop is now native (breaking)
+
+**Why.** Tool approval was a bespoke guard (`ApprovalGuard(callback)`) that ran inside
+Firefly's guard chain and raised `ToolError` on a denied call — a synchronous, all-or-nothing
+gate with no pause/resume, metadata, or per-call granularity, parallel to pydantic-ai's own
+deferred-tools protocol. It has been **removed** in favour of the native protocol
+(`requires_approval`, `DeferredToolRequests`/`DeferredToolResults`, `ApprovalRequired`,
+`ApprovalRequiredToolset`).
+
+```python
+# Before — guard that blocks the run on denial
+from fireflyframework_agentic.tools.guards import ApprovalGuard
+
+async def approve(tool_name, kwargs) -> bool:
+    return await ask_admin(tool_name, kwargs)
+
+@guarded(ApprovalGuard(callback=approve))
+@firefly_tool("delete_record", description="Delete a record")
+async def delete_record(record_id: str) -> str: ...
+
+# After — native: the run PAUSES for sign-off, then resumes
+from fireflyframework_agentic.agents import is_deferred
+from fireflyframework_agentic.tools import DeferredToolResults
+
+@firefly_tool("delete_record", description="Delete a record", requires_approval=True)
+async def delete_record(record_id: str) -> str: ...
+
+result = await agent.run("delete record 42")
+if is_deferred(result):
+    approvals = {c.tool_call_id: await ask_admin(c) for c in result.output.approvals}  # bool / ToolApproved / ToolDenied
+    result = await agent.run(message_history=result.all_messages(),
+                             deferred_tool_results=DeferredToolResults(approvals=approvals))
+```
+
+For the old **inline, non-pausing** behaviour (a callback decides programmatically), pass
+`FireflyAgent(approval_handler=...)` — wired as a native `HandleDeferredToolCalls` capability.
+See [Human-in-the-Loop Tool Approval](tools.md#human-in-the-loop-tool-approval).
+
+Also: guard denials (validation, rate-limit, sandbox) now raise `ToolGuardError` instead of a
+plain `ToolError`. `ToolGuardError` **subclasses** `ToolError`, so existing `except ToolError`
+handlers keep working.
+
+---
+
 ## Checklist
 
 - [ ] Replace every `type_annotation="..."` with `python_type=<real type>` in
@@ -144,3 +188,7 @@ await triage(args, runner=FireflyAgentRunner())   # both resolved from the regis
 - [ ] Review workflows for global cost/budget effects now that sub-agents run through
       `FireflyAgent`; pass `runner=DefaultAgentRunner()` if you want the old path.
 - [ ] Import toolset combinators / `RunContext` from `fireflyframework_agentic.tools`.
+- [ ] Replace `ApprovalGuard` with `requires_approval=True` + the native pause/resume flow
+      (`is_deferred()` + `deferred_tool_results=`), or an inline `approval_handler=`.
+- [ ] If you matched on `ToolError` from guard denials specifically, note it is now the
+      `ToolGuardError` subclass (still caught by `except ToolError`).
