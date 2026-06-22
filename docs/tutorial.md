@@ -626,8 +626,9 @@ during a conversation to fetch data, trigger side-effects, or run computations.
 
 Pydantic AI already supports tool functions, but fireflyframework-agentic wraps them with
 a richer layer: a **protocol-based type system** (`ToolProtocol` → `BaseTool`),
-**guards** that enforce validation, rate-limiting, sandboxing, and approval policies
-before a tool executes, **composition** primitives (sequential, fallback, conditional),
+**guards** that enforce validation, rate-limiting, and sandboxing
+before a tool executes (human-in-the-loop *approval* is separate — it pauses the run
+rather than rejecting it), **composition** primitives (sequential, fallback, conditional),
 a **global registry** for discovery, and a **ToolKit** that can convert framework tools
 into Pydantic AI tools for injection into any agent.
 
@@ -680,7 +681,6 @@ graph TB
     CG --> VG
     CG --> RG
     CG --> SG
-    CG --> AG
     BT -.->|"compose"| SEQ
     BT -.->|"compose"| FB
     BT -.->|"compose"| COND

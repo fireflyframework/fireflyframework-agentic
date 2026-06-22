@@ -40,6 +40,11 @@ SP-3: human-in-the-loop tool approval re-based onto pydantic-ai native deferred-
 - Tool **guard denials** (validation / rate-limit / sandbox) now raise `ToolGuardError`
   instead of a plain `ToolError`. `ToolGuardError` subclasses `ToolError`, so existing
   `except ToolError` handlers are unaffected.
+- `BaseTool._guarded_execute` now lets pydantic-ai's `ApprovalRequired` / `CallDeferred`
+  control signals propagate untouched (like `ModelRetry`), instead of wrapping them as
+  `ToolError`. This makes **dynamic** approval work — a tool body (with `takes_ctx=True`)
+  may `raise ApprovalRequired(metadata=...)` to defer that specific call; pair with
+  `FireflyAgent(hitl=True)` so the output union allows the pause.
 
 ### Removed (breaking)
 

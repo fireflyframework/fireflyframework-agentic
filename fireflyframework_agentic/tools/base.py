@@ -38,6 +38,7 @@ from typing import Annotated, Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai.exceptions import ApprovalRequired, CallDeferred
 
 from fireflyframework_agentic.exceptions import ToolError, ToolGuardError, ToolTimeoutError
 
@@ -257,6 +258,12 @@ class BaseTool(ABC):
             return await coro
         except TimeoutError:
             raise ToolTimeoutError(f"Tool '{self._name}' timed out after {self._timeout}s") from None
+        except (ApprovalRequired, CallDeferred):
+            # pydantic-ai human-in-the-loop / deferral control signals. Like
+            # ``ModelRetry`` these are NOT errors: they must reach the agent graph
+            # untouched so the run pauses and surfaces a ``DeferredToolRequests``.
+            # Wrapping them as ``ToolError`` would break dynamic tool approval.
+            raise
         except ToolError:
             raise
         except Exception as exc:

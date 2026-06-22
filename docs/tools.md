@@ -304,6 +304,39 @@ if is_deferred(result):
 # result.output is now the model's final answer
 ```
 
+The full pause → approve → resume flow:
+
+```mermaid
+sequenceDiagram
+    actor Caller
+    participant Agent as FireflyAgent
+    participant Model as LLM
+    actor Human
+
+    Caller->>Agent: run("Delete record 42.")
+    Agent->>Model: prompt + tool schemas
+    Model-->>Agent: call delete_record(record_id="42")
+    Note over Agent: requires_approval → run PAUSES<br/>before executing the tool
+    Agent-->>Caller: result.output = DeferredToolRequests<br/>(is_deferred(result) is True)
+
+    Caller->>Human: present requests.approvals (+ metadata)
+    Human-->>Caller: decision = True / ToolApproved(override_args=…) / ToolDenied(message=…)
+
+    Caller->>Agent: run(message_history=result.all_messages(),<br/>deferred_tool_results=DeferredToolResults(approvals={call_id: decision}))
+    alt approved
+        Agent->>Agent: execute delete_record<br/>(RunContext.tool_call_approved = True)
+    else denied
+        Note over Agent: ToolDenied message returned to the model<br/>(not a crash — the run continues)
+    end
+    Agent->>Model: continue with tool result / denial
+    Model-->>Agent: final answer
+    Agent-->>Caller: result.output = final answer
+```
+
+> With an `approval_handler=` (the inline, non-pausing path), the handler resolves the
+> `DeferredToolRequests` **inside** the run via a native `HandleDeferredToolCalls` capability,
+> so the run never returns to the caller paused.
+
 Decision values: `True` approves (equivalent to `ToolApproved()`); `ToolApproved(override_args={...})`
 approves but replaces the call arguments; `ToolDenied(message="...")` denies — the message is
 returned to the model, which continues (it is **not** a crash). On resume the tool's

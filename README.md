@@ -156,9 +156,14 @@ create your own components; the framework discovers them via duck typing.
 
 - **Tools** — `ToolProtocol` (duck-typed) and `BaseTool` (inheritance) let you choose
   your extensibility style. `ToolBuilder` provides a fluent API for building tools
-  without subclassing. Five guard types (`ValidationGuard`, `RateLimitGuard`,
-  `ApprovalGuard`, `SandboxGuard`, `CompositeGuard`) intercept calls before execution.
-  Three composition patterns (`SequentialComposer`, `FallbackComposer`,
+  without subclassing. Four guard types (`ValidationGuard`, `RateLimitGuard`,
+  `SandboxGuard`, `CompositeGuard`) intercept calls before execution (a rejected guard
+  raises `ToolGuardError`). For **human-in-the-loop**, mark a tool `requires_approval=True`:
+  the agent run **pauses** before executing it and returns a `DeferredToolRequests`
+  (detected via `is_deferred(result)`), which you resume with `deferred_tool_results=` —
+  approving (`ToolApproved`), denying (`ToolDenied`), or auto-deciding inline via an
+  `approval_handler=`. The native deferred-tools types are re-exported from
+  `fireflyframework_agentic.tools`. Three composition patterns (`SequentialComposer`, `FallbackComposer`,
   `ConditionalComposer`) build higher-order tools. `ToolKit` groups tools for
   bulk registration. Nine built-in tools (calculator, datetime, filesystem, HTTP,
   JSON, search, shell, text, database) are ready to attach to any agent.
@@ -177,7 +182,11 @@ create your own components; the framework discovers them via duck typing.
   **Reflexion** (execute → critique → retry), **Tree of Thoughts** (branch →
   evaluate → select), and **Goal Decomposition** (goal → phases → tasks).
   All produce structured `ReasoningResult` with `ReasoningTrace`. Prompts are
-  slot-overridable. `OutputReviewer` can validate final outputs. `ReasoningPipeline`
+  slot-overridable. Each pattern's structured output is wrapped in a pydantic-ai
+  output mode — selected per-pattern via `output_mode=` or framework-wide via the
+  `reasoning_output_mode` config — `"tool"` (`ToolOutput`), `"native"` (provider
+  structured output), or `"prompted"` (`PromptedOutput`, portable to any model).
+  `OutputReviewer` can validate final outputs. `ReasoningPipeline`
   chains patterns sequentially.
 
 <p align="center">
@@ -536,6 +545,12 @@ async def lookup(query: str) -> str:
     return f"Result for {query}"
 ```
 
+> **Human-in-the-loop:** mark a tool `@firefly_tool(name=..., requires_approval=True)` and the
+> agent run **pauses** before executing it — `run()` returns a `DeferredToolRequests`
+> (detect with `is_deferred(result)`). Resume with
+> `agent.run(message_history=paused.all_messages(), deferred_tool_results=DeferredToolResults(approvals={call_id: True}))`.
+> Full detail in [docs/tools.md](docs/tools.md#human-in-the-loop-tool-approval).
+
 ### 4. Add Memory for Multi-Turn Conversations
 
 ```python
@@ -713,11 +728,11 @@ content processing, validation, explainability, and pipelines.
 Detailed guides for each module:
 
 - [Architecture](docs/architecture.md) — Design principles and layer diagram
-- [Agents](docs/agents.md) — Lifecycle, registry, delegation, decorators
+- [Agents](docs/agents.md) — Lifecycle, registry, delegation, decorators, human-in-the-loop approval
 - [Template Agents](docs/templates.md) — Summarizer, classifier, extractor, conversational, router
-- [Tools](docs/tools.md) — Protocol, builder, guards, composition, built-ins
+- [Tools](docs/tools.md) — Protocol, builder, guards, composition, built-ins, native HITL approval (`requires_approval`, deferred resume)
 - [Prompts](docs/prompts.md) — Templates, versioning, composition, validation
-- [Reasoning Patterns](docs/reasoning.md) — 6 patterns, structured outputs, custom patterns
+- [Reasoning Patterns](docs/reasoning.md) — 6 patterns, structured outputs, output modes (`output_mode`/`reasoning_output_mode`), custom patterns
 - [Content](docs/content.md) — Chunking, compression, batch processing
 - [Memory](docs/memory.md) — Conversation history, working memory, storage backends
 - [Validation](docs/validation.md) — Rules, QoS guards, output reviewer
