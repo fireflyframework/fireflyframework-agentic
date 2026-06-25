@@ -742,7 +742,7 @@ async def _ragas_score(metric_name: str, item: dict, ctx: EvalContext) -> float 
         dataset = EvaluationDataset(samples=[sample])
         result = evaluate(dataset=dataset, metrics=[metric])
         df = result.to_pandas()  # type: ignore[attr-defined]
-        col = df.columns[df.columns.str.contains(metric_name.replace("_ragas", ""), case=False)]
+        col = df.columns[df.columns.str.contains(metric_name.replace("ragas_", "").replace("_ragas", ""), case=False)]
         if col.empty:
             return None
         val = df[col[0]].iloc[0]
