@@ -74,7 +74,7 @@ def _ap_single(retrieved: list[dict], n_gold: int, k: int = 10) -> float:
         if r.get("is_gold"):
             hits += 1
             precisions.append(hits / r["rank"])
-    return sum(precisions) / min(n_gold, k) if n_gold else 0.0
+    return sum(precisions) / n_gold if n_gold else 0.0
 
 
 def hit_at_k(results: list[dict], k: int) -> float:
