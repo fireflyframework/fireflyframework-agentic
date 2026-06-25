@@ -1,0 +1,160 @@
+# Firefly Agentic — documentation site (MkDocs + Material).
+# Local preview:  pip install -r docs/requirements.txt && mkdocs serve
+# Build (CI):     mkdocs build --strict
+site_name: Firefly Agentic
+site_url: https://fireflyframework.github.io/fireflyframework-agentic/
+site_description: >-
+  The production-grade agentic metaframework, built on Pydantic AI. Keep
+  Pydantic AI's Agent, Tool and RunContext — gain lifecycle hooks, delegation,
+  memory, reasoning patterns, validation loops, RAG and DAG pipelines.
+site_author: Firefly Software Foundation
+copyright: Copyright &copy; 2026 Firefly Software Foundation — Apache-2.0
+
+repo_name: fireflyframework/fireflyframework-agentic
+repo_url: https://github.com/fireflyframework/fireflyframework-agentic
+edit_uri: edit/main/docs/
+
+# Custom landing template lives OUTSIDE docs/ (Material requirement).
+theme:
+  name: material
+  custom_dir: overrides
+  logo: assets/logo.svg
+  favicon: assets/favicon.svg
+  icon:
+    repo: fontawesome/brands/github
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    # Light scheme
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    # Dark scheme — the firefly-in-the-dark default
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.footer
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+
+extra_css:
+  - stylesheets/firefly.css
+
+extra_javascript:
+  - javascripts/constellation.js
+
+extra:
+  homepage: https://fireflyframework.org/
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/fireflyframework/fireflyframework-agentic
+      name: Firefly Agentic on GitHub
+    - icon: material/web
+      link: https://fireflyframework.org/
+      name: The Firefly Framework
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - toc:
+      permalink: true
+      permalink_title: Anchor link to this section
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+
+plugins:
+  - search
+
+# Keep internal working artifacts and non-content files out of the build.
+exclude_docs: |
+  superpowers/
+  plans/
+  README.md
+  requirements.txt
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quick Start: getting-started/quickstart.md
+      - The Tutorial: tutorial.md
+      - Jupyter Notebooks: getting-started/jupyter.md
+  - Architecture: architecture.md
+  - Agent Layer:
+      - Agents: agents.md
+      - Template Agents: templates.md
+      - Tools: tools.md
+      - Prompts: prompts.md
+      - Content: content.md
+      - Memory: memory.md
+  - Embeddings & Vector Stores:
+      - Embeddings: embeddings.md
+      - Vector Stores: vectorstores.md
+  - Intelligence:
+      - Reasoning Patterns: reasoning.md
+      - Validation & QoS: validation.md
+  - Security:
+      - Security: security.md
+      - Secure Script Execution: execution.md
+  - Observability:
+      - Observability: observability.md
+      - Resilience: resilience.md
+      - Storage: storage.md
+      - Explainability: explainability.md
+  - Experimentation:
+      - Experiments: experiments.md
+      - Lab: lab.md
+  - Orchestration:
+      - Pipeline: pipeline.md
+      - Dynamic Workflows: workflows.md
+  - Use Cases:
+      - IDP Pipeline: use-case-idp.md
+  - Reference:
+      - Migration Guide: migration.md
+      - Changelog: changelog.md

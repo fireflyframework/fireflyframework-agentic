@@ -117,7 +117,7 @@ You write your business logic; the framework provides the architecture.
 ## Architecture at a Glance
 
 <p align="center">
-  <img src="assets/architecture.svg" alt="Firefly Agentic architecture: one front door (pip install fireflyframework-agentic, @firefly_agent) over five layers — Orchestration, Experimentation, Intelligence, Agent, Core — on the Pydantic AI engine." width="100%">
+  <img src="assets/architecture.svg" alt="Firefly Agentic architecture: one front door (import fireflyframework_agentic, @firefly_agent) over five layers — Orchestration, Experimentation, Intelligence, Agent, Core — on the Pydantic AI engine." width="100%">
 </p>
 
 ### Protocol Hierarchy

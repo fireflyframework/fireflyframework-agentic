@@ -343,7 +343,7 @@ a **live Anthropic model** end to end. All nine confirmed P0/P1 findings address
 Framework alignment: the Dynamic Workflows engine and the tools system now run on
 the framework's own primitives and on pydantic-ai's native model — no parallel
 implementations, no lossy shims. Includes breaking changes; see the
-[Migration Guide](docs/migration.md).
+[Migration Guide](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/docs/migration.md).
 
 ### Changed (BREAKING)
 

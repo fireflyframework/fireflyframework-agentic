@@ -1,0 +1,341 @@
+{% extends "main.html" %}
+
+<!--
+  Firefly Agentic — landing page.
+  The whole page is injected into the `tabs` block (which sits between the
+  header and the empty main), so the immersive dark layout owns the viewport.
+  Styles live in docs/stylesheets/firefly.css (scoped under .ff-home);
+  the constellation + interactions live in docs/javascripts/constellation.js.
+-->
+
+{% block extrahead %}
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Firefly Agentic — the production-grade agentic metaframework">
+  <meta property="og:description" content="{{ config.site_description }}">
+  <meta name="twitter:card" content="summary_large_image">
+{% endblock %}
+
+{% block htmltitle %}<title>Firefly Agentic — production-grade agents on Pydantic AI</title>{% endblock %}
+
+{% block tabs %}
+<div class="ff-home">
+
+  <!-- ============================ HERO ============================ -->
+  <section class="ff-hero">
+    <canvas class="ff-constellation" id="ff-constellation" aria-hidden="true"></canvas>
+    <div class="ff-wrap">
+      <p class="ff-eyebrow">Open source · Apache-2.0 · Built on Pydantic AI</p>
+      <h1 class="ff-hero__title">Agents you can run in <span class="ff-grad">production</span>.</h1>
+      <p class="ff-hero__lead">
+        Firefly Agentic is the production-grade metaframework built on Pydantic AI.
+        Keep its <code>Agent</code>, <code>Tool</code> and <code>RunContext</code> — gain
+        lifecycle hooks, delegation, memory, reasoning patterns, validation loops, RAG
+        and DAG pipelines. Protocol-driven, swappable, no lock-in.
+      </p>
+
+      <div class="ff-install">
+        <span class="ff-install__prompt">$</span>
+        <span class="ff-install__cmd">curl -fsSL https://raw.githubusercontent.com/fireflyframework/fireflyframework-agentic/main/install.sh | bash</span>
+        <button class="ff-install__copy" data-copy="curl -fsSL https://raw.githubusercontent.com/fireflyframework/fireflyframework-agentic/main/install.sh | bash" aria-label="Copy install command">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+      </div>
+
+      <div class="ff-cta-row">
+        <a class="ff-btn ff-btn--primary" href="{{ base_url }}/getting-started/installation/">
+          Get started
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+        <a class="ff-btn ff-btn--ghost" href="{{ base_url }}/tutorial/">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          Read the tutorial
+        </a>
+        <a class="ff-btn ff-btn--ghost" href="{{ config.repo_url }}" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-1.8c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5A11.5 11.5 0 0 0 23.5 12C23.5 5.7 18.3.5 12 .5z"/></svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ TRUST ============================ -->
+  <div class="ff-wrap">
+    <div class="ff-trust">
+      <span class="ff-chip">Built on <b>Pydantic AI</b></span>
+      <span class="ff-chip"><b>28</b> protocols</span>
+      <span class="ff-chip"><b>6</b> reasoning patterns</span>
+      <span class="ff-chip"><b>8</b> embedding providers</span>
+      <span class="ff-chip"><b>6</b> vector stores</span>
+      <span class="ff-chip">Python <b>3.13+</b></span>
+      <span class="ff-chip">type-checked</span>
+      <span class="ff-chip ff-chip--amber">Apache-<b>2.0</b></span>
+    </div>
+  </div>
+
+  <!-- ============================ WHY ============================ -->
+  <section class="ff-section ff-section--tint">
+    <div class="ff-wrap">
+      <div class="ff-why ff-reveal">
+        <div>
+          <span class="ff-section__kicker">Why a metaframework</span>
+          <h2 class="ff-why__title">Keep the engine.<br>Gain the architecture.</h2>
+          <p>
+            Pydantic AI gives you type-safe, model-agnostic agents. A production system
+            needs more: orchestration, validation-and-retry, memory across turns,
+            traces and budgets, experiments. Firefly Agentic supplies every one of
+            those as a dedicated, swappable layer — so your business logic never
+            couples to infrastructure.
+          </p>
+          <ul class="ff-why__list">
+            <li>Your <b>Agent</b>, <b>Tool</b> and <b>RunContext</b> APIs stay exactly as they are.</li>
+            <li>Lifecycle hooks, registries, delegation, memory, reasoning, validation and pipelines wrap them — all optional, all composable.</li>
+            <li>Switch models, swap a memory backend or replace a component without touching agent code. <b>No vendor lock-in.</b></li>
+          </ul>
+        </div>
+        <figure class="ff-figure">
+          <img src="{{ base_url }}/assets/agent-anatomy.svg" alt="Anatomy of an agent run: a FireflyAgent wrapping pydantic_ai.Agent inside a ten-stage middleware chain, with delegation, fallback, caching and memory.">
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ FEATURES ============================ -->
+  <section class="ff-section">
+    <div class="ff-wrap">
+      <div class="ff-section__head ff-reveal">
+        <span class="ff-section__kicker">One framework, every concern</span>
+        <h2 class="ff-section__title">Everything a production agent needs</h2>
+        <p class="ff-section__sub">Twelve composable layers. Adopt one, or all of them.</p>
+      </div>
+      <div class="ff-grid ff-reveal">
+        <a class="ff-feat" href="{{ base_url }}/agents/"><h3 class="ff-feat__name">Agents</h3><p class="ff-feat__desc">FireflyAgent, registry, a 10-stage middleware chain, and seven delegation strategies.</p></a>
+        <a class="ff-feat" href="{{ base_url }}/tools/"><h3 class="ff-feat__name">Tools</h3><p class="ff-feat__desc">Protocol or base-class tools, guards, composition, and human-in-the-loop approval.</p></a>
+        <a class="ff-feat" href="{{ base_url }}/reasoning/"><h3 class="ff-feat__name">Reasoning</h3><p class="ff-feat__desc">ReAct, CoT, Plan-and-Execute, Reflexion, Tree of Thoughts, Goal Decomposition.</p></a>
+        <a class="ff-feat" href="{{ base_url }}/memory/"><h3 class="ff-feat__name">Memory</h3><p class="ff-feat__desc">Conversation history and working memory with token budgets and pluggable stores.</p></a>
+        <a class="ff-feat" href="{{ base_url }}/validation/"><h3 class="ff-feat__name">Validation &amp; QoS</h3><p class="ff-feat__desc">Parse-then-validate retries, LLM-as-judge rubrics, hallucination guards.</p></a>
+        <a class="ff-feat" href="{{ base_url }}/pipeline/"><h3 class="ff-feat__name">Pipelines</h3><p class="ff-feat__desc">Typed DAGs with parallel execution, retries, checkpointing and audit logs.</p></a>
+        <a class="ff-feat" href="{{ base_url }}/workflows/"><h3 class="ff-feat__name">Workflows</h3><p class="ff-feat__desc">A code-defined orchestration DSL over agents with budgets and deterministic resume.</p></a>
+        <a class="ff-feat" href="{{ base_url }}/vectorstores/"><h3 class="ff-feat__name">RAG</h3><p class="ff-feat__desc">Eight embedding providers, six vector stores, auto-embedding and tenant scoping.</p></a>
+        <a class="ff-feat" href="{{ base_url }}/observability/"><h3 class="ff-feat__name">Observability</h3><p class="ff-feat__desc">Native OpenTelemetry spans &amp; metrics, cost resolution, and budget gates.</p></a>
+        <a class="ff-feat" href="{{ base_url }}/security/"><h3 class="ff-feat__name">Security</h3><p class="ff-feat__desc">Prompt-injection guards, PII/secret redaction, and at-rest encryption.</p></a>
+        <a class="ff-feat" href="{{ base_url }}/explainability/"><h3 class="ff-feat__name">Explainability</h3><p class="ff-feat__desc">Decision records, audit trails and human-readable reports for compliance.</p></a>
+        <a class="ff-feat" href="{{ base_url }}/resilience/"><h3 class="ff-feat__name">Resilience</h3><p class="ff-feat__desc">A circuit breaker that short-circuits a failing model before it drains budget.</p></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ ARCHITECTURE ============================ -->
+  <section class="ff-section ff-section--tint">
+    <div class="ff-wrap">
+      <div class="ff-section__head ff-reveal">
+        <span class="ff-section__kicker">Architecture</span>
+        <h2 class="ff-section__title">Five layers, strict top-down flow</h2>
+        <p class="ff-section__sub">Core → Agent → Intelligence → Experimentation → Orchestration. Higher layers depend on lower ones, never the reverse.</p>
+      </div>
+      <figure class="ff-figure ff-reveal">
+        <img src="{{ base_url }}/assets/architecture.svg" alt="Firefly Agentic architecture: one front door over five layers — Orchestration, Experimentation, Intelligence, Agent, Core — on the Pydantic AI engine.">
+      </figure>
+      <p class="ff-figcap">Every extension point is a <code>@runtime_checkable</code> protocol — implement it and the framework discovers your component by duck typing.</p>
+      <figure class="ff-figure ff-reveal" style="margin-top:1.4rem">
+        <img src="{{ base_url }}/assets/protocols.svg" alt="The runtime-checkable protocols — AgentLike, ToolProtocol, GuardProtocol, ReasoningPattern, StepExecutor, DelegationStrategy, CompressionStrategy, MemoryStore, ValidationRule, Chunker, EmbeddingProtocol, VectorStoreProtocol — each with its swappable implementations.">
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============================ CODE ============================ -->
+  <section class="ff-section">
+    <div class="ff-wrap">
+      <div class="ff-section__head ff-reveal">
+        <span class="ff-section__kicker">Five minutes in</span>
+        <h2 class="ff-section__title">Familiar Python, all the way down</h2>
+        <p class="ff-section__sub">Async-first, typed, and decorator-friendly. Here's the shape of it.</p>
+      </div>
+      <div class="ff-code-wrap ff-reveal">
+        <div class="ff-tabs">
+          <input type="radio" name="ff-code" id="ff-c1" checked>
+          <input type="radio" name="ff-code" id="ff-c2">
+          <input type="radio" name="ff-code" id="ff-c3">
+          <input type="radio" name="ff-code" id="ff-c4">
+          <div class="ff-tabs__labels">
+            <label for="ff-c1">Define an agent</label>
+            <label for="ff-c2">Add memory</label>
+            <label for="ff-c3">Reason</label>
+            <label for="ff-c4">Build a pipeline</label>
+          </div>
+          <div class="ff-window">
+            <div class="ff-window__bar"><i></i><i></i><i></i><span class="ff-window__file">assistant.py</span></div>
+<pre class="ff-code ff-panel p1"><span class="k">from</span> fireflyframework_agentic.agents <span class="k">import</span> FireflyAgent
+
+agent = FireflyAgent(name=<span class="s">"assistant"</span>, model=<span class="s">"openai:gpt-4o"</span>)
+result = <span class="k">await</span> agent.run(<span class="s">"Summarize this contract in 3 bullets."</span>)
+<span class="f">print</span>(result.output)</pre>
+<pre class="ff-code ff-panel p2"><span class="k">from</span> fireflyframework_agentic.memory <span class="k">import</span> MemoryManager
+
+memory = MemoryManager(max_conversation_tokens=<span class="o">32_000</span>)
+agent = FireflyAgent(name=<span class="s">"bot"</span>, model=<span class="s">"openai:gpt-4o"</span>, memory=memory)
+
+cid = memory.new_conversation()
+<span class="k">await</span> agent.run(<span class="s">"My name is Alice."</span>, conversation_id=cid)
+<span class="k">await</span> agent.run(<span class="s">"What's my name?"</span>, conversation_id=cid)  <span class="c"># -> Alice</span></pre>
+<pre class="ff-code ff-panel p3"><span class="k">from</span> fireflyframework_agentic.reasoning <span class="k">import</span> ReActPattern
+
+react = ReActPattern(max_steps=<span class="o">5</span>)
+result = <span class="k">await</span> react.execute(agent, <span class="s">"What's the weather in London?"</span>)
+<span class="f">print</span>(result.output)  <span class="c"># structured ReasoningResult + trace</span></pre>
+<pre class="ff-code ff-panel p4"><span class="k">from</span> fireflyframework_agentic.pipeline.builder <span class="k">import</span> PipelineBuilder
+<span class="k">from</span> fireflyframework_agentic.pipeline.steps <span class="k">import</span> AgentStep, CallableStep
+
+pipeline = (
+    PipelineBuilder(<span class="s">"idp"</span>)
+    .add_node(<span class="s">"classify"</span>, AgentStep(classifier))
+    .add_node(<span class="s">"extract"</span>, AgentStep(extractor))
+    .add_node(<span class="s">"validate"</span>, CallableStep(check))
+    .chain(<span class="s">"classify"</span>, <span class="s">"extract"</span>, <span class="s">"validate"</span>)
+    .build()
+)
+result = <span class="k">await</span> pipeline.run(inputs=<span class="s">"Process this document"</span>)</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ REASONING ============================ -->
+  <section class="ff-section ff-section--tint">
+    <div class="ff-wrap">
+      <div class="ff-section__head ff-reveal">
+        <span class="ff-section__kicker">Intelligence layer</span>
+        <h2 class="ff-section__title">Six reasoning patterns, one loop</h2>
+        <p class="ff-section__sub">Every pattern shares a reason → act → observe → continue template, produces a structured trace, and swaps its output mode per model.</p>
+      </div>
+      <figure class="ff-figure ff-reveal">
+        <img src="{{ base_url }}/assets/reasoning.svg" alt="Six reasoning patterns — ReAct, Chain of Thought, Plan-and-Execute, Reflexion, Tree of Thoughts, Goal Decomposition — on one reason/act/observe loop.">
+      </figure>
+      <div class="ff-patterns ff-reveal">
+        <span class="ff-pattern"><span>›</span> ReAct</span>
+        <span class="ff-pattern"><span>›</span> Chain of Thought</span>
+        <span class="ff-pattern"><span>›</span> Plan-and-Execute</span>
+        <span class="ff-pattern"><span>›</span> Reflexion</span>
+        <span class="ff-pattern"><span>›</span> Tree of Thoughts</span>
+        <span class="ff-pattern"><span>›</span> Goal Decomposition</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ ORCHESTRATION ============================ -->
+  <section class="ff-section">
+    <div class="ff-wrap">
+      <div class="ff-section__head ff-reveal">
+        <span class="ff-section__kicker">Orchestration layer</span>
+        <h2 class="ff-section__title">Declarative DAGs &amp; code-defined workflows</h2>
+        <p class="ff-section__sub">A typed pipeline graph for structure; a Python DSL for deterministic, resumable orchestration. Use either, or both.</p>
+      </div>
+      <div class="ff-figure--pair ff-reveal">
+        <figure class="ff-figure">
+          <img src="{{ base_url }}/assets/pipeline.svg" alt="A typed DAG pipeline: a seven-phase IDP flow with fan-out/fan-in, a human-in-the-loop pause, checkpointing and an audit log.">
+          <figcaption class="ff-figcap">Pipeline — declarative DAG</figcaption>
+        </figure>
+        <figure class="ff-figure">
+          <img src="{{ base_url }}/assets/workflows.svg" alt="Dynamic Workflows: the @workflow DSL primitives over a WorkflowContext carrying runner, journal, budget and routing, with verification helpers.">
+          <figcaption class="ff-figcap">Workflows — code-defined DSL</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ RAG ============================ -->
+  <section class="ff-section ff-section--tint">
+    <div class="ff-wrap">
+      <div class="ff-section__head ff-reveal">
+        <span class="ff-section__kicker">Retrieval-augmented generation</span>
+        <h2 class="ff-section__title">Bring your own embeddings &amp; vector store</h2>
+        <p class="ff-section__sub">Eight embedding providers and six vector-store backends behind one protocol — drop straight into a pipeline with EmbeddingStep and RetrievalStep.</p>
+      </div>
+      <figure class="ff-figure ff-reveal">
+        <img src="{{ base_url }}/assets/rag.svg" alt="Retrieval-augmented generation: eight embedding providers and six vector-store backends behind the EmbeddingProtocol and VectorStoreProtocol.">
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============================ LEARN ============================ -->
+  <section class="ff-section">
+    <div class="ff-wrap">
+      <div class="ff-section__head ff-reveal">
+        <span class="ff-section__kicker">Learn the framework</span>
+        <h2 class="ff-section__title">From zero to a working IDP pipeline</h2>
+      </div>
+      <div class="ff-learn ff-reveal">
+        <a class="ff-learn__card" href="{{ base_url }}/tutorial/">
+          <span class="ff-learn__eyebrow">The Bible</span>
+          <h3 class="ff-learn__title">The Complete Tutorial</h3>
+          <p class="ff-learn__desc">18 hands-on chapters that teach every concept from zero to expert through a real document-processing pipeline.</p>
+          <span class="ff-learn__more">Start the tutorial →</span>
+        </a>
+        <a class="ff-learn__card" href="{{ base_url }}/use-case-idp/">
+          <span class="ff-learn__eyebrow">Use case</span>
+          <h3 class="ff-learn__title">IDP Pipeline</h3>
+          <p class="ff-learn__desc">A focused walkthrough of a seven-phase pipeline: ingest, split, classify, extract, validate, assemble, explain.</p>
+          <span class="ff-learn__more">Read the walkthrough →</span>
+        </a>
+        <a class="ff-learn__card" href="{{ base_url }}/architecture/">
+          <span class="ff-learn__eyebrow">Reference</span>
+          <h3 class="ff-learn__title">Module Reference</h3>
+          <p class="ff-learn__desc">Detailed guides for every module — agents, tools, reasoning, pipelines, observability and more.</p>
+          <span class="ff-learn__more">Browse the docs →</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ FOOTER ============================ -->
+  <footer class="ff-foot">
+    <div class="ff-wrap">
+      <div class="ff-foot__grid">
+        <div>
+          <div class="ff-foot__brand">
+            <img src="{{ base_url }}/assets/logo.svg" alt="">
+            Firefly Agentic
+          </div>
+          <p class="ff-foot__tag">The production-grade agentic metaframework, built on Pydantic AI. The agentic member of the Firefly Framework family.</p>
+        </div>
+        <div>
+          <h4>Docs</h4>
+          <ul>
+            <li><a href="{{ base_url }}/getting-started/quickstart/">Quick Start</a></li>
+            <li><a href="{{ base_url }}/tutorial/">Tutorial</a></li>
+            <li><a href="{{ base_url }}/reasoning/">Reasoning</a></li>
+            <li><a href="{{ base_url }}/pipeline/">Pipelines</a></li>
+            <li><a href="{{ base_url }}/observability/">Observability</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Project</h4>
+          <ul>
+            <li><a href="{{ config.repo_url }}" target="_blank" rel="noopener">GitHub</a></li>
+            <li><a href="{{ base_url }}/changelog/">Changelog</a></li>
+            <li><a href="{{ config.repo_url }}/issues" target="_blank" rel="noopener">Issues</a></li>
+            <li><a href="{{ config.repo_url }}/blob/main/LICENSE" target="_blank" rel="noopener">License</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Ecosystem</h4>
+          <ul>
+            <li><a href="https://github.com/fireflyframework/fireflyframework-pyfly" target="_blank" rel="noopener">PyFly</a></li>
+            <li><a href="https://github.com/fireflyframework/fireflyframework-rust" target="_blank" rel="noopener">Firefly for Rust</a></li>
+            <li><a href="https://github.com/fireflyframework/fireflyframework-agentic-studio" target="_blank" rel="noopener">Firefly Studio</a></li>
+            <li><a href="https://fireflyframework.org/" target="_blank" rel="noopener">fireflyframework.org</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="ff-foot__base">
+        <span>Copyright © 2026 Firefly Software Foundation — Apache-2.0</span>
+        <span>Built on <a href="https://ai.pydantic.dev/" target="_blank" rel="noopener" style="color:var(--ff-violet-bright)">Pydantic AI</a></span>
+      </div>
+    </div>
+  </footer>
+
+</div>
+{% endblock %}
+
+{% block content %}{% endblock %}
+{% block footer %}{% endblock %}

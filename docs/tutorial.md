@@ -20,7 +20,7 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 
 **Part I — Foundation**
 1. [Introduction](#chapter-1-introduction) — What, who, why, design principles, running example
-2. [Installation & Project Setup](#chapter-2-installation--project-setup) — UV, extras, `FireflyAgenticConfig`, model providers
+2. [Installation & Project Setup](#chapter-2-installation-project-setup) — UV, extras, `FireflyAgenticConfig`, model providers
 3. [Your First Agent](#chapter-3-your-first-agent) — `FireflyAgent`, `@firefly_agent`, registry, context, lifecycle *(diagram)*
 4. [Tools](#chapter-4-tools) — `@firefly_tool`, `ToolBuilder`, guards, composition, built-ins, `ToolKit`, attaching tools to agents *(diagram)*
 5. [Prompts](#chapter-5-prompts) — Jinja2 templates, versioning, composition, validation, file loading
@@ -30,7 +30,7 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 6. [Reasoning Patterns](#chapter-6-reasoning-patterns) — ReAct, CoT, Plan-and-Execute, Reflexion, Tree of Thoughts, Goal Decomposition, custom patterns *(diagram)*
 7. [Content Processing](#chapter-7-content-processing) — Chunking, batch processing, compression, sliding window
 8. [Memory](#chapter-8-memory) — Conversation memory, working memory, backends, `MemoryManager`, forking, integration points *(diagram)*
-9. [Validation & Quality of Service](#chapter-9-validation--quality-of-service) — Rules, `OutputValidator`, QoS checks, `OutputReviewer`
+9. [Validation & Quality of Service](#chapter-9-validation-quality-of-service) — Rules, `OutputValidator`, QoS checks, `OutputReviewer`
 
 **Part III — Orchestration & Operations**
 

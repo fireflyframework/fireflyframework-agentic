@@ -425,7 +425,7 @@ label; edges carrying a condition are annotated `if?`.
 | You want the engine to run independent nodes concurrently | You want resume-after-failure and start-from-middle semantics |
 | You're happy with `BranchStep` + per-node `condition` lambdas | You want one `.branch(...)` call and inspectable routing |
 
-See [`examples/pipeline_state.py`](../examples/pipeline_state.py) for a
+See [`examples/pipeline_state.py`](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/examples/pipeline_state.py) for a
 runnable demo covering branching, software-factory checkpoint/resume, and
 map-reduce fan-out.
 

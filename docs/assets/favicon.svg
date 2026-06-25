@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Firefly Agentic">
+  <defs>
+    <radialGradient id="fav-halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#FFF9C1" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#F6A821" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#F68000" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="fav-body" cx="50%" cy="42%" r="58%">
+      <stop offset="0" stop-color="#FFFDF0"/>
+      <stop offset="0.5" stop-color="#FFF6B0"/>
+      <stop offset="1" stop-color="#F68000"/>
+    </radialGradient>
+    <linearGradient id="fav-spark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d6c6ff"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0b0a14"/>
+  <path d="M32 9 L35.5 28.5 L55 32 L35.5 35.5 L32 55 L28.5 35.5 L9 32 L28.5 28.5 Z" fill="url(#fav-spark)" opacity="0.6"/>
+  <circle cx="32" cy="32" r="20" fill="url(#fav-halo)"/>
+  <circle cx="32" cy="32" r="10" fill="url(#fav-body)"/>
+</svg>
