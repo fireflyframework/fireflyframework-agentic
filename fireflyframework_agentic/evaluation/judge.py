@@ -10,6 +10,7 @@ Flycanon item keys: question, answer, reference, contexts
 from __future__ import annotations
 
 import asyncio
+import copy
 import math
 import os
 import statistics
@@ -810,7 +811,7 @@ def _median_runs(samples: list[dict]) -> dict:
     for s in samples:
         for path, val in _numeric_leaves(s).items():
             leaf_values.setdefault(path, []).append(val)
-    merged = dict(base)
+    merged = copy.deepcopy(base)
     for path, vals in leaf_values.items():
         try:
             _set_leaf(merged, path, round(statistics.median(vals), 4))
