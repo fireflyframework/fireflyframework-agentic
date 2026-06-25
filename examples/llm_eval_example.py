@@ -52,7 +52,7 @@ from fireflyframework_agentic.evaluation import (
 _SAMPLE_ITEMS = [
     {
         "question": "What is the boiling point of water at sea level?",
-        "reference": "Water boils at 100 °C (212 °F) at standard atmospheric pressure.",
+        "reference": "Water boils at 100 °C at standard atmospheric pressure.",
         "answer": "Water boils at 100 degrees Celsius at sea level.",
     },
     {
