@@ -88,7 +88,7 @@ agent = FireflyAgent(name="analyst", model=model)
 ```
 
 This also works with the `@firefly_agent` decorator and all template agents. See the
-[tutorial](tutorial.md#model-providers--authentication) for full provider coverage
+[tutorial](tutorial.md#model-providers-authentication) for full provider coverage
 including Azure OpenAI, Anthropic, Google, and OpenAI-compatible endpoints.
 
 ### Model settings & default temperature
@@ -1153,4 +1153,4 @@ export OPENAI_API_KEY="sk-..."
 uv run python examples/basic_agent.py
 ```
 
-See [examples/README.md](../examples/README.md) for the full list.
+See [examples/README.md](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/examples/README.md) for the full list.

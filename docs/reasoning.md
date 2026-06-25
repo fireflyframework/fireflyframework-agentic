@@ -813,7 +813,7 @@ export OPENAI_API_KEY="sk-..."
 uv run python examples/reasoning_cot.py
 ```
 
-See [examples/README.md](../examples/README.md) for the full list.
+See [examples/README.md](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/examples/README.md) for the full list.
 
 ## Note: tool-using ReAct is implemented outside `reasoning/`
 

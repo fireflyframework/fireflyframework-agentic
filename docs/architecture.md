@@ -590,13 +590,13 @@ the framework adds on top is built to be provider-uniform:
   (those backends cache differently). See [Agents → PromptCacheMiddleware](agents.md#promptcachemiddleware).
 - **Tool schemas** — real `python_type`s keep tool schemas portable, with one
   caveat: **Gemini rejects free-form `dict[str, Any]` object schemas** — use a JSON
-  string or a nested model instead. See [Tools](tools.md#full-fidelity-schemas--runcontext).
+  string or a nested model instead. See [Tools](tools.md#full-fidelity-schemas-runcontext).
 - **Failover & rate limits** — `FallbackModelWrapper` / `run_with_fallback` fail over
   across providers, and rate-limit backoff prefers a provider's structured retry hint
   (e.g. Gemini `retry_delay`) before falling back to exponential backoff.
 
 This is validated end-to-end against a real provider by
-`tests/integration/test_real_anthropic_e2e.py` (nightly; see [tests/README](../tests/README.md)).
+`tests/integration/test_real_anthropic_e2e.py` (nightly; see [tests/README](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/tests/README.md)).
 
 ---
 

@@ -219,7 +219,7 @@ def architecture():
     b.append(f'<rect x="{X}" y="{fy}" width="{WD}" height="50" rx="12" fill="url(#door)" stroke="#6d28d9" stroke-width="1.2" filter="url(#sh)"/>')
     b.append(f'<rect x="{X+14}" y="{fy+6}" width="{WD-28}" height="2" rx="1" fill="#fbf8ff" opacity="0.3"/>')
     b.append(f'<text x="{X+22}" y="{fy+20}" font-size="10.5" font-weight="800" fill="#1c0e3a" letter-spacing="1.4">THE FRONT DOOR</text>')
-    b.append(f'<text x="{X+22}" y="{fy+39}" font-size="15" font-weight="800" fill="#190a35" font-family="{MONO}">pip install fireflyframework-agentic · @firefly_agent</text>')
+    b.append(f'<text x="{X+22}" y="{fy+39}" font-size="15" font-weight="800" fill="#190a35" font-family="{MONO}">import fireflyframework_agentic · @firefly_agent</text>')
     b.append(f'<text x="{X+WD-16}" y="{fy+20}" text-anchor="end" font-size="11" fill="#1c0e3a" font-weight="700">one install</text>')
     b.append(f'<text x="{X+WD-16}" y="{fy+39}" text-anchor="end" font-size="11" fill="#1c0e3a" font-weight="700">one decorator</text>')
     b.append(f'<g stroke="{VIOLET2}" stroke-width="1.4" stroke-dasharray="2 3" opacity="0.7">'+"".join(f'<line x1="{X+WD*f:.0f}" y1="{fy+50}" x2="{X+WD*f:.0f}" y2="170"/>' for f in (.18,.45,.72))+'</g>')

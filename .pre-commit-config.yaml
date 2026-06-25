@@ -34,6 +34,10 @@ repos:
         args: [--markdown-linebreak-ext=md]
       - id: end-of-file-fixer
       - id: check-yaml
+        # mkdocs.yml uses Material's `!!python/name:` tags (e.g. the mermaid
+        # superfence), which check-yaml can't construct. `mkdocs build --strict`
+        # in the docs workflow is its real validator.
+        exclude: ^mkdocs\.yml$
       - id: check-toml
       - id: check-json
         # tsconfig*.json files use JSONC (comments, trailing commas).
