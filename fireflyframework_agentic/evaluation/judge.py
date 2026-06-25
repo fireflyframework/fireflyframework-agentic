@@ -705,9 +705,19 @@ def _make_ragas_embeddings(ctx: EvalContext):
         from langchain_ollama import OllamaEmbeddings  # type: ignore[import]  # noqa: PLC0415
 
         return OllamaEmbeddings(model=ctx.embedder._model)
-    from langchain_anthropic import AnthropicEmbeddings  # type: ignore[import]  # noqa: PLC0415
+    provider = ctx.client.provider
+    if provider == "anthropic":
+        from langchain_anthropic import AnthropicEmbeddings  # type: ignore[import]  # noqa: PLC0415
 
-    return AnthropicEmbeddings()
+        return AnthropicEmbeddings()
+    if provider == "ollama":
+        from langchain_ollama import OllamaEmbeddings  # type: ignore[import]  # noqa: PLC0415
+
+        return OllamaEmbeddings()
+    raise ValueError(
+        f"RAGAS: no embedder configured for provider {provider!r}; "
+        "pass ctx.embedder=OllamaEmbedder(...) explicitly"
+    )
 
 
 async def _ragas_score(metric_name: str, item: dict, ctx: EvalContext) -> float | None:
