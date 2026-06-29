@@ -211,10 +211,8 @@ asyncio.run(main())
 |-------|------|-------------|
 | `judge_model` | `str` | The judge model spec used. |
 | `same_provider_caveat` | `bool` | `True` when the judge and the evaluated pipeline share a provider (self-grading risk). |
-| `calibrated` | `bool` | Reserved; always `False` for now. |
 | `runs` | `int` | Judge runs per repeated metric. |
 | `metrics` | `dict` | Per-metric results, keyed by metric name. |
-| `details` | `dict` | Supporting context (counts, ids). |
 | `errors` | `list[str]` | Per-metric failures captured best-effort. |
 
 ---

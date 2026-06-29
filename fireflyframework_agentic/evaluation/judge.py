@@ -47,19 +47,19 @@ class EvalContext(BaseModel):
 
 @dataclass
 class AdvisoryReport:
-    """The G4 output: a plain metrics bag, never a GateResult.
+    """Aggregated output of :func:`run_judge`: a plain metrics bag.
 
-    metrics maps metric-name -> small dict (the per-metric summary).  details
-    carries supporting context (counts, ids).  errors lists per-metric failures
-    captured by run_judge's best-effort try/except so nothing propagates.
+    metrics maps metric-name -> the per-metric result (a small dict or float).
+    errors lists per-metric failures captured by run_judge's best-effort
+    try/except so nothing propagates.  judge_model and runs are run metadata;
+    same_provider_caveat flags self-grading risk (the judge shares the evaluated
+    pipeline's provider).
     """
 
     judge_model: str
     same_provider_caveat: bool
-    calibrated: bool  # ALWAYS False for now
     runs: int
     metrics: dict = field(default_factory=dict)
-    details: dict = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
 
 
@@ -869,7 +869,6 @@ async def run_judge(
     report = AdvisoryReport(
         judge_model=ctx.client.model_spec,
         same_provider_caveat=same_provider(pipeline_model, ctx.client.model_spec),
-        calibrated=False,
         runs=ctx.runs,
     )
 
