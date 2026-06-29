@@ -15,7 +15,6 @@ import math
 import os
 import statistics
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
 
 from pydantic import BaseModel, ConfigDict
 
@@ -100,8 +99,7 @@ class EvalContext(BaseModel):
     runs: int = 3
 
 
-@dataclass
-class AdvisoryReport:
+class AdvisoryReport(BaseModel):
     """Aggregated output of :func:`run_judge`: a plain metrics bag.
 
     metrics maps metric-name -> the per-metric result (a small dict or float).
@@ -114,8 +112,8 @@ class AdvisoryReport:
     judge_model: str
     same_provider_caveat: bool
     runs: int
-    metrics: dict = field(default_factory=dict)
-    errors: list[str] = field(default_factory=list)
+    metrics: dict = {}
+    errors: list[str] = []
 
 
 # ── shared accessors ───────────────────────────────────────────────────────────

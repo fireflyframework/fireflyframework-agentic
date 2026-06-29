@@ -280,7 +280,7 @@ All symbols below are importable from `fireflyframework_agentic.evaluation`.
 | `EvalContext` | Pydantic model | Carries `client`, optional `embedder`, and `runs` for the judge metrics. |
 | `build_embedder` | Function | Build a framework embedder from a `"<provider>:<model>"` spec (openai/azure/cohere/google/mistral/voyage/bedrock/ollama). |
 | `JudgeClient` | Class | Async multi-provider (`anthropic`/`openai`/`azure`/`ollama`) judge backed by `FireflyAgent`; returns validated typed output. |
-| `AdvisoryReport` | Dataclass | Aggregated `run_judge` output: `metrics`, `errors`, and run metadata. |
+| `AdvisoryReport` | Pydantic model | Aggregated `run_judge` output: `metrics`, `errors`, and run metadata. |
 | `Metric` | Type alias | `Callable[[dict, EvalContext], Awaitable[dict \| float \| None]]`. |
 | `parse_model` | Function | Split `"provider:model"` into `(provider, model)`. |
 | `same_provider` | Function | `True` if two model specs share a known provider prefix. |
