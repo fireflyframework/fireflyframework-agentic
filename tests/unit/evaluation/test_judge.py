@@ -2,12 +2,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.evaluation.judge import (
     EvalContext,
+    _Verdict,
     addresses_question,
     contains_answer,
     excerpt_fill_rate,
     faithfulness,
+    run_judge,
     source_coverage,
 )
 from fireflyframework_agentic.evaluation.judge_client import JudgeClient
@@ -20,10 +23,10 @@ def make_ctx(responses: list[dict]) -> EvalContext:
     client.model = "claude-sonnet-4-6"
     call_iter = iter(responses)
 
-    async def mock_chat_json(system, user, max_tokens=1024):
-        return next(call_iter)
+    async def mock_judge(system, user, output_type, max_tokens=1024):
+        return output_type(**next(call_iter))
 
-    client.chat_json = mock_chat_json
+    client.judge = mock_judge
     return EvalContext(client=client, runs=1)
 
 
@@ -246,3 +249,50 @@ async def test_excerpt_fill_rate_empty():
     result = await excerpt_fill_rate(item, ctx)
     assert result["populated"] == 0
     assert result["total"] == 0
+
+
+# ── JudgeClient (FireflyAgent-backed) ─────────────────────────────────────────────
+
+
+def test_judge_client_builds_and_caches_agent(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "dummy")
+    client = JudgeClient("anthropic:claude-sonnet-4-6")
+    a1 = client._agent("sys", _Verdict, 1024)
+    a2 = client._agent("sys", _Verdict, 1024)
+    assert isinstance(a1, FireflyAgent)
+    assert a1 is a2  # cached per (system, output_type, max_tokens)
+
+
+@pytest.mark.asyncio
+async def test_faithfulness_propagates_judge_failure():
+    # A failed judge call must NOT be silently scored as a verdict — it propagates.
+    client = MagicMock(spec=JudgeClient)
+
+    async def boom(system, user, output_type, max_tokens=1024):
+        raise RuntimeError("API down")
+
+    client.judge = boom
+    ctx = EvalContext(client=client, runs=1)
+    item = {
+        "findings": [{"id": "F1", "description": "x", "evidence_refs": [{"evidence_id": "E1"}]}],
+        "evidence_index": [{"id": "E1", "excerpt": "y"}],
+    }
+    with pytest.raises(RuntimeError):
+        await faithfulness(item, ctx)
+
+
+@pytest.mark.asyncio
+async def test_run_judge_aggregates_and_captures_errors():
+    client = MagicMock(spec=JudgeClient)
+    client.model_spec = "anthropic:claude-sonnet-4-6"
+
+    async def mock_judge(system, user, output_type, max_tokens=1024):
+        return output_type()
+
+    client.judge = mock_judge
+    ctx = EvalContext(client=client, runs=1)
+    report = await run_judge({"question": "Q", "reference": "R", "answer": "A"}, ctx, pipeline_model="anthropic:claude-sonnet-4-6")
+    assert report.judge_model == "anthropic:claude-sonnet-4-6"
+    assert report.same_provider_caveat is True
+    assert "source_coverage" in report.metrics  # deterministic metric always runs
+    assert isinstance(report.errors, list)  # best-effort: never raises

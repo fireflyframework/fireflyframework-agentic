@@ -36,6 +36,61 @@ RUBRIC = (
     'Reply with ONLY {"contains_answer": <float>, "addresses_question": <float>}.'
 )
 
+# ── structured judge outputs (validated by the model via FireflyAgent) ───────────
+
+
+class _Verdict(BaseModel):
+    verdict: str = ""
+    reason: str = ""
+
+
+class _Mismatch(BaseModel):
+    value: str = ""
+    source: str = ""
+
+
+class _Mismatches(BaseModel):
+    mismatches: list[_Mismatch] = []
+
+
+class _Relevant(BaseModel):
+    relevant: str = ""
+
+
+class _Asserted(BaseModel):
+    asserted: str = ""
+
+
+class _Fabricated(BaseModel):
+    fabricated: list[str] = []
+
+
+class _Pairs(BaseModel):
+    pairs: list[list[str]] = []
+
+
+class _Gap(BaseModel):
+    gap: str = ""
+
+
+class _Score(BaseModel):
+    score: float | None = None
+
+
+class _Calibration(BaseModel):
+    calibration: str = "calibrated"
+
+
+class _Comparison(BaseModel):
+    candidate: dict = {}
+    champion: dict = {}
+    more_consistent: str = ""
+
+
+class _RagScore(BaseModel):
+    contains_answer: float | None = None
+    addresses_question: float | None = None
+
 
 class EvalContext(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -98,24 +153,19 @@ def _workspace_intention(item: dict) -> str:
     return f"{ws.get('name', '')}\n{ws.get('description', '')}".strip()
 
 
-def _coerce_float(value, default=None):
-    """Coerce a model-returned number/numeric-string to float; total (never raises)."""
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
 def _source_stem(locator: str) -> str:
     """Return the part before the first '#', or the full string if no '#'."""
     idx = locator.find("#")
     return locator[:idx] if idx != -1 else locator
 
 
-async def _gather_chat(chat_fn, prompts: list[tuple[str, str]]) -> list[dict]:
-    """Run a list of (system, user) prompts concurrently, returning ordered results."""
-    results = await asyncio.gather(*[chat_fn(s, u) for s, u in prompts], return_exceptions=True)
-    return [r if isinstance(r, dict) else {} for r in results]
+async def _judge_all[T: BaseModel](ctx: EvalContext, system: str, users: list[str], output_type: type[T]) -> list[T]:
+    """Judge a list of user prompts concurrently against one system prompt.
+
+    Failures propagate (no swallowing into a fake verdict): a failed call raises,
+    so run_judge records it in report.errors instead of scoring it as a result.
+    """
+    return list(await asyncio.gather(*[ctx.client.judge(system, u, output_type) for u in users]))
 
 
 # ── [D] DETERMINISTIC — no LLM, always available ────────────────────────────────
@@ -221,7 +271,7 @@ async def semantic_recovery(item: dict, ctx: EvalContext, tau: float = 0.70) -> 
     }
 
 
-# ── [J] JUDGE — needs chat_fn(system, user) -> dict ──────────────────────────────
+# ── [J] JUDGE — needs ctx.client.judge(system, user, output_type) ────────────────
 
 
 async def faithfulness(item: dict, ctx: EvalContext) -> dict:
@@ -232,18 +282,15 @@ async def faithfulness(item: dict, ctx: EvalContext) -> dict:
     ev_idx = _evidence_index(item)
     findings = item.get("findings", [])
     cited = [(f, _cited_excerpts(f, ev_idx)) for f in findings]
-    prompts = [
-        (
-            SYSTEM,
-            "Does the cited evidence span ENTAIL the claim made in this finding?\n"
-            'Reply with ONLY {"verdict": "SUPPORTED" or "NOT_SUPPORTED", "reason": "<one line>"}.\n\n'
-            f"FINDING: {f.get('description', '')}\n"
-            f"CITED EVIDENCE: {' || '.join(excerpts)}",
-        )
+    users = [
+        "Does the cited evidence span ENTAIL the claim made in this finding?\n"
+        'Reply with ONLY {"verdict": "SUPPORTED" or "NOT_SUPPORTED", "reason": "<one line>"}.\n\n'
+        f"FINDING: {f.get('description', '')}\n"
+        f"CITED EVIDENCE: {' || '.join(excerpts)}"
         for f, excerpts in cited
         if excerpts
     ]
-    answers = iter(await _gather_chat(ctx.client.chat_json, prompts))
+    answers = iter(await _judge_all(ctx, SYSTEM, users, _Verdict))
     supported = 0
     unsupported_ids: list[str] = []
     for f, excerpts in cited:
@@ -251,8 +298,7 @@ async def faithfulness(item: dict, ctx: EvalContext) -> dict:
         if not excerpts:
             unsupported_ids.append(fid)
             continue
-        verdict = str(next(answers).get("verdict", "")).upper()
-        if verdict == "SUPPORTED":
+        if str(next(answers).verdict).upper() == "SUPPORTED":
             supported += 1
         else:
             unsupported_ids.append(fid)
@@ -266,27 +312,24 @@ async def numeric_temporal_fidelity(item: dict, ctx: EvalContext) -> dict:
     """
     ev_idx = _evidence_index(item)
     scored = [(f, excerpts) for f in item.get("findings", []) if (excerpts := _cited_excerpts(f, ev_idx))]
-    prompts = [
-        (
-            SYSTEM,
-            "List every specific number or date asserted in the FINDING that does "
-            "NOT match the CITED EVIDENCE.\n"
-            'Reply with ONLY {"mismatches": [{"value": "<claimed>", "source": "<what the evidence says>"}]}. '
-            "Empty list if all match.\n\n"
-            f"FINDING: {f.get('description', '')}\n"
-            f"CITED EVIDENCE: {' || '.join(excerpts)}",
-        )
+    users = [
+        "List every specific number or date asserted in the FINDING that does "
+        "NOT match the CITED EVIDENCE.\n"
+        'Reply with ONLY {"mismatches": [{"value": "<claimed>", "source": "<what the evidence says>"}]}. '
+        "Empty list if all match.\n\n"
+        f"FINDING: {f.get('description', '')}\n"
+        f"CITED EVIDENCE: {' || '.join(excerpts)}"
         for f, excerpts in scored
     ]
-    answers = await _gather_chat(ctx.client.chat_json, prompts)
+    answers = await _judge_all(ctx, SYSTEM, users, _Mismatches)
     mismatches: list[dict] = []
     for (f, _excerpts), answer in zip(scored, answers, strict=False):
-        for m in answer.get("mismatches", []) or []:
+        for m in answer.mismatches:
             mismatches.append(
                 {
                     "finding_id": f.get("id", "?"),
-                    "value": m.get("value", ""),
-                    "source": m.get("source", ""),
+                    "value": m.value,
+                    "source": m.source,
                 }
             )
     return {"mismatches": mismatches, "count": len(mismatches)}
@@ -298,7 +341,7 @@ async def citation_relevance(item: dict, ctx: EvalContext) -> dict:
     Returns {precision, relevant, total}.
     """
     ev_idx = _evidence_index(item)
-    prompts: list[tuple[str, str]] = []
+    users: list[str] = []
     for f in item.get("findings", []):
         desc = f.get("description", "")
         for ref in f.get("evidence_refs", []):
@@ -308,18 +351,15 @@ async def citation_relevance(item: dict, ctx: EvalContext) -> dict:
             excerpt = ev.get("excerpt") or ""
             if not excerpt:
                 continue
-            prompts.append(
-                (
-                    SYSTEM,
-                    "Is this cited passage actually relevant to / used by this claim?\n"
-                    'Reply with ONLY {"relevant": "yes" or "no"}.\n\n'
-                    f"CLAIM: {desc}\n"
-                    f"CITED PASSAGE: {excerpt}",
-                )
+            users.append(
+                "Is this cited passage actually relevant to / used by this claim?\n"
+                'Reply with ONLY {"relevant": "yes" or "no"}.\n\n'
+                f"CLAIM: {desc}\n"
+                f"CITED PASSAGE: {excerpt}"
             )
-    answers = await _gather_chat(ctx.client.chat_json, prompts)
-    total = len(prompts)
-    relevant = sum(1 for a in answers if str(a.get("relevant", "")).lower() == "yes")
+    answers = await _judge_all(ctx, SYSTEM, users, _Relevant)
+    total = len(users)
+    relevant = sum(1 for a in answers if str(a.relevant).lower() == "yes")
     if not total:
         return {"precision": None, "relevant": relevant, "total": total}
     return {"precision": round(relevant / total, 4), "relevant": relevant, "total": total}
@@ -333,21 +373,18 @@ async def nc_semantic_precision(item: dict, ctx: EvalContext) -> dict:
     """
     output_text = _output_text(item)
     nc_items: list[dict] = item.get("nc_items", [])
-    prompts = [
-        (
-            SYSTEM,
-            "Does the OUTPUT assert or endorse the following FALSE statement?\n"
-            'Reply with ONLY {"asserted": "yes" or "no"}.\n\n'
-            f"FALSE STATEMENT: {nc.get('description', '')}\n"
-            f"OUTPUT:\n{output_text}",
-        )
+    users = [
+        "Does the OUTPUT assert or endorse the following FALSE statement?\n"
+        'Reply with ONLY {"asserted": "yes" or "no"}.\n\n'
+        f"FALSE STATEMENT: {nc.get('description', '')}\n"
+        f"OUTPUT:\n{output_text}"
         for nc in nc_items
     ]
-    answers = await _gather_chat(ctx.client.chat_json, prompts)
+    answers = await _judge_all(ctx, SYSTEM, users, _Asserted)
     asserted_ids = [
         nc.get("id", "?")
         for nc, a in zip(nc_items, answers, strict=False)
-        if str(a.get("asserted", "")).lower() == "yes"
+        if str(a.asserted).lower() == "yes"
     ]
     return {"asserted": len(asserted_ids), "total": len(nc_items), "asserted_ids": asserted_ids}
 
@@ -366,8 +403,8 @@ async def fabricated_entity(item: dict, ctx: EvalContext) -> dict:
         f"OUTPUT:\n{output_text}\n\n"
         f"CORPUS EVIDENCE:\n{corpus}"
     )
-    answer = await ctx.client.chat_json(SYSTEM, user)
-    entities = answer.get("fabricated", []) or []
+    answer = await ctx.client.judge(SYSTEM, user, _Fabricated)
+    entities = answer.fabricated
     return {"count": len(entities), "entities": list(entities)}
 
 
@@ -383,8 +420,8 @@ async def contradiction(item: dict, ctx: EvalContext) -> dict:
         "Are any two of these FINDINGS mutually contradictory? List each contradicting pair.\n"
         'Reply with ONLY {"pairs": [["<id_a>", "<id_b>"], ...]}.  Empty list if none.\n\n' + "\n".join(lines)
     )
-    answer = await ctx.client.chat_json(SYSTEM, user)
-    pairs = answer.get("pairs", []) or []
+    answer = await ctx.client.judge(SYSTEM, user, _Pairs)
+    pairs = answer.pairs
     return {"count": len(pairs), "pairs": [list(p) for p in pairs]}
 
 
@@ -403,8 +440,8 @@ async def open_gap(item: dict, ctx: EvalContext) -> dict:
         f"{pg_summary}\n"
         f"OUTPUT:\n{_output_text(item)}"
     )
-    answer = await ctx.client.chat_json(SYSTEM, user)
-    return {"gap": str(answer.get("gap", ""))}
+    answer = await ctx.client.judge(SYSTEM, user, _Gap)
+    return {"gap": str(answer.gap)}
 
 
 async def actionability(item: dict, ctx: EvalContext) -> dict:
@@ -414,29 +451,21 @@ async def actionability(item: dict, ctx: EvalContext) -> dict:
     """
     actions = item.get("proposed_actions", []) or []
     finding_ids = {f.get("id") for f in item.get("findings", [])}
-    prompts = [
-        (
-            SYSTEM,
-            "Rate whether this proposed action is SPECIFIC, QUANTIFIED, and LINKED to a "
-            "finding.\n"
-            'Reply with ONLY {"score": <number 0-1>}.\n\n'
-            f"TITLE: {a.get('title', '')}\n"
-            f"DESCRIPTION: {a.get('description', '')}\n"
-            f"OWNER: {a.get('owner_persona', '')}  HORIZON: {a.get('horizon', '')}  "
-            f"LEVER: {a.get('lever', '')}  EFFORT: {a.get('effort', '')}\n"
-            f"EXPECTED_SAVINGS_FTE: {a.get('expected_savings_fte', '')}  "
-            f"EXPECTED_SAVINGS_USD: {a.get('expected_savings_usd', '')}\n"
-            f"LINKED_TO_FINDING: {a.get('finding_id') in finding_ids}",
-        )
+    users = [
+        "Rate whether this proposed action is SPECIFIC, QUANTIFIED, and LINKED to a "
+        "finding.\n"
+        'Reply with ONLY {"score": <number 0-1>}.\n\n'
+        f"TITLE: {a.get('title', '')}\n"
+        f"DESCRIPTION: {a.get('description', '')}\n"
+        f"OWNER: {a.get('owner_persona', '')}  HORIZON: {a.get('horizon', '')}  "
+        f"LEVER: {a.get('lever', '')}  EFFORT: {a.get('effort', '')}\n"
+        f"EXPECTED_SAVINGS_FTE: {a.get('expected_savings_fte', '')}  "
+        f"EXPECTED_SAVINGS_USD: {a.get('expected_savings_usd', '')}\n"
+        f"LINKED_TO_FINDING: {a.get('finding_id') in finding_ids}"
         for a in actions
     ]
-    answers = await _gather_chat(ctx.client.chat_json, prompts)
-    scores: list[float] = []
-    for a in answers:
-        value = _coerce_float(a.get("score"))
-        if value is None:
-            continue
-        scores.append(value)
+    answers = await _judge_all(ctx, SYSTEM, users, _Score)
+    scores = [a.score for a in answers if a.score is not None]
     score = round(sum(scores) / len(scores), 4) if scores else None
     return {"score": score, "rated": len(scores)}
 
@@ -448,22 +477,19 @@ async def severity_calibration(item: dict, ctx: EvalContext) -> dict:
     """
     ev_idx = _evidence_index(item)
     findings = item.get("findings", [])
-    prompts = [
-        (
-            SYSTEM,
-            "Does the STATED SEVERITY match what the CITED EVIDENCE supports?\n"
-            'Reply with ONLY {"calibration": "under" or "over" or "calibrated"}.\n\n'
-            f"STATED SEVERITY: {f.get('severity', '')}  SCORE: {f.get('score', '')}\n"
-            f"FINDING: {f.get('description', '')}\n"
-            f"CITED EVIDENCE: {' || '.join(_cited_excerpts(f, ev_idx))}",
-        )
+    users = [
+        "Does the STATED SEVERITY match what the CITED EVIDENCE supports?\n"
+        'Reply with ONLY {"calibration": "under" or "over" or "calibrated"}.\n\n'
+        f"STATED SEVERITY: {f.get('severity', '')}  SCORE: {f.get('score', '')}\n"
+        f"FINDING: {f.get('description', '')}\n"
+        f"CITED EVIDENCE: {' || '.join(_cited_excerpts(f, ev_idx))}"
         for f in findings
     ]
-    answers = await _gather_chat(ctx.client.chat_json, prompts)
+    answers = await _judge_all(ctx, SYSTEM, users, _Calibration)
     verdicts: dict[str, str] = {}
     miscalibrated = 0
     for f, a in zip(findings, answers, strict=False):
-        verdict = str(a.get("calibration", "calibrated")).lower()
+        verdict = str(a.calibration).lower()
         verdicts[f.get("id", "?")] = verdict
         if verdict in ("under", "over"):
             miscalibrated += 1
@@ -481,8 +507,8 @@ async def answer_relevancy(item: dict, ctx: EvalContext) -> dict:
         f"WORKSPACE INTENTION: {_workspace_intention(item)}\n"
         f"OUTPUT:\n{_output_text(item)}"
     )
-    answer = await ctx.client.chat_json(SYSTEM, user)
-    return {"score": _coerce_float(answer.get("score"))}
+    answer = await ctx.client.judge(SYSTEM, user, _Score)
+    return {"score": answer.score}
 
 
 async def surface_deduplication(item: dict, ctx: EvalContext) -> dict:
@@ -537,28 +563,25 @@ async def surface_deduplication(item: dict, ctx: EvalContext) -> dict:
     if not candidates:
         return {"distinct": 0, "redundant": 0, "total": 0, "distinct_rate": None, "redundant_pairs": []}
 
-    prompts = []
+    users = []
     for surface, a, b, parent_proc in candidates:
         ctx_line = f"\nPARENT PROCESS: {parent_proc}\n" if parent_proc else ""
-        prompts.append(
-            (
-                SYSTEM,
-                f"Are these two {surface} nodes genuinely DISTINCT process concepts, or is one a "
-                f"duplicate / sub-case / restatement of the other?\n"
-                f"{ctx_line}"
-                'Reply with ONLY {"verdict": "DISTINCT" or "DUPLICATE", "reason": "<one line>"}.\n\n'
-                f"{surface.upper()} A: {a.get('name', '')} — {a.get('description', '')}\n"
-                f"{surface.upper()} B: {b.get('name', '')} — {b.get('description', '')}",
-            )
+        users.append(
+            f"Are these two {surface} nodes genuinely DISTINCT process concepts, or is one a "
+            f"duplicate / sub-case / restatement of the other?\n"
+            f"{ctx_line}"
+            'Reply with ONLY {"verdict": "DISTINCT" or "DUPLICATE", "reason": "<one line>"}.\n\n'
+            f"{surface.upper()} A: {a.get('name', '')} — {a.get('description', '')}\n"
+            f"{surface.upper()} B: {b.get('name', '')} — {b.get('description', '')}"
         )
 
-    answers = await _gather_chat(ctx.client.chat_json, prompts)
+    answers = await _judge_all(ctx, SYSTEM, users, _Verdict)
 
     distinct = 0
     redundant = 0
     redundant_pairs: list[dict] = []
     for (surface, a, b, _parent), answer in zip(candidates, answers, strict=False):
-        verdict = str(answer.get("verdict", "")).upper()
+        verdict = str(answer.verdict).upper()
         if verdict == "DISTINCT":
             distinct += 1
         else:
@@ -568,7 +591,7 @@ async def surface_deduplication(item: dict, ctx: EvalContext) -> dict:
                     "surface": surface,
                     "a": a.get("name", ""),
                     "b": b.get("name", ""),
-                    "reason": str(answer.get("reason", "")),
+                    "reason": str(answer.reason),
                 }
             )
 
@@ -602,27 +625,26 @@ async def comparative_vs_champion(item: dict, ctx: EvalContext) -> dict | None:
         f"CANDIDATE:\n{_output_text(item)}\n\n"
         f"CHAMPION:\n{_output_text(champion)}"
     )
-    out = await ctx.client.chat_json(SYSTEM, user)
+    out = await ctx.client.judge(SYSTEM, user, _Comparison)
     return {
-        "candidate": out.get("candidate", {}),
-        "champion": out.get("champion", {}),
-        "more_consistent": out.get("more_consistent", ""),
+        "candidate": out.candidate,
+        "champion": out.champion,
+        "more_consistent": out.more_consistent,
     }
 
 
 # ── flycanon custom metrics ───────────────────────────────────────────────────────
 
 
-async def _rag_score_once(item: dict, ctx: EvalContext) -> dict | None:
-    """Single RAG scoring call: returns {"contains_answer": float, "addresses_question": float}."""
+async def _rag_score_once(item: dict, ctx: EvalContext) -> _RagScore | None:
+    """Single RAG scoring call returning a _RagScore (or None if item lacks Q/A)."""
     question = item.get("question", "")
     reference = item.get("reference", "")
     answer = item.get("answer", "")
     if not question or not answer:
         return None
     user = f"QUESTION: {question}\nREFERENCE: {reference}\nANSWER: {answer}\n\n{RUBRIC}"
-    result = await ctx.client.chat_json(SYSTEM_RAG, user)
-    return result
+    return await ctx.client.judge(SYSTEM_RAG, user, _RagScore)
 
 
 async def contains_answer(item: dict, ctx: EvalContext) -> float | None:
@@ -636,9 +658,8 @@ async def contains_answer(item: dict, ctx: EvalContext) -> float | None:
         result = await _rag_score_once(item, ctx)
         if result is None:
             return None
-        val = _coerce_float(result.get("contains_answer"))
-        if val is not None:
-            scores.append(val)
+        if result.contains_answer is not None:
+            scores.append(result.contains_answer)
     if not scores:
         return None
     return round(statistics.median(scores), 4)
@@ -655,9 +676,8 @@ async def addresses_question(item: dict, ctx: EvalContext) -> float | None:
         result = await _rag_score_once(item, ctx)
         if result is None:
             return None
-        val = _coerce_float(result.get("addresses_question"))
-        if val is not None:
-            scores.append(val)
+        if result.addresses_question is not None:
+            scores.append(result.addresses_question)
     if not scores:
         return None
     return round(statistics.median(scores), 4)

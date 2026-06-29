@@ -74,11 +74,13 @@ ctx = EvalContext(
 The RAGAS metrics reuse this same framework embedder (wrapped for RAGAS), so the
 evaluator embeds with the same provider as the rest of your pipeline.
 
-`JudgeClient` is an async multi-provider chat client. The model spec is
-`"<provider>:<model>"`, where provider is one of `anthropic`, `openai`, `azure`, `ollama`.
-Temperature is pinned to `0.0` for stable verdicts, and API keys are read lazily from the
-environment (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AZURE_OPENAI_*`, `OLLAMA_HOST`) — so
-constructing a client never requires a secret.
+`JudgeClient` is an async multi-provider judge backed by the framework's `FireflyAgent`
+(pydantic-ai). The model spec is `"<provider>:<model>"`, where provider is one of
+`anthropic`, `openai`, `azure`, `ollama`. Each call returns a **validated, typed** Pydantic
+model — the LLM's structured output is schema-checked rather than hand-parsed — and
+`temperature` is pinned to `0.0` for stable verdicts. The provider reads its API key
+(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AZURE_OPENAI_*`, `OLLAMA_HOST`) when the underlying
+agent is first built, so constructing a `JudgeClient` never requires a secret.
 
 ### Item schema
 
@@ -277,7 +279,7 @@ All symbols below are importable from `fireflyframework_agentic.evaluation`.
 |--------|------|-------------|
 | `EvalContext` | Pydantic model | Carries `client`, optional `embedder`, and `runs` for the judge metrics. |
 | `build_embedder` | Function | Build a framework embedder from a `"<provider>:<model>"` spec (openai/azure/cohere/google/mistral/voyage/bedrock/ollama). |
-| `JudgeClient` | Class | Async multi-provider (`anthropic`/`openai`/`azure`/`ollama`) JSON chat client. |
+| `JudgeClient` | Class | Async multi-provider (`anthropic`/`openai`/`azure`/`ollama`) judge backed by `FireflyAgent`; returns validated typed output. |
 | `AdvisoryReport` | Dataclass | Aggregated `run_judge` output: `metrics`, `errors`, and run metadata. |
 | `Metric` | Type alias | `Callable[[dict, EvalContext], Awaitable[dict \| float \| None]]`. |
 | `parse_model` | Function | Split `"provider:model"` into `(provider, model)`. |
