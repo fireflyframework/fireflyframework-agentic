@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel, ConfigDict
 
-from fireflyframework_agentic.embeddings.providers.ollama import OllamaEmbedder
+from fireflyframework_agentic.embeddings.base import BaseEmbedder
 from fireflyframework_agentic.embeddings.similarity import cosine_similarity
 from fireflyframework_agentic.evaluation.judge_client import JudgeClient, same_provider
 
@@ -41,7 +41,7 @@ class EvalContext(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     client: JudgeClient
-    embedder: OllamaEmbedder | None = None
+    embedder: BaseEmbedder | None = None
     runs: int = 3
 
 
@@ -699,25 +699,38 @@ def _make_ragas_llm(ctx: EvalContext):
     raise ValueError(f"RAGAS: unsupported provider {provider!r}")
 
 
-def _make_ragas_embeddings(ctx: EvalContext):
-    """Build LangChain embeddings for RAGAS (langchain import inline)."""
-    if ctx.embedder is not None:
-        from langchain_ollama import OllamaEmbeddings  # type: ignore[import]  # noqa: PLC0415
+def _build_embeddings(ctx: EvalContext):
+    """Wrap the framework embedder (``ctx.embedder``) for RAGAS.
 
-        return OllamaEmbeddings(model=ctx.embedder._model)
-    provider = ctx.client.provider
-    if provider == "anthropic":
-        from langchain_anthropic import AnthropicEmbeddings  # type: ignore[import]  # noqa: PLC0415
+    RAGAS consumes a LangChain ``Embeddings`` via ``LangchainEmbeddingsWrapper``;
+    we feed it a thin adapter over the fireflyframework_agentic ``BaseEmbedder`` so
+    RAGAS uses the same embedder (and provider) as the rest of the pipeline. Build
+    one with :func:`fireflyframework_agentic.evaluation.build_embedder`.
+    """
+    from langchain_core.embeddings import Embeddings  # type: ignore[import]  # noqa: PLC0415
+    from ragas.embeddings import LangchainEmbeddingsWrapper  # type: ignore[import]  # noqa: PLC0415
 
-        return AnthropicEmbeddings()
-    if provider == "ollama":
-        from langchain_ollama import OllamaEmbeddings  # type: ignore[import]  # noqa: PLC0415
+    embedder = ctx.embedder
+    if embedder is None:
+        raise ValueError(
+            "RAGAS metrics need an embedder; set "
+            "EvalContext.embedder=build_embedder('<provider>:<model>')"
+        )
 
-        return OllamaEmbeddings()
-    raise ValueError(
-        f"RAGAS: no embedder configured for provider {provider!r}; "
-        "pass ctx.embedder=OllamaEmbedder(...) explicitly"
-    )
+    class _FrameworkEmbeddings(Embeddings):
+        async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
+            return (await embedder.embed(texts)).embeddings
+
+        async def aembed_query(self, text: str) -> list[float]:
+            return await embedder.embed_one(text)
+
+        def embed_documents(self, texts: list[str]) -> list[list[float]]:
+            return asyncio.run(self.aembed_documents(texts))
+
+        def embed_query(self, text: str) -> list[float]:
+            return asyncio.run(self.aembed_query(text))
+
+    return LangchainEmbeddingsWrapper(_FrameworkEmbeddings())
 
 
 async def _ragas_score(metric_name: str, item: dict, ctx: EvalContext) -> float | None:
@@ -746,7 +759,7 @@ async def _ragas_score(metric_name: str, item: dict, ctx: EvalContext) -> float 
             return None
 
         llm = _make_ragas_llm(ctx)
-        embeddings = _make_ragas_embeddings(ctx)
+        embeddings = _build_embeddings(ctx)
         metric = metric_cls(llm=llm, embeddings=embeddings)
         sample = _make_ragas_sample(item)
         dataset = EvaluationDataset(samples=[sample])

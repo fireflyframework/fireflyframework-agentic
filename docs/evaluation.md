@@ -51,14 +51,28 @@ async def metric(item: dict, ctx: EvalContext) -> dict | float | None
 ### EvalContext and JudgeClient
 
 ```python
-from fireflyframework_agentic.evaluation import EvalContext, JudgeClient
+from fireflyframework_agentic.evaluation import EvalContext, JudgeClient, build_embedder
 
 ctx = EvalContext(
     client=JudgeClient("anthropic:claude-haiku-4-5-20251001"),
     runs=3,          # metrics that repeat use the median of this many calls
-    embedder=None,   # optional OllamaEmbedder, required only by semantic_recovery
+    embedder=None,   # optional framework embedder; required by semantic_recovery and RAGAS
 )
 ```
+
+`embedder` is any `fireflyframework_agentic` embedder. Build one from a
+`"<provider>:<model>"` spec with `build_embedder` (openai, azure, cohere, google,
+mistral, voyage, bedrock, ollama):
+
+```python
+ctx = EvalContext(
+    client=JudgeClient("anthropic:claude-haiku-4-5-20251001"),
+    embedder=build_embedder("ollama:nomic-embed-text"),
+)
+```
+
+The RAGAS metrics reuse this same framework embedder (wrapped for RAGAS), so the
+evaluator embeds with the same provider as the rest of your pipeline.
 
 `JudgeClient` is an async multi-provider chat client. The model spec is
 `"<provider>:<model>"`, where provider is one of `anthropic`, `openai`, `azure`, `ollama`.
@@ -264,6 +278,7 @@ All symbols below are importable from `fireflyframework_agentic.evaluation`.
 | Symbol | Kind | Description |
 |--------|------|-------------|
 | `EvalContext` | Pydantic model | Carries `client`, optional `embedder`, and `runs` for the judge metrics. |
+| `build_embedder` | Function | Build a framework embedder from a `"<provider>:<model>"` spec (openai/azure/cohere/google/mistral/voyage/bedrock/ollama). |
 | `JudgeClient` | Class | Async multi-provider (`anthropic`/`openai`/`azure`/`ollama`) JSON chat client. |
 | `AdvisoryReport` | Dataclass | Aggregated `run_judge` output: `metrics`, `errors`, and run metadata. |
 | `Metric` | Type alias | `Callable[[dict, EvalContext], Awaitable[dict \| float \| None]]`. |

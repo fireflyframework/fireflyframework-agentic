@@ -1,3 +1,6 @@
+from fireflyframework_agentic.evaluation.embedder import (
+    build_embedder as build_embedder,
+)
 from fireflyframework_agentic.evaluation.judge import (
     AdvisoryReport as AdvisoryReport,
 )
