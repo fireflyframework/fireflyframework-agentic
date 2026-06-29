@@ -24,12 +24,6 @@ Quick start::
 
     config = get_config()
     print(config.default_model)
-
-Optional subpackages (not imported eagerly at the top level):
-    fireflyframework_agentic.lab          -- sessions, benchmarks, datasets, evaluation orchestration
-    fireflyframework_agentic.experiments  -- experiment tracking and comparison
-    fireflyframework_agentic.evaluation   -- LLM-as-judge metrics, RAGAS, and retrieval metrics
-                                            (requires the ``evaluation`` optional extra)
 """
 
 from importlib.metadata import PackageNotFoundError, version
