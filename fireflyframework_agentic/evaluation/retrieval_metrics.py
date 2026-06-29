@@ -26,8 +26,6 @@ Result row schema (dict)::
         "no_answer": bool,           # model refused / produced no answer
         "answer": str,               # used for no_answer detection when no_answer absent
         "citations": [{"is_gold": bool}, ...],
-        "search_ms": float,
-        "answer_ms": float,
     }
 
 Individual metrics::
@@ -40,7 +38,6 @@ Individual metrics::
     ndcg(results, k=10)         -> float
     no_answer_rate(results)     -> float | None
     citation_precision(results) -> float | None
-    mean_latency_ms(results, field) -> float | None
 """
 
 from __future__ import annotations
@@ -168,9 +165,3 @@ def citation_precision(results: list[dict]) -> float | None:
             num += sum(1 for c in cites if c.get("is_gold"))
             den += len(cites)
     return round(num / den, 4) if den else None
-
-
-def mean_latency_ms(results: list[dict], field: str) -> float | None:
-    """Mean latency in ms for the given field (``search_ms`` or ``answer_ms``). None if absent."""
-    values = [row[field] for row in results if row.get(field) is not None]
-    return round(sum(values) / len(values)) if values else None

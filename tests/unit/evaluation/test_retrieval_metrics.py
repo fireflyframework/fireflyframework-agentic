@@ -20,7 +20,6 @@ from fireflyframework_agentic.evaluation.retrieval_metrics import (
     citation_precision,
     hit_at_k,
     map_score,
-    mean_latency_ms,
     mrr,
     ndcg,
     no_answer_rate,
@@ -166,16 +165,3 @@ def test_citation_precision_1_when_all_gold():
 def test_citation_precision_half_when_half_gold():
     rows = [{**_row(gold_rank=1), "citations": [{"is_gold": True}, {"is_gold": False}]}]
     assert citation_precision(rows) == 0.5
-
-
-# ── mean_latency_ms ───────────────────────────────────────────────────────────
-
-
-def test_mean_latency_none_when_field_absent():
-    assert mean_latency_ms([_row(gold_rank=1)], "search_ms") is None
-
-
-def test_mean_latency_computed_when_present():
-    rows = [{**_row(gold_rank=1), "search_ms": 100.0, "answer_ms": 200.0}]
-    assert mean_latency_ms(rows, "search_ms") == 100
-    assert mean_latency_ms(rows, "answer_ms") == 200

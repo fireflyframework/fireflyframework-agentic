@@ -223,8 +223,6 @@ results = [
         "no_answer": False,              # model refused / produced no answer
         "answer": "...",                 # used for no_answer detection if no_answer absent
         "citations": [{"is_gold": True}],
-        "search_ms": 42.0,
-        "answer_ms": 310.0,
     },
 ]
 ```
@@ -244,7 +242,6 @@ results = [
 | `ndcg` | `(results, k=10) -> float` | Mean normalised discounted cumulative gain at k. |
 | `no_answer_rate` | `(results) -> float \| None` | Fraction of queries with no answer. `None` if no results. |
 | `citation_precision` | `(results) -> float \| None` | Precision of in-answer citations vs. the gold set. `None` if no citations. |
-| `mean_latency_ms` | `(results, field) -> float \| None` | Mean latency for `"search_ms"` or `"answer_ms"`. `None` if absent. |
 
 ### Example
 
@@ -286,4 +283,4 @@ and the orchestrator `run_judge`.
 ### Retrieval metrics
 
 `hit_at_k`, `recall_at_k`, `precision_at_k`, `mrr`, `map_score`, `ndcg`,
-`no_answer_rate`, `citation_precision`, `mean_latency_ms`.
+`no_answer_rate`, `citation_precision`.

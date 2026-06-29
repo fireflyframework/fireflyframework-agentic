@@ -92,9 +92,6 @@ from fireflyframework_agentic.evaluation.retrieval_metrics import (
     map_score as map_score,
 )
 from fireflyframework_agentic.evaluation.retrieval_metrics import (
-    mean_latency_ms as mean_latency_ms,
-)
-from fireflyframework_agentic.evaluation.retrieval_metrics import (
     mrr as mrr,
 )
 from fireflyframework_agentic.evaluation.retrieval_metrics import (
