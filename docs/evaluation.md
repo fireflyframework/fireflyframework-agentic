@@ -54,7 +54,7 @@ async def metric(item: dict, ctx: EvalContext) -> dict | float | None
 from fireflyframework_agentic.evaluation import EvalContext, JudgeClient, build_embedder
 
 ctx = EvalContext(
-    client=JudgeClient("anthropic:claude-haiku-4-5-20251001"),
+    client=JudgeClient("anthropic:claude-haiku-4-5"),
     runs=3,          # metrics that repeat use the median of this many calls
     embedder=None,   # optional framework embedder; required by semantic_recovery and RAGAS
 )
@@ -66,7 +66,7 @@ mistral, voyage, bedrock, ollama):
 
 ```python
 ctx = EvalContext(
-    client=JudgeClient("anthropic:claude-haiku-4-5-20251001"),
+    client=JudgeClient("anthropic:claude-haiku-4-5"),
     embedder=build_embedder("ollama:nomic-embed-text"),
 )
 ```
@@ -129,7 +129,7 @@ item = {
 }
 
 async def main():
-    ctx = EvalContext(client=JudgeClient("anthropic:claude-haiku-4-5-20251001"), runs=3)
+    ctx = EvalContext(client=JudgeClient("anthropic:claude-haiku-4-5"), runs=3)
     contains   = await contains_answer(item, ctx)     # 0.0–1.0
     addresses  = await addresses_question(item, ctx)  # 0.0–1.0
     print(contains, addresses)
@@ -199,7 +199,7 @@ import asyncio
 from fireflyframework_agentic.evaluation import run_judge, EvalContext, JudgeClient
 
 async def main():
-    ctx = EvalContext(client=JudgeClient("anthropic:claude-haiku-4-5-20251001"), runs=3)
+    ctx = EvalContext(client=JudgeClient("anthropic:claude-haiku-4-5"), runs=3)
     report = await run_judge(item, ctx, pipeline_model="anthropic:claude-sonnet-4-6")
     print(report.metrics)   # {metric_name: result, ...}
     print(report.errors)    # ["metric: ExceptionType: message", ...]

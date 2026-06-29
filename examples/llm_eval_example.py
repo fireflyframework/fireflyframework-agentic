@@ -22,11 +22,11 @@ Each metric runs ``--runs`` times and reports the median score (default 3).
 
 Usage::
 
-    python examples/llm_eval_example.py --model anthropic:claude-haiku-4-5-20251001
+    python examples/llm_eval_example.py --model anthropic:claude-haiku-4-5
 
     # Or score from a JSONL file instead of the built-in sample data:
     python examples/llm_eval_example.py \\
-        --model anthropic:claude-haiku-4-5-20251001 \\
+        --model anthropic:claude-haiku-4-5 \\
         --items-file items.jsonl
 
 Items JSONL format — one JSON object per line::
@@ -108,7 +108,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Score Q&A pairs with LLM-as-judge metrics.")
     parser.add_argument(
         "--model",
-        default="anthropic:claude-haiku-4-5-20251001",
+        default="anthropic:claude-haiku-4-5",
         help="Judge model spec (provider:model).",
     )
     parser.add_argument("--runs", type=int, default=3, help="Judge runs per item (median is reported).")
