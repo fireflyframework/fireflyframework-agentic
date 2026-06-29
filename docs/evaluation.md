@@ -2,434 +2,288 @@
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
-The Evaluation subpackage provides gate-based quality gates, LLM-as-judge advisory scoring,
-champion/challenger tracking, and deterministic retrieval metrics for assessing agent outputs.
-
----
-
-## Concepts
-
-### Gate pipeline
-
-The evaluation framework runs **five gates** in sequence. Every gate always runs — a failed
-gate raises a *flag*, not a veto, so the scorecard always carries the complete picture.
-
-| Gate | Name | Kind | Description |
-|------|------|------|-------------|
-| G1 | Structural & Safe | Deterministic | Schema validity, PII non-disclosure, empty-registry guard. |
-| G2 | Must-finds & Negative Controls | Deterministic | Lexical/semantic recall against the must-find registry; NC precision. |
-| G3 | Evidence (Grounding) | Deterministic | Excerpt-to-corpus anchoring; fabricated-evidence detection. |
-| G4 | LLM-as-a-Judge | Advisory (non-blocking) | Semantic faithfulness, entailment, gap detection — never changes the verdict. |
-| G5 | No-regression / Promotion | Human decision | Champion/challenger comparison with A/A noise band; collects sign-offs. |
-
-**No gate vetoes.** Failures append to the `GateResult` flags list and scoring continues.
-The scorecard carries every signal regardless of which gates fired.
-
-### GateResult
-
-`GateResult` is a dataclass returned by each gate:
-
-```python
-@dataclass
-class GateResult:
-    gate: str       # "G1", "G2", …, "G5"
-    passed: bool
-    reason_code: str = ""   # e.g. "SCHEMA_INVALID", "NC_HIT", "UNGROUNDED"
-    details: dict = field(default_factory=dict)
-```
-
-`str(gate_result)` prints `[G2] PASS` or `[G2] FLAG:NC_HIT`.
-
-### Verdict
-
-`verdict(gate_results)` returns `VERDICT_PROMOTE` or `VERDICT_HOLD`:
-
-- `VERDICT_PROMOTE` — all gates passed **and** G5 (the human sign-off gate) is present.
-- `VERDICT_HOLD` — any gate flagged, or G5 is missing.
-
-The CLI exits `0` on PROMOTE and `1` on HOLD, so it composes into CI.
-
-### Must-find registry
-
-A registry (`lean-1` schema) is a JSON file listing items the discovery output is
-expected to surface (`tier` L0–L3) and negative controls (NC) it must *not* assert.
-
-```json
-{
-  "schema_version": "lean-1",
-  "corpus": "banca-cordobesa",
-  "items": [
-    { "id": "ao-pep-4eyes", "tier": "L0", "scope": "decision",
-      "description": "PEP cases require a second analyst sign-off (4-eyes)",
-      "keywords": ["PEP", "4-eyes"],
-      "evidence": ["SOP-002-kyc-edd.md"] },
-    { "id": "ao-nc-realtime", "tier": "NC", "scope": "finding",
-      "description": "KYC-Hub synchronises in real time — factually false" }
-  ]
-}
-```
-
-Tier semantics: L0 = must-find control (a single miss flags the run), L1 = high-priority,
-L2 = important, L3 = nice-to-have (not counted in the recall floor).
-
-### Advisory judge (G4)
-
-G4 calls a chat LLM (or local Ollama model) for semantic checks the deterministic gates
-cannot perform: faithfulness, entailment, numeric/temporal fidelity, actionability,
-fabricated-entity detection, and more. It is:
-
-- **Non-blocking** — `AdvisoryReport` is carried separately and never enters `verdict()`.
-- **Non-deterministic** — each metric runs `judge_runs` times (default: 3) and the
-  median score is reported.
-- **Opt-in** — pass `--judge-model provider:model` to activate it; omit the flag to skip.
-
-### Champion/challenger pattern
-
-Champions are **per-corpus**. `ChampionRecord` persists the best-known run so that
-promotion decisions are made against a stable, signed baseline rather than the last run.
-
-```
-               ┌──────────────────────────────────────────┐
-               │  run result JSON (challenger)            │
-               └──────────────┬───────────────────────────┘
-                              │
-              ┌───────────────▼───────────────┐
-              │  G1 · G2 · G3 (deterministic) │
-              │  G4 (advisory, opt-in)         │
-              └───────────────┬───────────────┘
-                              │  flags + scores
-              ┌───────────────▼───────────────┐
-              │  G5 — no-regression vs        │
-              │  champion baseline + A/A band │
-              └───────────────┬───────────────┘
-                              │
-              ┌───────────────▼───────────────┐
-              │  Markdown scorecard           │
-              │  PROMOTE / HOLD               │
-              └───────────────────────────────┘
-```
-
-`invalidate_champion()` marks a baseline invalid. The `EMPTY_MUST_FIND` guard in G1
-prevents a fake-100% champion being created against an empty registry.
+The Evaluation subpackage provides **metrics for assessing LLM and pipeline outputs**:
+LLM-as-judge metrics (faithfulness, relevancy, answer correctness, …) and deterministic
+information-retrieval metrics (recall@k, nDCG, MRR, …). Every metric is a plain function
+you call directly and combine however your harness needs — there is no gate, verdict, or
+promotion machinery to opt into.
 
 ---
 
 ## Installation
 
-The evaluation subpackage requires `scipy` and `numpy`. Install the optional extra:
+The evaluation subpackage needs `numpy` for the embedding path and `ragas` (plus its
+LangChain providers) for the RAGAS metrics. Install the optional extra:
 
 ```bash
 pip install "fireflyframework-agentic[evaluation]"
 ```
 
-The `flyeval` CLI entry-point is registered automatically by the package. Verify:
-
-```bash
-flyeval --version
-```
+Everything except the RAGAS metrics works without `ragas` installed; the RAGAS functions
+import it lazily and only fail if you call them without the extra.
 
 ---
 
-## CLI
+## Two metric families
 
-All subcommands exit `0` on PROMOTE and `1` on HOLD.
+| Family | Module | Needs an LLM? | Use it to evaluate… |
+|--------|--------|---------------|---------------------|
+| **LLM-as-judge** | `evaluation.judge` | Most metrics yes (a few are deterministic/embedding) | The semantic quality of a model's answers and reports — faithfulness, relevancy, correctness, hallucination. |
+| **Retrieval** | `evaluation.retrieval_metrics` | No (pure functions, no network) | The ranked retrieval that feeds the LLM — recall@k, precision@k, MRR, MAP, nDCG, latency. |
 
-### `flyeval gate`
-
-Run the full gate pipeline against a result JSON and print a Markdown scorecard.
-
-```bash
-flyeval gate \
-  --result      runs/2026-06-18/output.json \
-  --registry    registries/banca-cordobesa.json \
-  --baseline    baselines/banca-cordobesa.json \
-  --judge-model anthropic:claude-3-5-haiku \
-  --judge-runs  3
-```
-
-Key flags:
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--result` | required | Path to the run's `output.json`. |
-| `--registry` | required | Must-find registry (lean-1 JSON). |
-| `--baseline` | — | Champion baseline JSON for G5 regression check. |
-| `--judge-model` | — | `provider:model` for G4 advisory judge. |
-| `--judge-runs` | 3 | Number of independent judge calls (median aggregation). |
-| `--no-judge` | — | Skip G4 entirely. |
-| `--recall-floor` | 0.70 | Minimum G2 recall before flagging. |
-| `--grounding-floor` | 0.90 | Minimum G3 grounding rate before flagging. |
-| `--corpus` | — | Path to the evidence corpus bundle for G3 verification. |
-| `--pii-list` | — | Path to a JSON array of names to scan for PII leaks (G1). |
-| `--embedder` | — | `provider:model` for semantic recall (G2 embedding path). |
-| `--model-id` | "unknown" | Identifier of the model under evaluation (for scorecard). |
-
-### `flyeval aa-band`
-
-Compute the A/A noise band from multiple repeated runs of the same model to establish
-the noise floor before setting up the champion comparison.
-
-```bash
-flyeval aa-band \
-  --results runs/aa-run-1/output.json runs/aa-run-2/output.json runs/aa-run-3/output.json \
-  --registry registries/banca-cordobesa.json
-```
-
-The command prints per-metric variance and recommended noise floors.
-
-### `flyeval day-zero`
-
-Promote the very first champion for a corpus (Day-Zero protocol). Requires at least
-`--signoffs` sign-offs (default: 2) before PROMOTE is issued.
-
-```bash
-flyeval day-zero \
-  --result   runs/2026-06-18/output.json \
-  --registry registries/banca-cordobesa.json \
-  --baseline baselines/banca-cordobesa.json \
-  --signoffs 2
-```
-
-The command writes the new `ChampionRecord` into `--baseline` on success.
-
-### `flyeval invalidate`
-
-Mark the current champion invalid with a documented reason. Use this when the registry
-changes in a way that makes the existing champion incommensurable.
-
-```bash
-flyeval invalidate \
-  --baseline baselines/banca-cordobesa.json \
-  --reason   "Registry expanded from 39 to 94 items (lean-1 v2)."
-```
+Both are re-exported from `fireflyframework_agentic.evaluation`.
 
 ---
 
-## Python API
+## LLM-as-judge metrics
 
-### Running gates
+Each judge metric is an **async function** with the same signature:
 
 ```python
-import json
+async def metric(item: dict, ctx: EvalContext) -> dict | float | None
+```
+
+- `item` — a plain dict of the output under evaluation (see schema below).
+- `ctx` — an `EvalContext` carrying the judge client, optional embedder, and run count.
+- The return is either a small summary dict, a single float, or `None` when the metric
+  cannot run (e.g. an embedding metric with no embedder, or a missing field).
+
+### EvalContext and JudgeClient
+
+```python
+from fireflyframework_agentic.evaluation import EvalContext, JudgeClient
+
+ctx = EvalContext(
+    client=JudgeClient("anthropic:claude-haiku-4-5-20251001"),
+    runs=3,          # metrics that repeat use the median of this many calls
+    embedder=None,   # optional OllamaEmbedder, required only by semantic_recovery
+)
+```
+
+`JudgeClient` is an async multi-provider chat client. The model spec is
+`"<provider>:<model>"`, where provider is one of `anthropic`, `openai`, `azure`, `ollama`.
+Temperature is pinned to `0.0` for stable verdicts, and API keys are read lazily from the
+environment (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AZURE_OPENAI_*`, `OLLAMA_HOST`) — so
+constructing a client never requires a secret.
+
+### Item schema
+
+The judge metrics read whichever keys they need and ignore the rest, so one `item` dict can
+serve many metrics.
+
+**RAG / Q&A items** (single answer under test):
+
+```python
+item = {
+    "question":  "What is the boiling point of water at sea level?",
+    "answer":    "Water boils at 100 degrees Celsius at sea level.",
+    "reference": "Water boils at 100 °C at standard atmospheric pressure.",
+    "contexts":  ["...retrieved passage...", "..."],   # used by RAGAS metrics
+}
+```
+
+**Report / discovery items** (a structured pipeline output):
+
+```python
+item = {
+    "findings":        [{"id": ..., "title": ..., "description": ..., "severity": ...,
+                         "evidence_refs": [{"evidence_id": ...}], ...}],
+    "evidence_index":  [{"id": ..., "locator": "doc.md#L1", "excerpt": "..."}],
+    "process_graph":   {"processes": [{"name": ..., "activities": [...], "decisions": [...]}]},
+    "proposed_actions": [{"title": ..., "finding_id": ..., "expected_savings_fte": ...}],
+    "workspace":       {"name": ..., "description": ...},
+    "nc_items":        [{"id": ..., "description": "a statement that is factually false"}],
+    "lexical_missed_ids": ["..."],   # ids the lexical pass missed (semantic_recovery)
+    "champion":        { ... another item ... },   # baseline for comparative_vs_champion
+}
+```
+
+### Quick start — scoring Q&A pairs
+
+```python
+import asyncio
 from fireflyframework_agentic.evaluation import (
-    run_gates,
-    render_scorecard,
-    verdict,
-    load_registry,
-    VERDICT_PROMOTE,
+    EvalContext, JudgeClient, contains_answer, addresses_question,
 )
 
-result = json.loads(open("runs/2026-06-18/output.json").read())
-registry = load_registry("registries/banca-cordobesa.json")
+item = {
+    "question":  "Who wrote Romeo and Juliet?",
+    "reference": "Romeo and Juliet was written by William Shakespeare around 1594–1596.",
+    "answer":    "It was written by Shakespeare.",
+}
 
-gate_results = run_gates(result, registry)
-scorecard_md = render_scorecard(
-    gate_results,
-    corpus="banca-cordobesa",
-    model_id="anthropic:claude-3-5-sonnet",
-    run_id="2026-06-18-sonnet-01",
-)
-print(scorecard_md)
+async def main():
+    ctx = EvalContext(client=JudgeClient("anthropic:claude-haiku-4-5-20251001"), runs=3)
+    contains   = await contains_answer(item, ctx)     # 0.0–1.0
+    addresses  = await addresses_question(item, ctx)  # 0.0–1.0
+    print(contains, addresses)
 
-v = verdict(gate_results)
-print("Verdict:", v)  # "PROMOTE" or "HOLD"
-assert v == VERDICT_PROMOTE
+asyncio.run(main())
 ```
 
-### Champion management
+See `examples/llm_eval_example.py` for a runnable version that scores a list of items
+(built-in sample data or a JSONL file) and prints a table.
+
+### Metric catalog
+
+**Deterministic** — no LLM call, always available:
+
+| Metric | Returns | Measures |
+|--------|---------|----------|
+| `source_coverage` | `{cited, total, orphaned}` | Distinct source documents cited by ≥1 finding vs. all sources; `orphaned` lists uncited stems. |
+| `excerpt_fill_rate` | `{populated, total}` | Fraction of `evidence_index` entries that carry a non-empty excerpt. |
+
+**Embedding** — requires `ctx.embedder`:
+
+| Metric | Returns | Measures |
+|--------|---------|----------|
+| `semantic_recovery` | `{lexical_recall, recovered_recall, recovered, tau, scored_denominator}` or `None` | Context-recall: recovers lexically-missed items via embedding similarity above `tau` (default 0.70). Returns `None` when no embedder is set. |
+
+**LLM-as-judge** — requires `ctx.client`:
+
+| Metric | Returns | Measures |
+|--------|---------|----------|
+| `faithfulness` | `{supported, total, unsupported_ids}` | Does each finding's cited evidence entail its claim? |
+| `numeric_temporal_fidelity` | `{mismatches, count}` | Numbers/dates asserted in a finding that don't match its evidence. |
+| `citation_relevance` | `{precision, relevant, total}` | Context precision: fraction of cited passages actually relevant to the claim. |
+| `nc_semantic_precision` | `{asserted, total, asserted_ids}` | How many negative-control falsehoods (`nc_items`) the output asserts or endorses. |
+| `fabricated_entity` | `{count, entities}` | Systems/orgs/metrics named in the output but absent from the corpus. |
+| `contradiction` | `{count, pairs}` | Internally contradictory finding pairs. |
+| `open_gap` | `{gap}` | G-Eval open probe: the most important issue the output missed (free-text, no score). |
+| `actionability` | `{score, rated}` | Average 0–1 rating of whether proposed actions are specific, quantified, and linked. |
+| `severity_calibration` | `{miscalibrated, total, verdicts}` | Whether each finding's stated severity matches its evidence (under/over/calibrated). |
+| `answer_relevancy` | `{score}` | Does the output address the stated workspace intention? |
+| `surface_deduplication` | `{distinct, redundant, total, distinct_rate, redundant_pairs}` | Fraction of near-duplicate process-graph nodes that are genuinely distinct. |
+| `comparative_vs_champion` | `{candidate, champion, more_consistent}` or `None` | Pairwise five-axis review of candidate vs. `item["champion"]`. `None` if no champion. |
+
+**RAG Q&A** — requires `ctx.client`; repeats `ctx.runs` times and returns the median:
+
+| Metric | Returns | Measures |
+|--------|---------|----------|
+| `contains_answer` | `float` or `None` | Does the answer contain the correct information from the reference? |
+| `addresses_question` | `float` or `None` | Does the answer directly address what the question asks? |
+
+**RAGAS** — requires the `ragas` extra and `ctx.client` (plus an embedder for some):
+
+| Metric | Returns | Measures |
+|--------|---------|----------|
+| `answer_correctness` | `float` or `None` | Semantic F1 of the answer against the reference. |
+| `ragas_faithfulness` | `float` or `None` | Answer grounded in the retrieved `contexts`. |
+| `context_recall` | `float` or `None` | Reference coverage by the retrieved `contexts`. |
+| `context_precision` | `float` or `None` | Retrieved `contexts` relevant to the question. |
+
+### Running every metric at once
+
+`run_judge()` runs all metrics concurrently and collects them into an `AdvisoryReport`. It
+is best-effort and never raises — any metric that fails is recorded in `report.errors`
+instead of propagating.
 
 ```python
-from fireflyframework_agentic.evaluation import (
-    load_champion,
-    save_champion,
-    invalidate_champion,
-    ChampionRecord,
-)
+import asyncio
+from fireflyframework_agentic.evaluation import run_judge, EvalContext, JudgeClient
 
-# Load the current champion (returns None on Day Zero).
-champ = load_champion("baselines/banca-cordobesa.json")
-if champ is None:
-    print("Day Zero — no champion yet.")
-else:
-    print(f"Champion: {champ.run_id} | {champ.primary_metric()}={champ.primary_score():.3f}")
+async def main():
+    ctx = EvalContext(client=JudgeClient("anthropic:claude-haiku-4-5-20251001"), runs=3)
+    report = await run_judge(item, ctx, pipeline_model="anthropic:claude-sonnet-4-6")
+    print(report.metrics)   # {metric_name: result, ...}
+    print(report.errors)    # ["metric: ExceptionType: message", ...]
 
-# Save a new champion after a successful PROMOTE.
-new_champ = ChampionRecord(
-    corpus="banca-cordobesa",
-    run_id="2026-06-18-sonnet-01",
-    model_id="anthropic:claude-3-5-sonnet",
-    registry_sha256=registry.sha256(),
-    scores={"lexical_recall": 0.857, "grounding_pct": 0.941},
-    human_sign_offs=["alice", "bob"],
-)
-save_champion("baselines/banca-cordobesa.json", new_champ)
-
-# Invalidate when the registry changes materially.
-invalidate_champion(
-    "baselines/banca-cordobesa.json",
-    reason="Registry expanded from 39 to 94 items.",
-)
+asyncio.run(main())
 ```
 
-### EvalConfig
+`AdvisoryReport` fields:
 
-`EvalConfig` is a Pydantic model that captures the parameters of a single evaluation run.
-Use it to build reproducible, serialisable run records.
-
-```python
-from fireflyframework_agentic.evaluation.models import EvalConfig
-
-cfg = EvalConfig(
-    model_id="anthropic:claude-3-5-sonnet",
-    corpus="banca-cordobesa",
-    run_id="2026-06-18-sonnet-01",
-    registry_path="registries/banca-cordobesa.json",
-    corpus_path="corpora/banca-cordobesa/",
-    baseline_path="baselines/banca-cordobesa.json",
-    judge_model="anthropic:claude-3-5-haiku",
-    judge_runs=3,
-)
-print(cfg.model_dump_json(indent=2))
-```
-
-### Advisory judge (G4)
-
-```python
-from fireflyframework_agentic.evaluation import run_judge, JudgeClient, build_embedder
-
-client = JudgeClient(
-    chat_fn=my_chat_fn,        # callable(system: str, user: str) -> dict
-    embed_fn=build_embedder("ollama:bge-m3"),
-)
-
-advisory = run_judge(
-    result=result,
-    registry=registry,
-    client=client,
-    runs=3,
-    missed_ids=[],   # IDs the deterministic G2 missed — judge tries to recover them
-)
-print(advisory.scores)   # dict of metric -> float
-print(advisory.errors)   # any metrics that failed (best-effort, never raises)
-```
+| Field | Type | Description |
+|-------|------|-------------|
+| `judge_model` | `str` | The judge model spec used. |
+| `same_provider_caveat` | `bool` | `True` when the judge and the evaluated pipeline share a provider (self-grading risk). |
+| `calibrated` | `bool` | Reserved; always `False` for now. |
+| `runs` | `int` | Judge runs per repeated metric. |
+| `metrics` | `dict` | Per-metric results, keyed by metric name. |
+| `details` | `dict` | Supporting context (counts, ids). |
+| `errors` | `list[str]` | Per-metric failures captured best-effort. |
 
 ---
 
-## Retrieval Metrics
+## Retrieval metrics
 
-The `compute_retrieval_metrics()` function computes standard IR metrics over ranked
-retrieval results. It is imported from `fireflyframework_agentic.lab.retrieval_metrics`
-and re-exported by the evaluation package.
+Deterministic IR metrics over ranked retrieval results — no LLM and no network, the same
+design as scikit-learn or MS MARCO evaluation scripts. Each is a plain function over a list
+of result rows.
 
-Supported metrics at cut-offs k ∈ {1, 5, 10}:
-
-- **Hit@k** — at least one gold document in top-k.
-- **Recall@k** — fraction of gold documents in top-k.
-- **Precision@k** — fraction of top-k results that are gold.
-- **MRR@10** — mean reciprocal rank of the first gold hit.
-- **MAP@10** — mean average precision.
-- **nDCG@10** — normalised discounted cumulative gain.
+### Row schema
 
 ```python
-from fireflyframework_agentic.evaluation import compute_retrieval_metrics, RetrieverMetrics
-
-# Each row is a query; each row's "retrieved" list is ranked (rank=1 is top).
-rows = [
+results = [
     {
-        "query": "KYC enhanced due diligence steps",
-        "gold": ["SOP-002-kyc-edd.md"],
-        "retrieved": [
-            {"rank": 1, "source_id": "SOP-002-kyc-edd.md", "is_gold": True},
-            {"rank": 2, "source_id": "SOP-001-account-opening.md", "is_gold": False},
-            {"rank": 3, "source_id": "INT-002-KYC-Jaime.md", "is_gold": True},
-        ],
+        "retrieved": [{"rank": 1, "source_id": "SOP-002.md", "is_gold": True},
+                      {"rank": 2, "source_id": "SOP-001.md", "is_gold": False}],
+        "gold": ["SOP-002.md"],          # gold source identifiers
+        # optional:
+        "no_answer": False,              # model refused / produced no answer
+        "answer": "...",                 # used for no_answer detection if no_answer absent
+        "citations": [{"is_gold": True}],
+        "search_ms": 42.0,
+        "answer_ms": 310.0,
     },
 ]
-
-metrics: RetrieverMetrics = compute_retrieval_metrics(rows)
-print(f"Recall@5:  {metrics.recall_5:.3f}")
-print(f"nDCG@10:   {metrics.ndcg_10:.3f}")
-print(f"MRR@10:    {metrics.mrr_10:.3f}")
 ```
 
-`RetrieverMetrics` also carries optional fields when the raw rows include them:
-`no_answer_rate`, `citation_precision`, `mean_search_ms`, `mean_answer_ms`.
+`rank` is 1-based (rank 1 is the top hit). Duplicate sources are de-duplicated by
+`source_id`, keeping the best-ranked chunk.
 
----
+### Metric catalog
 
-## Architecture
+| Function | Signature | Measures |
+|----------|-----------|----------|
+| `hit_at_k` | `(results, k) -> float` | Fraction of queries with ≥1 gold document in top-k. |
+| `recall_at_k` | `(results, k) -> float` | Mean fraction of gold documents found in top-k. |
+| `precision_at_k` | `(results, k) -> float` | Mean fraction of top-k results that are gold. |
+| `mrr` | `(results, k=10) -> float` | Mean reciprocal rank of the first gold hit. |
+| `map_score` | `(results, k=10) -> float` | Mean average precision at k. |
+| `ndcg` | `(results, k=10) -> float` | Mean normalised discounted cumulative gain at k. |
+| `no_answer_rate` | `(results) -> float \| None` | Fraction of queries with no answer. `None` if no results. |
+| `citation_precision` | `(results) -> float \| None` | Precision of in-answer citations vs. the gold set. `None` if no citations. |
+| `mean_latency_ms` | `(results, field) -> float \| None` | Mean latency for `"search_ms"` or `"answer_ms"`. `None` if absent. |
 
-```mermaid
-flowchart TD
-    R["result JSON\n(DiscoveryResult / output.json)"]
-    REG["Registry JSON\n(lean-1 must-find)"]
-    CORP["Corpus bundle\n(raw evidence documents)"]
-    BASE["Baseline JSON\n(champion record)"]
+### Example
 
-    R --> G1["G1 · Structural & Safe\n(schema, PII, empty-registry)"]
-    REG --> G1
-    R --> G2["G2 · Recall & NC Precision\n(lexical + optional semantic)"]
-    REG --> G2
-    R --> G3["G3 · Grounding\n(excerpt anchoring, fabrication)"]
-    CORP --> G3
-    R --> G4["G4 · LLM Judge advisory\n(faithfulness, entailment, gaps)"]
-    REG --> G4
-    G1 --> SC["Markdown Scorecard\nrender_scorecard()"]
-    G2 --> SC
-    G3 --> SC
-    G4 -.advisory.-> SC
-    BASE --> G5["G5 · No-regression\n(A/A band, sign-offs)"]
-    G1 --> G5
-    G2 --> G5
-    G3 --> G5
-    G5 --> SC
-    SC --> V["verdict()\nPROMOTE / HOLD"]
-    V --> CHAMP["save_champion()\nor invalidate_champion()"]
+```python
+from fireflyframework_agentic.evaluation import recall_at_k, ndcg, mrr
+
+print(f"Recall@5: {recall_at_k(results, 5):.3f}")
+print(f"nDCG@10:  {ndcg(results):.3f}")
+print(f"MRR@10:   {mrr(results):.3f}")
 ```
 
 ---
 
 ## Reference
 
-### Exports
-
 All symbols below are importable from `fireflyframework_agentic.evaluation`.
+
+### Core types
 
 | Symbol | Kind | Description |
 |--------|------|-------------|
-| `EvalConfig` | Pydantic model | Parameters for a single evaluation run. |
-| `GateResult` | Dataclass | Result of one gate: `gate`, `passed`, `reason_code`, `details`. |
-| `Verdict` | Constants class | `Verdict.PROMOTE`, `Verdict.HOLD`. |
-| `VERDICT_PROMOTE` | `str` | `"PROMOTE"`. |
-| `VERDICT_HOLD` | `str` | `"HOLD"`. |
-| `run_gates()` | Function | Run all four deterministic gates (G1–G3, G5 shape) and return results. |
-| `g2_recall_precision()` | Function | Run only G2 (recall + NC precision) and return `GateResult`. |
-| `verdict()` | Function | Derive PROMOTE/HOLD from a list of `GateResult`. |
-| `render_scorecard()` | Function | Render a Markdown scorecard from gate results and metadata. |
-| `ChampionRecord` | Dataclass | Per-corpus champion metadata and scores. |
-| `load_champion()` | Function | Load the current champion from `baseline.json`; returns `None` on Day Zero. |
-| `save_champion()` | Function | Persist a new champion to `baseline.json`. |
-| `invalidate_champion()` | Function | Mark the champion invalid with a reason string. |
-| `AdvisoryReport` | Dataclass | G4 judge output: `scores`, `errors`, `raw`. |
-| `run_judge()` | Function | Run the LLM-as-a-Judge advisory pass. |
-| `JudgeClient` | Dataclass | Holds `chat_fn` and `embed_fn` for the judge. |
-| `OllamaEmbedder` | Class | Local Ollama embedding callable (default BGE-M3). |
-| `build_embedder()` | Function | Factory: `"ollama:bge-m3"` → `OllamaEmbedder`. |
-| `cosine()` | Function | Cosine similarity between two numpy vectors. |
-| `Registry` | Dataclass | Parsed must-find registry with real items and NC items. |
-| `RegistryItem` | Dataclass | One must-find or NC item: `id`, `tier`, `scope`, `description`, …. |
-| `load_registry()` | Function | Parse and validate a lean-1 registry JSON file. |
-| `registry_sha256()` | Function | SHA-256 of a registry file path. |
-| `load_corpus()` | Function | Load and index a corpus bundle for G3 evidence verification. |
-| `corpus_sha256()` | Function | SHA-256 of a corpus directory or bundle. |
-| `verify_evidence_index()` | Function | Check each `evidence_index` entry against the corpus. |
-| `EMPTY` / `FABRICATED` / `SOURCE_UNKNOWN` / `VERIFIED` | `str` | Evidence verification status constants. |
-| `RetrieverMetrics` | Pydantic model | IR metrics: `recall_k`, `precision_k`, `ndcg_10`, `mrr_10`, `map_10`. |
-| `compute_retrieval_metrics()` | Function | Compute IR metrics from a list of ranked-retrieval result rows. |
-| `anchored()` | Function | True if claim and evidence share at least one non-trivial token. |
-| `matches()` | Function | Gate predicate: does a candidate match a registry item? |
-| `source_stem()` | Function | Normalise a `locator` path to its file stem for dedup. |
-| `tokens()` | Function | Tokenise text to a list of lowercase word strings. |
-| `aa_band()` | Function | Compute per-metric A/A noise floor from repeated runs. |
-| `aggregate_grounding()` | Function | Summarise grounding stats across a result's findings. |
-| `left_skew_flag()` | Function | True when the score distribution is left-skewed (over-optimistic). |
+| `EvalContext` | Pydantic model | Carries `client`, optional `embedder`, and `runs` for the judge metrics. |
+| `JudgeClient` | Class | Async multi-provider (`anthropic`/`openai`/`azure`/`ollama`) JSON chat client. |
+| `AdvisoryReport` | Dataclass | Aggregated `run_judge` output: `metrics`, `errors`, and run metadata. |
+| `Metric` | Type alias | `Callable[[dict, EvalContext], Awaitable[dict \| float \| None]]`. |
+| `parse_model` | Function | Split `"provider:model"` into `(provider, model)`. |
+| `same_provider` | Function | `True` if two model specs share a known provider prefix. |
+
+### Judge metrics
+
+`source_coverage`, `excerpt_fill_rate`, `semantic_recovery`, `faithfulness`,
+`numeric_temporal_fidelity`, `citation_relevance`, `nc_semantic_precision`,
+`fabricated_entity`, `contradiction`, `open_gap`, `actionability`,
+`severity_calibration`, `answer_relevancy`, `surface_deduplication`,
+`comparative_vs_champion`, `contains_answer`, `addresses_question`,
+`answer_correctness`, `ragas_faithfulness`, `context_recall`, `context_precision`,
+and the orchestrator `run_judge`.
+
+### Retrieval metrics
+
+`hit_at_k`, `recall_at_k`, `precision_at_k`, `mrr`, `map_score`, `ndcg`,
+`no_answer_rate`, `citation_precision`, `mean_latency_ms`.
