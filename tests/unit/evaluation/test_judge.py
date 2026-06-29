@@ -5,6 +5,7 @@ import pytest
 from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.evaluation.judge import (
     EvalContext,
+    JudgeClient,
     _Verdict,
     addresses_question,
     contains_answer,
@@ -13,7 +14,6 @@ from fireflyframework_agentic.evaluation.judge import (
     run_judge,
     source_coverage,
 )
-from fireflyframework_agentic.evaluation.judge_client import JudgeClient
 
 
 def make_ctx(responses: list[dict]) -> EvalContext:

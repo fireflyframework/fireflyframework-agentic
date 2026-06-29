@@ -8,6 +8,9 @@ from fireflyframework_agentic.evaluation.judge import (
     EvalContext as EvalContext,
 )
 from fireflyframework_agentic.evaluation.judge import (
+    JudgeClient as JudgeClient,
+)
+from fireflyframework_agentic.evaluation.judge import (
     Metric as Metric,
 )
 from fireflyframework_agentic.evaluation.judge import (
@@ -59,10 +62,16 @@ from fireflyframework_agentic.evaluation.judge import (
     open_gap as open_gap,
 )
 from fireflyframework_agentic.evaluation.judge import (
+    parse_model as parse_model,
+)
+from fireflyframework_agentic.evaluation.judge import (
     ragas_faithfulness as ragas_faithfulness,
 )
 from fireflyframework_agentic.evaluation.judge import (
     run_judge as run_judge,
+)
+from fireflyframework_agentic.evaluation.judge import (
+    same_provider as same_provider,
 )
 from fireflyframework_agentic.evaluation.judge import (
     semantic_recovery as semantic_recovery,
@@ -75,15 +84,6 @@ from fireflyframework_agentic.evaluation.judge import (
 )
 from fireflyframework_agentic.evaluation.judge import (
     surface_deduplication as surface_deduplication,
-)
-from fireflyframework_agentic.evaluation.judge_client import (
-    JudgeClient as JudgeClient,
-)
-from fireflyframework_agentic.evaluation.judge_client import (
-    parse_model as parse_model,
-)
-from fireflyframework_agentic.evaluation.judge_client import (
-    same_provider as same_provider,
 )
 from fireflyframework_agentic.evaluation.retrieval_metrics import (
     citation_precision as citation_precision,
