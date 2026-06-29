@@ -687,11 +687,21 @@ def _make_ragas_llm(ctx: EvalContext):
 
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         return ChatAnthropic(model=model, api_key=api_key, temperature=0.0)  # type: ignore[call-arg,arg-type]
-    if provider in ("openai", "azure"):
+    if provider == "openai":
         from langchain_openai import ChatOpenAI  # type: ignore[import]  # noqa: PLC0415
 
         api_key = os.environ.get("OPENAI_API_KEY", "")
         return ChatOpenAI(model=model, api_key=api_key, temperature=0.0)  # type: ignore[call-arg,arg-type]
+    if provider == "azure":
+        from langchain_openai import AzureChatOpenAI  # type: ignore[import]  # noqa: PLC0415
+
+        return AzureChatOpenAI(  # type: ignore[call-arg,arg-type]
+            azure_deployment=model,
+            azure_endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT", ""),
+            api_key=os.environ.get("AZURE_OPENAI_API_KEY", ""),
+            api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-01"),
+            temperature=0.0,
+        )
     if provider == "ollama":
         from langchain_ollama import ChatOllama  # type: ignore[import]  # noqa: PLC0415
 
