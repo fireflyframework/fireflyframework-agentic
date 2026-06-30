@@ -55,7 +55,6 @@ from fireflyframework_agentic.evaluation import EvalContext, JudgeClient, build_
 
 ctx = EvalContext(
     client=JudgeClient("anthropic:claude-haiku-4-5"),
-    runs=3,          # metrics that repeat use the median of this many calls
     embedder=None,   # optional framework embedder; required by semantic_recovery and RAGAS
 )
 ```
@@ -129,7 +128,7 @@ item = {
 }
 
 async def main():
-    ctx = EvalContext(client=JudgeClient("anthropic:claude-haiku-4-5"), runs=3)
+    ctx = EvalContext(client=JudgeClient("anthropic:claude-haiku-4-5"))
     contains   = await contains_answer(item, ctx)     # 0.0–1.0
     addresses  = await addresses_question(item, ctx)  # 0.0–1.0
     print(contains, addresses)
@@ -172,7 +171,7 @@ See `examples/llm_eval_example.py` for a runnable version that scores a list of 
 | `surface_deduplication` | `{distinct, redundant, total, distinct_rate, redundant_pairs}` | Fraction of near-duplicate process-graph nodes that are genuinely distinct. |
 | `comparative_vs_champion` | `{candidate, champion, more_consistent}` or `None` | Pairwise five-axis review of candidate vs. `item["champion"]`. `None` if no champion. |
 
-**RAG Q&A** — requires `ctx.client`; repeats `ctx.runs` times and returns the median:
+**RAG Q&A** — requires `ctx.client`:
 
 | Metric | Returns | Measures |
 |--------|---------|----------|
@@ -188,10 +187,18 @@ See `examples/llm_eval_example.py` for a runnable version that scores a list of 
 | `context_recall` | `float` or `None` | Reference coverage by the retrieved `contexts`. |
 | `context_precision` | `float` or `None` | Retrieved `contexts` relevant to the question. |
 
-### Running every metric at once
+### Running a metric family at once
 
-`run_judge()` runs all metrics concurrently and collects them into an `AdvisoryReport`. It
-is best-effort and never raises — any metric that fails is recorded in `report.errors`
+`run_judge()` runs a selected family of metrics concurrently and collects them into an
+`AdvisoryReport`. The `metrics` argument picks the family:
+
+- `"basic"` — domain-agnostic LLM/RAG answer-quality (`BASIC_METRICS`): `contains_answer`,
+  `addresses_question`, and the four RAGAS metrics.
+- `"process_mining"` — flyradar discovery-report (`PROCESS_MINING_METRICS`): the 15 metrics
+  that read `findings`/`evidence_index`/`process_graph`/…
+- `"all"` (default) — both families.
+
+It is best-effort and never raises — any metric that fails is recorded in `report.errors`
 instead of propagating.
 
 ```python
@@ -199,8 +206,8 @@ import asyncio
 from fireflyframework_agentic.evaluation import run_judge, EvalContext, JudgeClient
 
 async def main():
-    ctx = EvalContext(client=JudgeClient("anthropic:claude-haiku-4-5"), runs=3)
-    report = await run_judge(item, ctx, pipeline_model="anthropic:claude-sonnet-4-6")
+    ctx = EvalContext(client=JudgeClient("anthropic:claude-haiku-4-5"))
+    report = await run_judge(item, ctx, metrics="basic", pipeline_model="anthropic:claude-sonnet-4-6")
     print(report.metrics)   # {metric_name: result, ...}
     print(report.errors)    # ["metric: ExceptionType: message", ...]
 
@@ -213,7 +220,6 @@ asyncio.run(main())
 |-------|------|-------------|
 | `judge_model` | `str` | The judge model spec used. |
 | `same_provider_caveat` | `bool` | `True` when the judge and the evaluated pipeline share a provider (self-grading risk). |
-| `runs` | `int` | Judge runs per repeated metric. |
 | `metrics` | `dict` | Per-metric results, keyed by metric name. |
 | `errors` | `list[str]` | Per-metric failures captured best-effort. |
 
@@ -277,7 +283,8 @@ All symbols below are importable from `fireflyframework_agentic.evaluation`.
 
 | Symbol | Kind | Description |
 |--------|------|-------------|
-| `EvalContext` | Pydantic model | Carries `client`, optional `embedder`, and `runs` for the judge metrics. |
+| `EvalContext` | Pydantic model | Carries `client` and an optional `embedder` for the judge metrics. |
+| `BASIC_METRICS` / `PROCESS_MINING_METRICS` | `tuple[str, ...]` | Metric-name families selectable via `run_judge(..., metrics=...)`. |
 | `build_embedder` | Function | Build a framework embedder from a `"<provider>:<model>"` spec (openai/azure/cohere/google/mistral/voyage/bedrock/ollama). |
 | `JudgeClient` | Class | Async multi-provider (`anthropic`/`openai`/`azure`/`ollama`) judge backed by `FireflyAgent`; returns validated typed output. |
 | `AdvisoryReport` | Pydantic model | Aggregated `run_judge` output: `metrics`, `errors`, and run metadata. |
