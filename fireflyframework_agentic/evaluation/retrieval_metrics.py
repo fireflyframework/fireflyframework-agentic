@@ -46,7 +46,14 @@ import math
 
 
 def _dedup(retrieved: list[dict]) -> list[dict]:
-    """Return one entry per source, first chunk wins, preserving rank order."""
+    """Return one entry per source (best-ranked chunk wins), ranks re-densified 1..N.
+
+    De-duplicating by source can leave gaps in the raw chunk ranks — e.g. four
+    chunks of one source occupy ranks 1-4 and the next source sits at rank 5. Without
+    re-numbering, the rank metrics would treat that source as document-rank 5 instead
+    of 2 and understate recall/precision/nDCG/MRR/MAP. Renumber the survivors to
+    contiguous document positions so the metrics are document-level.
+    """
     seen: set[str] = set()
     out: list[dict] = []
     for r in sorted(retrieved, key=lambda x: x["rank"]):
@@ -54,7 +61,7 @@ def _dedup(retrieved: list[dict]) -> list[dict]:
         if key not in seen:
             seen.add(key)
             out.append(r)
-    return out
+    return [{**r, "rank": i} for i, r in enumerate(out, start=1)]
 
 
 def _ndcg_single(retrieved: list[dict], n_gold: int, k: int = 10) -> float:
@@ -152,7 +159,7 @@ def no_answer_rate(results: list[dict]) -> float | None:
     """Fraction of queries where the model produced no answer. None if no results."""
     if not results:
         return None
-    count = sum(1 for row in results if row.get("no_answer") or not row.get("answer", "").strip())
+    count = sum(1 for row in results if row.get("no_answer") or not (row.get("answer") or "").strip())
     return round(count / len(results), 4)
 
 

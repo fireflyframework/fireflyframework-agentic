@@ -165,3 +165,30 @@ def test_citation_precision_1_when_all_gold():
 def test_citation_precision_half_when_half_gold():
     rows = [{**_row(gold_rank=1), "citations": [{"is_gold": True}, {"is_gold": False}]}]
     assert citation_precision(rows) == 0.5
+
+
+# ── _dedup rank re-densification ───────────────────────────────────────────────
+
+
+def _multichunk_row() -> dict:
+    # 4 chunks of one (non-gold) source at ranks 1-4, gold source at chunk-rank 5.
+    retrieved = [{"rank": r, "source_id": "doc-A", "is_gold": False} for r in range(1, 5)]
+    retrieved.append({"rank": 5, "source_id": "doc-B", "is_gold": True})
+    return {"retrieved": retrieved, "gold": ["doc-B"]}
+
+
+def test_multichunk_source_redensifies_to_document_rank():
+    rows = [_multichunk_row()]
+    # After dedup, doc-B is the 2nd distinct document (rank 2), not rank 5.
+    assert recall_at_k(rows, k=3) == 1.0  # was 0.0 before the re-densify fix
+    assert precision_at_k(rows, k=2) == 0.5  # was 0.0
+    assert ndcg(rows, k=3) == 0.6309  # gold at doc-rank 2: 1/log2(3)
+    assert mrr(rows) == 0.5  # was 0.2
+
+
+# ── no_answer_rate with None answer ────────────────────────────────────────────
+
+
+def test_no_answer_rate_handles_none_answer():
+    rows = [{**_row(gold_rank=1), "answer": None}, {**_row(gold_rank=1), "answer": "real"}]
+    assert no_answer_rate(rows) == 0.5
