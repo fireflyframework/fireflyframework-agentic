@@ -162,7 +162,7 @@ ways.
 |--------|---------|----------|
 | `semantic_recovery` | `{lexical_recall, hybrid_recall, vector_recovered, tau, scored_denominator}` or `None` | Must-find recall: a lexical baseline (`lexical_recall`) lifted by a vector pass that recovers lexically-missed items above `tau`; `hybrid_recall` is the lexical-OR-vector union. Returns `None` when no embedder is set. |
 
-**Custom-rubric judge** — our prompts via `ctx.client`:
+**LLM-as-a-Judge (Custom rubric)** — our prompts via `ctx.client`:
 
 | Metric | Returns | Measures |
 |--------|---------|----------|
@@ -179,7 +179,7 @@ ways.
 | `surface_deduplication` | `{distinct, redundant, total, distinct_rate, redundant_pairs}` | Fraction of near-duplicate process-graph nodes that are genuinely distinct. |
 | `comparative_vs_champion` | `{candidate, champion, more_consistent}` or `None` | Pairwise five-axis review of candidate vs. `item["champion"]`. `None` if no champion. |
 
-**RAGAS library** — the `ragas` package's own LLM judges; needs the `ragas` extra and `ctx.client` (plus an embedder for some):
+**LLM-as-a-Judge (RAGAS)** — the `ragas` package's own LLM judges; needs the `ragas` extra and `ctx.client` (plus an embedder for some):
 
 | Metric | Returns | Measures |
 |--------|---------|----------|
@@ -188,7 +188,7 @@ ways.
 | `context_recall` | `float` or `None` | Reference coverage by the retrieved `contexts`. |
 | `context_precision` | `float` or `None` | Retrieved `contexts` relevant to the question. |
 
-**Custom-rubric judge (RAG Q&A)** — our prompts via `ctx.client`:
+**LLM-as-a-Judge (Custom rubric — RAG Q&A)** — our prompts via `ctx.client`:
 
 | Metric | Returns | Measures |
 |--------|---------|----------|
