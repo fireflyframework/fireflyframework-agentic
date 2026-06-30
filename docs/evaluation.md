@@ -152,7 +152,7 @@ See `examples/llm_eval_example.py` for a runnable version that scores a list of 
 
 | Metric | Returns | Measures |
 |--------|---------|----------|
-| `semantic_recovery` | `{lexical_recall, recovered_recall, recovered, tau, scored_denominator}` or `None` | Context-recall: recovers lexically-missed items via embedding similarity above `tau` (default 0.70). Returns `None` when no embedder is set. |
+| `semantic_recovery` | `{lexical_recall, hybrid_recall, vector_recovered, tau, scored_denominator}` or `None` | Must-find recall: a lexical baseline (`lexical_recall`) lifted by a vector pass that recovers lexically-missed items above `tau`; `hybrid_recall` is the lexical-OR-vector union. Returns `None` when no embedder is set. |
 
 **LLM-as-judge** — requires `ctx.client`:
 

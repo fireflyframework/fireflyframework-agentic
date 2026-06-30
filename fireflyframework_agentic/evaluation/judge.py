@@ -267,23 +267,28 @@ async def excerpt_fill_rate(item: dict, ctx: EvalContext) -> dict:  # noqa: ARG0
 
 
 async def semantic_recovery(item: dict, ctx: EvalContext, tau: float = 0.70) -> dict | None:
-    """Context-recall: recover lexical misses by embedding similarity.
+    """Must-find recall: a lexical baseline lifted by a vector pass (the hybrid).
 
-    Reads item["lexical_missed_ids"] (list of str).
-    Returns None if ctx.embedder is None.
+    Upstream, the eval harness matches the expected ("must-find") items against the
+    discovery output by surface/keyword (lexical) matching; the ids it could NOT match
+    arrive here as ``item["lexical_missed_ids"]``. This metric runs a second, *vector*
+    pass over those misses: it embeds each missed item and the candidate finding texts
+    and counts it recovered when the best cosine similarity is >= ``tau``. The three
+    recall views make the lexical -> vector -> hybrid progression explicit:
+
+      - ``lexical_recall``   : lexical-only baseline.
+      - ``hybrid_recall``    : lexical hits PLUS vector recoveries (the lexical-OR-vector union).
+      - ``vector_recovered`` : the misses the vector pass recovered, each with its cosine.
+
+    Returns None when ``ctx.embedder`` is unset (the vector pass needs embeddings).
     """
     if ctx.embedder is None:
         return None
 
-    lexical_missed_ids: list[str] = item.get("lexical_missed_ids", [])
-    missed = set(lexical_missed_ids or [])
+    missed = set(item.get("lexical_missed_ids", []) or [])
 
-    # Build the scored items from nc_items (non-NC = real items for recall)
-    # In the new EvalContext model, nc_items is a list of {"id": ..., "description": ...}
-    # We treat all item findings as the candidate surface; nc_items stay separate.
-    # Recompute as: all items scored = those not in nc_items ids.
-    # If there's no registry concept, we use findings as the denominator proxy.
-    # But keep the logic simple: just score the missed items against finding descriptions.
+    # Candidate surface the vector pass scores against: finding descriptions plus
+    # their cited evidence excerpts.
     ev_idx = _evidence_index(item)
     candidate_texts: list[str] = []
     for f in item.get("findings", []):
@@ -292,12 +297,11 @@ async def semantic_recovery(item: dict, ctx: EvalContext, tau: float = 0.70) -> 
             candidate_texts.append(desc)
         candidate_texts.extend(_cited_excerpts(f, ev_idx))
 
-    # missed_items: we only know their IDs; we need descriptions to embed.
-    # In the new design, if no descriptions available, return minimal result.
     all_findings = item.get("findings", [])
     denom = max(len(all_findings), 1)
     lexical_hits = sum(1 for f in all_findings if f.get("id") not in missed)
 
+    # The lexical misses we can embed (those carrying a description).
     missed_descs: list[tuple[str, str]] = [
         (f.get("id", ""), f.get("description", ""))
         for f in all_findings
@@ -305,30 +309,28 @@ async def semantic_recovery(item: dict, ctx: EvalContext, tau: float = 0.70) -> 
     ]
 
     if not missed_descs or not candidate_texts:
-        recovered_recall = lexical_hits / denom
+        lexical_recall = round(lexical_hits / denom, 4)
         return {
-            "lexical_recall": round(lexical_hits / denom, 4),
-            "recovered_recall": round(recovered_recall, 4),
-            "recovered": [],
+            "lexical_recall": lexical_recall,
+            "hybrid_recall": lexical_recall,
+            "vector_recovered": [],
             "tau": tau,
             "scored_denominator": denom,
         }
 
-    item_texts = [desc for _fid, desc in missed_descs]
-    item_vecs = await ctx.embedder._embed_batch(item_texts)
+    item_vecs = await ctx.embedder._embed_batch([desc for _fid, desc in missed_descs])
     cand_vecs = await ctx.embedder._embed_batch(candidate_texts)
 
-    recovered: list[dict] = []
+    vector_recovered: list[dict] = []
     for (fid, _desc), ivec in zip(missed_descs, item_vecs, strict=False):
         best = max((cosine_similarity(ivec, cvec) for cvec in cand_vecs), default=0.0)
         if best >= tau:
-            recovered.append({"id": fid, "cosine": round(best, 4)})
+            vector_recovered.append({"id": fid, "cosine": round(best, 4)})
 
-    recovered_recall = (lexical_hits + len(recovered)) / denom
     return {
         "lexical_recall": round(lexical_hits / denom, 4),
-        "recovered_recall": round(recovered_recall, 4),
-        "recovered": recovered,
+        "hybrid_recall": round((lexical_hits + len(vector_recovered)) / denom, 4),
+        "vector_recovered": vector_recovered,
         "tau": tau,
         "scored_denominator": denom,
     }
@@ -445,9 +447,7 @@ async def nc_semantic_precision(item: dict, ctx: EvalContext) -> dict:
     ]
     answers = await _judge_all(ctx, SYSTEM, users, _Asserted)
     asserted_ids = [
-        nc.get("id", "?")
-        for nc, a in zip(nc_items, answers, strict=False)
-        if str(a.asserted).lower() == "yes"
+        nc.get("id", "?") for nc, a in zip(nc_items, answers, strict=False) if str(a.asserted).lower() == "yes"
     ]
     return {"asserted": len(asserted_ids), "total": len(nc_items), "asserted_ids": asserted_ids}
 
@@ -764,10 +764,10 @@ def _make_ragas_llm(ctx: EvalContext):
     if provider == "azure":
         from langchain_openai import AzureChatOpenAI  # type: ignore[import]  # noqa: PLC0415
 
-        return AzureChatOpenAI(  # type: ignore[call-arg,arg-type]
+        return AzureChatOpenAI(  # type: ignore[call-arg]
             azure_deployment=model,
             azure_endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT", ""),
-            api_key=os.environ.get("AZURE_OPENAI_API_KEY", ""),
+            api_key=os.environ.get("AZURE_OPENAI_API_KEY", ""),  # type: ignore[arg-type]
             api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-01"),
             temperature=0.0,
         )
@@ -792,8 +792,7 @@ def _build_embeddings(ctx: EvalContext):
     embedder = ctx.embedder
     if embedder is None:
         raise ValueError(
-            "RAGAS metrics need an embedder; set "
-            "EvalContext.embedder=build_embedder('<provider>:<model>')"
+            "RAGAS metrics need an embedder; set EvalContext.embedder=build_embedder('<provider>:<model>')"
         )
 
     class _FrameworkEmbeddings(Embeddings):

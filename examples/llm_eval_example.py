@@ -109,5 +109,7 @@ if __name__ == "__main__":
         default="anthropic:claude-haiku-4-5",
         help="Judge model spec (provider:model).",
     )
-    parser.add_argument("--items-file", default=None, help="Optional JSONL file of {question, answer, reference} items.")
+    parser.add_argument(
+        "--items-file", default=None, help="Optional JSONL file of {question, answer, reference} items."
+    )
     asyncio.run(main(parser.parse_args()))

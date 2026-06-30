@@ -292,7 +292,9 @@ async def test_run_judge_aggregates_and_captures_errors():
 
     client.judge = mock_judge
     ctx = EvalContext(client=client)
-    report = await run_judge({"question": "Q", "reference": "R", "answer": "A"}, ctx, pipeline_model="anthropic:claude-sonnet-4-6")
+    report = await run_judge(
+        {"question": "Q", "reference": "R", "answer": "A"}, ctx, pipeline_model="anthropic:claude-sonnet-4-6"
+    )
     assert report.judge_model == "anthropic:claude-sonnet-4-6"
     assert report.same_provider_caveat is True
     assert "source_coverage" in report.metrics  # process-mining metric runs under "all"
