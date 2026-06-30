@@ -141,6 +141,14 @@ See `examples/llm_eval_example.py` for a runnable version that scores a list of 
 
 ### Metric catalog
 
+The three LLM-scored groups below are **all** "LLM-as-judge" — an LLM reads the output and
+grades it. They differ in **who writes the rubric**: the *custom-rubric* groups use our own
+hand-written prompts through `ctx.client` and return a schema we define, while the *RAGAS*
+group runs the third-party `ragas` library's standardized, paper-backed metrics (which prompt
+the LLM with their own internal logic and blend embeddings for some). There is deliberate
+overlap — e.g. `faithfulness` (ours) vs. `ragas_faithfulness` (RAGAS) score the same idea two
+ways.
+
 **Deterministic** — no LLM call, always available:
 
 | Metric | Returns | Measures |
@@ -154,7 +162,7 @@ See `examples/llm_eval_example.py` for a runnable version that scores a list of 
 |--------|---------|----------|
 | `semantic_recovery` | `{lexical_recall, hybrid_recall, vector_recovered, tau, scored_denominator}` or `None` | Must-find recall: a lexical baseline (`lexical_recall`) lifted by a vector pass that recovers lexically-missed items above `tau`; `hybrid_recall` is the lexical-OR-vector union. Returns `None` when no embedder is set. |
 
-**LLM-as-judge** — requires `ctx.client`:
+**Custom-rubric judge** — our prompts via `ctx.client`:
 
 | Metric | Returns | Measures |
 |--------|---------|----------|
@@ -171,14 +179,14 @@ See `examples/llm_eval_example.py` for a runnable version that scores a list of 
 | `surface_deduplication` | `{distinct, redundant, total, distinct_rate, redundant_pairs}` | Fraction of near-duplicate process-graph nodes that are genuinely distinct. |
 | `comparative_vs_champion` | `{candidate, champion, more_consistent}` or `None` | Pairwise five-axis review of candidate vs. `item["champion"]`. `None` if no champion. |
 
-**RAG Q&A** — requires `ctx.client`:
+**Custom-rubric judge (RAG Q&A)** — our prompts via `ctx.client`:
 
 | Metric | Returns | Measures |
 |--------|---------|----------|
 | `contains_answer` | `float` or `None` | Does the answer contain the correct information from the reference? |
 | `addresses_question` | `float` or `None` | Does the answer directly address what the question asks? |
 
-**RAGAS** — requires the `ragas` extra and `ctx.client` (plus an embedder for some):
+**RAGAS library** — the `ragas` package's own LLM judges; needs the `ragas` extra and `ctx.client` (plus an embedder for some):
 
 | Metric | Returns | Measures |
 |--------|---------|----------|
