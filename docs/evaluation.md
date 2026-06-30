@@ -149,6 +149,16 @@ the LLM with their own internal logic and blend embeddings for some). There is d
 overlap — e.g. `faithfulness` (ours) vs. `ragas_faithfulness` (RAGAS) score the same idea two
 ways.
 
+**Return shapes.** A metric that grades a single answer on one axis returns a bare `float`
+(the RAG Q&A and RAGAS groups). A metric that audits a *collection* (findings, citations,
+nodes, …) returns a dict with the counts **and the specific offenders** —
+e.g. `{supported, total, unsupported_ids}`. You can still get a float from these: when the
+metric has a meaningful aggregate it exposes it as a field (`actionability` → `score`,
+`answer_relevancy` → `score`, `citation_relevance` → `precision`, `surface_deduplication` →
+`distinct_rate`, `semantic_recovery` → `hybrid_recall`); otherwise derive your own
+(e.g. `supported / total`). Only pure defect counts (`contradiction`, `fabricated_entity`) and
+free-text probes (`open_gap`) have no single score by design.
+
 **Deterministic** — no LLM call, always available:
 
 | Metric | Returns | Measures |
