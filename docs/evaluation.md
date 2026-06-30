@@ -179,13 +179,6 @@ ways.
 | `surface_deduplication` | `{distinct, redundant, total, distinct_rate, redundant_pairs}` | Fraction of near-duplicate process-graph nodes that are genuinely distinct. |
 | `comparative_vs_champion` | `{candidate, champion, more_consistent}` or `None` | Pairwise five-axis review of candidate vs. `item["champion"]`. `None` if no champion. |
 
-**Custom-rubric judge (RAG Q&A)** — our prompts via `ctx.client`:
-
-| Metric | Returns | Measures |
-|--------|---------|----------|
-| `contains_answer` | `float` or `None` | Does the answer contain the correct information from the reference? |
-| `addresses_question` | `float` or `None` | Does the answer directly address what the question asks? |
-
 **RAGAS library** — the `ragas` package's own LLM judges; needs the `ragas` extra and `ctx.client` (plus an embedder for some):
 
 | Metric | Returns | Measures |
@@ -194,6 +187,13 @@ ways.
 | `ragas_faithfulness` | `float` or `None` | Answer grounded in the retrieved `contexts`. |
 | `context_recall` | `float` or `None` | Reference coverage by the retrieved `contexts`. |
 | `context_precision` | `float` or `None` | Retrieved `contexts` relevant to the question. |
+
+**Custom-rubric judge (RAG Q&A)** — our prompts via `ctx.client`:
+
+| Metric | Returns | Measures |
+|--------|---------|----------|
+| `contains_answer` | `float` or `None` | Does the answer contain the correct information from the reference? |
+| `addresses_question` | `float` or `None` | Does the answer directly address what the question asks? |
 
 ### Running a metric family at once
 
