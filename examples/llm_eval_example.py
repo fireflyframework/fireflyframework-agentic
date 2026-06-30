@@ -18,8 +18,6 @@ Score a set of Q&A pairs using the evaluation metrics:
   - contains_answer  — does the answer contain the correct information?
   - addresses_question — does the answer directly address what was asked?
 
-Each metric runs ``--runs`` times and reports the median score (default 3).
-
 Usage::
 
     python examples/llm_eval_example.py --model anthropic:claude-haiku-4-5
@@ -73,7 +71,7 @@ async def score_items(items: list[dict], ctx: EvalContext) -> list[dict]:
     pairs = await asyncio.gather(*[asyncio.gather(ca, aq) for ca, aq in tasks])
     return [
         {"question": item["question"], "contains_answer": ca, "addresses_question": aq}
-        for item, (ca, aq) in zip(items, pairs)
+        for item, (ca, aq) in zip(items, pairs, strict=True)
     ]
 
 
@@ -84,7 +82,7 @@ async def main(args: argparse.Namespace) -> None:
     else:
         items = _SAMPLE_ITEMS
 
-    ctx = EvalContext(client=JudgeClient(args.model), runs=args.runs)
+    ctx = EvalContext(client=JudgeClient(args.model))
     results = await score_items(items, ctx)
 
     print(f"\n{'Question':<45} {'contains':>8} {'addresses':>9}")
@@ -101,7 +99,7 @@ async def main(args: argparse.Namespace) -> None:
         avg_aq = sum(r["addresses_question"] for r in scored) / len(scored)
         print("-" * 63)
         print(f"{'Average':<45} {avg_ca:>8.2f} {avg_aq:>9.2f}")
-    print(f"\n{len(items)} items scored ({args.runs} judge run(s) each).")
+    print(f"\n{len(items)} items scored.")
 
 
 if __name__ == "__main__":
@@ -111,6 +109,5 @@ if __name__ == "__main__":
         default="anthropic:claude-haiku-4-5",
         help="Judge model spec (provider:model).",
     )
-    parser.add_argument("--runs", type=int, default=3, help="Judge runs per item (median is reported).")
     parser.add_argument("--items-file", default=None, help="Optional JSONL file of {question, answer, reference} items.")
     asyncio.run(main(parser.parse_args()))

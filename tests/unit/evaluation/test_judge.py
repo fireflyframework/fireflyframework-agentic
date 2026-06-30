@@ -6,6 +6,7 @@ from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.evaluation.judge import (
     EvalContext,
     JudgeClient,
+    _RagScore,
     _Verdict,
     addresses_question,
     contains_answer,
@@ -27,7 +28,7 @@ def make_ctx(responses: list[dict]) -> EvalContext:
         return output_type(**next(call_iter))
 
     client.judge = mock_judge
-    return EvalContext(client=client, runs=1)
+    return EvalContext(client=client)
 
 
 # ── contains_answer ──────────────────────────────────────────────────────────────
@@ -290,9 +291,38 @@ async def test_run_judge_aggregates_and_captures_errors():
         return output_type()
 
     client.judge = mock_judge
-    ctx = EvalContext(client=client, runs=1)
+    ctx = EvalContext(client=client)
     report = await run_judge({"question": "Q", "reference": "R", "answer": "A"}, ctx, pipeline_model="anthropic:claude-sonnet-4-6")
     assert report.judge_model == "anthropic:claude-sonnet-4-6"
     assert report.same_provider_caveat is True
-    assert "source_coverage" in report.metrics  # deterministic metric always runs
+    assert "source_coverage" in report.metrics  # process-mining metric runs under "all"
     assert isinstance(report.errors, list)  # best-effort: never raises
+
+
+@pytest.mark.asyncio
+async def test_run_judge_metric_family_selection():
+    client = MagicMock(spec=JudgeClient)
+    client.model_spec = "anthropic:claude-sonnet-4-6"
+
+    async def mock_judge(system, user, output_type, max_tokens=1024):
+        return output_type()
+
+    async def mock_judge_rag(system, user, output_type, max_tokens=1024):
+        if output_type is _RagScore:
+            return _RagScore(contains_answer=1.0, addresses_question=1.0)
+        return output_type()
+
+    client.judge = mock_judge_rag
+    ctx = EvalContext(client=client)
+    item = {"question": "Q", "reference": "R", "answer": "A"}
+
+    basic = await run_judge(item, ctx, metrics="basic")
+    assert "contains_answer" in basic.metrics
+    assert "source_coverage" not in basic.metrics  # process-mining excluded
+
+    pm = await run_judge(item, ctx, metrics="process_mining")
+    assert "source_coverage" in pm.metrics
+    assert "contains_answer" not in pm.metrics  # basic excluded
+
+    with pytest.raises(ValueError, match="metrics must be"):
+        await run_judge(item, ctx, metrics="bogus")

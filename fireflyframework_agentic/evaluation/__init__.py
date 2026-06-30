@@ -6,6 +6,8 @@ and deterministic retrieval metrics (``retrieval_metrics``).
 
 from fireflyframework_agentic.evaluation.embedder import build_embedder
 from fireflyframework_agentic.evaluation.judge import (
+    BASIC_METRICS,
+    PROCESS_MINING_METRICS,
     AdvisoryReport,
     EvalContext,
     JudgeClient,
@@ -47,6 +49,8 @@ from fireflyframework_agentic.evaluation.retrieval_metrics import (
 )
 
 __all__ = [
+    "BASIC_METRICS",
+    "PROCESS_MINING_METRICS",
     "AdvisoryReport",
     "EvalContext",
     "JudgeClient",

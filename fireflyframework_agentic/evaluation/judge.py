@@ -10,10 +10,8 @@ Flycanon item keys: question, answer, reference, contexts
 from __future__ import annotations
 
 import asyncio
-import copy
 import math
 import os
-import statistics
 from collections.abc import Awaitable, Callable
 
 from pydantic import BaseModel, ConfigDict
@@ -165,7 +163,6 @@ class EvalContext(BaseModel):
 
     client: JudgeClient
     embedder: BaseEmbedder | None = None
-    runs: int = 3
 
 
 class AdvisoryReport(BaseModel):
@@ -173,14 +170,13 @@ class AdvisoryReport(BaseModel):
 
     metrics maps metric-name -> the per-metric result (a small dict or float).
     errors lists per-metric failures captured by run_judge's best-effort
-    try/except so nothing propagates.  judge_model and runs are run metadata;
+    try/except so nothing propagates.  judge_model is run metadata;
     same_provider_caveat flags self-grading risk (the judge shares the evaluated
     pipeline's provider).
     """
 
     judge_model: str
     same_provider_caveat: bool
-    runs: int
     metrics: dict = {}
     errors: list[str] = []
 
@@ -717,37 +713,23 @@ async def _rag_score_once(item: dict, ctx: EvalContext) -> _RagScore | None:
 async def contains_answer(item: dict, ctx: EvalContext) -> float | None:
     """Flycanon: does the answer contain the correct information from the reference?
 
-    Runs ctx.runs times and returns the median score.
     Returns None if the item lacks question/answer.
     """
-    scores: list[float] = []
-    for _ in range(max(1, ctx.runs)):
-        result = await _rag_score_once(item, ctx)
-        if result is None:
-            return None
-        if result.contains_answer is not None:
-            scores.append(result.contains_answer)
-    if not scores:
+    result = await _rag_score_once(item, ctx)
+    if result is None or result.contains_answer is None:
         return None
-    return round(statistics.median(scores), 4)
+    return round(result.contains_answer, 4)
 
 
 async def addresses_question(item: dict, ctx: EvalContext) -> float | None:
     """Flycanon: does the answer directly address what the question is asking?
 
-    Runs ctx.runs times and returns the median score.
     Returns None if the item lacks question/answer.
     """
-    scores: list[float] = []
-    for _ in range(max(1, ctx.runs)):
-        result = await _rag_score_once(item, ctx)
-        if result is None:
-            return None
-        if result.addresses_question is not None:
-            scores.append(result.addresses_question)
-    if not scores:
+    result = await _rag_score_once(item, ctx)
+    if result is None or result.addresses_question is None:
         return None
-    return round(statistics.median(scores), 4)
+    return round(result.addresses_question, 4)
 
 
 # ── RAGAS metrics ─────────────────────────────────────────────────────────────────
@@ -894,50 +876,70 @@ async def context_precision(item: dict, ctx: EvalContext) -> float | None:
     return await _ragas_score("context_precision", item, ctx)
 
 
-# ── median-of-N helpers ──────────────────────────────────────────────────────────
+# ── metric families ──────────────────────────────────────────────────────────────
+
+# Domain-agnostic LLM / RAG answer-quality metrics.
+BASIC_METRICS: tuple[str, ...] = (
+    "contains_answer",
+    "addresses_question",
+    "answer_correctness",
+    "ragas_faithfulness",
+    "context_recall",
+    "context_precision",
+)
+
+# Flyradar process-mining discovery-report metrics.
+PROCESS_MINING_METRICS: tuple[str, ...] = (
+    "source_coverage",
+    "excerpt_fill_rate",
+    "semantic_recovery",
+    "faithfulness",
+    "numeric_temporal_fidelity",
+    "citation_relevance",
+    "nc_semantic_precision",
+    "fabricated_entity",
+    "contradiction",
+    "open_gap",
+    "actionability",
+    "severity_calibration",
+    "answer_relevancy",
+    "surface_deduplication",
+    "comparative_vs_champion",
+)
+
+_METRIC_FNS: dict[str, Metric] = {
+    "source_coverage": source_coverage,
+    "excerpt_fill_rate": excerpt_fill_rate,
+    "semantic_recovery": semantic_recovery,
+    "faithfulness": faithfulness,
+    "numeric_temporal_fidelity": numeric_temporal_fidelity,
+    "citation_relevance": citation_relevance,
+    "nc_semantic_precision": nc_semantic_precision,
+    "fabricated_entity": fabricated_entity,
+    "contradiction": contradiction,
+    "open_gap": open_gap,
+    "actionability": actionability,
+    "severity_calibration": severity_calibration,
+    "answer_relevancy": answer_relevancy,
+    "surface_deduplication": surface_deduplication,
+    "comparative_vs_champion": comparative_vs_champion,
+    "contains_answer": contains_answer,
+    "addresses_question": addresses_question,
+    "answer_correctness": answer_correctness,
+    "ragas_faithfulness": ragas_faithfulness,
+    "context_recall": context_recall,
+    "context_precision": context_precision,
+}
 
 
-def _numeric_leaves(d: dict) -> dict[tuple, float]:
-    """Flatten a metric dict to {path: float} over its FLOAT score-leaves only."""
-    out: dict[tuple, float] = {}
-
-    def walk(node, path: tuple) -> None:
-        if isinstance(node, float):
-            out[path] = node
-        elif isinstance(node, dict):
-            for k, v in node.items():
-                walk(v, path + (k,))
-
-    walk(d, ())
-    return out
-
-
-def _set_leaf(d: dict, path: tuple, value: float) -> None:
-    node = d
-    for key in path[:-1]:
-        node = node[key]
-    node[path[-1]] = value
-
-
-def _median_runs(samples: list[dict]) -> dict:
-    """Median across N metric-dicts: FLOAT score-leaves -> per-key median; rest = first."""
-    samples = [s for s in samples if isinstance(s, dict)]
-    if not samples:
-        return {}
-    base = samples[0]
-    if len(samples) == 1:
-        return base
-    leaf_values: dict[tuple, list[float]] = {}
-    for s in samples:
-        for path, val in _numeric_leaves(s).items():
-            leaf_values.setdefault(path, []).append(val)
-    merged = copy.deepcopy(base)
-    for path, vals in leaf_values.items():
-        try:
-            _set_leaf(merged, path, round(statistics.median(vals), 4))
-        except (KeyError, TypeError):
-            continue
-    return merged
+def _selected_metric_names(metrics: str) -> tuple[str, ...]:
+    if metrics == "basic":
+        return BASIC_METRICS
+    if metrics == "process_mining":
+        return PROCESS_MINING_METRICS
+    if metrics == "all":
+        return BASIC_METRICS + PROCESS_MINING_METRICS
+    raise ValueError(f"metrics must be 'all', 'basic', or 'process_mining'; got {metrics!r}")
 
 
 # ── orchestrator ─────────────────────────────────────────────────────────────────
@@ -947,56 +949,20 @@ async def run_judge(
     item: dict,
     ctx: EvalContext,
     *,
+    metrics: str = "all",
     pipeline_model: str = "",
 ) -> AdvisoryReport:
-    """Run all metrics concurrently and return an AdvisoryReport.
+    """Run the selected metric family concurrently and return an AdvisoryReport.
 
+    ``metrics`` selects which family runs: ``"basic"`` (domain-agnostic LLM/RAG
+    answer-quality), ``"process_mining"`` (flyradar discovery-report), or ``"all"``.
     Best-effort: never raises. Failing metrics append to report.errors.
     """
     report = AdvisoryReport(
         judge_model=ctx.client.model_spec,
         same_provider_caveat=same_provider(pipeline_model, ctx.client.model_spec),
-        runs=ctx.runs,
     )
-
-    # [D] deterministic (no LLM)
-    det_metrics: list[tuple[str, Metric]] = [
-        ("source_coverage", source_coverage),
-        ("excerpt_fill_rate", excerpt_fill_rate),
-    ]
-    # [E] embedding
-    emb_metrics: list[tuple[str, Metric]] = [
-        ("semantic_recovery", semantic_recovery),
-    ]
-    # [J] judge metrics (median-of-runs handled externally for single-call ones)
-    judge_metrics: list[tuple[str, Metric]] = [
-        ("faithfulness", faithfulness),
-        ("numeric_temporal_fidelity", numeric_temporal_fidelity),
-        ("citation_relevance", citation_relevance),
-        ("nc_semantic_precision", nc_semantic_precision),
-        ("fabricated_entity", fabricated_entity),
-        ("contradiction", contradiction),
-        ("open_gap", open_gap),
-        ("actionability", actionability),
-        ("severity_calibration", severity_calibration),
-        ("answer_relevancy", answer_relevancy),
-        ("surface_deduplication", surface_deduplication),
-        ("comparative_vs_champion", comparative_vs_champion),
-    ]
-    # flycanon custom
-    flycanon_metrics: list[tuple[str, Metric]] = [
-        ("contains_answer", contains_answer),
-        ("addresses_question", addresses_question),
-    ]
-    # RAGAS
-    ragas_metrics: list[tuple[str, Metric]] = [
-        ("answer_correctness", answer_correctness),
-        ("ragas_faithfulness", ragas_faithfulness),
-        ("context_recall", context_recall),
-        ("context_precision", context_precision),
-    ]
-
-    all_metrics = det_metrics + emb_metrics + judge_metrics + flycanon_metrics + ragas_metrics
+    selected = [(name, _METRIC_FNS[name]) for name in _selected_metric_names(metrics)]
 
     async def _run_one(name: str, fn: Metric) -> None:
         try:
@@ -1006,5 +972,5 @@ async def run_judge(
         except Exception as exc:
             report.errors.append(f"{name}: {type(exc).__name__}: {exc}")
 
-    await asyncio.gather(*[_run_one(name, fn) for name, fn in all_metrics])
+    await asyncio.gather(*[_run_one(name, fn) for name, fn in selected])
     return report
