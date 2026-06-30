@@ -195,6 +195,27 @@ ways.
 | `contains_answer` | `float` or `None` | Does the answer contain the correct information from the reference? |
 | `addresses_question` | `float` or `None` | Does the answer directly address what the question asks? |
 
+#### `faithfulness` vs. `ragas_faithfulness`
+
+Both detect hallucination — "is the content actually supported by its evidence?" — but they
+judge different things and report differently:
+
+| | `faithfulness` (custom rubric) | `ragas_faithfulness` (RAGAS) |
+|---|---|---|
+| Input | discovery report: `findings` + `evidence_index` | RAG answer: `answer` + retrieved `contexts` |
+| Unit judged | each **finding** as a whole | each **atomic claim** decomposed from the answer |
+| Evidence compared against | the finding's own **cited** excerpts (`evidence_refs`) | the full set of retrieved `contexts` |
+| LLM work | one binary verdict per finding | a claim-extraction pass, then one verdict per claim |
+| Output | tally `{supported, total, unsupported_ids}` | normalized float in `[0, 1]` |
+| No-evidence case | a finding citing nothing is counted unsupported (no LLM call) | n/a (uses contexts, not citations) |
+
+In short: `faithfulness` asks "did each finding's *own citations* entail it?" and gives you
+per-finding SUPPORTED/NOT_SUPPORTED accountability; `ragas_faithfulness` asks "what fraction
+of the *answer's claims* are inferable from the *retrieved contexts*?" and gives you one
+grounding score. Reach for `faithfulness` when you have cited findings to audit, and
+`ragas_faithfulness` for a free-text RAG answer scored against its contexts. Running both is a
+useful cross-check of a bespoke rubric against the standard RAGAS definition.
+
 ### Running a metric family at once
 
 `run_judge()` runs a selected family of metrics concurrently and collects them into an
