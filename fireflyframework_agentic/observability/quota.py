@@ -302,6 +302,11 @@ class QuotaManager:
             else None
         )
 
+    @property
+    def backoff(self) -> AdaptiveBackoff | None:
+        """The shared :class:`AdaptiveBackoff`, or ``None`` when disabled."""
+        return self._backoff
+
     def check_rate_limit_available(self, model: str) -> bool:
         """Check if a request is within the rate limit for the model.
 

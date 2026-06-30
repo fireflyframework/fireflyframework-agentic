@@ -31,10 +31,11 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar, runtime_checkable
 
 from pydantic import BaseModel, ValidationError
 from pydantic_ai import Agent as PydanticAgent
+from pydantic_ai import NativeOutput, PromptedOutput, ToolOutput
 from pydantic_ai.models import Model
 
 from fireflyframework_agentic.config import get_config
@@ -45,8 +46,13 @@ from fireflyframework_agentic.exceptions import (
     ReasoningStepLimitError,
 )
 from fireflyframework_agentic.memory.manager import MemoryManager
+from fireflyframework_agentic.model_utils import get_model_identifier
 from fireflyframework_agentic.observability.budget import ScopeContext
-from fireflyframework_agentic.observability.usage import default_usage_tracker
+from fireflyframework_agentic.observability.usage import (
+    default_usage_tracker,
+    reasoning_tokens_not_in_output,
+    resolve_run_usage,
+)
 from fireflyframework_agentic.prompts.template import Prompt, PromptTemplate
 from fireflyframework_agentic.reasoning.models import (
     BranchEvaluation,
@@ -71,6 +77,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
+
+#: Structured-output strategy for a reasoning pattern's internal LLM calls.
+#:
+#: ``"tool"`` forces tool-based structured output (the pydantic-ai default
+#: surface); ``"native"`` uses provider-native JSON-schema output (OpenAI,
+#: Google, ...); ``"prompted"`` injects the schema into the prompt and parses
+#: the JSON reply -- the most portable choice for models without tool-calling
+#: or native structured-output support. ``None`` leaves pydantic-ai to pick its
+#: default (tool-calling for a ``BaseModel`` output type).
+OutputMode = Literal["tool", "native", "prompted"]
 
 
 @runtime_checkable
@@ -107,6 +123,10 @@ class AbstractReasoningPattern(ABC):
             retries the final output of the pattern.
         step_timeout: Per-step timeout in seconds for LLM calls.  When
             *None* (default), no timeout is applied.
+        output_mode: Structured-output strategy for the pattern's internal
+            LLM calls (see :data:`OutputMode`).  When *None* (default), the
+            framework-wide ``reasoning_output_mode`` config value is used,
+            which itself defaults to pydantic-ai's tool-calling output.
     """
 
     def __init__(
@@ -118,6 +138,7 @@ class AbstractReasoningPattern(ABC):
         prompts: dict[str, PromptTemplate] | None = None,
         reviewer: OutputReviewer | None = None,
         step_timeout: float | None = None,
+        output_mode: OutputMode | None = None,
     ) -> None:
         self._name = name
         self._max_steps = max_steps
@@ -125,6 +146,7 @@ class AbstractReasoningPattern(ABC):
         self._prompts: dict[str, PromptTemplate] = prompts or {}
         self._reviewer = reviewer
         self._step_timeout = step_timeout
+        self._output_mode = output_mode
 
     @property
     def name(self) -> str:
@@ -149,6 +171,30 @@ class AbstractReasoningPattern(ABC):
         return self._prompts.get(slot, default)
 
     # -- Structured output ---------------------------------------------------
+
+    def _wrap_output_type(self, output_type: type[T]) -> Any:
+        """Wrap *output_type* in the configured pydantic-ai output mode.
+
+        Returns the bare type when no mode is configured (pydantic-ai then
+        uses its default tool-calling output for a ``BaseModel``), or a
+        ``ToolOutput`` / ``NativeOutput`` / ``PromptedOutput`` spec selecting
+        the structured-output strategy.  Resolution order: the per-pattern
+        ``output_mode`` argument, else the framework-wide
+        ``reasoning_output_mode`` config value.  See :data:`OutputMode`.
+
+        Only the real-model run paths call this; the model-less fallback
+        (duck-typed agents) cannot make an LLM call and parses text instead.
+        """
+        mode = self._output_mode or get_config().reasoning_output_mode
+        if mode is None:
+            return output_type
+        if mode == "tool":
+            return ToolOutput(output_type)
+        if mode == "native":
+            return NativeOutput(output_type)
+        if mode == "prompted":
+            return PromptedOutput(output_type)
+        raise ReasoningError(f"Unknown reasoning output mode: {mode!r}")
 
     @staticmethod
     def _resolve_model(agent: AgentLike) -> str | Model | None:
@@ -194,8 +240,18 @@ class AbstractReasoningPattern(ABC):
         _result_holder: list[Any] = []  # capture result for usage tracking
 
         async def _call() -> T:
+            # FireflyAgent-like wrapper: route the structured call THROUGH it
+            # (per-call output_type) so reasoning inherits the agent's middleware
+            # chain, 429 retry and usage recording. It records its own usage, so
+            # the bare-result path below (which double-records) is skipped.
+            if getattr(agent, "agent", None) is not None and hasattr(agent, "run"):
+                run_kwargs: dict[str, Any] = {"output_type": self._wrap_output_type(output_type)}
+                if self._model is not None:
+                    run_kwargs["model"] = self._model
+                result = await agent.run(prompt, **run_kwargs)
+                return result.output if hasattr(result, "output") else result
             if resolved_model is not None:
-                ephemeral = PydanticAgent(resolved_model, output_type=output_type)
+                ephemeral = PydanticAgent(resolved_model, output_type=self._wrap_output_type(output_type))
                 result = await ephemeral.run(prompt)
                 _result_holder.append(result)
                 return result.output
@@ -222,7 +278,7 @@ class AbstractReasoningPattern(ABC):
             self._record_structured_usage(
                 _result_holder[0],
                 elapsed_ms,
-                model=str(resolved_model) if resolved_model else "",
+                model=get_model_identifier(resolved_model),
                 correlation_id=correlation_id,
             )
 
@@ -482,7 +538,7 @@ class AbstractReasoningPattern(ABC):
             if not cfg.cost_tracking_enabled:
                 return
 
-            usage = result.usage() if callable(getattr(result, "usage", None)) else None
+            usage = resolve_run_usage(result)
             if usage is None:
                 return
 
@@ -495,6 +551,7 @@ class AbstractReasoningPattern(ABC):
                 model=model,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                reasoning_tokens=reasoning_tokens_not_in_output(usage),
                 request_count=request_count,
                 agent=agent_label,
                 correlation_id=correlation_id,

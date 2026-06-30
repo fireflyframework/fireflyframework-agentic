@@ -25,16 +25,21 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import contextlib
 import logging
 import re
 import time
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any, Generic, cast
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults, RunContext
 from pydantic_ai import Tool as PydanticTool
+from pydantic_ai.capabilities import HandleDeferredToolCalls, Instrumentation
+from pydantic_ai.exceptions import UserError
 from pydantic_ai.models import Model
+from pydantic_ai.models.instrumented import InstrumentationSettings
 from pydantic_ai.settings import ModelSettings
+from pydantic_ai.toolsets import ApprovalRequiredToolset
 
 from fireflyframework_agentic.agents.builtin_middleware import (
     LoggingMiddleware,
@@ -43,15 +48,20 @@ from fireflyframework_agentic.agents.builtin_middleware import (
 from fireflyframework_agentic.agents.context import AgentContext as _AgentContext
 from fireflyframework_agentic.agents.middleware import MiddlewareChain, MiddlewareContext
 from fireflyframework_agentic.agents.registry import agent_registry
-from fireflyframework_agentic.config import get_config
-from fireflyframework_agentic.exceptions import BudgetExceededError, RateLimitError
+from fireflyframework_agentic.config import FireflyAgenticConfig, get_config
+from fireflyframework_agentic.exceptions import AgentError, BudgetExceededError, RateLimitError
 from fireflyframework_agentic.model_utils import get_model_identifier
 from fireflyframework_agentic.observability.budget import ScopeContext
+from fireflyframework_agentic.observability.cost_resolvers import UnknownModelCostError
 from fireflyframework_agentic.observability.quota import (
     AdaptiveBackoff,
     default_quota_manager,
 )
-from fireflyframework_agentic.observability.usage import default_usage_tracker
+from fireflyframework_agentic.observability.usage import (
+    default_usage_tracker,
+    reasoning_tokens_not_in_output,
+    resolve_run_usage,
+)
 from fireflyframework_agentic.reasoning.trace import ReasoningResult
 from fireflyframework_agentic.tools.base import BaseTool
 from fireflyframework_agentic.tools.toolkit import ToolKit
@@ -82,6 +92,57 @@ def _run_sync_coro(coro: Any) -> Any:
         return pool.submit(asyncio.run, coro).result()
 
 
+def _suggested_retry_delay(exc: BaseException) -> float | None:
+    """Best-effort suggested retry delay (seconds) from a rate-limit error.
+
+    Prefers a provider's **structured** hint — Gemini ``ResourceExhausted``
+    carries ``retry_delay`` (a Duration with ``.seconds``); some SDKs expose a
+    numeric ``retry_after`` — then the OpenAI/Anthropic-shaped textual
+    ``"retry … Ns"`` body. Returns ``None`` when no hint is present (the caller
+    then uses exponential backoff).
+    """
+    for attr in ("retry_delay", "retry_after"):
+        val = getattr(exc, attr, None)
+        if val is None:
+            continue
+        seconds = getattr(val, "seconds", None)  # google Duration proto
+        if seconds is not None:
+            try:
+                return float(seconds)
+            except (TypeError, ValueError):
+                pass
+        if isinstance(val, int | float):
+            return float(val)
+    match = re.search(r"retry.*?(\d+\.?\d*)\s*s", str(exc).lower())
+    return float(match.group(1)) if match else None
+
+
+#: An inline human-in-the-loop approval handler. Receives the run context and the
+#: pending :class:`~pydantic_ai.DeferredToolRequests`, and returns a
+#: :class:`~pydantic_ai.DeferredToolResults` resolving some/all approvals so the
+#: run continues *without* pausing (return ``None`` to decline and let the run
+#: pause normally). Wired into the inner agent as a ``HandleDeferredToolCalls``
+#: capability. Use ``requests.build_results(...)`` to construct the result.
+ApprovalHandler = Callable[
+    [RunContext[Any], DeferredToolRequests],
+    DeferredToolResults | None | Awaitable[DeferredToolResults | None],
+]
+
+
+def is_deferred(result: Any) -> bool:
+    """Whether an agent run *paused* instead of completing.
+
+    Returns ``True`` when ``result.output`` is a pydantic-ai
+    :class:`~pydantic_ai.DeferredToolRequests` — i.e. the run hit a tool that
+    requires human-in-the-loop approval (``.approvals``) or external execution
+    (``.calls``) and is awaiting a :class:`~pydantic_ai.DeferredToolResults`
+    before it can continue. Resume by calling :meth:`FireflyAgent.run` (or
+    ``run_sync``) again with ``message_history=result.all_messages()`` and
+    ``deferred_tool_results=...``.
+    """
+    return isinstance(getattr(result, "output", None), DeferredToolRequests)
+
+
 class FireflyAgent(Generic[AgentDepsT, OutputT]):
     """A managed agent that wraps a Pydantic AI :class:`Agent`.
 
@@ -106,6 +167,9 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         output_type: The Pydantic model (or scalar type) for structured output.
         deps_type: The dependency type expected at run time.
         tools: Sequence of tool functions or :class:`pydantic_ai.Tool` objects.
+        toolsets: Sequence of pydantic-ai toolsets (e.g. a ``ToolKit.as_toolset()``
+            result, ``WrapperToolset``/``ApprovalRequiredToolset``, or an MCP
+            server) made available to the agent alongside ``tools``.
         description: Free-form description shown in documentation and agent
             discovery listings.
         version: Semantic version string for this agent definition.
@@ -119,6 +183,14 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             messages back after each invocation.
         auto_register: When *True* (the default), the agent is automatically
             added to the global :class:`AgentRegistry`.
+        hitl: Force human-in-the-loop mode on. Normally HITL is auto-detected
+            from approval-requiring tools/toolsets; set this when tools defer
+            dynamically (raising ``ApprovalRequired``) so the output union is
+            widened to allow the ``DeferredToolRequests`` pause.
+        approval_handler: Optional inline approval handler (see
+            :data:`ApprovalHandler`). When supplied, approvals are resolved
+            *inside* the run via a ``HandleDeferredToolCalls`` capability instead
+            of pausing — useful for programmatic / policy-based auto-approval.
     """
 
     def __init__(
@@ -130,6 +202,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         output_type: type[OutputT] = str,  # type: ignore[assignment]
         deps_type: type[AgentDepsT] = type(None),  # type: ignore[assignment]
         tools: Sequence[Any] = (),
+        toolsets: Sequence[Any] = (),
         description: str = "",
         version: str = "0.1.0",
         tags: Sequence[str] = (),
@@ -140,6 +213,8 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         middleware: list[AgentMiddleware] | None = None,
         default_middleware: bool = True,
         auto_register: bool = True,
+        hitl: bool = False,
+        approval_handler: ApprovalHandler | None = None,
     ) -> None:
         cfg = get_config()
 
@@ -161,18 +236,42 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
 
         self._middleware = MiddlewareChain(self._build_middleware(middleware, default_middleware=default_middleware))
 
-        resolved_settings: ModelSettings | None = (
-            cast("ModelSettings", model_settings) if isinstance(model_settings, dict) else model_settings
-        )
+        # Merge the framework default temperature when the caller omits one.
+        # ``ModelSettings`` is a TypedDict, so both forms are plain dicts at
+        # runtime. Caller-provided settings always win; the config default is
+        # only filled in when ``temperature`` is absent (and configured).
+        merged_settings: dict[str, Any] = dict(model_settings) if model_settings else {}
+        if cfg.default_temperature is not None and "temperature" not in merged_settings:
+            merged_settings["temperature"] = cfg.default_temperature
+        resolved_settings: ModelSettings | None = cast("ModelSettings", merged_settings) if merged_settings else None
+
+        # Human-in-the-loop: when any tool requires approval (declared on a
+        # BaseTool/ToolKit, or via an ApprovalRequiredToolset in ``toolsets``),
+        # or HITL is forced, or an inline approval handler is supplied, the run
+        # may pause and surface a ``DeferredToolRequests``. pydantic-ai only
+        # allows that terminal when it is in ``output_type`` — otherwise it
+        # raises ``UserError`` — so widen the output union exactly once here,
+        # gated strictly on HITL so non-HITL agents keep their declared shape.
+        self._hitl_enabled = hitl or approval_handler is not None or self._detect_hitl(tools, toolsets)
+        effective_output_type: Any = output_type
+        if self._hitl_enabled:
+            existing = list(output_type) if isinstance(output_type, list) else [output_type]
+            if DeferredToolRequests not in existing:
+                existing.append(DeferredToolRequests)
+            effective_output_type = existing
+
+        capabilities = self._build_capabilities(cfg, approval_handler)
 
         self._agent: Agent[AgentDepsT, OutputT] = Agent(
             resolved_model,
             instructions=instructions,
-            output_type=output_type,
+            output_type=effective_output_type,
             deps_type=deps_type,
             tools=self._resolve_tools(tools),
+            toolsets=list(toolsets),
             retries=resolved_retries,
             model_settings=resolved_settings,
+            capabilities=capabilities,
             name=name,
         )
 
@@ -236,6 +335,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         conversation_id: str | None = None,
         timeout: float | None = None,
         context: AgentContext | None = None,
+        deferred_tool_results: DeferredToolResults | None = None,
         **kwargs: Any,
     ) -> Any:
         """Run the agent asynchronously.
@@ -248,8 +348,16 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         is provided, the agent automatically loads conversation history
         as ``message_history`` and stores new messages after the run.
 
+        To **resume** a run that paused for human-in-the-loop approval (see
+        :func:`is_deferred`), pass ``deferred_tool_results`` together with
+        ``message_history=<paused result>.all_messages()``; do not also set
+        *conversation_id* on the resume call (memory injection and an explicit
+        ``message_history`` are mutually exclusive).
+
         Delegates to ``pydantic_ai.Agent.run``.
         """
+        if deferred_tool_results is not None:
+            kwargs["deferred_tool_results"] = deferred_tool_results
         if context is None:
             context = _AgentContext()
 
@@ -273,11 +381,18 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         t0 = time.monotonic()
         self._inject_memory(conversation_id, kwargs)
 
-        result = await self._run_with_rate_limit_retry(mw_ctx.prompt, deps=deps, timeout=timeout, **kwargs)
-
-        elapsed_ms = (time.monotonic() - t0) * 1000
-        self._persist_memory(conversation_id, prompt, result)
-        self._record_usage(result, elapsed_ms, correlation_id=context.correlation_id)
+        try:
+            result = await self._run_with_rate_limit_retry(
+                mw_ctx.prompt, deps=deps, timeout=timeout, retry_override=mw_ctx.metadata.get("_retry_config"), **kwargs
+            )
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            self._persist_memory(conversation_id, prompt, result)
+            self._record_usage(result, elapsed_ms, correlation_id=context.correlation_id)
+        except Exception as exc:
+            # Let middleware release what before_run acquired (end the span,
+            # record the breaker failure), then re-raise the original error.
+            await self._middleware.run_error(mw_ctx, exc)
+            raise
 
         result = await self._middleware.run_after(mw_ctx, result)
         return result
@@ -290,9 +405,15 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         conversation_id: str | None = None,
         timeout: float | None = None,
         context: AgentContext | None = None,
+        deferred_tool_results: DeferredToolResults | None = None,
         **kwargs: Any,
     ) -> Any:
-        """Run the agent synchronously.  Delegates to ``pydantic_ai.Agent.run_sync``."""
+        """Run the agent synchronously.  Delegates to ``pydantic_ai.Agent.run_sync``.
+
+        Supports the same ``deferred_tool_results`` resume path as :meth:`run`.
+        """
+        if deferred_tool_results is not None:
+            kwargs["deferred_tool_results"] = deferred_tool_results
         if context is None:
             context = _AgentContext()
 
@@ -317,10 +438,23 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
 
         t0 = time.monotonic()
         self._inject_memory(conversation_id, kwargs)
-        result = _run_sync_coro(self._run_with_rate_limit_retry(mw_ctx.prompt, deps=deps, timeout=timeout, **kwargs))
-        elapsed_ms = (time.monotonic() - t0) * 1000
-        self._persist_memory(conversation_id, prompt, result)
-        self._record_usage(result, elapsed_ms, correlation_id=context.correlation_id)
+        try:
+            result = _run_sync_coro(
+                self._run_with_rate_limit_retry(
+                    mw_ctx.prompt,
+                    deps=deps,
+                    timeout=timeout,
+                    retry_override=mw_ctx.metadata.get("_retry_config"),
+                    **kwargs,
+                )
+            )
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            self._persist_memory(conversation_id, prompt, result)
+            self._record_usage(result, elapsed_ms, correlation_id=context.correlation_id)
+        except Exception as exc:
+            if len(self._middleware) > 0:
+                _run_sync_coro(self._middleware.run_error(mw_ctx, exc))
+            raise
 
         if len(self._middleware) > 0:
             result = _run_sync_coro(self._middleware.run_after(mw_ctx, result))
@@ -411,6 +545,11 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         """After a run, store new messages in conversation memory."""
         if self._memory is None or conversation_id is None:
             return
+        if is_deferred(result):
+            # The run paused for approval; its output is a control object, not a
+            # final answer. Persisting it would corrupt the conversation turn —
+            # the resumed run records the completed turn instead.
+            return
         if not hasattr(result, "new_messages"):
             return
         new_msgs = result.new_messages()
@@ -433,25 +572,26 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         if not cfg.cost_tracking_enabled:
             return
         try:
-            usage = result.usage() if callable(getattr(result, "usage", None)) else None
+            usage = resolve_run_usage(result)
             if usage is None:
                 return
 
             input_tokens = getattr(usage, "input_tokens", 0) or 0
             output_tokens = getattr(usage, "output_tokens", 0) or 0
             request_count = getattr(usage, "requests", 0) or 0
-            # pydantic-ai's ``Usage`` exposes ``cache_write_tokens`` (the
-            # number of tokens written to the prompt cache); fall back to
-            # ``cache_creation_tokens`` for older SDKs that used that name.
+            # pydantic-ai's ``RunUsage`` exposes ``cache_write_tokens`` (tokens
+            # written to the prompt cache); ``cache_creation_tokens`` is the
+            # historical fallback for custom/legacy usage objects.
             cache_creation = getattr(usage, "cache_write_tokens", 0) or getattr(usage, "cache_creation_tokens", 0) or 0
             cache_read = getattr(usage, "cache_read_tokens", 0) or 0
 
-            default_usage_tracker.record_call(
+            record = default_usage_tracker.record_call(
                 model=self.model_identifier,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 cache_creation_tokens=cache_creation,
                 cache_read_tokens=cache_read,
+                reasoning_tokens=reasoning_tokens_not_in_output(usage),
                 request_count=request_count,
                 agent=self._name,
                 correlation_id=correlation_id,
@@ -462,10 +602,20 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
                     correlation_id=correlation_id,
                 ),
             )
-        except BudgetExceededError:
+            # Expose the computed cost on the result so downstream middleware
+            # (e.g. LoggingMiddleware's usage suffix) can surface it. Best-effort:
+            # result types that forbid attribute assignment are simply skipped.
+            if record is not None:
+                with contextlib.suppress(AttributeError, TypeError):
+                    result._firefly_cost_usd = record.cost_usd
+        except (BudgetExceededError, UnknownModelCostError):
+            # Budget breaches and (under cost_strict) unpriceable models must
+            # fail the run, not be swallowed into a debug log.
             raise
         except Exception:  # noqa: BLE001
-            logger.debug("Failed to record usage for agent '%s'", self._name, exc_info=True)
+            # Usage recording is a should-work path; surface failures at warning
+            # so a silently-broken cost/budget pipeline is visible to operators.
+            logger.warning("Failed to record usage for agent '%s'", self._name, exc_info=True)
 
     # -- Reasoning integration ------------------------------------------------
 
@@ -516,7 +666,14 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         if self._memory is not None and "memory" not in kwargs:
             kwargs["memory"] = self._memory
 
-        result: ReasoningResult = await pattern.execute(self, mw_ctx.prompt, **kwargs)
+        try:
+            result: ReasoningResult = await pattern.execute(self, mw_ctx.prompt, **kwargs)
+        except Exception as exc:
+            # Same error lifecycle as run/run_sync/run_stream: let middleware
+            # release what before_run acquired (end the span, record the breaker
+            # failure), then re-raise.
+            await self._middleware.run_error(mw_ctx, exc)
+            raise
 
         # Persist the reasoning output as a conversation turn
         if self._memory is not None and conversation_id is not None:
@@ -579,26 +736,35 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         *,
         deps: AgentDepsT = None,  # type: ignore[assignment]
         timeout: float | None = None,
+        retry_override: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> Any:
         """Execute ``self._agent.run()`` with automatic 429 retry using AdaptiveBackoff.
 
-        Reads retry parameters from :func:`get_config` and uses the
+        Reads retry parameters from :func:`get_config`, but a per-agent
+        :class:`RetryMiddleware` may supply ``retry_override`` (its declared
+        ``max_retries`` / ``base_delay`` / ``max_delay``), which takes
+        precedence. Uses the
         :class:`~fireflyframework_agentic.observability.quota.AdaptiveBackoff`
-        instance on the default :class:`QuotaManager` when quota is enabled,
-        or creates a standalone backoff otherwise.
+        on the default :class:`QuotaManager` when quota is enabled and no
+        override is given, or a standalone backoff otherwise.
         """
         cfg = get_config()
-        max_retries = cfg.rate_limit_max_retries
-        max_delay = cfg.rate_limit_max_delay
+        override = retry_override or {}
+        max_retries = override.get("max_retries", cfg.rate_limit_max_retries)
+        max_delay = override.get("max_delay", cfg.rate_limit_max_delay)
+        base_delay = override.get("base_delay", cfg.rate_limit_base_delay)
 
-        # Reuse the QuotaManager's backoff if available, else standalone
-        if default_quota_manager is not None and default_quota_manager._backoff is not None:
-            backoff = default_quota_manager._backoff
+        # Reuse the QuotaManager's shared backoff only when there's no per-agent
+        # override; an override needs its own backoff so its declared delays AND
+        # backoff multiplier take effect.
+        if not override and default_quota_manager is not None and default_quota_manager.backoff is not None:
+            backoff = default_quota_manager.backoff
         else:
             backoff = AdaptiveBackoff(
-                base_delay=cfg.rate_limit_base_delay,
+                base_delay=base_delay,
                 max_delay=max_delay,
+                multiplier=override.get("backoff_multiplier", 2.0),
             )
 
         key = self.model_identifier
@@ -620,10 +786,13 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
                 backoff.record_failure(key)
                 delay = backoff.get_delay(key)
 
-                # Try to parse a suggested delay from the error body
-                retry_match = re.search(r"retry.*?(\d+\.?\d*)\s*s", str(exc).lower())
-                if retry_match:
-                    delay = min(float(retry_match.group(1)), max_delay)
+                # Prefer a provider's structured retry hint (Gemini
+                # ResourceExhausted carries ``retry_delay``; some SDKs expose
+                # ``retry_after``); fall back to the OpenAI/Anthropic-shaped
+                # textual "retry … Ns" body, then to the exponential backoff.
+                hint = _suggested_retry_delay(exc)
+                if hint is not None:
+                    delay = min(hint, max_delay)
 
                 logger.warning(
                     "Rate limit hit on '%s' (attempt %d/%d), retrying in %.1fs…",
@@ -693,11 +862,69 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
                         item.pydantic_handler(),
                         name=item.name,
                         description=item.description,
+                        requires_approval=item.requires_approval,
                     )
                 )
             else:
                 resolved.append(item)
         return resolved
+
+    @staticmethod
+    def _detect_hitl(tools: Sequence[Any], toolsets: Sequence[Any]) -> bool:
+        """Whether any tool/toolset can pause the run for approval.
+
+        True if a :class:`BaseTool` (directly or inside a ``ToolKit``) declares
+        ``requires_approval``, a toolset is a native
+        :class:`~pydantic_ai.toolsets.ApprovalRequiredToolset`, or a toolset
+        (e.g. ``ToolKit.as_toolset()``) exposes a tool that declares
+        ``requires_approval``. Raw ``pydantic_ai.Tool`` objects with
+        ``requires_approval`` are also honoured; if introspection misses a case,
+        pass ``hitl=True`` explicitly.
+        """
+        for item in tools:
+            if isinstance(item, ToolKit):
+                if any(getattr(t, "requires_approval", False) for t in item.tools):
+                    return True
+            elif getattr(item, "requires_approval", False):
+                return True
+        for ts in toolsets:
+            if isinstance(ts, ApprovalRequiredToolset):
+                return True
+            # A FunctionToolset exposes its tools as a name -> Tool mapping; honour
+            # any that declare requires_approval (so as_toolset() HITL kits work).
+            ts_tools = getattr(ts, "tools", None)
+            if isinstance(ts_tools, dict) and any(getattr(t, "requires_approval", False) for t in ts_tools.values()):
+                return True
+        return False
+
+    @staticmethod
+    def _build_capabilities(cfg: FireflyAgenticConfig, approval_handler: ApprovalHandler | None) -> list[Any]:
+        """Assemble the inner pydantic-ai ``Agent``'s capabilities.
+
+        Two opt-in capabilities: an inline HITL approval handler (SP-3) and native
+        OpenTelemetry instrumentation (SP-10). Native instrumentation emits rich
+        GenAI-convention spans for each model request / tool call and is gated by
+        ``observability_enabled`` *and* ``native_instrumentation_enabled``. The
+        tracer/meter/logger providers are left unset (``None``) so spans flow
+        through the global OpenTelemetry API — the host owns the SDK/exporter. The
+        deprecated ``Agent(instrument=...)`` path is never used (it would trip the
+        deprecation gate); ``capabilities=[Instrumentation(...)]`` is warning-free.
+        """
+        capabilities: list[Any] = []
+        if approval_handler is not None:
+            capabilities.append(HandleDeferredToolCalls(approval_handler))
+        if cfg.observability_enabled and cfg.native_instrumentation_enabled:
+            capabilities.append(
+                Instrumentation(
+                    InstrumentationSettings(
+                        include_content=cfg.instrumentation_include_content,
+                        include_binary_content=cfg.instrumentation_include_content,
+                        version=cfg.instrumentation_version,
+                        event_mode=cfg.instrumentation_event_mode,
+                    )
+                )
+            )
+        return capabilities
 
     # -- Dunder --------------------------------------------------------------
 
@@ -737,6 +964,12 @@ class _UsageTrackingStreamContext:
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> Any:
         result = await self._stream_ctx.__aexit__(exc_type, exc_val, exc_tb)
         elapsed_ms = (time.monotonic() - self._t0) * 1000
+        # On a failed stream, fire error hooks (end span, record the breaker
+        # failure) and skip usage/after-hooks — there is no usable result.
+        if exc_type is not None:
+            if self._mw_ctx is not None:
+                await self._agent._middleware.run_error(self._mw_ctx, exc_val)
+            return result
         # After the stream closes, usage() is available on the stream handle.
         if self._stream is not None:
             self._agent._record_usage(
@@ -794,6 +1027,11 @@ class _IncrementalStreamContext:
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> Any:
         result = await self._stream_ctx.__aexit__(exc_type, exc_val, exc_tb)
         elapsed_ms = (time.monotonic() - self._t0) * 1000
+        # On a failed stream, fire error hooks and skip usage/after-hooks.
+        if exc_type is not None:
+            if self._mw_ctx is not None:
+                await self._agent._middleware.run_error(self._mw_ctx, exc_val)
+            return result
         # After the stream closes, usage() is available on the stream handle.
         if self._stream is not None:
             self._agent._record_usage(
@@ -842,22 +1080,32 @@ class _IncrementalStreamWrapper:
         """
         self._prev_text = ""
 
-        async for chunk in self._stream.stream_text(delta=True):
-            # The delta=True gives us incremental text
-            if chunk:
-                if debounce_ms > 0:
-                    # Batch rapid tokens with debouncing
-                    self._buffer.append(chunk)
-                    await asyncio.sleep(debounce_ms / 1000.0)
+        try:
+            async for chunk in self._stream.stream_text(delta=True):
+                # The delta=True gives us incremental text
+                if chunk:
+                    if debounce_ms > 0:
+                        # Batch rapid tokens with debouncing
+                        self._buffer.append(chunk)
+                        await asyncio.sleep(debounce_ms / 1000.0)
 
-                    if self._buffer:
-                        # Yield batched tokens
-                        batched = "".join(self._buffer)
-                        self._buffer.clear()
-                        yield batched
-                else:
-                    # Yield immediately without debouncing
-                    yield chunk
+                        if self._buffer:
+                            # Yield batched tokens
+                            batched = "".join(self._buffer)
+                            self._buffer.clear()
+                            yield batched
+                    else:
+                        # Yield immediately without debouncing
+                        yield chunk
+        except UserError as exc:
+            # pydantic-ai forbids stream_text() for a non-text (structured) run.
+            # Token-by-token streaming is meaningless for structured output, so
+            # fail fast with an actionable message instead of an opaque UserError.
+            raise AgentError(
+                "incremental token streaming (stream_tokens) requires a text output_type; "
+                "this agent produces structured output. Use streaming_mode='buffered' and "
+                "iterate get_output() / stream_output() instead."
+            ) from exc
 
         # Flush any remaining buffered tokens
         if self._buffer:

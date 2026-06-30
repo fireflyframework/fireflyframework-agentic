@@ -21,7 +21,7 @@ without subclassing::
     tool = (
         ToolBuilder("search")
         .description("Search the web for information")
-        .parameter("query", "str", description="Search query", required=True)
+        .parameter("query", str, description="Search query", required=True)
         .guard(RateLimitGuard(max_calls=10, period_seconds=60))
         .handler(my_search_function)
         .build()
@@ -100,17 +100,22 @@ class ToolBuilder:
     def parameter(
         self,
         name: str,
-        type_annotation: str,
+        python_type: Any = str,
         *,
         description: str = "",
         required: bool = True,
         default: Any = None,
     ) -> ToolBuilder:
-        """Declare a parameter the tool accepts."""
+        """Declare a parameter the tool accepts.
+
+        ``python_type`` is a real type object (``str``, ``list[str]``,
+        ``Literal["a", "b"]``, a nested ``BaseModel``, …) — pydantic-ai derives a
+        full-fidelity JSON schema from it.
+        """
         self._parameters.append(
             ParameterSpec(
                 name=name,
-                type_annotation=type_annotation,
+                python_type=python_type,
                 description=description,
                 required=required,
                 default=default,

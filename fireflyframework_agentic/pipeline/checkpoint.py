@@ -28,6 +28,7 @@ connection. Copy whichever you need into your project and adapt.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -90,7 +91,10 @@ class FileCheckpointer:
         run_dir = self._root / record.pipeline_name / record.run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         path = run_dir / f"{record.sequence:06d}_{record.node_id}.json"
-        path.write_text(record.model_dump_json(indent=2))
+        # Atomic write: a crash mid-write must not leave a truncated checkpoint.
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(record.model_dump_json(indent=2))
+        os.replace(tmp, path)
 
     def load_latest(self, pipeline_name: str, run_id: str) -> CheckpointRecord | None:
         run_dir = self._root / pipeline_name / run_id

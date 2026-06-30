@@ -96,11 +96,18 @@ async def calculator(expression: str) -> str:
 
 The fluent `ToolBuilder` lets you construct tools step by step. Beyond `description()`,
 `handler()`, and `guard()`, it also exposes `tag()`, `tags()`, and
-`parameter(name, type_annotation, *, description, required, default)` — declared
+`parameter(name, python_type, *, description, required, default)` — declared
 parameters generate the JSON schema the LLM uses to call the tool. `build()` raises
 `ValueError` if no handler was set.
 
+`python_type` is a **real Python type object** — `str`, `list[str]`,
+`Literal["a", "b"]`, a nested `BaseModel`, `dict[str, Any] | None`, … pydantic-ai
+introspects it directly, so nested models, enums and element types all reach the
+LLM's schema intact.
+
 ```python
+from typing import Literal
+
 from fireflyframework_agentic.tools import ToolBuilder
 from fireflyframework_agentic.tools.guards import RateLimitGuard
 
@@ -108,12 +115,60 @@ tool = (
     ToolBuilder("weather")
     .description("Get current weather for a city")
     .tags(["web", "geo"])
-    .parameter("city", "str", description="City name", required=True)
+    .parameter("city", str, description="City name", required=True)
+    .parameter("units", Literal["metric", "imperial"], default="metric", required=False)
     .guard(RateLimitGuard(max_calls=10, period_seconds=60))
     .handler(get_weather_fn)
     .build()
 )
 ```
+
+### Full-fidelity schemas & RunContext
+
+A `BaseTool` subclass declares its parameters as `ParameterSpec(name=..., python_type=...)`.
+Because `python_type` is a real type, the generated schema is exact — `list[str]`
+keeps its element type, a `Literal` becomes an `enum`, a nested model becomes a
+`$ref`. Opt a tool into pydantic-ai's `RunContext` (agent deps, usage, retry count)
+with `takes_ctx=True`; the context arrives as the keyword-only `_ctx` in `_execute`,
+and **guards and the cache never see it** (so it can't poison a cache key):
+
+```python
+from typing import Any, Literal
+
+from fireflyframework_agentic.tools.base import BaseTool, ParameterSpec
+
+class SetPriority(BaseTool):
+    def __init__(self) -> None:
+        super().__init__(
+            "set_priority",
+            description="Set a ticket's priority.",
+            takes_ctx=True,                                  # opt into RunContext
+            parameters=[ParameterSpec(name="level", python_type=Literal["low", "medium", "high"])],
+        )
+
+    async def _execute(self, *, _ctx: Any = None, **kwargs: Any) -> str:
+        tenant = _ctx.deps                                   # reach the agent's deps
+        return f"{tenant}: priority set to {kwargs['level']}"
+```
+
+> **Cross-provider schema portability.** Real `python_type`s keep tool schemas
+> portable across providers, but **Gemini's `FunctionDeclaration` rejects free-form
+> objects** — a `dict[str, Any]` parameter produces an open object schema (no
+> declared properties) that Google's API refuses (OpenAI/Anthropic/Bedrock accept
+> it). Prefer a **JSON-object string** (`python_type=str`, parsed in `_execute`) or a
+> constrained nested `BaseModel` for "bag of fields" inputs. The built-in
+> `DatabaseTool` does exactly this for its `params` argument.
+
+### Toolsets and native combinators
+
+`ToolKit.as_toolset()` returns a pydantic-ai `FunctionToolset` (descriptions and
+schemas included) for `Agent(toolsets=[...])` / `FireflyAgent(toolsets=[...])`. For
+convenience the tools package re-exports pydantic-ai's native toolset combinators —
+`FilteredToolset`, `PrefixedToolset`, `RenamedToolset`, `CombinedToolset`,
+`WrapperToolset`, `PreparedToolset`, `ApprovalRequiredToolset` — plus `RunContext`,
+so you can wrap/filter/combine a kit's toolset without importing from `pydantic_ai`
+directly. `to_pydantic_handler(tool)` returns the guard/cache-routing handler for a
+single tool.
 
 ---
 
@@ -133,7 +188,12 @@ flowchart LR
 
 Each guard implements `GuardProtocol.check(tool_name, kwargs) -> GuardResult`. When a
 guard returns `GuardResult(passed=False, reason=...)`, `BaseTool.execute()` raises a
-`ToolError` before the handler runs.
+`ToolGuardError` (a `ToolError` subclass) before the handler runs.
+
+> Guards are for **hard, synchronous policy** (validation, rate-limiting, sandboxing).
+> For **human-in-the-loop approval** — pausing a run until a person signs off — use the
+> native deferred-tools path described in
+> [Human-in-the-Loop Tool Approval](#human-in-the-loop-tool-approval), not a guard.
 
 ### Built-in Guards
 
@@ -141,8 +201,6 @@ guard returns `GuardResult(passed=False, reason=...)`, `BaseTool.execute()` rais
   required keyword argument is missing.
 - **RateLimitGuard** -- `RateLimitGuard(max_calls, period_seconds=60.0)` — sliding-window
   rate limiter that caps invocations per time window.
-- **ApprovalGuard** -- `ApprovalGuard(callback)` — human-in-the-loop gate; `callback` is
-  an async callable `(tool_name, kwargs) -> bool` that must return `True` to approve.
 - **SandboxGuard** -- `SandboxGuard(*, allowed_patterns=(), denied_patterns=())` — converts
   each kwarg value to a string and rejects it if it matches a `denied_patterns` regex
   (unless it also matches an `allowed_patterns` regex, which takes precedence).
@@ -179,8 +237,11 @@ shell = ShellTool(
 ### Retry
 
 `retryable(max_retries=3, backoff=1.0)` is a cross-cutting decorator (alongside `guarded`)
-exported from `fireflyframework_agentic.tools`. It wraps a `BaseTool`'s `execute` so that
-failures are retried with exponential backoff — the call is attempted up to
+exported from `fireflyframework_agentic.tools`. It wraps the tool's `_execute` hook
+(not the public `execute`) so the retry sits *inside* the guard/timeout wrapper:
+guards run **once**, then only the tool body is retried — and the retry applies on
+the path pydantic-ai actually calls (the generated handler) and to `RunContext`-aware
+(`takes_ctx`) tools, not just a direct `tool.execute()`. The call is attempted up to
 `max_retries + 1` times, doubling the delay (starting at `backoff` seconds) after each
 failure. If every attempt fails, the last exception propagates.
 
@@ -195,6 +256,139 @@ async def fetch(url: str) -> str:
 
 ---
 
+## Human-in-the-Loop Tool Approval
+
+Destructive or sensitive tools can require a human to sign off **before** they run.
+Firefly delegates this to pydantic-ai's native **deferred-tools** protocol — no bespoke
+mechanism — so approval is per-tool-call, carries metadata, and survives durable
+execution.
+
+### Declaring a tool that needs approval
+
+Set `requires_approval=True` on the tool. It works on the decorator, `BaseTool`
+subclasses, and tools added to a `ToolKit` (via either `as_pydantic_tools()` or
+`as_toolset()`):
+
+```python
+from fireflyframework_agentic.tools import firefly_tool
+
+@firefly_tool("delete_record", description="Delete a database record", requires_approval=True)
+async def delete_record(record_id: str) -> str:
+    ...
+```
+
+### Pause → approve → resume
+
+When the model calls an approval-required tool, the run **pauses before executing it**
+and returns a `DeferredToolRequests` as `result.output`. Check this with `is_deferred()`,
+collect the human decision, then **resume** by calling `run()` again with the prior
+messages and a `DeferredToolResults`:
+
+```python
+from fireflyframework_agentic.agents import FireflyAgent, is_deferred
+from fireflyframework_agentic.tools import DeferredToolResults, ToolApproved, ToolDenied
+
+agent = FireflyAgent("ops", model="anthropic:claude-haiku-4-5", tools=[delete_record])
+
+result = await agent.run("Delete record 42.")
+if is_deferred(result):
+    requests = result.output                      # DeferredToolRequests
+    decisions = {}
+    for call in requests.approvals:               # each is a ToolCallPart
+        # call.tool_name, call.args, requests.metadata.get(call.tool_call_id)
+        decisions[call.tool_call_id] = True        # True / ToolApproved(override_args=...) / ToolDenied(message=...)
+    result = await agent.run(
+        message_history=result.all_messages(),     # required: thread the paused run's messages
+        deferred_tool_results=DeferredToolResults(approvals=decisions),
+    )
+# result.output is now the model's final answer
+```
+
+The full pause → approve → resume flow:
+
+```mermaid
+sequenceDiagram
+    actor Caller
+    participant Agent as FireflyAgent
+    participant Model as LLM
+    actor Human
+
+    Caller->>Agent: run("Delete record 42.")
+    Agent->>Model: prompt + tool schemas
+    Model-->>Agent: call delete_record(record_id="42")
+    Note over Agent: requires_approval → run PAUSES<br/>before executing the tool
+    Agent-->>Caller: result.output = DeferredToolRequests<br/>(is_deferred(result) is True)
+
+    Caller->>Human: present requests.approvals (+ metadata)
+    Human-->>Caller: decision = True / ToolApproved(override_args=…) / ToolDenied(message=…)
+
+    Caller->>Agent: run(message_history=result.all_messages(),<br/>deferred_tool_results=DeferredToolResults(approvals={call_id: decision}))
+    alt approved
+        Agent->>Agent: execute delete_record<br/>(RunContext.tool_call_approved = True)
+    else denied
+        Note over Agent: ToolDenied message returned to the model<br/>(not a crash — the run continues)
+    end
+    Agent->>Model: continue with tool result / denial
+    Model-->>Agent: final answer
+    Agent-->>Caller: result.output = final answer
+```
+
+> With an `approval_handler=` (the inline, non-pausing path), the handler resolves the
+> `DeferredToolRequests` **inside** the run via a native `HandleDeferredToolCalls` capability,
+> so the run never returns to the caller paused.
+
+Decision values: `True` approves (equivalent to `ToolApproved()`); `ToolApproved(override_args={...})`
+approves but replaces the call arguments; `ToolDenied(message="...")` denies — the message is
+returned to the model, which continues (it is **not** a crash). On resume the tool's
+`RunContext.tool_call_approved` is `True` and `RunContext.tool_call_metadata` carries any
+`DeferredToolResults.metadata` you passed.
+
+> Do not set `conversation_id` on the resume call — an explicit `message_history` and
+> memory injection are mutually exclusive.
+
+### Auto-detection and forcing HITL
+
+`FireflyAgent` widens its output type to allow the `DeferredToolRequests` pause exactly when
+HITL is in play. It auto-detects this from any `requires_approval` tool (directly, inside a
+`ToolKit`, or inside a `ToolKit.as_toolset()`), or an `ApprovalRequiredToolset` in `toolsets`.
+If your tools defer **dynamically** (raising `pydantic_ai.exceptions.ApprovalRequired`) so
+detection can't see it statically, pass `hitl=True`.
+
+### Dynamic, predicate-based approval
+
+To gate **existing** tools by a runtime predicate (e.g. approve small amounts, hold large
+ones), wrap a toolset in the native `ApprovalRequiredToolset`:
+
+```python
+from fireflyframework_agentic.tools import ApprovalRequiredToolset
+
+gated = ApprovalRequiredToolset(
+    my_toolkit.as_toolset(),
+    approval_required_func=lambda ctx, tool_def, args: args.get("amount", 0) > 1000,
+)
+agent = FireflyAgent("payments", model="...", toolsets=[gated])
+```
+
+### Inline (non-pausing) approval
+
+For programmatic / policy-based auto-approval that resolves **inside** the run instead of
+pausing, pass an `approval_handler` — wired as a native `HandleDeferredToolCalls` capability:
+
+```python
+def auto_approve(ctx, requests):
+    return requests.build_results(approvals={c.tool_call_id: True for c in requests.approvals})
+
+agent = FireflyAgent("ops", model="...", tools=[delete_record], approval_handler=auto_approve)
+```
+
+> **Three distinct HITL layers, by design.** Tool approval (this section) is native
+> deferred-tools at the **agent** layer. A **workflow** pause uses `human()` /
+> `WorkflowInterrupt` (journal-replay). A **pipeline** node pauses by returning `Pause(...)`
+> and resumes via `approve_pause` (checkpoint). They solve different problems and are not
+> collapsed into one mechanism.
+
+---
+
 ## Composition
 
 Tools can be composed into higher-level operations. Each composer implements
@@ -204,7 +398,8 @@ Tools can be composed into higher-level operations. Each composer implements
   tools in order; the first receives the original kwargs, each subsequent tool receives a
   single `input=` kwarg set to the previous tool's return value.
 - **FallbackComposer** -- `FallbackComposer(name, tools, *, description="")` — tries tools
-  in priority order until one succeeds; raises `ToolError` if all fail.
+  in priority order until one succeeds; if all fail it raises `ToolError` **chained from
+  the last error** (`raise … from last_error`), so the original traceback is preserved.
 - **ConditionalComposer** -- `ConditionalComposer(name, router_fn, tool_map, *,
   description="")` — `router_fn(**kwargs)` returns the key of the tool in `tool_map` to run.
 
@@ -437,6 +632,12 @@ finally:
 memoises results using a TTL-based in-memory cache keyed on the tool's
 input arguments. This is ideal for deterministic tools (lookups, calculations)
 where repeated calls with the same arguments should avoid redundant work.
+
+Concurrent identical misses are **single-flighted**: the first caller for a key
+runs the underlying tool while the others `await` the same in-flight result, so an
+expensive or rate-limited tool is never stampeded (it runs once per key). A failure
+is not cached and clears the in-flight slot so the next call retries. (It uses an
+`asyncio.Lock`; intended for one event loop.)
 
 ```python
 from fireflyframework_agentic.tools.cached import CachedTool

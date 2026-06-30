@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Firefly Agentic">
+  <defs>
+    <radialGradient id="ffl-halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#FFF9C1" stop-opacity="0.95"/>
+      <stop offset="0.45" stop-color="#F6A821" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#F68000" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ffl-body" cx="50%" cy="42%" r="58%">
+      <stop offset="0" stop-color="#FFFDF0"/>
+      <stop offset="0.5" stop-color="#FFF6B0"/>
+      <stop offset="1" stop-color="#F68000"/>
+    </radialGradient>
+    <linearGradient id="ffl-spark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d6c6ff"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+  </defs>
+  <!-- violet agentic spark (4-point star) -->
+  <path d="M32 5 L35 29 L59 32 L35 35 L32 59 L29 35 L5 32 L29 29 Z" fill="url(#ffl-spark)" opacity="0.55"/>
+  <!-- amber firefly halo -->
+  <circle cx="32" cy="32" r="23" fill="url(#ffl-halo)"/>
+  <!-- firefly body -->
+  <circle cx="32" cy="32" r="9.5" fill="url(#ffl-body)"/>
+  <circle cx="32" cy="32" r="9.5" fill="none" stroke="#FFFDF0" stroke-opacity="0.55" stroke-width="0.6"/>
+</svg>

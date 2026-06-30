@@ -40,11 +40,15 @@ Usage::
 
 from __future__ import annotations
 
+import contextlib
+import dataclasses
 import logging
 import time
 from typing import Any
 
+from opentelemetry import context as _otel_context
 from opentelemetry import trace as _trace
+from pydantic_ai import DeferredToolRequests
 
 from fireflyframework_agentic.agents.middleware import MiddlewareContext
 from fireflyframework_agentic.exceptions import BudgetExceededError, OutputReviewError
@@ -58,15 +62,23 @@ from fireflyframework_agentic.observability.budget import (
     ScopeContext,
 )
 from fireflyframework_agentic.observability.events import default_events
-from fireflyframework_agentic.observability.metrics import default_metrics
 from fireflyframework_agentic.observability.usage import (
     UsageRecord,
     default_usage_tracker,
+    resolve_run_usage,
 )
 from fireflyframework_agentic.security.output_guard import OutputGuard
 from fireflyframework_agentic.security.prompt_guard import PromptGuard
 
 logger = logging.getLogger(__name__)
+
+
+def _is_deferred_output(result: Any) -> bool:
+    """Whether a run paused (output is a ``DeferredToolRequests``) rather than
+    completing. Output-consuming ``after_run`` hooks must skip such a result:
+    it is a HITL control object, not a final answer — scanning, validating, or
+    caching it is wrong (and would raise on a type mismatch)."""
+    return isinstance(getattr(result, "output", None), DeferredToolRequests)
 
 
 # -- Errors ------------------------------------------------------------------
@@ -138,6 +150,16 @@ class LoggingMiddleware:
         elapsed_ms = (time.monotonic() - t0) * 1000 if t0 is not None else 0.0
         method = context.method or "run"
 
+        if _is_deferred_output(result):
+            logger.log(
+                self._level,
+                "⏸ %s.%s paused after %.1fms awaiting tool approval",
+                context.agent_name,
+                method,
+                elapsed_ms,
+            )
+            return result
+
         suffix = self._usage_suffix(result) if self._include_usage else ""
         reasoning = self._reasoning_suffix(result)
 
@@ -157,7 +179,7 @@ class LoggingMiddleware:
     @staticmethod
     def _usage_suffix(result: Any) -> str:
         """Extract token/cost info from the result, if available."""
-        usage = result.usage() if callable(getattr(result, "usage", None)) else None
+        usage = resolve_run_usage(result)
         if usage is None:
             return ""
         tokens = getattr(usage, "total_tokens", 0) or 0
@@ -314,58 +336,85 @@ class CostGuardMiddleware:
 
 
 class ObservabilityMiddleware:
-    """Emits OpenTelemetry spans, metrics, and structured events for agent runs.
+    """Owns the agent-run OpenTelemetry span.
 
     Auto-wired by default when ``config.observability_enabled`` is ``True``.
-    Creates a span covering the entire agent run, records latency and token
-    metrics, and emits ``agent.started`` / ``agent.completed`` events.
+    Opens a span covering the entire agent run (`agent.{name}`, carrying
+    `firefly.agent.name` / `firefly.agent.method` / `firefly.correlation_id`),
+    **activates it in the OTel context** so pydantic-ai's native instrumentation
+    spans (model requests, tool calls) nest under it, emits the ``agent.started``
+    event, and ends the span on success or error. Metrics (tokens, latency, cost)
+    and the ``agent.completed`` event are the sole responsibility of the
+    usage/cost-sink path (``UsageTracker`` → ``OTelMetricsSink`` / ``EventBusSink``)
+    — a single source of truth, so nothing is double-counted.
     """
 
     async def before_run(self, context: MiddlewareContext) -> None:
-        """Open an OTel span and emit the agent-started event."""
+        """Open an OTel span, make it the current context, and emit agent-started."""
         tracer = _trace.get_tracer("fireflyframework_agentic")
-        span = tracer.start_span(
-            f"agent.{context.agent_name}",
-            attributes={
-                "firefly.agent.name": context.agent_name,
-                "firefly.agent.method": context.method or "run",
-            },
-        )
+        attributes: dict[str, Any] = {
+            "firefly.agent.name": context.agent_name,
+            "firefly.agent.method": context.method or "run",
+        }
+        # Stamp the correlation id so native child spans (and any cost record keyed
+        # by the same id) can be joined back to this agent run.
+        correlation_id = getattr(getattr(context, "context", None), "correlation_id", None)
+        if correlation_id:
+            attributes["firefly.correlation_id"] = correlation_id
+
+        span = tracer.start_span(f"agent.{context.agent_name}", attributes=attributes)
         context.metadata["_otel_span"] = span
-        context.metadata["_obs_t0"] = time.monotonic()
+
+        # Activate the span in the OTel context so spans created *during* the run
+        # — notably pydantic-ai's native instrumentation (SP-10), which uses
+        # ``start_as_current_span`` — nest UNDER this agent span instead of
+        # becoming disjoint roots in a separate trace. ``start_span`` (not
+        # ``start_as_current_span``) is kept because the span's lifetime straddles
+        # before/after/on_error and a context manager cannot. The attach token is
+        # detached in after_run and on_error (every exit path) to avoid leaking it.
+        context.metadata["_otel_ctx_token"] = _otel_context.attach(_trace.set_span_in_context(span))
 
         default_events.agent_started(context.agent_name)
 
+    @staticmethod
+    def _detach_context(context: MiddlewareContext) -> None:
+        """Detach the OTel context token attached in :meth:`before_run`, if any."""
+        token = context.metadata.pop("_otel_ctx_token", None)
+        if token is not None:
+            with contextlib.suppress(Exception):
+                _otel_context.detach(token)
+
     async def after_run(self, context: MiddlewareContext, result: Any) -> Any:
-        """Record OTel metrics and close the span.
+        """Close the agent span (detaching the OTel context first).
 
-        Note: the ``agent.completed`` **event** is intentionally NOT emitted
-        here.  ``UsageTracker._emit_event()`` already emits the same event
-        with strictly more detail (model name, cost, per-token breakdown).
-        Emitting it in both places caused every agent call to log duplicate
-        ``agent.completed`` entries.
+        Metrics (tokens, latency, cost) and the ``agent.completed`` event are the
+        sole responsibility of the usage/cost-sink path
+        (``UsageTracker`` → ``OTelMetricsSink`` / ``EventBusSink``), which has the
+        full picture (model, cost, per-token breakdown). Emitting them here too
+        double-counted ``firefly.tokens.total`` and ``firefly.latency`` in every
+        metrics backend, so this hook now owns only the span lifecycle — a single
+        source of truth, matching the existing ``agent.completed`` de-dup.
         """
-        t0 = context.metadata.get("_obs_t0")
-        elapsed_ms = (time.monotonic() - t0) * 1000 if t0 is not None else 0.0
-
-        tokens = 0
-        usage = result.usage() if callable(getattr(result, "usage", None)) else None
-        if usage is not None:
-            tokens = getattr(usage, "total_tokens", 0) or 0
-
-        default_metrics.record_latency(
-            elapsed_ms,
-            operation="agent.run",
-            agent=context.agent_name,
-        )
-        if tokens > 0:
-            default_metrics.record_tokens(tokens, agent=context.agent_name)
-
+        self._detach_context(context)
         span = context.metadata.pop("_otel_span", None)
         if span is not None:
             span.end()
 
         return result
+
+    async def on_error(self, context: MiddlewareContext, exc: BaseException) -> None:
+        """End the span on a failed run so it does not leak; mark it errored.
+
+        Without this, a span opened in :meth:`before_run` would never be closed
+        when the model call raises (``after_run`` runs only on success).
+        """
+        self._detach_context(context)
+        span = context.metadata.pop("_otel_span", None)
+        if span is not None:
+            with contextlib.suppress(Exception):
+                span.record_exception(exc)
+                span.set_status(_trace.Status(_trace.StatusCode.ERROR, str(exc)))
+            span.end()
 
 
 # -- ExplainabilityMiddleware ------------------------------------------------
@@ -404,7 +453,9 @@ class ExplainabilityMiddleware:
     async def after_run(self, context: MiddlewareContext, result: Any) -> Any:
         """Record a decision with output information."""
         output_text = ""
-        if hasattr(result, "output"):
+        if _is_deferred_output(result):
+            output_text = "<paused: awaiting tool approval>"
+        elif hasattr(result, "output"):
             output_text = str(result.output)[:200]
         self._get_recorder().record(
             "llm_call",
@@ -442,13 +493,45 @@ class CacheMiddleware:
 
     async def after_run(self, context: MiddlewareContext, result: Any) -> Any:
         """Store the result in the cache on miss."""
+        if _is_deferred_output(result):
+            # Never cache a paused run — a later identical prompt would be served
+            # a stale ``DeferredToolRequests`` instead of running for real.
+            return result
         if "_cache_result" not in context.metadata:
             prompt_str = str(context.prompt) if context.prompt is not None else ""
             self._cache.put(context.agent_name, prompt_str, result)
         return result
 
 
-# -- ValidationMiddleware ----------------------------------------------------
+# -- OutputGuardMiddleware ---------------------------------------------------
+
+
+def _replace_output(result: Any, new_output: Any) -> Any:
+    """Return ``result`` with its ``output`` swapped, preserving the result type.
+
+    Handles NamedTuple results (``_replace``), dataclass results
+    (``dataclasses.replace`` — e.g. pydantic-ai's ``AgentRunResult``), and plain
+    mutable objects (in-place assignment); degrades to the bare value only as a
+    last resort. The previous ``hasattr(result, "_replace")`` guard silently
+    failed for the dataclass ``AgentRunResult``, returning the *unwrapped* output
+    (a bare ``str``) and dropping usage/messages/type from the result.
+    """
+    if hasattr(result, "_replace"):  # NamedTuple
+        try:
+            return result._replace(output=new_output)
+        except (TypeError, ValueError):
+            pass
+    if dataclasses.is_dataclass(result) and not isinstance(result, type):
+        try:
+            return dataclasses.replace(result, output=new_output)
+        except (TypeError, ValueError):
+            pass
+    obj: Any = result
+    try:
+        obj.output = new_output
+        return obj
+    except (AttributeError, TypeError):
+        return new_output
 
 
 class OutputGuardMiddleware:
@@ -485,6 +568,8 @@ class OutputGuardMiddleware:
 
     async def after_run(self, context: MiddlewareContext, result: Any) -> Any:
         """Scan the output; reject or sanitise if unsafe."""
+        if _is_deferred_output(result):
+            return result
         output_text = ""
         if hasattr(result, "output"):
             output_text = str(result.output)
@@ -513,9 +598,10 @@ class OutputGuardMiddleware:
                 len(scan_result.matched_patterns),
                 scan_result.matched_categories,
             )
-            # Replace the output in the result if possible (e.g. NamedTuple results)
-            if hasattr(result, "output") and hasattr(result, "_replace"):
-                return result._replace(output=scan_result.sanitised_output)  # type: ignore[union-attr]
+            # Preserve the result object's contract (usage, messages, type);
+            # only swap the sanitised output field.
+            if hasattr(result, "output"):
+                return _replace_output(result, scan_result.sanitised_output)
             return scan_result.sanitised_output
 
         raise OutputGuardError(f"Output blocked for agent '{context.agent_name}': {scan_result.reason}")
@@ -541,6 +627,8 @@ class ValidationMiddleware:
 
     async def after_run(self, context: MiddlewareContext, result: Any) -> Any:
         """Validate the output; raise on failure."""
+        if _is_deferred_output(result):
+            return result
         raw = result.output if hasattr(result, "output") else result
 
         parsed, parse_errors = self._reviewer._parse_output(raw)

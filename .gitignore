@@ -144,3 +144,9 @@ examples/corpus_search/test_queries.md
 examples/corpus_search/test_queries.local.md
 docs/superpowers/
 PLAYGROUND.md
+
+# MkDocs build output
+/site/
+
+# Playwright MCP screenshots (local verification)
+/.playwright-mcp/

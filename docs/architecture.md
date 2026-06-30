@@ -61,7 +61,7 @@ graph TD
 
     subgraph Agent Layer
         AGT["Agents<br/><small>FireflyAgent · AgentRegistry<br/>DelegationRouter · AgentLifecycle<br/>@firefly_agent · 5 templates · 11 middleware<br/>7 delegation strategies · FallbackModelWrapper<br/>ResultCache · run timeout</small>"]
-        TOOLS["Tools<br/><small>BaseTool · ToolBuilder · ToolKit · CachedTool<br/>5 guards · 3 composers · tool timeout<br/>ToolRegistry · 9 built-ins</small>"]
+        TOOLS["Tools<br/><small>BaseTool · ToolBuilder · ToolKit · CachedTool<br/>4 guards · 3 composers · tool timeout · HITL approval<br/>ToolRegistry · 9 built-ins</small>"]
         PROMPTS["Prompts<br/><small>PromptTemplate · PromptRegistry<br/>3 composers · PromptValidator<br/>PromptLoader</small>"]
         CONTENT["Content<br/><small>TextChunker · DocumentSplitter · MarkdownChunker<br/>ImageTiler · BatchProcessor<br/>ContextCompressor · SlidingWindowManager<br/>content.binary (BinaryNormalizer · office converters)</small>"]
         MEM["Memory<br/><small>MemoryManager · ConversationMemory<br/>WorkingMemory · TokenEstimator<br/>InMemoryStore · FileStore · SQLiteStore<br/>summarization · create_llm_summarizer<br/>export/import · async wrappers</small>"]
@@ -166,7 +166,6 @@ classDiagram
     ToolProtocol <|.. ConditionalComposer
     GuardProtocol <|.. ValidationGuard
     GuardProtocol <|.. RateLimitGuard
-    GuardProtocol <|.. ApprovalGuard
     GuardProtocol <|.. SandboxGuard
     GuardProtocol <|.. CompositeGuard
     ReasoningPattern <|.. AbstractReasoningPattern
@@ -215,7 +214,7 @@ system. Every other module depends on at least one Core component.
   from environment variables and `.env` files. It actively rejects removed serving/exposure
   config fields (e.g. `otlp_endpoint`, `rbac_enabled`, `cors_allowed_origins`,
   `cost_calculator`) with a `ValueError`.
-- **exceptions.py** -- A structured exception hierarchy of 34 classes rooted at
+- **exceptions.py** -- A structured exception hierarchy of 42 classes rooted at
   `FireflyAgenticError`.
 - **plugin.py** -- `PluginDiscovery` discovers and loads entry-point plugins at startup.
 - **resilience/circuit_breaker.py** -- `CircuitBreaker` (with `CircuitState` and
@@ -565,6 +564,42 @@ graph TD
 
 ---
 
+## Multi-Provider Support
+
+The framework is **provider-agnostic**: it never re-implements a provider client.
+Model construction is delegated entirely to pydantic-ai, so any provider pydantic-ai
+supports — OpenAI, Anthropic, Google/Gemini, Groq, Bedrock, Mistral, Cohere,
+DeepSeek, xAI, OpenRouter, Azure, Ollama, … — works by passing either a
+`"provider:model"` string or a pydantic-ai `Model` object to any agent. Everything
+the framework adds on top is built to be provider-uniform:
+
+- **Identity normalisation** — `model_utils` (`get_model_identifier`,
+  `extract_model_info`, `detect_model_family`) turns both `"provider:model"`
+  strings and `Model` objects (reading the provider from the model's own
+  `_provider.name`) into a canonical `provider:model` string. This single key feeds
+  cost lookup, quota/backoff, and usage grouping, so a model object never "drops"
+  its provider.
+- **Cost** — pricing keys off that identifier across all providers, with
+  provider-aware nuances: Gemini `thoughts_tokens` are counted (OpenAI/Anthropic
+  fold reasoning into output), Bedrock vendor-prefixed ids get a retry on the bare
+  model name, and an authoritative provider cost (OpenRouter `usage.cost`) wins when
+  available. See [Observability → Cost Resolution](observability.md#cost-resolution).
+- **Prompt caching** — routed by model *family*: Anthropic writes `cache_control`
+  breakpoints, OpenAI supplies a routing key (its caching is automatic), Gemini uses
+  `cachedContent`; Claude **via Bedrock/OpenRouter is skipped with a warning**
+  (those backends cache differently). See [Agents → PromptCacheMiddleware](agents.md#promptcachemiddleware).
+- **Tool schemas** — real `python_type`s keep tool schemas portable, with one
+  caveat: **Gemini rejects free-form `dict[str, Any]` object schemas** — use a JSON
+  string or a nested model instead. See [Tools](tools.md#full-fidelity-schemas-runcontext).
+- **Failover & rate limits** — `FallbackModelWrapper` / `run_with_fallback` fail over
+  across providers, and rate-limit backoff prefers a provider's structured retry hint
+  (e.g. Gemini `retry_delay`) before falling back to exponential backoff.
+
+This is validated end-to-end against a real provider by
+`tests/integration/test_real_anthropic_e2e.py` (nightly; see [tests/README](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/tests/README.md)).
+
+---
+
 ## Plugin System
 
 Plugins are discovered via Python entry points under three well-known groups:
@@ -627,6 +662,8 @@ environment variables prefixed with `FIREFLY_AGENTIC_`. For example:
 export FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o
 export FIREFLY_AGENTIC_LOG_LEVEL=DEBUG
 export FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true
+export FIREFLY_AGENTIC_NATIVE_INSTRUMENTATION_ENABLED=true  # native pydantic-ai GenAI spans (see observability.md)
+export FIREFLY_AGENTIC_REASONING_OUTPUT_MODE=prompted  # reasoning structured-output strategy (see reasoning.md)
 ```
 
 > The framework emits telemetry through the OpenTelemetry API but does **not** configure the

@@ -20,7 +20,7 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 
 **Part I — Foundation**
 1. [Introduction](#chapter-1-introduction) — What, who, why, design principles, running example
-2. [Installation & Project Setup](#chapter-2-installation--project-setup) — UV, extras, `FireflyAgenticConfig`, model providers
+2. [Installation & Project Setup](#chapter-2-installation-project-setup) — UV, extras, `FireflyAgenticConfig`, model providers
 3. [Your First Agent](#chapter-3-your-first-agent) — `FireflyAgent`, `@firefly_agent`, registry, context, lifecycle *(diagram)*
 4. [Tools](#chapter-4-tools) — `@firefly_tool`, `ToolBuilder`, guards, composition, built-ins, `ToolKit`, attaching tools to agents *(diagram)*
 5. [Prompts](#chapter-5-prompts) — Jinja2 templates, versioning, composition, validation, file loading
@@ -30,7 +30,7 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 6. [Reasoning Patterns](#chapter-6-reasoning-patterns) — ReAct, CoT, Plan-and-Execute, Reflexion, Tree of Thoughts, Goal Decomposition, custom patterns *(diagram)*
 7. [Content Processing](#chapter-7-content-processing) — Chunking, batch processing, compression, sliding window
 8. [Memory](#chapter-8-memory) — Conversation memory, working memory, backends, `MemoryManager`, forking, integration points *(diagram)*
-9. [Validation & Quality of Service](#chapter-9-validation--quality-of-service) — Rules, `OutputValidator`, QoS checks, `OutputReviewer`
+9. [Validation & Quality of Service](#chapter-9-validation-quality-of-service) — Rules, `OutputValidator`, QoS checks, `OutputReviewer`
 
 **Part III — Orchestration & Operations**
 
@@ -156,7 +156,7 @@ from fireflyframework_agentic import FireflyAgenticConfig, get_config
 # get_config() returns a thread-safe singleton
 config = get_config()
 print(config.default_model) # "openai:gpt-4o"
-print(config.default_temperature) # 0.7
+print(config.default_temperature) # None (no temperature forced; provider default)
 print(config.max_retries) # 3
 ```
 
@@ -182,7 +182,7 @@ FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true
 Here are the most commonly used configuration fields:
 
 - `default_model` — LLM model string (e.g. `"openai:gpt-4o"`, `"anthropic:claude-3-5-sonnet"`).
-- `default_temperature` — Sampling temperature (0.0–1.0).
+- `default_temperature` — Default sampling temperature. `None` (default) forces no temperature, so each provider uses its own default (some models, e.g. OpenAI `o1`/`o3`, reject an explicit temperature). When set, it's merged into an agent's settings only if the caller omits one.
 - `max_retries` — Default retry count for agent runs.
 - `observability_enabled` — Toggle OpenTelemetry instrumentation.
 - `prompt_templates_dir` — Directory for Jinja2 prompt files.
@@ -626,8 +626,9 @@ during a conversation to fetch data, trigger side-effects, or run computations.
 
 Pydantic AI already supports tool functions, but fireflyframework-agentic wraps them with
 a richer layer: a **protocol-based type system** (`ToolProtocol` → `BaseTool`),
-**guards** that enforce validation, rate-limiting, sandboxing, and approval policies
-before a tool executes, **composition** primitives (sequential, fallback, conditional),
+**guards** that enforce validation, rate-limiting, and sandboxing
+before a tool executes (human-in-the-loop *approval* is separate — it pauses the run
+rather than rejecting it), **composition** primitives (sequential, fallback, conditional),
 a **global registry** for discovery, and a **ToolKit** that can convert framework tools
 into Pydantic AI tools for injection into any agent.
 
@@ -654,7 +655,6 @@ graph TB
         VG["ValidationGuard"]
         RG["RateLimitGuard"]
         SG["SandboxGuard"]
-        AG["ApprovalGuard"]
     end
 
     subgraph "Composition"
@@ -681,7 +681,6 @@ graph TB
     CG --> VG
     CG --> RG
     CG --> SG
-    CG --> AG
     BT -.->|"compose"| SEQ
     BT -.->|"compose"| FB
     BT -.->|"compose"| COND
@@ -724,7 +723,7 @@ async def fetch_exchange_rate(currency: str) -> float:
 exchange_tool = (
     ToolBuilder("exchange_rate")
     .description("Get exchange rate for a currency code")
-    .parameter("currency", "str", description="Three-letter currency code")
+    .parameter("currency", str, description="Three-letter currency code")
     .handler(fetch_exchange_rate)
     .build()
 )
@@ -733,9 +732,10 @@ exchange_tool = (
 ### Tool Guards
 
 In production, you rarely want a tool to run unconditionally. Guards are decorators
-that wrap a tool's execution with policy checks — input validation, rate-limiting,
-filesystem sandboxing, or human-in-the-loop approval. They run **before** the handler
-(and optionally after), and they stack via `CompositeGuard`.
+that wrap a tool's execution with **hard, synchronous policy checks** — input validation,
+rate-limiting, or filesystem sandboxing. They run **before** the handler (and optionally
+after), and they stack via `CompositeGuard`. (Human-in-the-loop *approval*, which pauses
+the run rather than rejecting it, is handled separately — see below.)
 
 #### Validation Guard
 
@@ -785,24 +785,26 @@ async def read_file(path: str) -> str:
     ...
 ```
 
-#### Approval Guard
+#### Human-in-the-loop approval
 
-Requires explicit approval before execution — useful for destructive operations.
-You provide an async callback that receives the tool name and kwargs and returns
-`True` to approve:
+Human approval is **not** a guard — it pauses the run rather than failing it. Mark a tool
+with `requires_approval=True`; the agent run then pauses before the tool executes and the
+caller resumes with an approval decision. See
+[Human-in-the-Loop Tool Approval](tools.md#human-in-the-loop-tool-approval) for the full flow.
 
 ```python
-from fireflyframework_agentic.tools.guards import ApprovalGuard
+from fireflyframework_agentic.agents import is_deferred
+from fireflyframework_agentic.tools import DeferredToolResults
 
-async def require_admin_approval(tool_name: str, kwargs: dict) -> bool:
-    """In production, this would check a queue, Slack webhook, or admin UI."""
-    print(f"Approve {tool_name} with {kwargs}? (auto-approved in dev)")
-    return True
-
-@guarded(ApprovalGuard(callback=require_admin_approval))
-@firefly_tool(name="delete_record", description="Delete a database record")
+@firefly_tool(name="delete_record", description="Delete a database record", requires_approval=True)
 async def delete_record(record_id: str) -> str:
     ...
+
+result = await agent.run("Delete record 42.")
+if is_deferred(result):  # paused for sign-off
+    approvals = {c.tool_call_id: True for c in result.output.approvals}  # True / ToolApproved / ToolDenied
+    result = await agent.run(message_history=result.all_messages(),
+                             deferred_tool_results=DeferredToolResults(approvals=approvals))
 ```
 
 ### Composing Guards

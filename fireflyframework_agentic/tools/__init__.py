@@ -12,7 +12,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tools subpackage -- protocol, base class, registry, guards, composition, and built-ins."""
+"""Tools subpackage -- protocol, base class, registry, guards, composition, and built-ins.
+
+Firefly tools layer guards, composition, caching and a capability registry on top
+of pydantic-ai's tooling, while delegating JSON-schema generation and tool
+invocation to pydantic-ai itself. For convenience this package also re-exports
+pydantic-ai's native ``RunContext`` and toolset combinators so a ``ToolKit``'s
+``as_toolset()`` output can be wrapped/filtered/combined without importing from
+``pydantic_ai`` directly.
+"""
+
+# Native pydantic-ai surface, re-exported so callers compose toolsets, request
+# human approval, and resume deferred runs in one import.
+from pydantic_ai import (
+    DeferredToolRequests,
+    DeferredToolResults,
+    RunContext,
+    ToolApproved,
+    ToolDenied,
+)
+from pydantic_ai.exceptions import ApprovalRequired
+from pydantic_ai.toolsets import (
+    ApprovalRequiredToolset,
+    CombinedToolset,
+    FilteredToolset,
+    FunctionToolset,
+    PrefixedToolset,
+    PreparedToolset,
+    RenamedToolset,
+    WrapperToolset,
+)
 
 from fireflyframework_agentic.tools.base import (
     BaseTool,
@@ -31,36 +60,49 @@ from fireflyframework_agentic.tools.composer import (
 )
 from fireflyframework_agentic.tools.decorators import firefly_tool, guarded, retryable
 from fireflyframework_agentic.tools.guards import (
-    ApprovalGuard,
     CompositeGuard,
     RateLimitGuard,
     SandboxGuard,
     ValidationGuard,
 )
 from fireflyframework_agentic.tools.registry import ToolRegistry, tool_registry
-from fireflyframework_agentic.tools.toolkit import ToolKit
+from fireflyframework_agentic.tools.toolkit import ToolKit, to_pydantic_handler
 
 __all__ = [
-    "ApprovalGuard",
+    "ApprovalRequired",
+    "ApprovalRequiredToolset",
     "BaseTool",
     "CachedTool",
+    "CombinedToolset",
     "CompositeGuard",
     "ConditionalComposer",
+    "DeferredToolRequests",
+    "DeferredToolResults",
     "FallbackComposer",
+    "FilteredToolset",
+    "FunctionToolset",
     "GuardProtocol",
     "GuardResult",
     "ParameterSpec",
+    "PrefixedToolset",
+    "PreparedToolset",
     "RateLimitGuard",
+    "RenamedToolset",
+    "RunContext",
     "SandboxGuard",
     "SequentialComposer",
+    "ToolApproved",
     "ToolBuilder",
+    "ToolDenied",
     "ToolInfo",
     "ToolKit",
     "ToolProtocol",
     "ToolRegistry",
     "ValidationGuard",
+    "WrapperToolset",
     "firefly_tool",
     "guarded",
     "retryable",
+    "to_pydantic_handler",
     "tool_registry",
 ]

@@ -22,26 +22,30 @@ provider uniformly.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import Any
+
+from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 from pydantic_ai.models import Model
 
-# Maps PydanticAI model class names to provider identifiers.
+# Defensive fallback only: the provider is normally read from the model's own
+# ``_provider.name`` (every pydantic-ai provider implements it). This map covers
+# any object that lacks a provider. Class names track pydantic-ai 1.x.
 _CLASS_TO_PROVIDER: dict[str, str] = {
     "AnthropicModel": "anthropic",
     "BedrockConverseModel": "bedrock",
     "OpenAIChatModel": "openai",
-    "GeminiModel": "google",
+    "OpenAIResponsesModel": "openai",
+    "GoogleModel": "google",
+    "GeminiModel": "google",  # legacy alias
     "GroqModel": "groq",
     "MistralModel": "mistral",
     "OllamaModel": "ollama",
-    "DeepSeekModel": "deepseek",
     "CohereModel": "cohere",
-}
-
-# Maps OpenAI-based provider class names to more specific provider IDs.
-_OPENAI_PROVIDER_TO_ID: dict[str, str] = {
-    "AzureProvider": "azure",
-    "DeepSeekProvider": "deepseek",
-    "OpenAIProvider": "openai",
+    "XaiModel": "xai",
+    "HuggingFaceModel": "huggingface",
+    "CerebrasModel": "cerebras",
+    "OpenRouterModel": "openrouter",
 }
 
 # Maps model name substrings/prefixes to their underlying model family.
@@ -52,6 +56,7 @@ _MODEL_FAMILY_PATTERNS: list[tuple[str, str]] = [
     ("o3", "openai"),
     ("o4", "openai"),
     ("gemini", "google"),
+    ("grok", "xai"),
     ("llama", "meta"),
     ("mistral", "mistral"),
     ("mixtral", "mistral"),
@@ -65,12 +70,13 @@ _PROVIDER_TO_FAMILY: dict[str, str] = {
     "openai": "openai",
     "azure": "openai",
     "google": "google",
-    "groq": "meta",
+    "groq": "unknown",  # multi-vendor proxy; family comes from the model name.
     "mistral": "mistral",
-    "ollama": "unknown",
+    "ollama": "unknown",  # multi-vendor; family comes from the model name.
     "deepseek": "deepseek",
     "cohere": "cohere",
     "bedrock": "unknown",  # Bedrock is a proxy; family depends on model name.
+    "openrouter": "unknown",  # multi-vendor proxy; family comes from the model name.
 }
 
 
@@ -99,17 +105,14 @@ def extract_model_info(model: str | Model | None) -> tuple[str, str]:
             return (provider, model_name)
         return ("", model)
 
-    # Model object — inspect class name.
-    cls_name = type(model).__name__
-    provider = _CLASS_TO_PROVIDER.get(cls_name, "")
-
-    # For OpenAIChatModel, check internal provider for Azure/DeepSeek.
-    if cls_name == "OpenAIChatModel":
-        internal_provider = getattr(model, "_provider", None)
-        if internal_provider is not None:
-            prov_cls = type(internal_provider).__name__
-            provider = _OPENAI_PROVIDER_TO_ID.get(prov_cls, provider)
-
+    # Model object — prefer the provider's own ``.name``. Every pydantic-ai
+    # provider implements it with a correct, fine-grained id (openai, google,
+    # xai, cerebras, openrouter, azure, deepseek, bedrock, groq, mistral, cohere,
+    # huggingface), which also distinguishes OpenAI-compatible backends (Azure,
+    # DeepSeek, OpenRouter) that share the OpenAI model classes. Fall back to the
+    # class-name map only for an object without a provider.
+    prov = getattr(getattr(model, "_provider", None), "name", None)
+    provider = prov or _CLASS_TO_PROVIDER.get(type(model).__name__, "")
     model_name = getattr(model, "model_name", "") or ""
     return (provider, model_name)
 
@@ -155,11 +158,12 @@ def detect_model_family(model: str | Model | None) -> str:
     if not provider and not model_name:
         return "unknown"
 
-    # First, try to resolve from the model name — this handles proxy
-    # providers like Bedrock where the model name contains the family.
-    combined = f"{provider}:{model_name}".lower() if provider else model_name.lower()
+    # Resolve from the MODEL NAME only — this handles proxy providers like
+    # Bedrock/Groq/OpenRouter where the model name carries the family. Scanning
+    # the provider token too would misfire (e.g. ``ollama`` contains ``llama``).
+    name = model_name.lower()
     for pattern, family in _MODEL_FAMILY_PATTERNS:
-        if pattern in combined:
+        if pattern in name:
             return family
 
     # Fall back to provider-level mapping.
@@ -167,3 +171,23 @@ def detect_model_family(model: str | Model | None) -> str:
         return _PROVIDER_TO_FAMILY.get(provider, "unknown")
 
     return "unknown"
+
+
+def serialize_model_messages(messages: Sequence[ModelMessage]) -> list[Any]:
+    """Serialize pydantic-ai ``ModelMessage`` objects to a JSON-able list.
+
+    Uses pydantic-ai's canonical ``ModelMessagesTypeAdapter`` so the full,
+    model-agnostic message structure (typed parts, tool calls, usage, kinds)
+    survives a round-trip through :func:`deserialize_model_messages`. A plain
+    ``list[Any]`` dump loses the typed parts on reload — this does not.
+    """
+    if not messages:
+        return []
+    return ModelMessagesTypeAdapter.dump_python(list(messages), mode="json")
+
+
+def deserialize_model_messages(data: Any) -> list[ModelMessage]:
+    """Reconstruct ``ModelMessage`` objects produced by :func:`serialize_model_messages`."""
+    if not data:
+        return []
+    return list(ModelMessagesTypeAdapter.validate_python(data))

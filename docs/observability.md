@@ -80,6 +80,56 @@ async def process_request(prompt: str) -> str:
     ...
 ```
 
+### Native Instrumentation (pydantic-ai)
+
+Beyond the framework's single agent-level span, every `FireflyAgent` enables
+**pydantic-ai's native OpenTelemetry instrumentation** — rich
+[GenAI-semantic-convention](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
+spans (and metrics) for **each model request** (`chat <model>`) and **each tool call**
+(`execute_tool <name>`), carrying provider, model, token usage, and (optionally)
+message content. It is wired per-agent via the non-deprecated
+`capabilities=[Instrumentation(...)]` API (never the deprecated `Agent(instrument=)`),
+and is **on by default**.
+
+Because the framework leaves the tracer/meter providers unset (the host owns the
+SDK/exporter) and **strips prompt/response content by default**, default-on is safe
+and costs nothing until a host wires an exporter. Disable it (e.g. to cut span
+volume on very high-throughput hosts) with:
+
+```bash
+export FIREFLY_AGENTIC_NATIVE_INSTRUMENTATION_ENABLED=false
+```
+
+| Config field | Env var | Default | Purpose |
+|---|---|---|---|
+| `native_instrumentation_enabled` | `FIREFLY_AGENTIC_NATIVE_INSTRUMENTATION_ENABLED` | `True` | Master switch (only effective when `observability_enabled` is also `True`). |
+| `instrumentation_include_content` | `FIREFLY_AGENTIC_INSTRUMENTATION_INCLUDE_CONTENT` | `False` | Whether prompt/response text and tool args/results are recorded as span attributes. Off by default so the framework never silently leaks prompts/PII into traces. |
+| `instrumentation_version` | `FIREFLY_AGENTIC_INSTRUMENTATION_VERSION` | `2` | GenAI semantic-convention version (`1`–`5`); `>=3` uses `invoke_agent <name>` / `execute_tool <name>` span names. |
+| `instrumentation_event_mode` | `FIREFLY_AGENTIC_INSTRUMENTATION_EVENT_MODE` | `attributes` | `attributes` keeps model-message events on the span; `logs` routes them to a separate OTel `LoggerProvider` (forces version 1). |
+
+**Two altitudes, one trace.** The native spans **nest under** the framework's
+`agent.{name}` span — `ObservabilityMiddleware` activates its span in the OTel
+context for the duration of the run, so the resulting trace is:
+
+```
+agent.{name}                     (firefly — name, method, correlation_id)
+└─ invoke_agent <name>           (pydantic-ai)
+   ├─ chat <model>               (per model request — gen_ai.* + token usage)
+   └─ execute_tool <name>        (per tool call)
+```
+
+The coarse firefly envelope carries `firefly.correlation_id` (the join key to cost
+records); the fine native tree carries the standardized `gen_ai.*` attributes the
+hand-rolled span structurally cannot. There is no duplicate model span —
+pydantic-ai de-dups the instrumentation internally.
+
+**API, not SDK.** As everywhere in the framework, native instrumentation emits
+through the **global** OpenTelemetry API (the tracer/meter providers are left
+unset) — the host application owns the SDK and exporter (see
+[Exporters and SDK Configuration](#exporters-and-sdk-configuration)). With no host
+exporter configured, the spans are produced against the no-op provider and simply
+not exported.
+
 ### Distributed Trace Correlation
 
 Cross-service trace-context propagation (e.g. W3C Trace Context over HTTP or
@@ -270,11 +320,19 @@ into `PipelineResult.usage`.
 ## Cost Resolution
 
 Each LLM call is priced by a chain of resolver callables, each returning `float | None`.
-The default chain (`DEFAULT_RESOLVERS`) tries `provider_reported_cost` first (e.g.
-OpenRouter's `usage.cost` in the provider payload), then falls back to
-`genai_prices_cost` for token-by-token computation against the `genai-prices` price
-table. `CostContext` carries the token breakdown — cache and reasoning tokens are
-priced when the model's price record exposes the relevant fields:
+The default chain (`DEFAULT_RESOLVERS`) tries `provider_reported_cost` first (an
+authoritative per-call USD from the provider payload — e.g. OpenRouter's
+`usage.cost`; this is a **seam** for custom integrations, since pydantic-ai 1.x
+does not surface that cost on the result), then falls back to `genai_prices_cost`
+for token-by-token computation against the `genai-prices` price table.
+
+**Model identity is provider-agnostic.** Pricing keys off
+`get_model_identifier(model)` (`model_utils`), which normalises both
+`"provider:model"` strings and pydantic-ai `Model` objects (reading the provider
+from the model's own `_provider.name`) into a `provider:model` string — so any
+pydantic-ai provider (OpenAI, Anthropic, Google, Groq, Bedrock, Mistral, Cohere,
+DeepSeek, xAI, OpenRouter, Azure, …) prices uniformly. `CostContext` carries the
+token breakdown:
 
 ```python
 from fireflyframework_agentic.observability.cost_resolvers import resolve_cost, CostContext
@@ -291,11 +349,31 @@ cost = resolve_cost(CostContext(
 
 Custom strategies plug in by passing your own chain: `resolve_cost(ctx, [my_fixed_rate, *DEFAULT_RESOLVERS])`. See `examples/cost_tracking.py`.
 
+**Reasoning tokens are provider-aware.** `genai-prices` has no reasoning field;
+the resolver folds reasoning into output tokens (`output_tokens + reasoning_tokens`,
+priced at the output rate). Critically, `CostContext.reasoning_tokens` means
+*reasoning the provider does **not** already count in `output_tokens`* — which is
+**only Gemini's `thoughts_tokens`** (Gemini excludes them from `output_tokens`).
+The callers compute this via `reasoning_tokens_not_in_output(usage)`, which reads
+the Gemini-specific `thoughts_tokens` key, so OpenAI (whose `reasoning_tokens` are
+already in `output_tokens` — re-adding would inflate o-series cost ~53%) and
+Anthropic (which folds thinking into `output_tokens`) contribute `0`.
+
+**Bedrock model ids** carry a vendor prefix (`bedrock:anthropic.claude-…`); on a
+`genai-prices` miss the resolver retries on the bare model name with the vendor as
+the provider before giving up.
+
 When no resolver can price the model, `resolve_cost` returns `None`, increments the
 `cost_unknown` metric, and logs a WARNING on every such call. The default
 `UsageTracker` coerces `None` to `0.0`. In **strict mode** — `resolve_cost(ctx,
 strict=True)`, or globally via `config.cost_strict` / `FIREFLY_AGENTIC_COST_STRICT=true`
-— it raises `UnknownModelCostError` instead (a public export).
+— it raises `UnknownModelCostError` instead (a public export), failing the agent
+run (and the workflow `agent()` call) rather than silently billing `$0`.
+
+> **Budget caveat.** Because an unpriceable model contributes `$0`, the
+> `BudgetGate` enforces only over models `genai-prices` *can* price. For
+> budget-critical deployments, set `cost_strict=True` to fail closed on any model
+> the price table doesn't know.
 
 ## Budgets
 

@@ -17,8 +17,10 @@ table is unavoidable.
 
 We picked `pydantic/genai-prices <https://github.com/pydantic/genai-prices>`_
 because it is Pydantic-maintained (fits our stack), exposes a typed
-``Usage`` model with explicit fields for cache and reasoning tokens, and
-ships pricing for the 16+ providers we care about. The trade-off — shared
+``Usage`` model with explicit fields for cache tokens, and ships pricing for
+the 16+ providers we care about. (It has no reasoning-token field; reasoning
+tokens not already in ``output_tokens`` are folded into output by the caller —
+see :func:`genai_prices_cost`.) The trade-off — shared
 by every option in this space — is that the data is community-curated
 YAML, not a machine-readable provider feed, so it lags new model variants
 by days to weeks.
@@ -92,6 +94,11 @@ def provider_reported_cost(ctx: CostContext) -> float | None:
 
     Supported sources:
       * OpenRouter — ``provider_payload["usage"]["cost"]`` (USD float).
+
+    Runs first so a provider's authoritative per-call USD wins over the local
+    estimate. Note: pydantic-ai 1.107 does not surface OpenRouter's cost on the
+    result/usage, so ``provider_payload`` is currently populated only by custom
+    integrations that pass the raw response through to ``record_call``.
     """
     payload = ctx.provider_payload
     if not payload:
@@ -125,8 +132,11 @@ def genai_prices_cost(ctx: CostContext) -> float | None:
         (genai-prices subtracts cache portions internally).
       * ``Usage.cache_write_tokens`` = ctx.cache_creation_tokens.
       * ``Usage.cache_read_tokens`` = ctx.cache_read_tokens.
-      * ``Usage.output_tokens`` = ctx.output_tokens + ctx.reasoning_tokens
-        (reasoning tokens bill at the output rate).
+      * ``Usage.output_tokens`` = ctx.output_tokens + ctx.reasoning_tokens, where
+        ``ctx.reasoning_tokens`` is reasoning the provider does NOT already
+        include in ``output_tokens`` — i.e. Gemini ``thoughts_tokens`` (OpenAI's
+        reasoning is already in output, Anthropic folds thinking into output, so
+        those callers pass ``0``). These bill at the output rate.
 
     On unknown model (LookupError): emits ``cost_unknown`` metric +
     WARNING on every call, returns None.
@@ -146,6 +156,15 @@ def genai_prices_cost(ctx: CostContext) -> float | None:
     try:
         result = calc_price(usage, model_ref, provider_id=provider)
     except LookupError:
+        # Bedrock ids carry a vendor prefix (e.g. "anthropic.claude-3-5-sonnet-latest")
+        # and region/inference-profile variants genai-prices may not key on. Retry
+        # on the bare model name with the vendor as the provider before giving up.
+        if provider == "bedrock" and "." in model_ref:
+            vendor, base = model_ref.split(".", 1)
+            try:
+                return float(calc_price(usage, base, provider_id=vendor).total_price)
+            except LookupError:
+                pass
         _warn_unknown_model(ctx.model)
         return None
     except Exception:  # noqa: BLE001

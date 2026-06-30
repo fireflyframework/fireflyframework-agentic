@@ -29,6 +29,7 @@ Four built-in strategies (:class:`RoundRobinStrategy`,
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 import json
 import logging
@@ -147,6 +148,7 @@ class RoundRobinStrategy:
     def __init__(self) -> None:
         self._cycle: itertools.cycle[FireflyAgent[Any, Any]] | None = None
         self._last_ids: tuple[int, ...] = ()
+        self._lock = asyncio.Lock()
 
     async def decide(
         self,
@@ -166,10 +168,13 @@ class RoundRobinStrategy:
         if not agents:
             return RoutingDecision.empty(type(self).__name__)
         ids = tuple(id(a) for a in agents)
-        if self._cycle is None or ids != self._last_ids:
-            self._cycle = itertools.cycle(agents)
-            self._last_ids = ids
-        agent = next(self._cycle)
+        # Strategies are shared across a router and may run concurrently; guard
+        # the cursor so concurrent calls don't race it.
+        async with self._lock:
+            if self._cycle is None or ids != self._last_ids:
+                self._cycle = itertools.cycle(agents)
+                self._last_ids = ids
+            agent = next(self._cycle)
         candidate = Candidate(agent=agent, score=1.0, reason="round-robin turn")
         return RoutingDecision(
             candidates=(candidate,),
@@ -233,6 +238,10 @@ class ContentBasedStrategy:
 
     def __init__(self, model: str = "openai:gpt-4o-mini") -> None:
         self._model = model
+        # Lazily-built, reused router agent (the model is fixed for the
+        # strategy's lifetime, so one instance serves every routing call).
+        self._router: PydanticAgent | None = None
+        self._router_lock = asyncio.Lock()
 
     async def decide(
         self,
@@ -267,8 +276,13 @@ class ContentBasedStrategy:
         )
 
         try:
-            router = PydanticAgent(self._model, system_prompt="You pick the best agent.")
-            result = await router.run(routing_prompt)
+            # Guard the lazy build so concurrent first calls don't each
+            # construct (and leak) a router agent.
+            if self._router is None:
+                async with self._router_lock:
+                    if self._router is None:
+                        self._router = PydanticAgent(self._model, instructions="You pick the best agent.")
+            result = await self._router.run(routing_prompt)
         except Exception:
             logger.warning("Content-based routing LLM call failed", exc_info=True)
             return RoutingDecision.empty(name, error="llm_failure")

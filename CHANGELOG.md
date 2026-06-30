@@ -7,6 +7,546 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.06.13] - 2026-06-22
+
+Best-in-class auto-instrumentation, on by default — plus an observability-metrics de-dup.
+
+### Changed (behavioural)
+
+- **Native pydantic-ai instrumentation is now ON by default** (`native_instrumentation_enabled`
+  defaults to `True`, gated by `observability_enabled`). Every agent emits rich
+  GenAI-convention spans + metrics for each model request (`chat`) and tool call
+  (`execute_tool`), nested under the framework's `agent.{name}` span. Default-on is
+  safe because the framework leaves the tracer/meter providers unset (telemetry flows
+  through the global OTel API and costs nothing until the host wires an exporter) and
+  **prompt/response content is stripped by default** (`instrumentation_include_content=False`).
+  Set `native_instrumentation_enabled=false` to opt out (e.g. to cut span volume on
+  very high-throughput hosts).
+- **Single source of truth for metrics.** `ObservabilityMiddleware` no longer emits
+  `firefly.tokens.total` / `firefly.latency` — these (and `firefly.cost.total`, the
+  prompt/completion token split) are emitted solely by the usage/cost-sink path
+  (`UsageTracker` → `OTelMetricsSink`), which previously **double-counted** them in
+  every metrics backend. The middleware now owns only the span lifecycle (matching the
+  existing `agent.completed` de-dup). Metrics flow when `cost_tracking_enabled` (default
+  `True`). The span also now carries `firefly.correlation_id`.
+
+### Fixed
+
+- Removed a stale `# RubricReviewer (placeholder — full implementation in subsequent
+  tasks)` comment — `RubricReviewer` is fully implemented and tested; the comment was
+  misleading.
+
+## [26.06.12] - 2026-06-22
+
+SP-10: native pydantic-ai OpenTelemetry instrumentation.
+
+### Added
+
+- **Native instrumentation** for FireflyAgents via pydantic-ai's
+  `capabilities=[Instrumentation(InstrumentationSettings(...))]` — rich
+  GenAI-semantic-convention spans for **each model request** (`chat <model>`) and
+  **each tool call** (`execute_tool <name>`), with provider, model, and token
+  usage. Off by default; enable with `native_instrumentation_enabled`. Four config
+  fields (env `FIREFLY_AGENTIC_*`):
+  - `native_instrumentation_enabled` (`False`) — master switch; effective only when
+    `observability_enabled` is also `True`.
+  - `instrumentation_include_content` (`False`) — privacy-safe default; prompt/response
+    text and tool args/results are stripped from spans unless opted in (overrides
+    pydantic-ai's own `include_content=True`).
+  - `instrumentation_version` (`2`) — GenAI convention version (`1`–`5`).
+  - `instrumentation_event_mode` (`attributes`) — span attributes vs OTel logs.
+  Uses the **non-deprecated** capabilities API (never `Agent(instrument=)`, which
+  emits a `PydanticAIDeprecationWarning` the SP-9 gate would reject). Providers left
+  unset → spans flow through the global OTel API; the host owns the SDK/exporter.
+
+### Changed
+
+- `ObservabilityMiddleware` now **activates** its `agent.{name}` span in the OTel
+  context (attach in `before_run`, detach in `after_run` and `on_error`) so spans
+  created during the run — notably the native instrumentation spans — **nest under**
+  it instead of becoming disjoint roots in a separate trace. The span also carries
+  `firefly.correlation_id` (the join key to cost records). The detach runs on every
+  exit path (success, error, streaming, HITL pause) with no context-token leak.
+
+### Notes
+
+- Two complementary altitudes per run: the coarse firefly `agent.{name}` envelope
+  (name/method/correlation_id) and the fine native `invoke_agent → chat / execute_tool`
+  tree (`gen_ai.*`). No duplicate model span — pydantic-ai de-dups internally.
+- Verified with an in-memory OTel exporter (nesting, gating, privacy, no deprecation
+  warning, one chat span per request) and live against Anthropic (real
+  `claude-haiku-4-5` spans with real token usage, nested, content stripped).
+- This closes the deferred SP-10: the memory's "blocked on pydantic-ai 2.0 capabilities
+  surface" was outdated — the `Instrumentation` capability is available and warning-free
+  on the pinned 1.x line.
+
+## [26.06.11] - 2026-06-22
+
+SP-3: human-in-the-loop tool approval re-based onto pydantic-ai native deferred-tools.
+
+### Added
+
+- **Native tool approval / HITL.** Tools can declare `requires_approval=True`
+  (`firefly_tool(...)`, `BaseTool`, and threaded through `ToolKit.as_pydantic_tools()`
+  / `as_toolset()`). When the model calls such a tool, the agent run **pauses before
+  executing it** and returns a `DeferredToolRequests` as `result.output`. Detect with
+  the new `is_deferred(result)` helper; **resume** via
+  `agent.run(message_history=..., deferred_tool_results=DeferredToolResults(approvals={call_id: True | ToolApproved(override_args=...) | ToolDenied(message=...)}))`.
+  `FireflyAgent` auto-detects HITL (any approval-requiring tool/`ToolKit`/`as_toolset()`,
+  or an `ApprovalRequiredToolset` in `toolsets`) and widens its output union to allow the
+  pause **only then** — non-HITL agents are unchanged. Force with `hitl=True`.
+- **Inline (non-pausing) approval.** `FireflyAgent(approval_handler=...)` resolves
+  approvals *inside* the run via a native `HandleDeferredToolCalls` capability — for
+  programmatic / policy-based auto-approval.
+- **Native re-exports** from `fireflyframework_agentic.tools`: `DeferredToolRequests`,
+  `DeferredToolResults`, `ToolApproved`, `ToolDenied`, `ApprovalRequired` (plus the
+  already-exported `ApprovalRequiredToolset`). `is_deferred` and the `ApprovalHandler`
+  type are exported from `fireflyframework_agentic.agents`.
+
+### Changed
+
+- Post-run cross-cutting code now treats a paused run as a control object, not a final
+  answer: `_persist_memory`, the output-guard, validation, cache, logging, and
+  explainability middleware all **skip** a `DeferredToolRequests` output (preventing
+  corrupted memory turns, spurious `OutputGuardError`/`OutputReviewError`, and caching a
+  pause).
+- Tool **guard denials** (validation / rate-limit / sandbox) now raise `ToolGuardError`
+  instead of a plain `ToolError`. `ToolGuardError` subclasses `ToolError`, so existing
+  `except ToolError` handlers are unaffected.
+- `BaseTool._guarded_execute` now lets pydantic-ai's `ApprovalRequired` / `CallDeferred`
+  control signals propagate untouched (like `ModelRetry`), instead of wrapping them as
+  `ToolError`. This makes **dynamic** approval work — a tool body (with `takes_ctx=True`)
+  may `raise ApprovalRequired(metadata=...)` to defer that specific call; pair with
+  `FireflyAgent(hitl=True)` so the output union allows the pause.
+
+### Removed (breaking)
+
+- **`ApprovalGuard`** (and the `ApprovalCallback` alias). The bespoke guard-chain approval
+  (sync bool callback → `ToolError` on denial, no pause/resume/metadata) is replaced by the
+  native protocol above. Migration: `docs/migration.md` §6.
+
+### Notes
+
+- HITL stays three distinct layers by design: tool approval (native deferred-tools, agent
+  layer), workflow `human()` / `WorkflowInterrupt` (journal-replay), and pipeline `Pause`
+  / `approve_pause` (checkpoint). They are not collapsed.
+- Validated against a live Anthropic model: a `requires_approval` tool pauses the real run
+  (tool body does not execute), and resuming with approval runs it exactly once.
+
+## [26.06.10] - 2026-06-22
+
+SP-5: native structured-output modes for reasoning patterns.
+
+### Added
+
+- **Selectable output modes on the real-model reasoning paths.** Reasoning's
+  structured calls (`_structured_run`) now wrap the `output_type` in a pydantic-ai
+  output mode chosen via a new per-pattern `output_mode=` argument or the
+  framework-wide `reasoning_output_mode` config value
+  (`FIREFLY_AGENTIC_REASONING_OUTPUT_MODE`):
+  - `None` (default) — pydantic-ai's default tool-calling output (no behaviour change).
+  - `"tool"` — force tool-based structured output (`ToolOutput`).
+  - `"native"` — provider-native JSON-schema output (`NativeOutput`; OpenAI/Google/…).
+  - `"prompted"` — schema-in-prompt JSON parsing (`PromptedOutput`); the portable
+    choice for models without tool-calling or native structured output.
+  Threaded through all six concrete patterns (ReAct, Chain-of-Thought,
+  Plan-and-Execute, Tree-of-Thoughts, Reflexion, Goal-Decomposition). New
+  `OutputMode` type alias exported from `fireflyframework_agentic.reasoning`.
+  Resolution order: per-pattern argument → config default → pydantic-ai default.
+
+### Notes
+
+- The model-less duck-typed fallback (`_fallback_parse`, used by mocks/agents
+  without a resolvable model) is unchanged — it cannot make an LLM call, so it
+  keeps its text-parsing graceful-degradation cascade. Output modes apply only
+  to the two real-model paths (FireflyAgent route + ephemeral agent).
+- Validated against a live Anthropic model: a Chain-of-Thought pattern with
+  `output_mode="prompted"` produces correct validated structured steps end to end.
+
+## [26.06.9] - 2026-06-22
+
+Documentation coverage pass — every 26.06.x change is now explained, with two new
+reference guides and several corrected docs (driven by a per-doc audit verified
+against the source).
+
+### Added
+
+- **`docs/resilience.md`** — the circuit breaker (state machine, direct
+  `async with CircuitBreaker(...)` usage, `CircuitBreakerMiddleware` agent wiring,
+  inspection/reset, API reference).
+- **`docs/storage.md`** — the managed-SQLite durable layer (`StorageBackend`,
+  `LocalBackend`, `DatabaseStore`, `WriteSession`/`LockToken` leasing, atomic writes,
+  the `SqliteVecVectorStore` consumer, types/exceptions reference).
+- **Multi-Provider Support** section in `docs/architecture.md` consolidating the
+  "works with any provider" story (identity normalisation, provider-aware cost,
+  prompt-cache routing, tool-schema portability, failover/rate-limit handling).
+
+### Changed (docs)
+
+- `agents.md`: documented the middleware **error lifecycle** (`on_error` / LIFO
+  `run_error`), the `ObservabilityMiddleware` span-on-error and `CircuitBreaker`
+  failure-recording-via-`on_error`, `MiddlewareContext` fields, and
+  `model_settings`/`default_temperature` (provider-safe `None` default). Fixed a
+  **factual error**: corrected the OpenAI prompt-cache mechanism and documented that
+  Claude via Bedrock/OpenRouter is skipped with a warning.
+- `reasoning.md`: documented that structured runs route through the source
+  `FireflyAgent` (middleware/retry/usage) rather than a bare `pydantic_ai.Agent`.
+- `observability.md`: provider-agnostic identity → cost, provider-aware reasoning
+  tokens (Gemini `thoughts_tokens`), the strict-mode/Budget-priceable-only caveat,
+  and the Bedrock vendor-prefix retry; fixed the misleading reasoning-token claim.
+- `tools.md`: corrected `retryable` (wraps `_execute`), documented `CachedTool`
+  single-flight, the `FallbackComposer` chained traceback, and the Gemini
+  free-form-schema constraint.
+- `workflows.md`: `stream()` structured-output fallback, the precise `using=`
+  rejection/forwarding behaviour, and `cascade()` `output_type`/`instructions`/
+  `max_escalations`. `tutorial.md`: corrected the stale `default_temperature` default.
+- docs index + README Module Reference now list **Resilience** and **Storage**.
+
+### Fixed
+
+- The middleware **error lifecycle is now uniform**: `run_with_reasoning()` also
+  fires `on_error` on failure (previously only `run`/`run_sync`/`run_stream` did), so
+  circuit breakers and span cleanup work for reasoning runs too.
+
+## [26.06.8] - 2026-06-22
+
+Provider-aware reasoning-token cost accounting (COST-001/COST-002) — the last
+open audit item.
+
+### Fixed
+
+- **Gemini thinking tokens are now priced.** Gemini reports thinking under
+  `usage.details["thoughts_tokens"]` and *excludes* them from `output_tokens`, so
+  they were previously uncounted (a ~4× undercount for thinking-heavy calls). The
+  agent, reasoning and workflow cost paths now fold them in at the output rate via
+  a shared `reasoning_tokens_not_in_output(usage)` helper.
+- **No double-counting on OpenAI/Anthropic.** The helper reads the Gemini-specific
+  `thoughts_tokens` key only — OpenAI's `reasoning_tokens` are already inside
+  `output_tokens` (reading them would inflate o-series cost ~53%) and Anthropic
+  folds thinking into `output_tokens` too, so both contribute `0`. Corrected the
+  stale resolver docstrings that implied otherwise.
+
+### Changed
+
+- **`genai-prices` pinned to `>=0.0.66,<0.1`.** It is a pre-1.0 package whose
+  `Usage`/`calc_price` surface could change between minors and break all cost
+  resolution at once; bumps are now deliberate.
+- `provider_reported_cost` (OpenRouter authoritative per-call USD) documented as a
+  seam for custom integrations — pydantic-ai 1.107 does not surface that cost on
+  the result/usage, so it is populated only when a caller passes `provider_payload`.
+
+## [26.06.7] - 2026-06-21
+
+The deferred P2/P3 wave from the framework audit — provider robustness, durability,
+thread-safety and observability of failures.
+
+### Fixed
+
+- **Cache stampede** — `CachedTool` now **single-flights** concurrent identical
+  misses (the first caller computes; the rest await the same result), and uses an
+  `asyncio.Lock`, so an expensive/rate-limited tool runs once per key.
+- **Atomic durable writes** — `FileCheckpointer` (pipeline) and `FileJournalBackend`
+  (workflows) write to a temp file and `os.replace`, so a crash mid-write can't leave
+  a truncated checkpoint / resume journal.
+- **Delegation thread-safety** — `RoundRobinStrategy` (cursor) and
+  `ContentBasedStrategy` (lazy router build) are guarded by locks; concurrent routing
+  no longer races the cursor or constructs duplicate routers.
+- **Prompt-cache no longer silently no-ops on Bedrock/OpenRouter** — Claude via those
+  providers logs a warning and skips (the Anthropic cache settings only apply to the
+  direct `AnthropicModel`) instead of writing dead settings.
+- **Bedrock cost resolution** — on a genai-prices miss for a `bedrock:vendor.model`
+  id, retry on the bare model name with the vendor as the provider before giving up.
+- **Provider retry hints** — the rate-limit backoff prefers a provider's *structured*
+  retry hint (e.g. Gemini `ResourceExhausted.retry_delay`) before the
+  OpenAI/Anthropic-shaped textual body.
+- **`RetryMiddleware.backoff_multiplier`** is now honoured (it was dead config — the
+  override path never passed it to `AdaptiveBackoff`).
+- **Gemini-safe tool schema** — the built-in `DatabaseTool` `params` argument is now a
+  JSON-object *string* instead of a free-form `dict[str, Any]` (whose open object
+  schema Gemini's `FunctionDeclaration` rejects); a dict is still accepted from
+  non-LLM callers.
+- **Error context preserved** — `FallbackComposer` and `run_with_fallback` keep the
+  original traceback (`raise … from …`) instead of discarding it on exhaustion.
+- Usage-recording failures now log at **warning** (not debug), so a silently-broken
+  cost/budget pipeline is visible.
+
+### Changed
+
+- `QuotaManager` exposes a public `backoff` property; framework internals no longer
+  reach into the private `_backoff`.
+
+### Deferred (documented)
+
+- COST-001/COST-002 (provider-aware reasoning-token pricing + `provider_payload`
+  plumbing) remain open: a naive caller-side reasoning-token add would double-count
+  OpenAI (whose `output_tokens` already includes them), so the correct fix needs
+  provider-aware normalisation and is tracked separately.
+
+## [26.06.6] - 2026-06-21
+
+Provider-agnosticism, cross-subsystem cohesion and correctness hardening, driven
+by a framework-wide audit (6 lenses, adversarially verified) and validated against
+a **live Anthropic model** end to end. All nine confirmed P0/P1 findings addressed.
+
+### Fixed
+
+- **Provider identity for `Model` objects** — `model_utils.extract_model_info` now
+  reads the provider from the model's own `_provider.name`, so `OpenAIResponsesModel`,
+  `GoogleModel`, `XaiModel`, `OpenRouterModel`, Azure/DeepSeek, etc. resolve to the
+  correct `provider:model` instead of dropping the provider (which corrupted cost
+  lookup, quota keys and usage grouping for any non-string model).
+- **Model-family detection** — match on the model *name* only, fixing
+  `ollama:…`/`groq:…` being misclassified as `meta` (the substring `llama` lived
+  inside `ollama`); added `grok`→`xai`; multi-vendor proxies fall back to `unknown`.
+- **Structured-output streaming no longer crashes** — `StreamHandle.text()` falls
+  back to stringified `stream_output()` snapshots and `stream_tokens()` raises a
+  clear `AgentError` when a run is non-text, instead of an opaque pydantic-ai
+  `UserError`.
+- **Middleware error lifecycle** — added an `on_error` hook to the middleware
+  protocol/chain and wired it into `run`/`run_sync`/`run_stream`. The
+  `CircuitBreakerMiddleware` can now actually open, and `ObservabilityMiddleware`
+  ends its OTel span on a failed run instead of leaking it.
+- **Reasoning runs through `FireflyAgent`** — a reasoning pattern's structured
+  calls now route through the source `FireflyAgent` (middleware, 429 retry, usage
+  recording) when available, instead of a bare ephemeral `pydantic_ai.Agent`; the
+  recorded model identifier is normalised (no more `str(Model)` reprs in cost).
+- **`cost_strict` is honoured on every path** — the workflow `price_call` and the
+  agent usage path no longer swallow `UnknownModelCostError`, so an unpriceable
+  model fails closed under `cost_strict` instead of being billed as `$0`.
+- **`retryable()` applies where it matters** — wraps the `_execute` hook, so
+  retries now cover the pydantic-ai handler path and `RunContext`-aware tools (not
+  just a direct `tool.execute()` call).
+
+### Changed
+
+- **`default_temperature` is wired and provider-safe** — now defaults to `None`
+  (use the provider's own default) and is merged into an agent's model settings
+  only when configured and the caller omits it; previously the knob was silently
+  ignored. This avoids forcing a temperature on models that reject one (e.g. OpenAI
+  `o1`/`o3`).
+- `config.budget_limit_usd` docstring corrected (it raises `BudgetExceededError`,
+  not "logs a warning") and documents that the gate enforces only over priceable
+  models.
+
+### Added
+
+- **Live end-to-end test suite** (`tests/integration/test_real_anthropic_e2e.py`,
+  `@pytest.mark.nightly`, skipped without a real `ANTHROPIC_API_KEY`) covering the
+  whole stack against a real Anthropic model: agent + tools, structured output,
+  streaming, multi-turn memory, a reasoning pattern, a pipeline, a Dynamic Workflow
+  (`FireflyAgentRunner` + `using=`) and cost tracking. Closes the previous gap where
+  every provider-facing behaviour was validated only against mocks; `tests/README.md`
+  corrected to match.
+
+## [26.06.5] - 2026-06-21
+
+Framework alignment: the Dynamic Workflows engine and the tools system now run on
+the framework's own primitives and on pydantic-ai's native model — no parallel
+implementations, no lossy shims. Includes breaking changes; see the
+[Migration Guide](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/docs/migration.md).
+
+### Changed (BREAKING)
+
+- **Tool parameters use a real `python_type`.** `ParameterSpec` and
+  `ToolBuilder.parameter(name, python_type, …)` now take a real Python type object
+  (`list[str]`, `Literal[...]`, a nested `BaseModel`, `dict[str, Any] | None`, …)
+  instead of a string `type_annotation`. pydantic-ai introspects it directly, so the
+  LLM gets full-fidelity schemas (element types, enums and nested models are
+  preserved). The string `type_annotation` field and its resolver (`_TYPE_MAP`,
+  `_resolve_param_type`) are **removed**; all built-in tools were migrated.
+- **`FireflyAgentRunner` is the default workflow runner.** Workflow sub-agents now
+  run through a `FireflyAgent` (middleware, observability, guards, 429-retry, global
+  usage tracker / budget gate, model fallback) instead of a bare `pydantic_ai.Agent`.
+  Global cost tracking and a configured `budget_limit_usd` now apply to sub-agents.
+  The model-resolution contract is unchanged; pass `runner=DefaultAgentRunner()` for
+  the previous lightweight path.
+
+### Added
+
+- **`FireflyAgentRunner`** — runs each workflow call through a `FireflyAgent`; its
+  source may be `None` (a fresh isolated ephemeral agent per call), a `FireflyAgent`
+  instance (reused), a registry name, or a factory. Tokens/cost are booked once per
+  ledger (per-run `WorkflowBudget` and the global tracker, disjoint).
+- **`agent(..., using=<FireflyAgent | name>)`** (and `stream(..., using=)`) — target a
+  specific configured agent for one call: multi-model sub-agents and per-task cost
+  optimisation. Composes with `SmartRoutingRunner`.
+- **Tool `RunContext` opt-in** — `BaseTool(..., takes_ctx=True)` delivers pydantic-ai's
+  `RunContext` (agent deps, usage, retries) to `_execute` as the keyword-only `_ctx`;
+  guards and the cache never see it, so it cannot poison a cache key.
+- **Native toolset combinators re-exported** from `fireflyframework_agentic.tools`:
+  `RunContext`, `FilteredToolset`, `PrefixedToolset`, `RenamedToolset`,
+  `CombinedToolset`, `WrapperToolset`, `PreparedToolset`, `ApprovalRequiredToolset`,
+  plus the `to_pydantic_handler(tool)` helper.
+- **Migration guide** (`docs/migration.md`).
+
+### Fixed
+
+- `ToolKit.as_toolset()` now forwards each tool's **description** to the model
+  (pydantic-ai's `add_function` dropped it before), so toolset tools are no longer
+  description-less to the LLM.
+
+## [26.06.4] - 2026-06-21
+
+Dynamic Workflows — the final SOTA wave: token-level streaming and end-to-end
+static typing of the DSL.
+
+### Added
+
+- **Streaming** — `stream(prompt, ...)` is an async context manager that streams one
+  sub-agent's output token-by-token: iterate `handle.text()` for deltas, then read
+  `handle.output` for the full result after the block. It honours the budget,
+  concurrency gate, journal (a resumed call yields its cached output once) and cost
+  accounting exactly like `agent()`. Backed by a `StreamingAgentRunner` protocol that
+  `DefaultAgentRunner` implements via pydantic-ai's `run_stream`; a non-streaming
+  runner raises `WorkflowError`. Streamed calls emit `agent.start` / `agent.end` with
+  `stream: True`. New exports: `stream`, `StreamHandle`, `StreamingAgentRunner`.
+- **Typed generics** — `agent(output_type=T)` is now typed to return `T` (via
+  `@overload`) instead of `Any`, and `@workflow` produces a `Workflow[OutputT]`
+  inferred from the function's return annotation, so `await my_workflow(args)` is
+  statically typed end-to-end with no casts.
+
+## [26.06.3] - 2026-06-20
+
+Dynamic Workflows — the durable-composition wave: sub-workflows, durable resume,
+and human-in-the-loop (the top remaining SOTA gaps from the analysis).
+
+### Added
+
+- **Sub-workflows** — `subworkflow(name_or_wf, args)` runs another workflow inline,
+  inheriting the parent's budget, concurrency gate, journal and runner (one
+  deterministic sequence stream across the nested run). Emits `subworkflow.start` /
+  `subworkflow.end`.
+- **Durable resume** — `JournalBackend` protocol + `FileJournalBackend`. Attach one
+  to a `Journal` (`Journal(backend=…, run_key=…)`) and every completed call flushes
+  to durable storage, so an out-of-process crash resumes from the last call.
+- **Human-in-the-loop** — `human(prompt)` pauses a run by raising `WorkflowInterrupt`;
+  the caller `provide()`s the answer and re-runs with the same journal to resume past
+  the pause. Sequence-keyed, so resume is deterministic; pairs with a `JournalBackend`
+  for approvals that survive a restart. Emits `human.pause`.
+
+### Fixed
+
+- `WorkflowInterrupt` is in the never-swallow set, so a `human()` pause inside a
+  `parallel`/`pipeline` branch propagates instead of being silenced.
+
+## [26.06.2] - 2026-06-20
+
+Dynamic Workflows: smart model routing, multi-model cost optimization, and the
+budget/quality wiring that makes them observable. Driven by a SOTA gap analysis
+(verdict: sound architecture, under-wired — the cost stack existed but wasn't
+connected to the engine).
+
+### Added
+
+- **`SmartRoutingRunner`** — a drop-in `AgentRunner` that picks the cheapest
+  *capable* model per call from ordered tiers, with fallback escalation on
+  transient errors. Pluggable `ModelSelectionStrategy` (`ComplexityHeuristicStrategy`
+  default — training-free; `CostFloorStrategy` — genai-prices cheapest). Emits
+  `route.select` / `route.escalate` events. An explicit `agent(model=…)` always wins.
+- **`cascade()`** — cheap-first, escalate-on-low-confidence (FrugalGPT-style),
+  returning a `CascadeResult`; a judge model scores each tier by default. Emits
+  `cascade.tier`.
+- **USD + wall-clock budgets** — `WorkflowBudget(max_cost_usd=…, max_wall_seconds=…)`;
+  `DefaultAgentRunner` now prices every call via `genai-prices` (`AgentCall.cost_usd`),
+  and `WorkflowContext` exposes `cost_spent_usd` / `remaining_cost_usd()`.
+- **`judge_panel()` / `Verdict`** — heterogeneous-model verification with a
+  structured verdict. **`map_agents()`** — concurrent `map` sugar over `parallel`
+  (removes the late-binding-lambda footgun). **`price_model()`** helper.
+
+### Fixed
+
+- **Budget kill-switch swallowed in `parallel`/`pipeline`.** A `WorkflowBudgetError`
+  raised inside a fan-out branch resolved to `None` instead of aborting the run;
+  structural/kill-switch errors now propagate (ordinary branch failures still
+  resolve to `None`).
+- **`run_id` collisions.** Default run id is now `f"{name}-{uuid4().hex[:8]}"`
+  (was `f"{name}-run"`), so concurrent runs no longer merge in logs/telemetry.
+
+## [26.06.1] - 2026-06-20
+
+Completeness & wiring fixes for the new subsystems, validated end-to-end against a
+real model (structured output, parallel fan-out, pipeline, a sub-agent calling a
+toolset tool, budget enforcement, journal resume, adversarial verify, and a
+connected workflow + secure-execution run).
+
+### Added
+
+- **Workflow sub-agents can use tools.** `agent()` (and the `AgentRunner` seam /
+  `DefaultAgentRunner`) now accept `tools=` and `toolsets=`, so a workflow
+  sub-agent can use a `ToolKit.as_toolset()`, an MCP server, or raw tools — just
+  like a top-level agent. `deps` now also sets the underlying agent's `deps_type`.
+
+### Fixed
+
+- **Code Mode async tools.** `MontyEnvironment.run_code` now bridges async
+  external functions (e.g. Firefly tools exposed via `toolkit_external_functions`)
+  to sync, so sandboxed guest code calls them naturally without `await`. Previously
+  an async tool returned an unresolved coroutine to the script.
+
+## [26.06.0] - 2026-06-20
+
+pydantic-ai modernization program (phase 1): dependency upgrade + deprecation /
+stability fixes, two new headline subsystems (Dynamic Workflows, Secure Script
+Execution), and native-capability adoption (message persistence, toolsets).
+
+### Added
+
+- **Dynamic Workflows engine** (`fireflyframework_agentic.workflows`) — a
+  code-defined orchestration DSL over pydantic-ai agents, mirroring Claude's
+  Workflow mechanism: `@workflow`, `agent`, `parallel` (barrier; failures → None),
+  `pipeline` (streaming, no inter-stage barrier), `phase`, `log`; `WorkflowBudget`
+  (concurrency / agent-count / token ceilings); `Journal` deterministic resume;
+  pluggable `AgentRunner` (`DefaultAgentRunner` + test fakes); `workflow_registry`
+  / `run_workflow`; verify combinators (`adversarial_verify`, `loop_until_dry`).
+  See `docs/workflows.md`.
+- **Secure Script Execution** (`fireflyframework_agentic.execution`, new
+  `[script-execution]` extra) — run untrusted/generated Python in a self-hosted,
+  deny-by-default sandbox. `ExecutionEnvironment` protocol; `MontyEnvironment`
+  (pydantic-monty Rust micro-interpreter — no FS/network/env, host access only via
+  registered external functions); `SecureScriptRunner` (validate → execute →
+  capture with optional output scrubbing); `analyze_code`/`SafetyPolicy` AST
+  pre-screen; `ExecutionLimits`; Firefly Code Mode (`toolkit_external_functions`).
+  See `docs/execution.md`.
+- **Native message persistence** — `model_utils.serialize_model_messages` /
+  `deserialize_model_messages` (built on pydantic-ai's `ModelMessagesTypeAdapter`);
+  `ConversationMemory` export/import now round-trips typed `ModelMessage` history
+  losslessly (previously dropped as "not portable"). Backward-compatible with
+  pre-existing exports.
+- **Native toolsets** — `ToolKit.as_toolset()` returns a composable pydantic-ai
+  `FunctionToolset`; `FireflyAgent(toolsets=...)` passes toolsets through to the
+  underlying agent (enables `WrapperToolset`/`ApprovalRequiredToolset`/MCP servers).
+- **Deprecation CI gate** — pytest promotes `pydantic`/`pydantic-ai` deprecation
+  warnings to errors so a future dependency bump that reintroduces one fails CI
+  immediately (the framework's own intentional `DeprecationWarning`s are unaffected).
+
+### Changed
+
+- **Upgraded pydantic-ai 1.99.0 → 1.107.0** and pinned `>=1.107.0,<2` (the
+  previously-unbounded requirement could resolve to the breaking 2.0 line);
+  `pydantic>=2.13,<3`; `pydantic-settings>=2.14.2,<3`.
+- `AgentRunResult.usage` is now read as a property via the new
+  `observability.usage.resolve_run_usage` helper (no `PydanticAIDeprecationWarning`),
+  with forward-compatible support for method-style/legacy usage objects.
+- `observability/decorators` use `inspect.iscoroutinefunction` (the `asyncio`
+  variant is removed in Python 3.16); the content-based delegation router uses
+  `instructions=` and is cached.
+
+### Fixed
+
+- **OutputGuardMiddleware** output sanitisation degraded results to a bare string
+  (its `_replace` guard never matched the dataclass `AgentRunResult`), dropping
+  usage/messages/type — now preserved via `dataclasses.replace`/NamedTuple/mutable
+  handling.
+- **RetryMiddleware** was a silent no-op — its configuration never reached the
+  retry loop; a per-agent `RetryMiddleware` now takes effect.
+- Cost (`_firefly_cost_usd`) was read for logging but never written — now wired
+  from the recorded `UsageRecord`.
+- Nullable/generic tool parameter annotations (`"str | None"`,
+  `"dict[str, Any] | None"`) fell back to `str`, producing incorrect non-nullable
+  JSON schemas for the LLM — now resolved correctly (`Optional`/union/generic forms).
+- Removed the dead `ModelRetry` optional-import guard (pydantic-ai is a hard
+  dependency).
+
 ## [26.05.33] - 2026-05-31
 
 ### Removed

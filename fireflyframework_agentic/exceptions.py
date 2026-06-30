@@ -226,3 +226,55 @@ class VectorStoreError(FireflyAgenticError):
 
 class VectorStoreConnectionError(VectorStoreError):
     """Raised when a vector store backend connection fails."""
+
+
+# -- Workflows ---------------------------------------------------------------
+
+
+class WorkflowError(FireflyAgenticError):
+    """Base exception for the dynamic-workflow orchestration engine."""
+
+
+class WorkflowNotFoundError(WorkflowError):
+    """Raised when no workflow is registered under the requested name."""
+
+
+class WorkflowBudgetError(WorkflowError):
+    """Raised when a workflow exceeds its agent-count or token budget."""
+
+
+class WorkflowContextError(WorkflowError):
+    """Raised when a workflow primitive runs outside an active workflow context."""
+
+
+class WorkflowInterrupt(WorkflowError):  # noqa: N818 - a control-flow signal, not an error
+    """Raised by ``human()`` to pause a run for external input.
+
+    Catch it, call :meth:`provide` with the human's answer, then re-run the
+    workflow with the same ``journal`` to resume from where it paused.
+    """
+
+    def __init__(self, prompt: str, *, seq: int, journal: object) -> None:
+        super().__init__(f"workflow paused for human input: {prompt[:120]}")
+        self.prompt = prompt
+        self.seq = seq
+        self._journal = journal
+
+    def provide(self, answer: object) -> None:
+        """Record the human's answer so the next run resumes past the pause."""
+        self._journal.record(self.seq, answer)  # type: ignore[attr-defined]
+
+
+# -- Secure script execution -------------------------------------------------
+
+
+class ExecutionError(FireflyAgenticError):
+    """Base exception for the secure script-execution subsystem."""
+
+
+class CodeSafetyError(ExecutionError):
+    """Raised when generated/guest code fails the static safety pre-screen."""
+
+
+class SandboxUnavailableError(ExecutionError):
+    """Raised when a sandbox backend's dependency is not installed."""

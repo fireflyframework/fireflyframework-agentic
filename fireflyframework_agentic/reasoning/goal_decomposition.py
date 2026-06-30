@@ -30,7 +30,10 @@ from typing import TYPE_CHECKING, Any
 from pydantic_ai.models import Model
 
 from fireflyframework_agentic.prompts.template import PromptTemplate
-from fireflyframework_agentic.reasoning.base import AbstractReasoningPattern
+from fireflyframework_agentic.reasoning.base import (
+    AbstractReasoningPattern,
+    OutputMode,
+)
 from fireflyframework_agentic.reasoning.models import (
     GoalDecompositionResult,
 )
@@ -82,6 +85,7 @@ class GoalDecompositionPattern(AbstractReasoningPattern):
         prompts: dict[str, PromptTemplate] | None = None,
         reviewer: OutputReviewer | None = None,
         step_timeout: float | None = None,
+        output_mode: OutputMode | None = None,
     ) -> None:
         super().__init__(
             "goal_decomposition",
@@ -90,6 +94,7 @@ class GoalDecompositionPattern(AbstractReasoningPattern):
             prompts=prompts,
             reviewer=reviewer,
             step_timeout=step_timeout,
+            output_mode=output_mode,
         )
         self._task_pattern = task_pattern
 

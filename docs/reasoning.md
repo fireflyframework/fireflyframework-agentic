@@ -124,13 +124,16 @@ When a pattern needs structured output, it calls `_structured_run(agent, prompt,
 
 ```mermaid
 flowchart TD
-    CALL["_structured_run(agent, prompt, OutputType)"] --> RESOLVE{Model available?}
+    CALL["_structured_run(agent, prompt, OutputType)"] --> ISFF{FireflyAgent?}
+    ISFF -->|yes| THRU["agent.run(prompt, output_type=OutputType)<br/>through the full FireflyAgent stack"]
+    THRU --> DONE([Return validated OutputType])
+    ISFF -->|no| RESOLVE{Model available?}
     RESOLVE -->|yes| EPHEMERAL["Create ephemeral Agent(model, output_type=OutputType)"]
     EPHEMERAL --> RUN_E["agent.run(prompt) → validated OutputType"]
     RESOLVE -->|no| FALLBACK["agent.run(prompt) → raw output"]
     FALLBACK --> PARSE["_fallback_parse(raw, OutputType)"]
     PARSE --> IS_TYPE{Already OutputType?}
-    IS_TYPE -->|yes| DONE([Return])
+    IS_TYPE -->|yes| DONE
     IS_TYPE -->|no| IS_DICT{dict?}
     IS_DICT -->|yes| VALIDATE["model_validate(raw)"]
     IS_DICT -->|no| IS_JSON{Valid JSON string?}
@@ -145,10 +148,49 @@ flowchart TD
     CONTENT --> DONE
 ```
 
+**Routing through the agent.** When the agent is a `FireflyAgent`, the structured
+call now runs **through it** — `agent.run(prompt, output_type=OutputType)` with a
+per-call output-type override — so the reasoning step inherits the agent's full
+stack (middleware chain, 429 rate-limit retry, usage/cost recording). An explicit
+pattern-level `model=` is forwarded as a per-call model override. The agent
+records its own usage in this path, so reasoning does not double-count it. The
+bare ephemeral `pydantic_ai.Agent` is used only for non-`FireflyAgent`,
+model-bearing inputs; the fallback parse cascade handles the rest.
+
 The model is resolved from:
 1. The pattern's constructor `model` parameter.
 2. The agent's underlying model (via `_resolve_model()`).
 3. If neither is available, the fallback parse cascade handles raw text.
+
+### Output Modes
+
+On the two real-model paths (the FireflyAgent route and the ephemeral agent), the
+structured `output_type` is wrapped in a pydantic-ai **output mode** that selects
+*how* the model is constrained to the schema. Pick the mode with the per-pattern
+`output_mode=` argument or the framework-wide `reasoning_output_mode` config value:
+
+| Mode | pydantic-ai spec | Strategy | Use when |
+|------|------------------|----------|----------|
+| `None` *(default)* | bare type | pydantic-ai's default (tool-calling for a `BaseModel`) | General use on tool-capable models. |
+| `"tool"` | `ToolOutput` | Forces tool-based structured output explicitly. | You want to pin tool-calling regardless of pydantic-ai defaults. |
+| `"native"` | `NativeOutput` | Provider-native JSON-schema / structured-output mode. | OpenAI, Google, and other providers with first-class structured output — strictest schema enforcement, no tool round-trip. |
+| `"prompted"` | `PromptedOutput` | Injects the schema into the prompt and parses the JSON reply. | The most **portable** choice — works on models without tool-calling or native JSON (open-weights, smaller local models). |
+
+```python
+from fireflyframework_agentic.reasoning import ChainOfThoughtPattern
+
+# Per-pattern: force prompt-engineered JSON (portable to any model).
+pattern = ChainOfThoughtPattern(output_mode="prompted")
+
+# Or globally, via env var (applies to every pattern that doesn't override it):
+#   FIREFLY_AGENTIC_REASONING_OUTPUT_MODE=native
+```
+
+Resolution order is **per-pattern argument → config default → pydantic-ai default**.
+The mode affects only the real-model paths; the model-less duck-typed fallback can
+make no LLM call, so it keeps parsing text through the fallback cascade regardless.
+The `OutputMode` type alias (`Literal["tool", "native", "prompted"]`) is exported
+from `fireflyframework_agentic.reasoning`.
 
 ### Model Catalogue
 
@@ -771,7 +813,7 @@ export OPENAI_API_KEY="sk-..."
 uv run python examples/reasoning_cot.py
 ```
 
-See [examples/README.md](../examples/README.md) for the full list.
+See [examples/README.md](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/examples/README.md) for the full list.
 
 ## Note: tool-using ReAct is implemented outside `reasoning/`
 

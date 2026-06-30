@@ -30,7 +30,10 @@ from typing import TYPE_CHECKING, Any
 from pydantic_ai.models import Model
 
 from fireflyframework_agentic.prompts.template import PromptTemplate
-from fireflyframework_agentic.reasoning.base import AbstractReasoningPattern
+from fireflyframework_agentic.reasoning.base import (
+    AbstractReasoningPattern,
+    OutputMode,
+)
 from fireflyframework_agentic.reasoning.models import ReasoningThought
 from fireflyframework_agentic.reasoning.prompts import REACT_ACTION_PROMPT, REACT_THOUGHT_PROMPT
 from fireflyframework_agentic.reasoning.trace import (
@@ -75,6 +78,7 @@ class ReActPattern(AbstractReasoningPattern):
         prompts: dict[str, PromptTemplate] | None = None,
         reviewer: OutputReviewer | None = None,
         step_timeout: float | None = None,
+        output_mode: OutputMode | None = None,
     ) -> None:
         super().__init__(
             "react",
@@ -83,6 +87,7 @@ class ReActPattern(AbstractReasoningPattern):
             prompts=prompts,
             reviewer=reviewer,
             step_timeout=step_timeout,
+            output_mode=output_mode,
         )
 
     async def _reason(self, state: dict[str, Any]) -> ReasoningStep | None:

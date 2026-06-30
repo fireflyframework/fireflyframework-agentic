@@ -22,7 +22,7 @@ in the environment will override the ``default_model`` field.
 from __future__ import annotations
 
 import threading
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -48,15 +48,59 @@ class FireflyAgenticConfig(BaseSettings):
     default_model: str = "openai:gpt-4o"
     """The default Pydantic AI model identifier used when no model is specified."""
 
-    default_temperature: float = 0.7
-    """Default sampling temperature for LLM calls."""
+    default_temperature: float | None = None
+    """Default sampling temperature applied to every agent's model settings when
+    the caller does not specify one. ``None`` (default) leaves it unset so each
+    provider uses its own default — important because some models (e.g. OpenAI
+    ``o1``/``o3`` reasoning models) reject an explicit temperature."""
 
     max_retries: int = 3
     """Default maximum number of retries for agent runs and tool calls."""
 
+    # -- Reasoning -----------------------------------------------------------
+    reasoning_output_mode: Literal["tool", "native", "prompted"] | None = None
+    """Structured-output strategy for reasoning patterns' internal LLM calls
+    (plan / thought / reflection / evaluation / decomposition). ``None``
+    (default) leaves pydantic-ai to use its tool-calling output. ``"tool"``
+    forces tool-based structured output; ``"native"`` uses provider-native
+    JSON-schema output (OpenAI, Google, ...); ``"prompted"`` injects the schema
+    into the prompt and parses the JSON reply — the most portable choice for
+    models without tool-calling or native structured-output support. A
+    per-pattern ``output_mode=`` argument overrides this default."""
+
     # -- Observability -------------------------------------------------------
     observability_enabled: bool = True
     """Whether OpenTelemetry instrumentation is active."""
+
+    native_instrumentation_enabled: bool = True
+    """Whether to enable pydantic-ai's **native** OpenTelemetry instrumentation on
+    every agent — rich GenAI-semantic-convention spans for each model request
+    (``chat``) and tool call (``execute_tool``), nested under the framework's
+    ``agent.{name}`` span, plus native GenAI token/duration metrics. **On by
+    default** (gated by :attr:`observability_enabled`): the framework leaves the
+    tracer/meter providers unset (``None``) so telemetry flows through the global
+    OpenTelemetry API and costs nothing until the host wires an SDK/exporter, and
+    prompt/response content is stripped unless :attr:`instrumentation_include_content`
+    is set — so default-on is safe. Set to ``False`` to suppress the per-request /
+    per-tool-call span volume on very high-throughput hosts (the coarse
+    ``agent.{name}`` span and firefly metrics remain)."""
+
+    instrumentation_include_content: bool = False
+    """Whether native instrumentation records prompt/response **content** (and
+    tool args/results, binary content) as span attributes. ``False`` (default)
+    strips content so the framework never silently leaks prompts/PII into traces
+    — message events keep only their role/part-type skeleton. Overrides
+    pydantic-ai's own ``include_content=True`` default."""
+
+    instrumentation_version: Literal[1, 2, 3, 4, 5] = 2
+    """GenAI semantic-convention version for native instrumentation span names
+    and attributes. ``2`` (default) matches pydantic-ai; ``>=3`` uses
+    ``invoke_agent <name>`` / ``execute_tool <name>`` span names."""
+
+    instrumentation_event_mode: Literal["attributes", "logs"] = "attributes"
+    """Where native instrumentation puts model-message events. ``"attributes"``
+    (default) keeps them on the span; ``"logs"`` routes them to a separate OTel
+    ``LoggerProvider``. Note: ``"logs"`` forces convention version 1."""
 
     log_level: str = "INFO"
     """Logging level for the framework's internal logger."""
@@ -102,7 +146,13 @@ class FireflyAgenticConfig(BaseSettings):
     """Whether usage and cost tracking is active."""
 
     budget_limit_usd: float | None = None
-    """Hard budget limit in USD.  When exceeded, a warning is logged."""
+    """Hard budget limit in USD. When exceeded, a ``BudgetExceededError`` is
+    raised (it is a hard gate, not a warning).
+
+    The gate enforces only over models that can be **priced** — a model
+    ``genai-prices`` cannot price contributes $0 and is not counted. For
+    budget-critical deployments set ``cost_strict=True`` to fail closed
+    (``UnknownModelCostError``) on any unpriceable model instead."""
 
     cost_strict: bool = False
     """When true, :func:`resolve_cost` raises :class:`UnknownModelCostError`

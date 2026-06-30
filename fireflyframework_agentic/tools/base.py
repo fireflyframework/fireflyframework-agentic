@@ -37,13 +37,10 @@ from collections.abc import Sequence
 from typing import Annotated, Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
+from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai.exceptions import ApprovalRequired, CallDeferred
 
-try:
-    from pydantic_ai import ModelRetry  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - optional dep
-    ModelRetry = None  # type: ignore[assignment,misc]
-
-from fireflyframework_agentic.exceptions import ToolError, ToolTimeoutError
+from fireflyframework_agentic.exceptions import ToolError, ToolGuardError, ToolTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -51,29 +48,10 @@ logger = logging.getLogger(__name__)
 def _is_model_retry(exc: BaseException) -> bool:
     """Return True when ``exc`` is a ``pydantic_ai.ModelRetry`` instance.
 
-    Imported lazily so hosts that bundle the toolkit without
-    pydantic-ai still load cleanly. When pydantic-ai is unavailable
-    nothing can be a ``ModelRetry``, so the helper just returns False
-    and the legacy wrap-as-``ToolError`` behaviour stays intact.
+    ``ModelRetry`` is re-raised (not wrapped) so pydantic-ai's retry
+    machinery sees it; every other exception is wrapped as ``ToolError``.
     """
-    if ModelRetry is None:
-        return False
     return isinstance(exc, ModelRetry)
-
-
-# Mapping from ParameterSpec.type_annotation strings to Python types.
-_TYPE_MAP: dict[str, type] = {
-    "str": str,
-    "string": str,
-    "int": int,
-    "integer": int,
-    "float": float,
-    "number": float,
-    "bool": bool,
-    "boolean": bool,
-    "list": list,
-    "dict": dict,
-}
 
 
 # ---------------------------------------------------------------------------
@@ -82,10 +60,17 @@ _TYPE_MAP: dict[str, type] = {
 
 
 class ParameterSpec(BaseModel):
-    """Describes a single parameter accepted by a tool."""
+    """Describes a single parameter accepted by a tool.
+
+    ``python_type`` is a **real** Python type object — ``str``, ``int``,
+    ``list[str]``, ``Literal["a", "b"]``, a nested ``BaseModel``,
+    ``dict[str, Any] | None``, … pydantic-ai introspects it directly, so the LLM
+    receives a correct, full-fidelity JSON schema (nested models, enums and
+    element types are all preserved).
+    """
 
     name: str
-    type_annotation: str
+    python_type: Any = str
     description: str = ""
     required: bool = True
     default: Any = None
@@ -163,6 +148,16 @@ class BaseTool(ABC):
         guards: Ordered sequence of guards evaluated before execution.
         parameters: Declared parameter specifications (used by builder /
             schema generation).
+        takes_ctx: When ``True``, the tool opts into receiving a pydantic-ai
+            ``RunContext`` (agent deps, usage, retry count, messages). The
+            generated handler injects it; ``_execute`` then receives it as the
+            keyword-only ``_ctx``. Guards and caching never see ``ctx``.
+        requires_approval: When ``True``, the tool is exposed to pydantic-ai as
+            an approval-required tool. The agent run pauses before this tool
+            executes and surfaces a ``DeferredToolRequests`` for human
+            sign-off (resolved natively via ``DeferredToolResults``); the tool
+            body runs only once the call is approved. See the agent's
+            human-in-the-loop docs.
     """
 
     def __init__(
@@ -174,6 +169,8 @@ class BaseTool(ABC):
         guards: Sequence[GuardProtocol] = (),
         parameters: Sequence[ParameterSpec] = (),
         timeout: float | None = None,
+        takes_ctx: bool = False,
+        requires_approval: bool = False,
     ) -> None:
         self._name = name
         self._description = description
@@ -181,6 +178,8 @@ class BaseTool(ABC):
         self._guards = list(guards)
         self._parameters = list(parameters)
         self._timeout = timeout
+        self._takes_ctx = takes_ctx
+        self._requires_approval = requires_approval
 
     # -- Properties ----------------------------------------------------------
 
@@ -209,31 +208,62 @@ class BaseTool(ABC):
         """Declared parameter specifications."""
         return self._parameters
 
+    @property
+    def takes_ctx(self) -> bool:
+        """Whether this tool opts into a pydantic-ai ``RunContext``."""
+        return self._takes_ctx
+
+    @property
+    def requires_approval(self) -> bool:
+        """Whether calls to this tool require human-in-the-loop approval."""
+        return self._requires_approval
+
     # -- Execution -----------------------------------------------------------
 
     async def execute(self, **kwargs: Any) -> Any:
         """Run the tool after evaluating all guards.
 
-        If any guard rejects, a :class:`ToolError` is raised immediately.
+        If any guard rejects, a :class:`ToolGuardError` (a ``ToolError``
+        subclass) is raised immediately.
         When a *timeout* is configured, wraps the execution in
         :func:`asyncio.wait_for` and raises :class:`ToolTimeoutError`
         on expiry.
         """
+        return await self._guarded_execute(kwargs, ctx=None)
+
+    async def execute_with_ctx(self, ctx: Any, /, **kwargs: Any) -> Any:
+        """Run the tool with a pydantic-ai ``RunContext`` delivered to ``_execute``.
+
+        Used by the generated handler for ``takes_ctx`` tools. Guards and any
+        caching see only the tool arguments — ``ctx`` is never guard-checked or
+        hashed, so it cannot poison a cache key. When ``takes_ctx`` is ``False``
+        the ``ctx`` is ignored and behaviour is identical to :meth:`execute`.
+        """
+        return await self._guarded_execute(kwargs, ctx=ctx)
+
+    async def _guarded_execute(self, kwargs: dict[str, Any], *, ctx: Any) -> Any:
         for guard in self._guards:
             result = await guard.check(self._name, kwargs)
             if not result.passed:
-                raise ToolError(f"Guard rejected execution of tool '{self._name}': {result.reason}")
+                raise ToolGuardError(f"Guard rejected execution of tool '{self._name}': {result.reason}")
 
         logger.debug("Executing tool '%s' with kwargs=%s", self._name, list(kwargs.keys()))
+        # ``_ctx`` reaches ``_execute`` only for ctx-aware tools; it is never in
+        # the guard-checked / cache-hashed ``kwargs``.
+        exec_kwargs = {**kwargs, "_ctx": ctx} if self._takes_ctx else kwargs
         try:
+            coro = self._execute(**exec_kwargs)
             if self._timeout is not None:
-                return await asyncio.wait_for(
-                    self._execute(**kwargs),
-                    timeout=self._timeout,
-                )
-            return await self._execute(**kwargs)
+                return await asyncio.wait_for(coro, timeout=self._timeout)
+            return await coro
         except TimeoutError:
             raise ToolTimeoutError(f"Tool '{self._name}' timed out after {self._timeout}s") from None
+        except (ApprovalRequired, CallDeferred):
+            # pydantic-ai human-in-the-loop / deferral control signals. Like
+            # ``ModelRetry`` these are NOT errors: they must reach the agent graph
+            # untouched so the run pauses and surfaces a ``DeferredToolRequests``.
+            # Wrapping them as ``ToolError`` would break dynamic tool approval.
+            raise
         except ToolError:
             raise
         except Exception as exc:
@@ -264,7 +294,9 @@ class BaseTool(ABC):
         override this to return a wrapper preserving the original
         function's signature instead.
         """
-        if not self._parameters:
+        # A ctx-aware tool always needs the generated handler so the
+        # ``RunContext``-first parameter is present even with no declared params.
+        if not self._parameters and not self._takes_ctx:
             return self.execute
 
         return _build_typed_handler(self)
@@ -302,13 +334,27 @@ def _build_typed_handler(tool: BaseTool) -> Any:
     This helper constructs a wrapper whose ``inspect.Signature`` and
     ``__annotations__`` reflect the declared :class:`ParameterSpec` entries,
     so the LLM receives correct parameter names, types, and descriptions.
+
+    Each parameter's type is ``ParameterSpec.python_type`` — a real type object,
+    so nested models, enums and element types reach the schema intact. When
+    ``tool.takes_ctx`` is set, a ``RunContext``-first parameter is prepended —
+    annotated with the **bare** ``RunContext`` form pydantic-ai detects (not
+    ``Annotated`` / not ``| None``) — and the handler delegates to
+    :meth:`BaseTool.execute_with_ctx`, which keeps ``ctx`` out of guards/cache.
     """
     params: list[inspect.Parameter] = []
     annotations: dict[str, Any] = {}
+    takes_ctx = getattr(tool, "takes_ctx", False)
+
+    if takes_ctx:
+        # Bare ``RunContext[Any]`` so pydantic-ai detects it and injects it
+        # positionally; it is excluded from the tool's JSON schema.
+        ctx_type = RunContext[Any]
+        params.append(inspect.Parameter("ctx", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=ctx_type))
+        annotations["ctx"] = ctx_type
 
     for spec in tool.parameters:
-        py_type = _TYPE_MAP.get(spec.type_annotation, str)
-        annotated_type = Annotated[py_type, Field(description=spec.description)]  # type: ignore[valid-type]
+        annotated_type = Annotated[spec.python_type, Field(description=spec.description)]  # type: ignore[valid-type]
 
         if spec.required:
             param = inspect.Parameter(
@@ -328,8 +374,18 @@ def _build_typed_handler(tool: BaseTool) -> Any:
 
     sig = inspect.Signature(params)
 
-    async def handler(**kwargs: Any) -> Any:
-        return await tool.execute(**kwargs)
+    if takes_ctx:
+
+        async def _ctx_handler(ctx: Any, **kwargs: Any) -> Any:
+            return await tool.execute_with_ctx(ctx, **kwargs)
+
+        handler: Any = _ctx_handler
+    else:
+
+        async def _plain_handler(**kwargs: Any) -> Any:
+            return await tool.execute(**kwargs)
+
+        handler = _plain_handler
 
     handler.__signature__ = sig  # type: ignore[attr-defined]
     handler.__annotations__ = annotations

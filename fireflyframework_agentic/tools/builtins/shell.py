@@ -57,9 +57,7 @@ class ShellTool(BaseTool):
             tags=["shell", "system"],
             guards=guards,
             parameters=[
-                ParameterSpec(
-                    name="command", type_annotation="str", description="Shell command to execute", required=True
-                ),
+                ParameterSpec(name="command", python_type=str, description="Shell command to execute", required=True),
             ],
         )
         self._allowed = set(allowed_commands)

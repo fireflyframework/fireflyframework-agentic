@@ -108,7 +108,7 @@ class FallbackComposer:
             except Exception as exc:
                 logger.debug("Fallback: tool '%s' failed (%s), trying next", tool.name, exc)
                 last_error = exc
-        raise ToolError(f"All {len(self._tools)} fallback tools failed; last error: {last_error}")
+        raise ToolError(f"All {len(self._tools)} fallback tools failed; last error: {last_error}") from last_error
 
 
 class ConditionalComposer:

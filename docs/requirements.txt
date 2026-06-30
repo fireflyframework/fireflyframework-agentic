@@ -1,0 +1,9 @@
+# Documentation toolchain for the Firefly Agentic site (MkDocs + Material).
+# This file is the single source of truth for the GitHub Pages build
+# (.github/workflows/docs.yml installs from it). Material vendors mkdocs and
+# pymdown-extensions, so no other plugins are needed for the current site.
+#
+# Local preview:
+#   pip install -r docs/requirements.txt
+#   mkdocs serve
+mkdocs-material>=9.5,<10

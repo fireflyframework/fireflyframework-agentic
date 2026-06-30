@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
+from pydantic_ai.usage import RunUsage
 
 from fireflyframework_agentic.config import get_config
 from fireflyframework_agentic.observability.budget import BudgetGate, BudgetRule
@@ -39,6 +40,44 @@ from fireflyframework_agentic.observability.sinks import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_run_usage(result: Any) -> Any | None:
+    """Return the ``RunUsage`` for a pydantic-ai result, or ``None``.
+
+    pydantic-ai 1.x exposes ``result.usage`` as a *property* (calling it — the
+    legacy ``result.usage()`` form — emits a ``PydanticAIDeprecationWarning``),
+    while pre-1.x SDKs and some test doubles expose it as a method. If the
+    attribute is already a ``RunUsage`` (the property form, including 1.x's
+    deprecated-callable wrapper which subclasses it), use it directly without
+    calling; if it is callable (the method form), call it once.
+    """
+    usage = getattr(result, "usage", None)
+    if usage is None:
+        return None
+    if isinstance(usage, RunUsage):
+        return usage
+    if callable(usage):
+        return usage()
+    return usage
+
+
+def reasoning_tokens_not_in_output(usage: Any) -> int:
+    """Reasoning tokens that the provider does **not** already fold into
+    ``output_tokens`` (and that therefore must be priced separately).
+
+    Today this is exactly Gemini's ``details["thoughts_tokens"]``: Gemini's
+    ``output_tokens`` (``candidates_token_count``) excludes thinking. It is keyed
+    on the Gemini-specific ``thoughts_tokens`` detail deliberately — OpenAI's
+    ``details["reasoning_tokens"]`` is **already** counted in ``output_tokens``
+    (reading it would double-count), and Anthropic folds thinking into
+    ``output_tokens`` too. So every non-Gemini provider contributes ``0``.
+    """
+    details = getattr(usage, "details", None) or {}
+    try:
+        return int(details.get("thoughts_tokens", 0) or 0)
+    except (TypeError, ValueError, AttributeError):
+        return 0
 
 
 class UsageRecord(BaseModel):
