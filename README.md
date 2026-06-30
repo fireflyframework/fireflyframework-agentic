@@ -318,6 +318,12 @@ create your own components; the framework discovers them via duck typing.
   `EvalDataset` loads/saves test cases from JSON. `ModelComparison` runs the
   same prompts across multiple agents for side-by-side analysis.
 
+- **Evaluation** — LLM-as-judge metrics (faithfulness, relevancy, answer correctness,
+  RAGAS, …) and deterministic retrieval metrics (recall@k, MRR, MAP, nDCG, …) for
+  assessing LLM and pipeline outputs. Each metric is a plain function you call directly.
+  Install with `pip install "fireflyframework-agentic[evaluation]"`.
+  See [docs/evaluation.md](docs/evaluation.md) for the full guide.
+
   > **Optional developer tooling.** `fireflyframework_agentic.experiments` (A/B
   > experiments) and `fireflyframework_agentic.lab` (offline evaluation /
   > benchmarking) are leaf modules — nothing in the core imports them and they add
@@ -751,6 +757,7 @@ Detailed guides for each module:
 - [Secure Script Execution](docs/execution.md) — Deny-by-default Monty sandbox, static safety pre-screen, `SecureScriptRunner`, Firefly Code Mode
 - [Experiments](docs/experiments.md) — A/B testing, variant comparison
 - [Lab](docs/lab.md) — Benchmarks, datasets, evaluators
+- [Evaluation](docs/evaluation.md) — LLM-as-judge metrics, RAGAS, retrieval metrics
 - Studio — moved to [fireflyframework-agentic-studio](https://github.com/fireflyframework/fireflyframework-agentic-studio)
 ---
 

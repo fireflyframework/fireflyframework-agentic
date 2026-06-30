@@ -1,6 +1,6 @@
 [project]
 name = "fireflyframework-agentic"
-version = "26.06.13"
+version = "26.06.14"
 description = "A GenAI metaframework built on Pydantic AI for building production-grade GenAI applications with agents, reasoning patterns, prompt engineering, observability, and more."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -133,6 +133,13 @@ binary = [
 ]
 all = [
     "fireflyframework-agentic[postgres,mongodb,security,embeddings,openai-embeddings,cohere-embeddings,google-embeddings,mistral-embeddings,voyage-embeddings,azure-embeddings,bedrock-embeddings,ollama-embeddings,vectorstores-chroma,vectorstores-pinecone,vectorstores-qdrant,vectorstores-pgvector,vectorstores-sqlite-vec,watch,binary,script-execution]",
+]
+evaluation = [
+    "numpy>=1.26.0",
+    "ragas>=0.2",
+    "langchain-anthropic>=0.3",
+    "langchain-ollama>=0.3",
+    "langchain-openai>=0.3",
 ]
 dev = [
     "pytest>=8.3.0",
