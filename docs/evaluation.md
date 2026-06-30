@@ -166,7 +166,7 @@ ways.
 
 | Metric | Returns | Measures |
 |--------|---------|----------|
-| `faithfulness` | `{supported, total, unsupported_ids}` | Does each finding's cited evidence entail its claim? |
+| `faithfulness` | `{supported, total, unsupported_ids}` | Per-**finding** entailment against the finding's **own cited** excerpts (tally). Cf. `ragas_faithfulness`. |
 | `numeric_temporal_fidelity` | `{mismatches, count}` | Numbers/dates asserted in a finding that don't match its evidence. |
 | `citation_relevance` | `{precision, relevant, total}` | Context precision: fraction of cited passages actually relevant to the claim. |
 | `nc_semantic_precision` | `{asserted, total, asserted_ids}` | How many negative-control falsehoods (`nc_items`) the output asserts or endorses. |
@@ -184,7 +184,7 @@ ways.
 | Metric | Returns | Measures |
 |--------|---------|----------|
 | `answer_correctness` | `float` or `None` | Semantic F1 of the answer against the reference. |
-| `ragas_faithfulness` | `float` or `None` | Answer grounded in the retrieved `contexts`. |
+| `ragas_faithfulness` | `float` or `None` | Per-**claim** grounding: fraction of the answer's atomic claims inferable from the retrieved `contexts` (float). Cf. `faithfulness`. |
 | `context_recall` | `float` or `None` | Reference coverage by the retrieved `contexts`. |
 | `context_precision` | `float` or `None` | Retrieved `contexts` relevant to the question. |
 
