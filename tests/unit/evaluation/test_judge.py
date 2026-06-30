@@ -39,7 +39,7 @@ async def test_contains_answer_present():
     ctx = make_ctx([{"contains_answer": 1.0, "addresses_question": 1.0}])
     item = {"question": "Q", "reference": "R", "answer": "A"}
     score = await contains_answer(item, ctx)
-    assert score == 1.0
+    assert score["score"] == 1.0
 
 
 @pytest.mark.asyncio
@@ -47,7 +47,7 @@ async def test_contains_answer_absent():
     ctx = make_ctx([{"contains_answer": 0.0, "addresses_question": 0.5}])
     item = {"question": "Q", "reference": "R", "answer": "wrong"}
     score = await contains_answer(item, ctx)
-    assert score == 0.0
+    assert score["score"] == 0.0
 
 
 @pytest.mark.asyncio
@@ -55,7 +55,7 @@ async def test_contains_answer_partial():
     ctx = make_ctx([{"contains_answer": 0.5, "addresses_question": 0.8}])
     item = {"question": "Q", "reference": "R", "answer": "partial"}
     score = await contains_answer(item, ctx)
-    assert score == 0.5
+    assert score["score"] == 0.5
 
 
 @pytest.mark.asyncio
@@ -74,7 +74,7 @@ async def test_addresses_question_yes():
     ctx = make_ctx([{"contains_answer": 0.5, "addresses_question": 1.0}])
     item = {"question": "Q", "reference": "R", "answer": "A"}
     score = await addresses_question(item, ctx)
-    assert score == 1.0
+    assert score["score"] == 1.0
 
 
 @pytest.mark.asyncio
@@ -82,7 +82,7 @@ async def test_addresses_question_no():
     ctx = make_ctx([{"contains_answer": 0.0, "addresses_question": 0.0}])
     item = {"question": "Q", "reference": "R", "answer": "irrelevant"}
     score = await addresses_question(item, ctx)
-    assert score == 0.0
+    assert score["score"] == 0.0
 
 
 @pytest.mark.asyncio

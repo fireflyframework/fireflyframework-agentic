@@ -70,7 +70,11 @@ async def score_items(items: list[dict], ctx: EvalContext) -> list[dict]:
     tasks = [(contains_answer(item, ctx), addresses_question(item, ctx)) for item in items]
     pairs = await asyncio.gather(*[asyncio.gather(ca, aq) for ca, aq in tasks])
     return [
-        {"question": item["question"], "contains_answer": ca, "addresses_question": aq}
+        {
+            "question": item["question"],
+            "contains_answer": ca["score"] if ca else None,
+            "addresses_question": aq["score"] if aq else None,
+        }
         for item, (ca, aq) in zip(items, pairs, strict=True)
     ]
 

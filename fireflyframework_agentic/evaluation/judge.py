@@ -1,6 +1,7 @@
 """Evaluation judge — async metrics for flyradar and flycanon pipelines.
 
-Every metric: async def metric_name(item: dict, ctx: EvalContext) -> dict | float | None
+Every metric: async def metric_name(item: dict, ctx: EvalContext) -> dict | None
+Each result is {"score": float | None, **extra} — read result["score"] for the headline.
 
 Flyradar item keys: findings, evidence_index, process_graph, proposed_actions,
   workspace, reports, lexical_missed_ids, nc_items, champion
@@ -89,7 +90,7 @@ class JudgeClient:
         return result.output
 
 
-Metric = Callable[["dict", "EvalContext"], Awaitable["dict | float | None"]]
+Metric = Callable[["dict", "EvalContext"], Awaitable["dict | None"]]
 
 SYSTEM = "You are a meticulous evaluator of a process-mining discovery report. Return ONLY a JSON object."
 
@@ -231,6 +232,17 @@ async def _judge_all[T: BaseModel](ctx: EvalContext, system: str, users: list[st
     return list(await asyncio.gather(*[ctx.client.judge(system, u, output_type) for u in users]))
 
 
+def _scored(score: float | None, **extra: object) -> dict:
+    """Uniform metric result: a leading ``score`` float (or None) then structured extras.
+
+    Every metric returns this shape so results compare apples-to-apples — read
+    ``result["score"]`` for the headline number and the remaining keys for the breakdown.
+    ``score`` is None for metrics with no natural [0, 1] aggregate (pure defect counts and
+    free-text probes).
+    """
+    return {"score": score, **extra}
+
+
 # ── [D] DETERMINISTIC — no LLM, always available ────────────────────────────────
 
 
@@ -250,7 +262,12 @@ async def source_coverage(item: dict, ctx: EvalContext) -> dict:  # noqa: ARG001
                 cited_stems.add(_source_stem(ev["locator"]))
     cited_stems &= all_stems
     orphaned = sorted(all_stems - cited_stems)
-    return {"cited": len(cited_stems), "total": len(all_stems), "orphaned": orphaned}
+    return _scored(
+        round(len(cited_stems) / len(all_stems), 4) if all_stems else None,
+        cited=len(cited_stems),
+        total=len(all_stems),
+        orphaned=orphaned,
+    )
 
 
 async def excerpt_fill_rate(item: dict, ctx: EvalContext) -> dict:  # noqa: ARG001
@@ -260,7 +277,7 @@ async def excerpt_fill_rate(item: dict, ctx: EvalContext) -> dict:  # noqa: ARG0
     """
     entries = item.get("evidence_index", [])
     populated = sum(1 for ev in entries if (ev.get("excerpt") or "").strip())
-    return {"populated": populated, "total": len(entries)}
+    return _scored(round(populated / len(entries), 4) if entries else None, populated=populated, total=len(entries))
 
 
 # ── [E] EMBEDDING — needs embedder ───────────────────────────────────────────────
@@ -276,8 +293,8 @@ async def semantic_recovery(item: dict, ctx: EvalContext, tau: float = 0.70) -> 
     and counts it recovered when the best cosine similarity is >= ``tau``. The three
     recall views make the lexical -> vector -> hybrid progression explicit:
 
+      - ``score``            : hybrid recall — lexical hits PLUS vector recoveries.
       - ``lexical_recall``   : lexical-only baseline.
-      - ``hybrid_recall``    : lexical hits PLUS vector recoveries (the lexical-OR-vector union).
       - ``vector_recovered`` : the misses the vector pass recovered, each with its cosine.
 
     Returns None when ``ctx.embedder`` is unset (the vector pass needs embeddings).
@@ -310,13 +327,13 @@ async def semantic_recovery(item: dict, ctx: EvalContext, tau: float = 0.70) -> 
 
     if not missed_descs or not candidate_texts:
         lexical_recall = round(lexical_hits / denom, 4)
-        return {
-            "lexical_recall": lexical_recall,
-            "hybrid_recall": lexical_recall,
-            "vector_recovered": [],
-            "tau": tau,
-            "scored_denominator": denom,
-        }
+        return _scored(
+            lexical_recall,
+            lexical_recall=lexical_recall,
+            vector_recovered=[],
+            tau=tau,
+            scored_denominator=denom,
+        )
 
     item_vecs = await ctx.embedder._embed_batch([desc for _fid, desc in missed_descs])
     cand_vecs = await ctx.embedder._embed_batch(candidate_texts)
@@ -327,13 +344,13 @@ async def semantic_recovery(item: dict, ctx: EvalContext, tau: float = 0.70) -> 
         if best >= tau:
             vector_recovered.append({"id": fid, "cosine": round(best, 4)})
 
-    return {
-        "lexical_recall": round(lexical_hits / denom, 4),
-        "hybrid_recall": round((lexical_hits + len(vector_recovered)) / denom, 4),
-        "vector_recovered": vector_recovered,
-        "tau": tau,
-        "scored_denominator": denom,
-    }
+    return _scored(
+        round((lexical_hits + len(vector_recovered)) / denom, 4),
+        lexical_recall=round(lexical_hits / denom, 4),
+        vector_recovered=vector_recovered,
+        tau=tau,
+        scored_denominator=denom,
+    )
 
 
 # ── [J] JUDGE — needs ctx.client.judge(system, user, output_type) ────────────────
@@ -346,10 +363,9 @@ async def faithfulness(item: dict, ctx: EvalContext) -> dict:
     the finding explicitly cites (evidence_refs -> evidence_index) and asks the LLM a single
     binary verdict — does that cited evidence ENTAIL the finding's claim (SUPPORTED /
     NOT_SUPPORTED)? A finding that cites no evidence is counted unsupported without an LLM
-    call. The unit judged is the whole finding, compared only against its own citations, and
-    the result is a tally (not a normalized score).
+    call. The unit judged is the whole finding, compared only against its own citations.
 
-    Returns {supported, total, unsupported_ids}.
+    Returns {score, supported, total, unsupported_ids}; score = supported / total.
 
     Differs from ``ragas_faithfulness`` (which measures the same hallucination concept):
     that one works on a RAG answer — it decomposes the ANSWER into atomic claims and scores
@@ -380,13 +396,19 @@ async def faithfulness(item: dict, ctx: EvalContext) -> dict:
             supported += 1
         else:
             unsupported_ids.append(fid)
-    return {"supported": supported, "total": len(findings), "unsupported_ids": unsupported_ids}
+    return _scored(
+        round(supported / len(findings), 4) if findings else None,
+        supported=supported,
+        total=len(findings),
+        unsupported_ids=unsupported_ids,
+    )
 
 
 async def numeric_temporal_fidelity(item: dict, ctx: EvalContext) -> dict:
     """Flag numbers/dates asserted in a finding that do NOT match its evidence.
 
-    Returns {mismatches: [{finding_id, value, source}], count}.
+    Returns {score, mismatches: [{finding_id, value, source}], count}; score is the fraction
+    of evidence-cited findings with no numeric/temporal mismatch (None if none were scored).
     """
     ev_idx = _evidence_index(item)
     scored = [(f, excerpts) for f in item.get("findings", []) if (excerpts := _cited_excerpts(f, ev_idx))]
@@ -410,13 +432,18 @@ async def numeric_temporal_fidelity(item: dict, ctx: EvalContext) -> dict:
                     "source": m.source,
                 }
             )
-    return {"mismatches": mismatches, "count": len(mismatches)}
+    bad = len({m["finding_id"] for m in mismatches})
+    return _scored(
+        round(1 - bad / len(scored), 4) if scored else None,
+        mismatches=mismatches,
+        count=len(mismatches),
+    )
 
 
 async def citation_relevance(item: dict, ctx: EvalContext) -> dict:
     """Context precision: fraction of cited passages actually relevant to the claim.
 
-    Returns {precision, relevant, total}.
+    Returns {score, relevant, total}; score is that precision (relevant / total).
     """
     ev_idx = _evidence_index(item)
     users: list[str] = []
@@ -438,16 +465,15 @@ async def citation_relevance(item: dict, ctx: EvalContext) -> dict:
     answers = await _judge_all(ctx, SYSTEM, users, _Relevant)
     total = len(users)
     relevant = sum(1 for a in answers if str(a.relevant).lower() == "yes")
-    if not total:
-        return {"precision": None, "relevant": relevant, "total": total}
-    return {"precision": round(relevant / total, 4), "relevant": relevant, "total": total}
+    return _scored(round(relevant / total, 4) if total else None, relevant=relevant, total=total)
 
 
 async def nc_semantic_precision(item: dict, ctx: EvalContext) -> dict:
     """Count negative-control falsehoods the output asserts or endorses.
 
     Reads item["nc_items"] as list of {"id": ..., "description": ...} dicts.
-    Returns {asserted, total, asserted_ids}.
+    Returns {score, asserted, total, asserted_ids}; score is the fraction of negative
+    controls NOT endorsed (1 - asserted / total) — higher is better.
     """
     output_text = _output_text(item)
     nc_items: list[dict] = item.get("nc_items", [])
@@ -462,13 +488,18 @@ async def nc_semantic_precision(item: dict, ctx: EvalContext) -> dict:
     asserted_ids = [
         nc.get("id", "?") for nc, a in zip(nc_items, answers, strict=False) if str(a.asserted).lower() == "yes"
     ]
-    return {"asserted": len(asserted_ids), "total": len(nc_items), "asserted_ids": asserted_ids}
+    return _scored(
+        round(1 - len(asserted_ids) / len(nc_items), 4) if nc_items else None,
+        asserted=len(asserted_ids),
+        total=len(nc_items),
+        asserted_ids=asserted_ids,
+    )
 
 
 async def fabricated_entity(item: dict, ctx: EvalContext) -> dict:
     """Count systems/orgs/metrics named in the output but absent from the corpus.
 
-    Returns {count, entities}.
+    Returns {score, count, entities}; score is None (a pure defect count has no denominator).
     """
     output_text = _output_text(item)
     corpus = "\n".join(f"{ev.get('locator', '')} :: {ev.get('excerpt', '')}" for ev in item.get("evidence_index", []))
@@ -481,13 +512,13 @@ async def fabricated_entity(item: dict, ctx: EvalContext) -> dict:
     )
     answer = await ctx.client.judge(SYSTEM, user, _Fabricated)
     entities = answer.fabricated
-    return {"count": len(entities), "entities": list(entities)}
+    return _scored(None, count=len(entities), entities=list(entities))
 
 
 async def contradiction(item: dict, ctx: EvalContext) -> dict:
     """Count internally contradictory finding pairs.
 
-    Returns {count, pairs}.
+    Returns {score, count, pairs}; score is None (a pure defect count has no denominator).
     """
     lines = []
     for f in item.get("findings", []):
@@ -498,13 +529,13 @@ async def contradiction(item: dict, ctx: EvalContext) -> dict:
     )
     answer = await ctx.client.judge(SYSTEM, user, _Pairs)
     pairs = answer.pairs
-    return {"count": len(pairs), "pairs": [list(p) for p in pairs]}
+    return _scored(None, count=len(pairs), pairs=[list(p) for p in pairs])
 
 
 async def open_gap(item: dict, ctx: EvalContext) -> dict:
     """G-Eval open probe: the most important process issue the output missed.
 
-    Returns {gap} — a free-text advisory narrative (no score).
+    Returns {score, gap}; score is None (free-text advisory narrative, no score).
     """
     pg = item.get("process_graph") or {}
     pg_summary = f"process_graph has {len(pg.get('processes', []))} processes"
@@ -517,7 +548,7 @@ async def open_gap(item: dict, ctx: EvalContext) -> dict:
         f"OUTPUT:\n{_output_text(item)}"
     )
     answer = await ctx.client.judge(SYSTEM, user, _Gap)
-    return {"gap": str(answer.gap)}
+    return _scored(None, gap=str(answer.gap))
 
 
 async def actionability(item: dict, ctx: EvalContext) -> dict:
@@ -543,13 +574,14 @@ async def actionability(item: dict, ctx: EvalContext) -> dict:
     answers = await _judge_all(ctx, SYSTEM, users, _Score)
     scores = [a.score for a in answers if a.score is not None]
     score = round(sum(scores) / len(scores), 4) if scores else None
-    return {"score": score, "rated": len(scores)}
+    return _scored(score, rated=len(scores))
 
 
 async def severity_calibration(item: dict, ctx: EvalContext) -> dict:
     """Per-finding judgment of whether stated severity matches the evidence.
 
-    Returns {miscalibrated, total, verdicts: {finding_id: under|over|calibrated}}.
+    Returns {score, miscalibrated, total, verdicts: {finding_id: under|over|calibrated}};
+    score is the fraction of findings whose severity is calibrated (1 - miscalibrated / total).
     """
     ev_idx = _evidence_index(item)
     findings = item.get("findings", [])
@@ -569,13 +601,18 @@ async def severity_calibration(item: dict, ctx: EvalContext) -> dict:
         verdicts[f.get("id", "?")] = verdict
         if verdict in ("under", "over"):
             miscalibrated += 1
-    return {"miscalibrated": miscalibrated, "total": len(findings), "verdicts": verdicts}
+    return _scored(
+        round(1 - miscalibrated / len(findings), 4) if findings else None,
+        miscalibrated=miscalibrated,
+        total=len(findings),
+        verdicts=verdicts,
+    )
 
 
 async def answer_relevancy(item: dict, ctx: EvalContext) -> dict:
     """RAGAS-style: does the output address the stated workspace intention?
 
-    Returns {score} in [0,1], or {"score": None} when the vote fails to coerce.
+    Returns {score} in [0,1] (score is None when the vote fails to coerce).
     """
     user = (
         "Does the OUTPUT address the stated WORKSPACE INTENTION (on-topic, responsive)?\n"
@@ -584,13 +621,14 @@ async def answer_relevancy(item: dict, ctx: EvalContext) -> dict:
         f"OUTPUT:\n{_output_text(item)}"
     )
     answer = await ctx.client.judge(SYSTEM, user, _Score)
-    return {"score": answer.score}
+    return _scored(answer.score)
 
 
 async def surface_deduplication(item: dict, ctx: EvalContext) -> dict:
     """Fraction of near-duplicate process-graph node pairs that are genuinely distinct.
 
-    Returns {distinct, redundant, total, distinct_rate, redundant_pairs}.
+    Returns {score, distinct, redundant, total, redundant_pairs}; score is the distinct rate
+    (distinct / total), None when there were no near-duplicate candidates to judge.
     """
     pg = item.get("process_graph", {})
     procs = pg.get("processes", [])
@@ -637,7 +675,7 @@ async def surface_deduplication(item: dict, ctx: EvalContext) -> dict:
             candidates.append((surface_key, a, b, proc_name))
 
     if not candidates:
-        return {"distinct": 0, "redundant": 0, "total": 0, "distinct_rate": None, "redundant_pairs": []}
+        return _scored(None, distinct=0, redundant=0, total=0, redundant_pairs=[])
 
     users = []
     for surface, a, b, parent_proc in candidates:
@@ -672,20 +710,21 @@ async def surface_deduplication(item: dict, ctx: EvalContext) -> dict:
             )
 
     total = distinct + redundant
-    return {
-        "distinct": distinct,
-        "redundant": redundant,
-        "total": total,
-        "distinct_rate": round(distinct / total, 4) if total else None,
-        "redundant_pairs": redundant_pairs,
-    }
+    return _scored(
+        round(distinct / total, 4) if total else None,
+        distinct=distinct,
+        redundant=redundant,
+        total=total,
+        redundant_pairs=redundant_pairs,
+    )
 
 
 async def comparative_vs_champion(item: dict, ctx: EvalContext) -> dict | None:
     """Pairwise MT-Bench-style review of candidate vs champion (advisory only).
 
     Returns None if item["champion"] is not present.
-    Returns {candidate, champion, more_consistent}.
+    Returns {score, candidate, champion, more_consistent}; score is None (structured
+    pairwise comparison, no single aggregate).
     """
     champion = item.get("champion")
     if champion is None:
@@ -702,11 +741,7 @@ async def comparative_vs_champion(item: dict, ctx: EvalContext) -> dict | None:
         f"CHAMPION:\n{_output_text(champion)}"
     )
     out = await ctx.client.judge(SYSTEM, user, _Comparison)
-    return {
-        "candidate": out.candidate,
-        "champion": out.champion,
-        "more_consistent": out.more_consistent,
-    }
+    return _scored(None, candidate=out.candidate, champion=out.champion, more_consistent=out.more_consistent)
 
 
 # ── flycanon custom metrics ───────────────────────────────────────────────────────
@@ -723,26 +758,26 @@ async def _rag_score_once(item: dict, ctx: EvalContext) -> _RagScore | None:
     return await ctx.client.judge(SYSTEM_RAG, user, _RagScore)
 
 
-async def contains_answer(item: dict, ctx: EvalContext) -> float | None:
+async def contains_answer(item: dict, ctx: EvalContext) -> dict | None:
     """Flycanon: does the answer contain the correct information from the reference?
 
-    Returns None if the item lacks question/answer.
+    Returns {score} in [0,1], or None if the item lacks question/answer.
     """
     result = await _rag_score_once(item, ctx)
     if result is None or result.contains_answer is None:
         return None
-    return round(result.contains_answer, 4)
+    return _scored(round(result.contains_answer, 4))
 
 
-async def addresses_question(item: dict, ctx: EvalContext) -> float | None:
+async def addresses_question(item: dict, ctx: EvalContext) -> dict | None:
     """Flycanon: does the answer directly address what the question is asking?
 
-    Returns None if the item lacks question/answer.
+    Returns {score} in [0,1], or None if the item lacks question/answer.
     """
     result = await _rag_score_once(item, ctx)
     if result is None or result.addresses_question is None:
         return None
-    return round(result.addresses_question, 4)
+    return _scored(round(result.addresses_question, 4))
 
 
 # ── RAGAS metrics ─────────────────────────────────────────────────────────────────
@@ -868,35 +903,39 @@ async def _ragas_score(metric_name: str, item: dict, ctx: EvalContext) -> float 
     return await loop.run_in_executor(None, _sync)
 
 
-async def answer_correctness(item: dict, ctx: EvalContext) -> float | None:
-    """RAGAS answer correctness (semantic F1 against reference)."""
-    return await _ragas_score("answer_correctness", item, ctx)
+async def answer_correctness(item: dict, ctx: EvalContext) -> dict | None:
+    """RAGAS answer correctness (semantic F1 against reference). Returns {score} or None."""
+    val = await _ragas_score("answer_correctness", item, ctx)
+    return _scored(val) if val is not None else None
 
 
-async def ragas_faithfulness(item: dict, ctx: EvalContext) -> float | None:
+async def ragas_faithfulness(item: dict, ctx: EvalContext) -> dict | None:
     """RAGAS faithfulness: fraction of the answer's atomic claims grounded in contexts.
 
     Runs the ragas library's Faithfulness metric on a RAG Q&A item. RAGAS first decomposes
     ``answer`` into atomic claims (one LLM pass), then verifies each claim against the
     retrieved ``contexts`` (a verdict per claim); the score is supported_claims /
-    total_claims — a float in [0, 1], or None when it cannot be computed.
+    total_claims. Returns {score} in [0, 1], or None when it cannot be computed.
 
     Differs from the custom ``faithfulness``: that one judges each discovery FINDING as a
-    whole against its own CITED excerpts (not retrieved contexts) and returns a
-    {supported, total, unsupported_ids} tally rather than a normalized score. This one is
-    the right choice for grading a free-text RAG answer's grounding in its contexts.
+    whole against its own CITED excerpts (not retrieved contexts) and reports a
+    {score, supported, total, unsupported_ids} tally over findings. This one grades a
+    free-text RAG answer's grounding in its contexts.
     """
-    return await _ragas_score("ragas_faithfulness", item, ctx)
+    val = await _ragas_score("ragas_faithfulness", item, ctx)
+    return _scored(val) if val is not None else None
 
 
-async def context_recall(item: dict, ctx: EvalContext) -> float | None:
-    """RAGAS context recall (reference coverage by retrieved contexts)."""
-    return await _ragas_score("context_recall", item, ctx)
+async def context_recall(item: dict, ctx: EvalContext) -> dict | None:
+    """RAGAS context recall (reference coverage by retrieved contexts). Returns {score} or None."""
+    val = await _ragas_score("context_recall", item, ctx)
+    return _scored(val) if val is not None else None
 
 
-async def context_precision(item: dict, ctx: EvalContext) -> float | None:
-    """RAGAS context precision (retrieved contexts relevant to the question)."""
-    return await _ragas_score("context_precision", item, ctx)
+async def context_precision(item: dict, ctx: EvalContext) -> dict | None:
+    """RAGAS context precision (retrieved contexts relevant to the question). Returns {score} or None."""
+    val = await _ragas_score("context_precision", item, ctx)
+    return _scored(val) if val is not None else None
 
 
 # ── metric families ──────────────────────────────────────────────────────────────
