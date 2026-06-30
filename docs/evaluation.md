@@ -29,7 +29,7 @@ import it lazily and only fail if you call them without the extra.
 | Family | Module | Needs an LLM? | Use it to evaluate… |
 |--------|--------|---------------|---------------------|
 | **LLM-as-judge** | `evaluation.judge` | Most metrics yes (a few are deterministic/embedding) | The semantic quality of a model's answers and reports — faithfulness, relevancy, correctness, hallucination. |
-| **Retrieval** | `evaluation.retrieval_metrics` | No (pure functions, no network) | The ranked retrieval that feeds the LLM — recall@k, precision@k, MRR, MAP, nDCG, latency. |
+| **Retrieval** | `evaluation.retrieval_metrics` | No (pure functions, no network) | The ranked retrieval that feeds the LLM — recall@k, precision@k, MRR, MAP, nDCG. |
 
 Both are re-exported from `fireflyframework_agentic.evaluation`.
 
@@ -40,13 +40,13 @@ Both are re-exported from `fireflyframework_agentic.evaluation`.
 Each judge metric is an **async function** with the same signature:
 
 ```python
-async def metric(item: dict, ctx: EvalContext) -> dict | float | None
+async def metric(item: dict, ctx: EvalContext) -> dict | None
 ```
 
 - `item` — a plain dict of the output under evaluation (see schema below).
-- `ctx` — an `EvalContext` carrying the judge client, optional embedder, and run count.
-- The return is either a small summary dict, a single float, or `None` when the metric
-  cannot run (e.g. an embedding metric with no embedder, or a missing field).
+- `ctx` — an `EvalContext` carrying the judge client and an optional embedder.
+- The return is `{"score": float | None, …extra}`, or `None` when the metric cannot run
+  (e.g. an embedding metric with no embedder, or a missing field). See **Return shapes** below.
 
 ### EvalContext and JudgeClient
 
@@ -129,9 +129,9 @@ item = {
 
 async def main():
     ctx = EvalContext(client=JudgeClient("anthropic:claude-haiku-4-5"))
-    contains   = await contains_answer(item, ctx)     # 0.0–1.0
-    addresses  = await addresses_question(item, ctx)  # 0.0–1.0
-    print(contains, addresses)
+    contains   = await contains_answer(item, ctx)     # {"score": 0.0–1.0} or None
+    addresses  = await addresses_question(item, ctx)  # {"score": 0.0–1.0} or None
+    print(contains["score"], addresses["score"])
 
 asyncio.run(main())
 ```
@@ -149,68 +149,64 @@ the LLM with their own internal logic and blend embeddings for some). There is d
 overlap — e.g. `faithfulness` (ours) vs. `ragas_faithfulness` (RAGAS) score the same idea two
 ways.
 
-**Return shapes.** A metric that grades a single answer on one axis returns a bare `float`
-(the RAG Q&A and RAGAS groups). A metric that audits a *collection* (findings, citations,
-nodes, …) returns a dict with the counts **and the specific offenders** —
-e.g. `{supported, total, unsupported_ids}`. You can still get a float from these: when the
-metric has a meaningful aggregate it exposes it as a field (`actionability` → `score`,
-`answer_relevancy` → `score`, `citation_relevance` → `precision`, `surface_deduplication` →
-`distinct_rate`, `semantic_recovery` → `hybrid_recall`); otherwise derive your own
-(e.g. `supported / total`). Only pure defect counts (`contradiction`, `fabricated_entity`) and
-free-text probes (`open_gap`) have no single score by design.
+**Return shapes.** Every metric returns `{"score": float | None, …extra}` (or `None` when it
+doesn't apply). Read `result["score"]` for the headline number — comparable across all metrics —
+and the remaining keys for the breakdown (counts, ids, offending pairs). `score` is `None` only
+where there is no natural [0, 1] aggregate: pure defect counts (`fabricated_entity`,
+`contradiction`) and free-text / structured probes (`open_gap`, `comparative_vs_champion`).
 
 **Deterministic** — no LLM call, always available:
 
 | Metric | Returns | Measures |
 |--------|---------|----------|
-| `source_coverage` | `{cited, total, orphaned}` | Distinct source documents cited by ≥1 finding vs. all sources; `orphaned` lists uncited stems. |
-| `excerpt_fill_rate` | `{populated, total}` | Fraction of `evidence_index` entries that carry a non-empty excerpt. |
+| `source_coverage` | `{score, cited, total, orphaned}` | Distinct source documents cited by ≥1 finding vs. all sources; `orphaned` lists uncited stems. |
+| `excerpt_fill_rate` | `{score, populated, total}` | Fraction of `evidence_index` entries that carry a non-empty excerpt. |
 
 **Embedding** — requires `ctx.embedder`:
 
 | Metric | Returns | Measures |
 |--------|---------|----------|
-| `semantic_recovery` | `{lexical_recall, hybrid_recall, vector_recovered, tau, scored_denominator}` or `None` | Must-find recall: a lexical baseline (`lexical_recall`) lifted by a vector pass that recovers lexically-missed items above `tau`; `hybrid_recall` is the lexical-OR-vector union. Returns `None` when no embedder is set. |
+| `semantic_recovery` | `{score, lexical_recall, vector_recovered, tau, scored_denominator}` or `None` | Must-find recall: a lexical baseline (`lexical_recall`) lifted by a vector pass that recovers lexically-missed items above `tau`; `score` is the lexical-OR-vector union (hybrid recall). Returns `None` when no embedder is set. |
 
 **LLM-as-a-Judge (Custom rubric)** — our prompts via `ctx.client`:
 
 | Metric | Returns | Measures |
 |--------|---------|----------|
-| `faithfulness` | `{supported, total, unsupported_ids}` | Per-**finding** entailment against the finding's **own cited** excerpts (tally). Cf. `ragas_faithfulness`. |
-| `numeric_temporal_fidelity` | `{mismatches, count}` | Numbers/dates asserted in a finding that don't match its evidence. |
-| `citation_relevance` | `{precision, relevant, total}` | Context precision: fraction of cited passages actually relevant to the claim. |
-| `nc_semantic_precision` | `{asserted, total, asserted_ids}` | How many negative-control falsehoods (`nc_items`) the output asserts or endorses. |
-| `fabricated_entity` | `{count, entities}` | Systems/orgs/metrics named in the output but absent from the corpus. |
-| `contradiction` | `{count, pairs}` | Internally contradictory finding pairs. |
-| `open_gap` | `{gap}` | G-Eval open probe: the most important issue the output missed (free-text, no score). |
+| `faithfulness` | `{score, supported, total, unsupported_ids}` | Per-**finding** entailment against the finding's **own cited** excerpts. Cf. `ragas_faithfulness`. |
+| `numeric_temporal_fidelity` | `{score, mismatches, count}` | Numbers/dates asserted in a finding that don't match its evidence. |
+| `citation_relevance` | `{score, relevant, total}` | Context precision: fraction of cited passages actually relevant to the claim. |
+| `nc_semantic_precision` | `{score, asserted, total, asserted_ids}` | How many negative-control falsehoods (`nc_items`) the output asserts or endorses. |
+| `fabricated_entity` | `{score: None, count, entities}` | Systems/orgs/metrics named in the output but absent from the corpus. |
+| `contradiction` | `{score: None, count, pairs}` | Internally contradictory finding pairs. |
+| `open_gap` | `{score: None, gap}` | G-Eval open probe: the most important issue the output missed (free-text, no score). |
 | `actionability` | `{score, rated}` | Average 0–1 rating of whether proposed actions are specific, quantified, and linked. |
-| `severity_calibration` | `{miscalibrated, total, verdicts}` | Whether each finding's stated severity matches its evidence (under/over/calibrated). |
+| `severity_calibration` | `{score, miscalibrated, total, verdicts}` | Whether each finding's stated severity matches its evidence (under/over/calibrated). |
 | `answer_relevancy` | `{score}` | Does the output address the stated workspace intention? |
-| `surface_deduplication` | `{distinct, redundant, total, distinct_rate, redundant_pairs}` | Fraction of near-duplicate process-graph nodes that are genuinely distinct. |
-| `comparative_vs_champion` | `{candidate, champion, more_consistent}` or `None` | Pairwise five-axis review of candidate vs. `item["champion"]`. `None` if no champion. |
+| `surface_deduplication` | `{score, distinct, redundant, total, redundant_pairs}` | Fraction of near-duplicate process-graph nodes that are genuinely distinct. |
+| `comparative_vs_champion` | `{score: None, candidate, champion, more_consistent}` or `None` | Pairwise five-axis review of candidate vs. `item["champion"]`. `None` if no champion. |
 
 **LLM-as-a-Judge (RAGAS)** — the `ragas` package's own LLM judges; needs the `ragas` extra and `ctx.client` (plus an embedder for some):
 
 | Metric | Returns | Measures |
 |--------|---------|----------|
-| `answer_correctness` | `float` or `None` | Semantic F1 of the answer against the reference. |
-| `ragas_faithfulness` | `float` or `None` | Per-**claim** grounding: fraction of the answer's atomic claims inferable from the retrieved `contexts` (float). Cf. `faithfulness`. |
-| `context_recall` | `float` or `None` | Reference coverage by the retrieved `contexts`. |
-| `context_precision` | `float` or `None` | Retrieved `contexts` relevant to the question. |
+| `answer_correctness` | `{score}` or `None` | Semantic F1 of the answer against the reference. |
+| `ragas_faithfulness` | `{score}` or `None` | Per-**claim** grounding: fraction of the answer's atomic claims inferable from the retrieved `contexts`. Cf. `faithfulness`. |
+| `context_recall` | `{score}` or `None` | Reference coverage by the retrieved `contexts`. |
+| `context_precision` | `{score}` or `None` | Retrieved `contexts` relevant to the question. |
 
 **LLM-as-a-Judge (Custom rubric — RAG Q&A)** — our prompts via `ctx.client`:
 
 | Metric | Returns | Measures |
 |--------|---------|----------|
-| `contains_answer` | `float` or `None` | Does the answer contain the correct information from the reference? |
-| `addresses_question` | `float` or `None` | Does the answer directly address what the question asks? |
+| `contains_answer` | `{score}` or `None` | Does the answer contain the correct information from the reference? |
+| `addresses_question` | `{score}` or `None` | Does the answer directly address what the question asks? |
 
 #### `faithfulness` vs. `ragas_faithfulness`
 
-Both check grounding. `faithfulness` judges each **finding** against its own **cited** excerpts
-and returns a `{supported, total, unsupported_ids}` tally; `ragas_faithfulness` decomposes a RAG
-**answer** into atomic claims and scores the fraction inferable from the retrieved **contexts**
-as a float in `[0, 1]`.
+Both check grounding (and both return `{score, …}`). `faithfulness` judges each **finding**
+against its own **cited** excerpts — `score = supported / total`, plus `unsupported_ids`;
+`ragas_faithfulness` decomposes a RAG **answer** into atomic claims and its `score` is the
+fraction inferable from the retrieved **contexts**.
 
 ### Running a metric family at once
 
