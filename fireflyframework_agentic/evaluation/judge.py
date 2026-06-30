@@ -342,9 +342,20 @@ async def semantic_recovery(item: dict, ctx: EvalContext, tau: float = 0.70) -> 
 async def faithfulness(item: dict, ctx: EvalContext) -> dict:
     """Per-finding entailment: does each finding's CITED evidence support its claim?
 
-    Returns {supported, total, unsupported_ids}. Unlike ``ragas_faithfulness`` (claim-level
-    grounding of a RAG answer against retrieved contexts, as a float), this judges each
-    finding as a whole against its own citations and returns a tally.
+    Custom-rubric judge over a discovery report. For every finding it gathers the excerpts
+    the finding explicitly cites (evidence_refs -> evidence_index) and asks the LLM a single
+    binary verdict — does that cited evidence ENTAIL the finding's claim (SUPPORTED /
+    NOT_SUPPORTED)? A finding that cites no evidence is counted unsupported without an LLM
+    call. The unit judged is the whole finding, compared only against its own citations, and
+    the result is a tally (not a normalized score).
+
+    Returns {supported, total, unsupported_ids}.
+
+    Differs from ``ragas_faithfulness`` (which measures the same hallucination concept):
+    that one works on a RAG answer — it decomposes the ANSWER into atomic claims and scores
+    the fraction inferable from the retrieved ``contexts`` (not citations), returning a
+    single float in [0, 1]. Use this one for per-finding SUPPORTED/NOT_SUPPORTED
+    accountability when findings carry explicit citations.
     """
     ev_idx = _evidence_index(item)
     findings = item.get("findings", [])
@@ -863,11 +874,17 @@ async def answer_correctness(item: dict, ctx: EvalContext) -> float | None:
 
 
 async def ragas_faithfulness(item: dict, ctx: EvalContext) -> float | None:
-    """RAGAS faithfulness: fraction of the answer's atomic claims inferable from ``contexts``.
+    """RAGAS faithfulness: fraction of the answer's atomic claims grounded in contexts.
 
-    Float in [0, 1] (or None). RAGAS decomposes the answer into claims and verifies each
-    against the retrieved contexts. Unlike the custom ``faithfulness`` (per-finding verdict
-    against the finding's own citations, returned as a tally).
+    Runs the ragas library's Faithfulness metric on a RAG Q&A item. RAGAS first decomposes
+    ``answer`` into atomic claims (one LLM pass), then verifies each claim against the
+    retrieved ``contexts`` (a verdict per claim); the score is supported_claims /
+    total_claims — a float in [0, 1], or None when it cannot be computed.
+
+    Differs from the custom ``faithfulness``: that one judges each discovery FINDING as a
+    whole against its own CITED excerpts (not retrieved contexts) and returns a
+    {supported, total, unsupported_ids} tally rather than a normalized score. This one is
+    the right choice for grading a free-text RAG answer's grounding in its contexts.
     """
     return await _ragas_score("ragas_faithfulness", item, ctx)
 
