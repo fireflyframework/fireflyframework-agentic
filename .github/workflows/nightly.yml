@@ -9,6 +9,7 @@ jobs:
   test:
     name: Test (nightly)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -27,6 +28,7 @@ jobs:
     needs: test
     if: failure()
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       issues: write
@@ -85,6 +87,7 @@ jobs:
     needs: test
     if: success()
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       issues: write
