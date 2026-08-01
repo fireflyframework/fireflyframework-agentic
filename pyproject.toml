@@ -30,7 +30,7 @@ dependencies = [
     # openai->Responses default, to_ag_ui/to_a2a removal) exists, and an
     # unbounded ``>=`` would let a resolver silently pull it and break the Agent
     # construction seam in agents/base.py. 2.0 migration is a separate epic.
-    "pydantic-ai>=1.107.0,<2",
+    "pydantic-ai>=1.107.0,<3",
     "pydantic>=2.13,<3",
     "pydantic-settings>=2.14.2,<3",
     "jinja2>=3.1.0",
