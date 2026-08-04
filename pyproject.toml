@@ -40,7 +40,7 @@ dependencies = [
     # Pin to a known-good 0.0.x: this is a pre-1.0 package whose ``Usage``
     # dataclass fields / ``calc_price`` signature could change between minors,
     # which would break ALL cost resolution at once. Bump deliberately.
-    "genai-prices>=0.0.66,<0.1",
+    "genai-prices>=0.0.66,<0.2",
     # markdown-it-py backs content.markdown_chunker (structure-aware markdown
     # chunking). content/__init__ imports MarkdownChunker eagerly, which
     # imports markdown_it at module load, so this is a core dependency rather
