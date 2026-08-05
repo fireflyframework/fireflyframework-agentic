@@ -62,7 +62,7 @@ mongodb = [
     "pymongo>=4.10.0",
 ]
 security = [
-    "cryptography>=48.0.1",
+    "cryptography>=50.0.0",
 ]
 # Secure self-hosted script execution (fireflyframework_agentic.execution): the
 # Monty backend is a Rust micro-interpreter with a deny-by-default capability
