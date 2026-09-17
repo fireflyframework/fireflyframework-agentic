@@ -7,6 +7,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.06.15] - 2026-09-17
+
+What a host building digital workers on the framework had to carry itself, now upstream — each
+found by one worker runtime on `claude-sonnet-5` that wrote its own model factory, subclassed a
+private tool method, `setattr`'d a private flag, passed `hitl=True` unconditionally, and could
+not hand the framework the settings it had built.
+
+### Added
+
+- **`fireflyframework_agentic.models` — a model factory.** `ModelSpec` describes a model as data
+  (provider, model id, `Credential` inline / by reference / none, settings, capabilities, an
+  explicit class, profile overrides, provider arguments); `ModelFactory.build()` constructs the
+  pydantic-ai model (`AnthropicModel`, `OpenAIChatModel`, `OpenAIResponsesModel` — its own
+  builder, never aliased to Chat Completions — `BedrockConverseModel`, `GoogleModel`,
+  `MistralModel`, any OpenAI-compatible `base_url`), redeeming a credential reference through a
+  `CredentialResolver` and refusing, with `ModelBuildError` naming the fix, a description it
+  cannot follow. `model_settings_for()` translates a parameter profile (console or pydantic-ai
+  spelling) into `ModelSettings` and sends only what the model takes: sampling knobs dropped for
+  a model that refuses them and for a budget-style thinking turn, a budget clamped to the model's
+  ceiling, `{"type": "adaptive"}` + an effort level for an adaptive model, a label for an
+  effort-style model, nothing for a model without thinking. `EFFORT_BUDGETS`, `effort_for`,
+  `anthropic_effort_for` are the one vocabulary a budget is read back out of.
+- **Claude 5 awareness.** pydantic-ai 1.107's Anthropic profile table predates Claude Opus 5 and
+  Claude Sonnet 5 (no 1.x release carries them). `models.claude` corrects the derived profile for
+  the Claude 5 family — adaptive thinking, every effort level, budgets and sampling refused,
+  native structured output — always with `dataclasses.replace`, never by constructing a profile,
+  so the SDK's own fields survive. Verified against the SDK's own `prepare_request`: the
+  translated settings pass, and a `budget_tokens` on Opus 5 is refused by the SDK because the
+  profile now says so. Proved live on `claude-sonnet-5`.
+- **A Claude 5 price row.** `genai-prices` 0.0.66 raises `LookupError` for the Claude 5 ids, so
+  every call priced to `None` with a WARNING and a strict-mode host could not run the current
+  generation at all. `framework_price_table_cost` (before `genai_prices_cost` in
+  `DEFAULT_RESOLVERS`) carries the Anthropic first-party rates for `claude-opus-5`,
+  `claude-sonnet-5` and `claude-fable-5`, cache writes at 1.25× and reads at 0.10× input, keyed
+  by id prefix so a dated snapshot, a Bedrock `anthropic.` prefix and a Vertex `@version` are one
+  row. A row goes the day genai-prices carries the id.
+- **`ToolCallListener` — a public seam around every tool call.** `before_call` / `after_call` /
+  `on_error` / `on_pause` around `_execute`, with the kwargs and `ctx` the tool sees, registered
+  per tool (`listeners=` or `add_listener`). The guard chain is itself the first listener
+  (`GuardChainListener`), so there is one order every observer can reason about and a refused
+  call reaches every `on_error` with the `ToolGuardError` the caller sees. Every hook is
+  optional; a listener that fails in `after_call` fails the call, because a ledger that silently
+  missed a row is worse than a turn that failed loudly. `_guarded_execute` stays private.
+- **`BaseTool.require_approval(flag)`** — the supported way to raise (or lower) `requires_approval`
+  after construction, for a host that learns which tools must stop for a person only once the
+  surface is built; returns whether anything changed. **`BaseTool(defers=True)`** declares that a
+  tool may raise `CallDeferred` from its body.
+- **`set_config(config)`** installs a `FireflyAgenticConfig` the host built as the instance
+  `get_config()` returns, and **`FireflyAgent(config=...)`** scopes one to an agent (`agent.config`);
+  the agent's default middleware, retries, cost tracking and rate-limit back-off read it.
+  `MiddlewareChain` is iterable.
+- **`fireflyframework_agentic.skills` — a `Skill` primitive.** Frontmatter (`key`, `name`,
+  `description`, `when_to_use`, `version`, `requires` {tools, connectors, skills},
+  `parameters_schema`, `examples`, a resource index), a markdown body rendered as a Jinja
+  template over a validated config (`with_config`, `render`, `validate_config`, `unmet`,
+  `digest`), and resources (`SkillResource`: reference / template / script, inline or lazy) that
+  never reach the prompt. `parse_skill` reads SKILL.md text, `load_skill` a directory (declared
+  resources only), `render_skills_section` builds the `## Skills` prompt section with each
+  resource listed as the exact `read_skill(key, path)` call, and `build_read_skill_tool` is that
+  tool — a plain `BaseTool` answering a wrong key or path with a `ModelRetry` naming what exists.
+  Proved live on `claude-sonnet-5`: the model read a checklist through `read_skill` and quoted
+  a control code that was in the resource and not in the prompt.
+- **`PgVectorVectorStore(create_schema=False)`** verifies the extension and the table exist and
+  raises `VectorStoreError` naming what is missing instead of running DDL, for pods whose schema
+  is migrated and whose role must never create.
+
+### Changed
+
+- **`FireflyAgent._detect_hitl` recurses.** It looked one level deep — a `CombinedToolset`,
+  `FilteredToolset` or `WrapperToolset` around an approval tool defeated it, and a tool that
+  paused from inside its body was invisible, so the first pause crashed the run with pydantic-ai's
+  `UserError`. It now follows `.toolsets` and `.wrapped` at any depth and honours `defers`.
+- **`LoggingMiddleware.for_config`**: the default logging middleware previews `0` characters of
+  the prompt when `instrumentation_include_content` is off — one privacy switch for spans and
+  logs, not two. `LoggingMiddleware()` built by hand keeps `preview_length=80`.
+- **`CalculatorTool` caps `**` at `MAX_EXPONENT = 1024`.** `2 ** 10_000_000` allocated until
+  the process died; it now answers `{"error": "exponent ... exceeds the calculator's limit"}`.
+- `pyyaml` is a declared dependency (it was reached only transitively, and two modules import it).
+
+## [26.06.14] - 2026-06-30
+
+The evaluation framework (#279), released without a changelog entry; recorded here.
+
+### Added
+
+- **`fireflyframework_agentic.evaluation`** — metrics for assessing LLM and pipeline outputs,
+  every one a plain function: LLM-as-judge metrics built on `FireflyAgent` (`JudgeClient`;
+  faithfulness, answer relevancy, answer correctness, citation relevance, fabricated entity,
+  hallucination; RAGAS wrappers behind the `[evaluation]` extra) and deterministic retrieval
+  metrics (`hit@k`, `recall@k`, `precision@k`, MRR, MAP, nDCG, no-answer rate, citation
+  precision). Uniform return shape: a leading `score` float, then extras. See `docs/evaluation.md`.
+
 ## [26.06.13] - 2026-06-22
 
 Best-in-class auto-instrumentation, on by default — plus an observability-metrics de-dup.

@@ -239,4 +239,52 @@ def test_resolve_cost_default_chain_used_when_none() -> None:
 
 def test_default_resolvers_is_tuple() -> None:
     assert isinstance(DEFAULT_RESOLVERS, tuple)
-    assert len(DEFAULT_RESOLVERS) == 2
+    # provider-reported, the framework's own rows, then genai-prices.
+    assert len(DEFAULT_RESOLVERS) == 3
+
+
+# ---------------------------------------------------------------------------
+# Claude 5: a price row the framework carries until genai-prices does
+# ---------------------------------------------------------------------------
+
+
+def test_claude_5_is_priced_although_genai_prices_does_not_know_it() -> None:
+    from fireflyframework_agentic.observability.cost_resolvers import (
+        DEFAULT_RESOLVERS,
+        framework_price_table_cost,
+        genai_prices_cost,
+        resolve_cost,
+    )
+
+    ctx = CostContext(model="anthropic:claude-opus-5", input_tokens=1_000_000, output_tokens=1_000_000)
+    assert genai_prices_cost(ctx) is None
+    assert framework_price_table_cost(ctx) == pytest.approx(30.0)
+    assert resolve_cost(ctx) == pytest.approx(30.0)
+    # The table runs before genai-prices, and only for ids it carries.
+    assert DEFAULT_RESOLVERS.index(framework_price_table_cost) < DEFAULT_RESOLVERS.index(genai_prices_cost)
+    assert (
+        framework_price_table_cost(CostContext(model="anthropic:claude-haiku-4-5", input_tokens=1, output_tokens=1))
+        is None
+    )
+
+
+def test_claude_5_cache_tokens_are_priced_at_the_provider_multipliers() -> None:
+    from fireflyframework_agentic.observability.cost_resolvers import framework_price_table_cost
+
+    ctx = CostContext(
+        model="claude-sonnet-5",
+        input_tokens=1_000_000,
+        output_tokens=0,
+        cache_creation_tokens=1_000_000,
+        cache_read_tokens=1_000_000,
+    )
+    # $2 input + $2 * 1.25 cache write + $2 * 0.10 cache read
+    assert framework_price_table_cost(ctx) == pytest.approx(2.0 + 2.5 + 0.2)
+
+
+def test_bedrock_and_dated_claude_5_ids_resolve_to_the_same_row() -> None:
+    from fireflyframework_agentic.observability.cost_resolvers import framework_price_table_cost
+
+    for model in ("bedrock:anthropic.claude-opus-5", "anthropic:claude-opus-5-20260401", "claude-opus-5@20260401"):
+        ctx = CostContext(model=model, input_tokens=1_000_000, output_tokens=0)
+        assert framework_price_table_cost(ctx) == pytest.approx(5.0), model

@@ -45,9 +45,11 @@ from pydantic_ai.toolsets import (
 
 from fireflyframework_agentic.tools.base import (
     BaseTool,
+    GuardChainListener,
     GuardProtocol,
     GuardResult,
     ParameterSpec,
+    ToolCallListener,
     ToolInfo,
     ToolProtocol,
 )
@@ -81,6 +83,7 @@ __all__ = [
     "FallbackComposer",
     "FilteredToolset",
     "FunctionToolset",
+    "GuardChainListener",
     "GuardProtocol",
     "GuardResult",
     "ParameterSpec",
@@ -94,6 +97,7 @@ __all__ = [
     "ToolApproved",
     "ToolBuilder",
     "ToolDenied",
+    "ToolCallListener",
     "ToolInfo",
     "ToolKit",
     "ToolProtocol",

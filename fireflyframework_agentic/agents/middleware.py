@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
@@ -145,3 +146,7 @@ class MiddlewareChain:
 
     def __len__(self) -> int:
         return len(self._middlewares)
+
+    def __iter__(self) -> Iterator[AgentMiddleware]:
+        """The middleware in call order (``before_run`` order)."""
+        return iter(list(self._middlewares))

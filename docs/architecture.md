@@ -680,3 +680,18 @@ from fireflyframework_agentic.core import FireflyAgenticConfig
 config = FireflyAgenticConfig()
 print(config.default_model)
 ```
+
+A host with its own configuration tree (a PyFly `pyfly.yaml`, a settings service) builds the
+instance itself and hands it to the framework instead of exporting variables:
+
+```python
+from fireflyframework_agentic.config import set_config
+
+set_config(FireflyAgenticConfig(default_model="anthropic:claude-opus-5", usage_tracker_max_records=1))
+```
+
+`set_config` installs the instance `get_config()` returns from then on; install it before the
+first agent is built. An agent may also carry a config of its own — `FireflyAgent(config=...)`
+— which scopes it to that agent (its default middleware, retries, cost tracking and rate-limit
+back-off read it) without touching the singleton, so a test harness or a multi-tenant host can
+build two agents from two settings objects.

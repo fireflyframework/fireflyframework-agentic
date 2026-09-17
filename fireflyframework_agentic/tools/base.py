@@ -130,6 +130,76 @@ class GuardProtocol(Protocol):
         ...
 
 
+@runtime_checkable
+class ToolCallListener(Protocol):
+    """Sees every call a :class:`BaseTool` makes — begin, end, failure, pause.
+
+    The one public seam around ``_execute``. Before this protocol existed the only path every
+    call took (guards, timeout, error wrapping) was the private ``_guarded_execute``, so a host
+    that needed a record of each call as it happened — a per-turn ledger, an audit trail, a
+    metering row, a trace — subclassed a private method and broke on every refactor. A listener
+    is registered per tool (``listeners=`` at construction or :meth:`BaseTool.add_listener`) and
+    receives, in order:
+
+    * ``before_call`` once the earlier listeners (the guard chain first) have let the call
+      through; raising here refuses the call — a ``ModelRetry`` tells the model why, anything
+      else becomes a ``ToolError`` — and later listeners never see ``before_call`` for it;
+    * exactly one of ``after_call`` (with the result the caller receives), ``on_error`` (with
+      the exception the caller receives: ``ToolError``, ``ToolTimeoutError``, ``ToolGuardError``
+      or ``ModelRetry``) or ``on_pause`` (with the human-in-the-loop signal, ``ApprovalRequired``
+      or ``CallDeferred``: the call is waiting on a person, it has neither succeeded nor failed).
+
+    Every method is optional: a listener defines the hooks it needs. ``kwargs`` are the tool's
+    arguments, never ``ctx``. ``ctx`` is the same object the tool receives: the pydantic-ai
+    ``RunContext`` when the call came through an agent AND the tool opted in with
+    ``takes_ctx=True`` (read ``ctx.tool_call_id`` to correlate the call with the model's
+    history), ``None`` otherwise — a tool that did not opt in is never handed the context, by
+    the tool contract, and its listeners are not either.
+    """
+
+    async def before_call(self, tool: BaseTool, kwargs: dict[str, Any], ctx: Any) -> None:
+        """The call is about to run. Raise to refuse it."""
+        ...
+
+    async def after_call(self, tool: BaseTool, kwargs: dict[str, Any], ctx: Any, result: Any) -> None:
+        """The call returned ``result``."""
+        ...
+
+    async def on_error(self, tool: BaseTool, kwargs: dict[str, Any], ctx: Any, exc: BaseException) -> None:
+        """The call failed with ``exc`` — the exception the caller will receive."""
+        ...
+
+    async def on_pause(self, tool: BaseTool, kwargs: dict[str, Any], ctx: Any, signal: BaseException) -> None:
+        """The call paused for a person (``ApprovalRequired`` / ``CallDeferred``)."""
+        ...
+
+
+class GuardChainListener:
+    """The tool's guard chain, run as the FIRST listener's ``before_call``.
+
+    Guards used to be evaluated by a private loop ahead of the listeners' seam; running them as
+    a listener means there is one order every observer can reason about — guards refuse first,
+    then each listener's ``before_call`` in registration order — and a refused call reaches
+    every listener's ``on_error`` with the ``ToolGuardError`` the caller sees. The listener
+    holds the tool's own guard list (not a copy) so ``tool.guards.append(...)`` after
+    construction, which the decorators do, still counts.
+    """
+
+    def __init__(self, guards: list[GuardProtocol]) -> None:
+        self._guards = guards
+
+    @property
+    def guards(self) -> list[GuardProtocol]:
+        """The live guard list this listener evaluates."""
+        return self._guards
+
+    async def before_call(self, tool: BaseTool, kwargs: dict[str, Any], ctx: Any) -> None:
+        for guard in self._guards:
+            result = await guard.check(tool.name, kwargs)
+            if not result.passed:
+                raise ToolGuardError(f"Guard rejected execution of tool '{tool.name}': {result.reason}")
+
+
 # ---------------------------------------------------------------------------
 # Abstract base class
 # ---------------------------------------------------------------------------
@@ -157,7 +227,16 @@ class BaseTool(ABC):
             executes and surfaces a ``DeferredToolRequests`` for human
             sign-off (resolved natively via ``DeferredToolResults``); the tool
             body runs only once the call is approved. See the agent's
-            human-in-the-loop docs.
+            human-in-the-loop docs. Change it after construction with
+            :meth:`require_approval`.
+        defers: Declare that this tool may raise ``CallDeferred`` from its body
+            (a call the run must pause on and a host completes out of band).
+            :class:`~fireflyframework_agentic.agents.base.FireflyAgent` widens
+            its output type for a deferring tool exactly as it does for an
+            approval-required one, so the pause is planned rather than a
+            ``UserError`` from pydantic-ai at the first deferral.
+        listeners: :class:`ToolCallListener` objects that see every call
+            (after the guard chain, which is always the first listener).
     """
 
     def __init__(
@@ -171,6 +250,8 @@ class BaseTool(ABC):
         timeout: float | None = None,
         takes_ctx: bool = False,
         requires_approval: bool = False,
+        defers: bool = False,
+        listeners: Sequence[ToolCallListener] = (),
     ) -> None:
         self._name = name
         self._description = description
@@ -180,6 +261,10 @@ class BaseTool(ABC):
         self._timeout = timeout
         self._takes_ctx = takes_ctx
         self._requires_approval = requires_approval
+        self._defers = defers
+        # The guard chain is the first listener, always: refusing a call is the first thing
+        # that can happen to it, and everything that watches calls sees the refusal.
+        self._listeners: list[Any] = [GuardChainListener(self._guards), *listeners]
 
     # -- Properties ----------------------------------------------------------
 
@@ -218,6 +303,36 @@ class BaseTool(ABC):
         """Whether calls to this tool require human-in-the-loop approval."""
         return self._requires_approval
 
+    def require_approval(self, flag: bool = True) -> bool:
+        """Set :attr:`requires_approval` after construction; returns whether it changed.
+
+        The supported door for a host that learns which tools must stop for a person only
+        once the whole surface is built — a policy that names tools, a room rule, a plan — and
+        would otherwise have to rebuild every tool or reach for the private attribute. The flag
+        must be final before the tool is handed to a :class:`FireflyAgent`, which copies it
+        into the native ``pydantic_ai.Tool`` at construction.
+        """
+        if self._requires_approval == flag:
+            return False
+        self._requires_approval = flag
+        return True
+
+    @property
+    def defers(self) -> bool:
+        """Whether this tool declares that it may raise ``CallDeferred``."""
+        return self._defers
+
+    @property
+    def listeners(self) -> list[Any]:
+        """The call listeners, guard chain first."""
+        return self._listeners
+
+    def add_listener(self, listener: ToolCallListener) -> None:
+        """Append a :class:`ToolCallListener`; adding the same object twice is a no-op."""
+        if any(existing is listener for existing in self._listeners):
+            return
+        self._listeners.append(listener)
+
     # -- Execution -----------------------------------------------------------
 
     async def execute(self, **kwargs: Any) -> Any:
@@ -242,10 +357,26 @@ class BaseTool(ABC):
         return await self._guarded_execute(kwargs, ctx=ctx)
 
     async def _guarded_execute(self, kwargs: dict[str, Any], *, ctx: Any) -> Any:
-        for guard in self._guards:
-            result = await guard.check(self._name, kwargs)
-            if not result.passed:
-                raise ToolGuardError(f"Guard rejected execution of tool '{self._name}': {result.reason}")
+        """The one path every call takes: listeners (guards first), timeout, error wrapping.
+
+        Kept private on purpose — :class:`ToolCallListener` is the extension point. A subclass
+        that overrides this bypasses every listener the host registered, silently.
+        """
+        try:
+            await self._notify_before(kwargs, ctx)
+        except (ApprovalRequired, CallDeferred) as signal:
+            await self._notify("on_pause", kwargs, ctx, signal)
+            raise
+        except BaseException as exc:
+            failure = (
+                exc
+                if isinstance(exc, ToolError) or _is_model_retry(exc)
+                else ToolError(f"Tool '{self._name}' refused: {exc}")
+            )
+            if failure is not exc:
+                failure.__cause__ = exc
+            await self._notify("on_error", kwargs, ctx, failure)
+            raise failure from (None if failure is exc else exc)
 
         logger.debug("Executing tool '%s' with kwargs=%s", self._name, list(kwargs.keys()))
         # ``_ctx`` reaches ``_execute`` only for ctx-aware tools; it is never in
@@ -254,17 +385,22 @@ class BaseTool(ABC):
         try:
             coro = self._execute(**exec_kwargs)
             if self._timeout is not None:
-                return await asyncio.wait_for(coro, timeout=self._timeout)
-            return await coro
+                result = await asyncio.wait_for(coro, timeout=self._timeout)
+            else:
+                result = await coro
         except TimeoutError:
-            raise ToolTimeoutError(f"Tool '{self._name}' timed out after {self._timeout}s") from None
-        except (ApprovalRequired, CallDeferred):
+            failure = ToolTimeoutError(f"Tool '{self._name}' timed out after {self._timeout}s")
+            await self._notify("on_error", kwargs, ctx, failure)
+            raise failure from None
+        except (ApprovalRequired, CallDeferred) as signal:
             # pydantic-ai human-in-the-loop / deferral control signals. Like
             # ``ModelRetry`` these are NOT errors: they must reach the agent graph
             # untouched so the run pauses and surfaces a ``DeferredToolRequests``.
             # Wrapping them as ``ToolError`` would break dynamic tool approval.
+            await self._notify("on_pause", kwargs, ctx, signal)
             raise
-        except ToolError:
+        except ToolError as exc:
+            await self._notify("on_error", kwargs, ctx, exc)
             raise
         except Exception as exc:
             # ``ModelRetry`` is Pydantic-AI's way of telling the agent
@@ -280,8 +416,33 @@ class BaseTool(ABC):
             # model history at all. Letting it propagate untouched
             # restores the documented contract.
             if _is_model_retry(exc):
+                await self._notify("on_error", kwargs, ctx, exc)
                 raise
-            raise ToolError(f"Tool '{self._name}' failed: {exc}") from exc
+            failure = ToolError(f"Tool '{self._name}' failed: {exc}")
+            failure.__cause__ = exc
+            await self._notify("on_error", kwargs, ctx, failure)
+            raise failure from exc
+
+        try:
+            await self._notify("after_call", kwargs, ctx, result)
+        except Exception as exc:
+            # A listener that cannot record the outcome is a failed call, not a successful one
+            # with a hole in the record: a ledger that silently missed a row is worse than a
+            # turn that failed loudly, and every listener before it already heard ``after_call``.
+            raise ToolError(f"Tool '{self._name}' succeeded but a call listener failed: {exc}") from exc
+        return result
+
+    async def _notify_before(self, kwargs: dict[str, Any], ctx: Any) -> None:
+        for listener in self._listeners:
+            hook = getattr(listener, "before_call", None)
+            if hook is not None:
+                await hook(self, kwargs, ctx)
+
+    async def _notify(self, event: str, kwargs: dict[str, Any], ctx: Any, payload: Any) -> None:
+        for listener in self._listeners:
+            hook = getattr(listener, event, None)
+            if hook is not None:
+                await hook(self, kwargs, ctx, payload)
 
     def pydantic_handler(self) -> Any:
         """Return a callable suitable for :class:`pydantic_ai.Tool`.

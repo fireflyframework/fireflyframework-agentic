@@ -174,7 +174,72 @@ def genai_prices_cost(ctx: CostContext) -> float | None:
     return float(result.total_price)
 
 
-DEFAULT_RESOLVERS: tuple[CostFn, ...] = (provider_reported_cost, genai_prices_cost)
+# ---------------------------------------------------------------------------
+# The framework's own price rows
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PriceRow:
+    """USD per million tokens for one model: input, output, and the cache multipliers.
+
+    Anthropic prices a cache write at 1.25x input and a cache read at 0.10x input; the
+    multipliers are on the row so a provider with a different rule can carry its own.
+    """
+
+    input_per_million: float
+    output_per_million: float
+    cache_write_multiplier: float = 1.25
+    cache_read_multiplier: float = 0.10
+
+    def cost(self, ctx: CostContext) -> float:
+        per_token_in = self.input_per_million / 1_000_000
+        per_token_out = self.output_per_million / 1_000_000
+        return (
+            ctx.input_tokens * per_token_in
+            + ctx.cache_creation_tokens * per_token_in * self.cache_write_multiplier
+            + ctx.cache_read_tokens * per_token_in * self.cache_read_multiplier
+            + (ctx.output_tokens + ctx.reasoning_tokens) * per_token_out
+        )
+
+
+#: Rows genai-prices 0.0.66 does not carry, keyed by the model-id PREFIX (a dated snapshot, a
+#: Vertex ``@version`` suffix and a Bedrock ``anthropic.`` prefix all resolve to the same row).
+#: Anthropic first-party rates at the date of this release. A row is deleted the day
+#: genai-prices prices the id, so the community table stays the source of record; until then
+#: a Claude 5 call resolved to ``None`` — WARNING + ``cost_unknown`` on every call, and a host
+#: in strict mode could not run the current generation at all.
+FRAMEWORK_PRICE_TABLE: dict[str, PriceRow] = {
+    "claude-opus-5": PriceRow(5.00, 25.00),
+    "claude-sonnet-5": PriceRow(2.00, 10.00),
+    "claude-fable-5": PriceRow(10.00, 50.00),
+}
+
+
+def _bare_model_ref(model: str) -> str:
+    ref = model.split(":", 1)[1] if ":" in model else model
+    ref = ref.lower()
+    if ref.startswith("anthropic."):
+        ref = ref[len("anthropic.") :]
+    return ref.split("@", 1)[0]
+
+
+def framework_price_table_cost(ctx: CostContext) -> float | None:
+    """Price a model from :data:`FRAMEWORK_PRICE_TABLE`, else return ``None``.
+
+    Runs before :func:`genai_prices_cost` and answers only for the ids it carries, so it never
+    shadows a community price. Match is by prefix on the bare id: ``claude-opus-5``,
+    ``claude-opus-5-20260401``, ``anthropic.claude-opus-5`` and ``claude-opus-5@20260401`` are
+    one row.
+    """
+    ref = _bare_model_ref(ctx.model)
+    for prefix, row in FRAMEWORK_PRICE_TABLE.items():
+        if ref == prefix or ref.startswith(prefix + "-") or ref.startswith(prefix + "@"):
+            return row.cost(ctx)
+    return None
+
+
+DEFAULT_RESOLVERS: tuple[CostFn, ...] = (provider_reported_cost, framework_price_table_cost, genai_prices_cost)
 
 
 def _strict_mode_from_config() -> bool:

@@ -8,7 +8,7 @@ import pytest
 from pydantic_ai.exceptions import ModelHTTPError
 
 from fireflyframework_agentic.agents.base import FireflyAgent
-from fireflyframework_agentic.config import reset_config
+from fireflyframework_agentic.config import FireflyAgenticConfig, reset_config
 
 
 @pytest.fixture(autouse=True)
@@ -51,21 +51,16 @@ class TestRunWithRateLimitRetry:
 
     async def test_429_exhausts_retries(self):
         """Always 429 — verify ModelHTTPError propagates after max retries."""
-        agent = _make_agent()
-
+        # The agent reads ITS config (scoped at construction), not the accessor at call time.
+        agent = FireflyAgent(
+            "test-retry",
+            model="test",
+            auto_register=False,
+            config=FireflyAgenticConfig(rate_limit_max_retries=2, rate_limit_base_delay=0.01, rate_limit_max_delay=0.1),
+        )
         agent._agent.run = AsyncMock(side_effect=_make_429())
 
-        with (
-            patch("asyncio.sleep", new_callable=AsyncMock),
-            patch(
-                "fireflyframework_agentic.agents.base.get_config",
-            ) as mock_cfg,
-        ):
-            cfg = mock_cfg.return_value
-            cfg.rate_limit_max_retries = 2
-            cfg.rate_limit_base_delay = 0.01
-            cfg.rate_limit_max_delay = 0.1
-
+        with patch("asyncio.sleep", new_callable=AsyncMock):
             with pytest.raises(ModelHTTPError) as exc_info:
                 await agent._run_with_rate_limit_retry("hello")
 
@@ -119,16 +114,10 @@ class TestRunWithRateLimitRetry:
 
         agent._agent.run = AsyncMock(return_value=mock_result)
 
-        with patch(
-            "fireflyframework_agentic.agents.base.get_config",
-        ) as mock_cfg:
-            cfg = mock_cfg.return_value
-            cfg.rate_limit_max_retries = 3
-            cfg.rate_limit_base_delay = 1.0
-            cfg.rate_limit_max_delay = 60.0
-            cfg.quota_enabled = False
-
-            result = await agent._run_with_rate_limit_retry("hello")
+        agent._config = FireflyAgenticConfig(
+            rate_limit_max_retries=3, rate_limit_base_delay=1.0, rate_limit_max_delay=60.0, quota_enabled=False
+        )
+        result = await agent._run_with_rate_limit_retry("hello")
 
         assert result is mock_result
         assert agent._agent.run.call_count == 1

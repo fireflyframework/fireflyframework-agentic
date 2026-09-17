@@ -317,6 +317,25 @@ def get_config() -> FireflyAgenticConfig:
     return _config_instance
 
 
+def set_config(config: FireflyAgenticConfig) -> None:
+    """Install ``config`` as the instance :func:`get_config` returns from now on.
+
+    For a host with its own configuration tree — a PyFly ``pyfly.yaml``, a settings service —
+    that builds the :class:`FireflyAgenticConfig` itself and needs the framework to read it,
+    rather than the process environment. Before this setter existed the singleton had no
+    public door, so such a host's translated settings never reached the framework: the usage
+    tracker kept its 10 000-record default, ``default_model`` stayed the framework's, and the
+    only alternatives were exporting ``FIREFLY_AGENTIC_*`` variables or writing the private
+    global. Install it before the first :class:`~fireflyframework_agentic.agents.base.FireflyAgent`
+    is built; an agent may also be given a config of its own (``FireflyAgent(config=...)``).
+    """
+    if not isinstance(config, FireflyAgenticConfig):
+        raise TypeError(f"set_config expects a FireflyAgenticConfig, got {type(config).__name__}")
+    global _config_instance  # noqa: PLW0603
+    with _config_lock:
+        _config_instance = config
+
+
 def reset_config() -> None:
     """Reset the cached configuration.  Useful in tests."""
     global _config_instance  # noqa: PLW0603
