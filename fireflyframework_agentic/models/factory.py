@@ -44,7 +44,12 @@ from pydantic_ai.models import Model
 from pydantic_ai.profiles import ModelProfile
 
 from fireflyframework_agentic.model_utils import detect_model_family
-from fireflyframework_agentic.models.claude import claude_capabilities, claude_profile, is_claude
+from fireflyframework_agentic.models.claude import (
+    bedrock_claude_profile,
+    claude_capabilities,
+    claude_profile,
+    is_claude,
+)
 from fireflyframework_agentic.models.spec import (
     Credential,
     CredentialResolver,
@@ -207,6 +212,14 @@ def model_settings_for(spec: ModelSpec) -> dict[str, Any]:
         style = capabilities.thinking_style
         # One of the two is set here; a label with no budget is folded onto the table's budget.
         resolved_budget = budget if budget is not None else EFFORT_BUDGETS.get(str(effort), EFFORT_BUDGETS["medium"])
+        # BEDROCK READS ITS OWN KEY. `BedrockConverseModel` builds `additionalModelRequestFields`
+        # from `bedrock_additional_model_requests_fields` (or from the portable `thinking`
+        # setting, gated on ITS profile table, which predates Claude 5 too); `anthropic_thinking`
+        # and `anthropic_effort` are the Anthropic model's keys and Bedrock ignores them —
+        # a Claude turn on Bedrock ran with no thinking at all and nothing said so. The wire
+        # shape inside the fields is the Anthropic one (`thinking`, `output_config.effort`),
+        # which is what Bedrock forwards to the model.
+        bedrock = spec.provider == "bedrock" and is_claude(spec.model)
         if style == "budget":
             ceiling = capabilities.max_thinking_budget_tokens
             tokens = resolved_budget
@@ -216,6 +229,12 @@ def model_settings_for(spec: ModelSpec) -> dict[str, Any]:
                 tokens = min(tokens, ceiling)
             if family == "google":
                 out["google_thinking_config"] = {"thinking_budget": tokens}
+            elif bedrock:
+                out["bedrock_additional_model_requests_fields"] = {
+                    "thinking": {"type": "enabled", "budget_tokens": tokens}
+                }
+                for key in _SAMPLING_KEYS:
+                    out.pop(key, None)
             else:
                 out["anthropic_thinking"] = {"type": "enabled", "budget_tokens": tokens}
                 # THINKING AND SAMPLING KNOBS ARE MUTUALLY EXCLUSIVE AT ANTHROPIC. With extended
@@ -235,8 +254,15 @@ def model_settings_for(spec: ModelSpec) -> dict[str, Any]:
             # `anthropic_effort` are read directly, whatever the table thinks. A budget is
             # folded onto an effort level — `{"type": "enabled", "budget_tokens": N}` is a 400
             # on these models.
-            out["anthropic_thinking"] = {"type": "adaptive"}
-            out["anthropic_effort"] = str(effort) if effort is not None else anthropic_effort_for(resolved_budget)
+            level = str(effort) if effort is not None else anthropic_effort_for(resolved_budget)
+            if bedrock:
+                out["bedrock_additional_model_requests_fields"] = {
+                    "thinking": {"type": "adaptive"},
+                    "output_config": {"effort": level},
+                }
+            else:
+                out["anthropic_thinking"] = {"type": "adaptive"}
+                out["anthropic_effort"] = level
             for key in _SAMPLING_KEYS:
                 out.pop(key, None)
 
@@ -259,6 +285,11 @@ def _derived_profile(spec: ModelSpec) -> ModelProfile:
     ``replace`` a dataclass to work from, so the overrides apply either way.
     """
     if is_claude(spec.model):
+        if spec.provider == "bedrock":
+            try:
+                return bedrock_claude_profile(spec.model)
+            except ImportError:  # pragma: no cover - boto3 is the bedrock extra; the build fails later, louder
+                logger.warning("bedrock support is not installed; using the Anthropic profile for %s", spec.model)
         return claude_profile(spec.model)
     family = detect_model_family(f"{spec.provider}:{spec.model}")
     try:

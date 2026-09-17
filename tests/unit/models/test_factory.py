@@ -334,3 +334,115 @@ class TestSettingsAgainstTheSdk:
         model = await ModelFactory().build(spec)
         prepared, _ = model.prepare_request(model_settings_for(spec), ModelRequestParameters())  # type: ignore[arg-type]
         assert prepared == {"max_tokens": 4096, "anthropic_thinking": {"type": "enabled", "budget_tokens": 2048}}
+
+
+def _bedrock_spec(model: str, **kw: Any) -> ModelSpec:
+    return ModelSpec(
+        provider="bedrock", model=model, credential=Credential.api_key("AKIA:secret"), region="us-east-1", **kw
+    )
+
+
+class TestBedrockIds:
+    """Bedrock ids come in three spellings and every one names the same Claude.
+
+    ``anthropic.claude-opus-5`` (bare), ``us.anthropic.claude-opus-5`` / ``global.anthropic.…``
+    (a cross-region inference profile — what a production account actually calls) and the
+    dated ``us.anthropic.claude-haiku-4-5-20251001-v1:0``. Only the bare form was recognised,
+    so a cross-region id kept its temperature and dropped its budget: a 400 on Bedrock.
+    """
+
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "us.anthropic.claude-opus-5",
+            "global.anthropic.claude-sonnet-5",
+            "eu.anthropic.claude-opus-5-v1:0",
+            "apac.anthropic.claude-sonnet-5",
+            "us-gov.anthropic.claude-opus-5",
+        ],
+    )
+    def test_cross_region_ids_are_claude_5(self, model: str) -> None:
+        capabilities = capabilities_for("bedrock", model)
+        assert capabilities.thinking_style == "adaptive"
+        assert capabilities.refuses_sampling is True
+
+    def test_a_dated_cross_region_haiku_is_a_budget_model(self) -> None:
+        capabilities = capabilities_for("bedrock", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
+        assert capabilities.thinking_style == "budget"
+        assert capabilities.refuses_sampling is False
+
+    def test_a_non_anthropic_bedrock_id_is_not_claude(self) -> None:
+        assert capabilities_for("bedrock", "us.amazon.nova-pro-v1:0") == ModelCapabilities()
+
+
+class TestBedrockSettings:
+    """Bedrock reads thinking from ``bedrock_additional_model_requests_fields`` (or its own
+    profile-gated portable path), never from ``anthropic_thinking`` / ``anthropic_effort`` —
+    those are the Anthropic model's keys, and on Bedrock they were silently ignored, so a
+    Claude turn ran with no thinking at all."""
+
+    def test_adaptive_claude_on_bedrock_gets_thinking_and_effort_in_the_bedrock_fields(self) -> None:
+        spec = _bedrock_spec(
+            "us.anthropic.claude-opus-5", settings={"temperature": 0.2, "thinkingBudgetTokens": 4096, "maxTokens": 900}
+        )
+        assert model_settings_for(spec) == {
+            "max_tokens": 900,
+            "bedrock_additional_model_requests_fields": {
+                "thinking": {"type": "adaptive"},
+                "output_config": {"effort": "low"},
+            },
+        }
+
+    def test_an_effort_label_on_bedrock(self) -> None:
+        spec = _bedrock_spec("global.anthropic.claude-sonnet-5", settings={"effort": "xhigh"})
+        fields = model_settings_for(spec)["bedrock_additional_model_requests_fields"]
+        assert fields == {"thinking": {"type": "adaptive"}, "output_config": {"effort": "xhigh"}}
+
+    def test_a_budget_claude_on_bedrock_gets_an_enabled_budget(self) -> None:
+        spec = _bedrock_spec(
+            "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            settings={"temperature": 0.3, "thinkingBudgetTokens": 2048, "maxTokens": 4096},
+        )
+        assert model_settings_for(spec) == {
+            "max_tokens": 4096,
+            "bedrock_additional_model_requests_fields": {"thinking": {"type": "enabled", "budget_tokens": 2048}},
+        }
+
+    def test_no_thinking_setting_means_no_bedrock_fields(self) -> None:
+        spec = _bedrock_spec("us.anthropic.claude-haiku-4-5", settings={"temperature": 0.3})
+        assert model_settings_for(spec) == {"temperature": 0.3}
+
+    async def test_the_built_bedrock_model_keeps_its_bedrock_profile_and_learns_claude_5(self) -> None:
+        """The Claude corrections must be applied ON the Bedrock profile, not replace it: a plain
+        ``AnthropicModelProfile`` handed to ``BedrockConverseModel`` loses the Bedrock-only
+        flags (tool choice, prompt caching, the Bedrock JSON-schema transformer)."""
+        pytest.importorskip("boto3")
+        from pydantic_ai.models.bedrock import BedrockModelProfile
+        from pydantic_ai.providers.bedrock import BedrockJsonSchemaTransformer
+
+        model = await ModelFactory().build(_bedrock_spec("us.anthropic.claude-opus-5"))
+        profile = model.profile
+        assert isinstance(profile, BedrockModelProfile)
+        assert profile.bedrock_supports_adaptive_thinking is True
+        assert profile.bedrock_supports_effort is True
+        assert profile.bedrock_supports_tool_choice is True
+        assert profile.bedrock_supports_prompt_caching is True
+        assert profile.supports_thinking is True
+        assert profile.json_schema_transformer is BedrockJsonSchemaTransformer
+
+    async def test_the_sdk_sends_the_translated_thinking_on_bedrock(self) -> None:
+        """Through pydantic-ai's own translation: what reaches ``additionalModelRequestFields``."""
+        pytest.importorskip("boto3")
+        from pydantic_ai.models import ModelRequestParameters
+
+        spec = _bedrock_spec("us.anthropic.claude-opus-5", settings={"thinkingBudgetTokens": 4096, "temperature": 0.2})
+        model = await ModelFactory().build(spec)
+        prepared, params = model.prepare_request(model_settings_for(spec), ModelRequestParameters())  # type: ignore[arg-type]
+        assert "temperature" not in prepared
+        fields = model._translate_thinking(prepared, params)  # type: ignore[attr-defined]
+        assert fields == {"thinking": {"type": "adaptive"}, "output_config": {"effort": "low"}}
+
+        haiku = _bedrock_spec("us.anthropic.claude-haiku-4-5-20251001-v1:0", settings={"thinkingBudgetTokens": 2048})
+        model = await ModelFactory().build(haiku)
+        prepared, params = model.prepare_request(model_settings_for(haiku), ModelRequestParameters())  # type: ignore[arg-type]
+        assert model._translate_thinking(prepared, params) == {"thinking": {"type": "enabled", "budget_tokens": 2048}}  # type: ignore[attr-defined]

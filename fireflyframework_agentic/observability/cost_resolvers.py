@@ -60,6 +60,7 @@ from genai_prices import Usage as _GenAIUsage  # type: ignore[import-untyped]
 from genai_prices import calc_price  # type: ignore[import-untyped]
 
 from fireflyframework_agentic.config import get_config
+from fireflyframework_agentic.models.claude import bare_claude_id
 from fireflyframework_agentic.observability.metrics import default_metrics
 
 logger = logging.getLogger(__name__)
@@ -217,11 +218,13 @@ FRAMEWORK_PRICE_TABLE: dict[str, PriceRow] = {
 
 
 def _bare_model_ref(model: str) -> str:
+    """``provider:`` prefix, Bedrock geo/vendor prefix and version, Vertex ``@version`` removed.
+
+    The ``provider:`` split is on the FIRST colon; a Bedrock version suffix (``-v1:0``) also
+    carries a colon, which is why it is stripped afterwards and never mistaken for a provider.
+    """
     ref = model.split(":", 1)[1] if ":" in model else model
-    ref = ref.lower()
-    if ref.startswith("anthropic."):
-        ref = ref[len("anthropic.") :]
-    return ref.split("@", 1)[0]
+    return bare_claude_id(ref)
 
 
 def framework_price_table_cost(ctx: CostContext) -> float | None:

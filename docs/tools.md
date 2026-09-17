@@ -216,8 +216,10 @@ the caller sees. `kwargs` are the tool's arguments, never `ctx`; `ctx` is the py
 `RunContext` when the call came through an agent **and** the tool opted in with `takes_ctx=True`
 (read `ctx.tool_call_id` to correlate), `None` otherwise. A listener that raises in `after_call`
 turns the call into a `ToolError`: a ledger that silently missed a row is worse than a turn that
-failed loudly. `_guarded_execute` stays private — a subclass that overrides it bypasses every
-listener the host registered.
+failed loudly. Cancellation is none of these: a run cancelled (deadline, shutdown) while a
+listener or the tool body is mid-flight propagates as `CancelledError` and no listener hears
+an outcome, because the call did not happen. `_guarded_execute` stays private — a subclass that
+overrides it bypasses every listener the host registered.
 
 ### Built-in Guards
 

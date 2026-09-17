@@ -25,7 +25,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 from pydantic_ai.usage import RunUsage
 
-from fireflyframework_agentic.config import get_config
+from fireflyframework_agentic.config import FireflyAgenticConfig, on_config_installed
 from fireflyframework_agentic.observability.budget import BudgetGate, BudgetRule
 from fireflyframework_agentic.observability.cost_resolvers import (
     CostContext,
@@ -244,6 +244,55 @@ class UsageTracker:
             _emit_safely(sink, usage)
 
     # -- Sink management -------------------------------------------------
+    #: The name of the budget rule a configuration's ``budget_limit_usd`` becomes. One rule,
+    #: replaced on every install, so two configs never stack two global limits.
+    CONFIG_RULE = "config_global"
+
+    @property
+    def max_records(self) -> int:
+        """How many records are kept (``0`` keeps every one)."""
+        return self._max_records
+
+    def apply_config(self, config: FireflyAgenticConfig) -> None:
+        """Take ``usage_tracker_max_records`` and ``budget_limit_usd`` from *config*, in place.
+
+        In place, because the process tracker is one object with many holders: ``agents.base``
+        imported it, the docs read ``default_usage_tracker.get_summary()``, tests patch it by
+        its module path. Rebuilding it on ``set_config`` would leave every holder with the old
+        one. The record cap is applied immediately (a smaller cap trims the oldest records);
+        the config rule of the budget gate is replaced, other rules on the gate are kept, and
+        their accumulated spend is not reset.
+        """
+        with self._lock:
+            self._max_records = config.usage_tracker_max_records
+            if self._max_records > 0 and len(self._records) > self._max_records:
+                del self._records[: len(self._records) - self._max_records]
+        others = [r for r in (self._gate.rules if self._gate is not None else ()) if r.name != self.CONFIG_RULE]
+        if config.budget_limit_usd is not None:
+            others.append(BudgetRule(name=self.CONFIG_RULE, limit_usd=config.budget_limit_usd))
+        if others:
+            self._gate = BudgetGate(others) if self._gate is None else self._gate.with_rules(others)
+        else:
+            self._gate = None
+
+    @classmethod
+    def for_config(
+        cls,
+        config: FireflyAgenticConfig,
+        *,
+        sinks: Sequence[CostSink] | None = None,
+        resolver: _ResolverArg = None,
+    ) -> UsageTracker:
+        """A tracker sized and gated by *config* — the ledger an agent or a tenant owns.
+
+        ``FireflyAgent(config=cfg)`` governs the agent, not the process ledger; a host that
+        wants the agent's ``usage_tracker_max_records`` / ``budget_limit_usd`` to bound a
+        ledger of that agent's own builds one here and passes it as ``usage_tracker=``.
+        """
+        tracker = cls(sinks=sinks, resolver=resolver)
+        tracker.apply_config(config)
+        return tracker
+
     def add_sink(self, sink: CostSink) -> None:
         self._sinks.append(sink)
 
@@ -279,18 +328,20 @@ class UsageTracker:
 
 
 def _build_default_tracker() -> UsageTracker:
-    """Construct the module-level tracker with defaults driven by config."""
-    sinks: list[CostSink] = [OTelMetricsSink(), EventBusSink()]
-    gate: BudgetGate | None = None
-    max_records = 10_000
+    """Construct the module-level tracker and keep it in step with the installed config.
+
+    The tracker is built at import time, and ``agents.base`` imports this module, so every
+    host has it before it calls ``set_config``. It therefore subscribes to the install
+    (:func:`~fireflyframework_agentic.config.on_config_installed`), which also runs once now
+    with the current config; a config that cannot be read at import (a bad environment
+    variable) leaves the defaults in place rather than failing the import.
+    """
+    tracker = UsageTracker(sinks=[OTelMetricsSink(), EventBusSink()], max_records=10_000)
     try:
-        cfg = get_config()
-        if cfg.budget_limit_usd is not None:
-            gate = BudgetGate([BudgetRule(name="config_global", limit_usd=cfg.budget_limit_usd)])
-        max_records = cfg.usage_tracker_max_records
+        on_config_installed(tracker.apply_config)
     except Exception:  # noqa: BLE001
         logger.debug("Falling back to defaults for usage tracker", exc_info=True)
-    return UsageTracker(sinks=sinks, gate=gate, max_records=max_records)
+    return tracker
 
 
 default_usage_tracker = _build_default_tracker()

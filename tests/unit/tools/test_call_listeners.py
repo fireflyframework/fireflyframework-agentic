@@ -190,6 +190,53 @@ class TestHookOrder:
             await tool.execute(q="x")
         assert [e[0] for e in recorder.events] == ["error"]
 
+    async def test_cancellation_during_before_call_is_not_a_refusal(self) -> None:
+        """A run cancelled (deadline, shutdown) while a listener is mid-ledger-write must be
+        cancelled, not reported to the model as a refused tool. Before the hooks existed the
+        guards ran with no try/except and cancellation propagated; the hook path caught
+        ``BaseException`` and rewrapped it as ``ToolError("... refused: ")``."""
+        started = asyncio.Event()
+
+        class SlowLedger:
+            async def before_call(self, tool: BaseTool, kwargs: dict[str, Any], ctx: Any) -> None:
+                started.set()
+                await asyncio.sleep(10)
+
+        recorder = Recorder()
+        tool = _Behaviour("ok", listeners=[SlowLedger(), recorder])
+        task = asyncio.create_task(tool.execute(q="x"))
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        # Cancellation is not an outcome the listeners are told about: the call never happened.
+        assert recorder.events == []
+
+    async def test_cancellation_during_after_call_is_not_a_tool_error(self) -> None:
+        started = asyncio.Event()
+
+        class SlowLedger:
+            async def after_call(self, tool: BaseTool, kwargs: dict[str, Any], ctx: Any, result: Any) -> None:
+                started.set()
+                await asyncio.sleep(10)
+
+        tool = _Behaviour("ok", listeners=[SlowLedger()])
+        task = asyncio.create_task(tool.execute(q="x"))
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    async def test_cancellation_during_the_tool_body_still_propagates(self) -> None:
+        recorder = Recorder()
+        tool = _Behaviour("slow", listeners=[recorder])
+        task = asyncio.create_task(tool.execute(q="x"))
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert [e[0] for e in recorder.events] == ["before"]
+
     async def test_a_listener_that_raises_in_after_call_does_not_lose_the_result_silently(self) -> None:
         class Broken:
             async def after_call(self, tool: BaseTool, kwargs: dict[str, Any], ctx: Any, result: Any) -> None:

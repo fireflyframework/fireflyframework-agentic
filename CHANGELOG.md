@@ -35,29 +35,48 @@ not hand the framework the settings it had built.
   native structured output — always with `dataclasses.replace`, never by constructing a profile,
   so the SDK's own fields survive. Verified against the SDK's own `prepare_request`: the
   translated settings pass, and a `budget_tokens` on Opus 5 is refused by the SDK because the
-  profile now says so. Proved live on `claude-sonnet-5`.
+  profile now says so. Proved live on `claude-sonnet-5`. On Bedrock the same Claude is
+  recognised under its cross-region inference ids (`us.` / `eu.` / `apac.` / `global.` /
+  `us-gov.` + `anthropic.` + `-v1:0`), the translation writes `thinking` and
+  `output_config.effort` (or an enabled budget) into `bedrock_additional_model_requests_fields`
+  — the key `BedrockConverseModel` reads; `anthropic_thinking` was silently ignored there — and
+  the built model keeps the Bedrock provider's profile with the corrections mapped onto
+  `bedrock_supports_adaptive_thinking` / `bedrock_supports_effort`, verified through the SDK's
+  own `_translate_thinking`.
 - **A Claude 5 price row.** `genai-prices` 0.0.66 raises `LookupError` for the Claude 5 ids, so
   every call priced to `None` with a WARNING and a strict-mode host could not run the current
   generation at all. `framework_price_table_cost` (before `genai_prices_cost` in
   `DEFAULT_RESOLVERS`) carries the Anthropic first-party rates for `claude-opus-5`,
   `claude-sonnet-5` and `claude-fable-5`, cache writes at 1.25× and reads at 0.10× input, keyed
-  by id prefix so a dated snapshot, a Bedrock `anthropic.` prefix and a Vertex `@version` are one
-  row. A row goes the day genai-prices carries the id.
+  by id prefix so a dated snapshot, a Bedrock `anthropic.` or cross-region `us.anthropic.…-v1:0`
+  prefix and a Vertex `@version` are one row. A row goes the day genai-prices carries the id.
 - **`ToolCallListener` — a public seam around every tool call.** `before_call` / `after_call` /
   `on_error` / `on_pause` around `_execute`, with the kwargs and `ctx` the tool sees, registered
   per tool (`listeners=` or `add_listener`). The guard chain is itself the first listener
   (`GuardChainListener`), so there is one order every observer can reason about and a refused
   call reaches every `on_error` with the `ToolGuardError` the caller sees. Every hook is
   optional; a listener that fails in `after_call` fails the call, because a ledger that silently
-  missed a row is worse than a turn that failed loudly. `_guarded_execute` stays private.
+  missed a row is worse than a turn that failed loudly. Cancellation passes through untouched
+  (`CancelledError`, `KeyboardInterrupt`, `SystemExit`) and no listener hears an outcome — a run
+  cancelled mid-ledger-write is cancelled, not answered to the model as a refused tool.
+  `_guarded_execute` stays private.
 - **`BaseTool.require_approval(flag)`** — the supported way to raise (or lower) `requires_approval`
   after construction, for a host that learns which tools must stop for a person only once the
   surface is built; returns whether anything changed. **`BaseTool(defers=True)`** declares that a
   tool may raise `CallDeferred` from its body.
 - **`set_config(config)`** installs a `FireflyAgenticConfig` the host built as the instance
-  `get_config()` returns, and **`FireflyAgent(config=...)`** scopes one to an agent (`agent.config`);
-  the agent's default middleware, retries, cost tracking and rate-limit back-off read it.
-  `MiddlewareChain` is iterable.
+  `get_config()` returns — and reaches what was built before the call: the process usage
+  tracker is created when `agents.base` is imported, so it used to keep the 10 000-record
+  default and no budget whatever a host installed afterwards. It now subscribes to the install
+  (`on_config_installed(hook)`, run at once with the current config and again on every
+  `set_config`, first build and `reset_config`) and takes `usage_tracker_max_records` and
+  `budget_limit_usd` in place (`UsageTracker.apply_config`; a smaller cap trims, the
+  `config_global` budget rule is replaced, other rules keep their spend). **`FireflyAgent(config=...)`**
+  scopes a config to an agent (`agent.config`): its default middleware, retries, temperature,
+  cost gate and rate-limit back-off read it; the process ledger is shared and only `set_config`
+  sizes it. **`FireflyAgent(usage_tracker=...)`** gives an agent a ledger of its own
+  (`agent.usage_tracker`, `UsageTracker.for_config(cfg)` builds one sized by a config) — the
+  per-tenant ledger a multi-tenant host needs. `MiddlewareChain` is iterable.
 - **`fireflyframework_agentic.skills` — a `Skill` primitive.** Frontmatter (`key`, `name`,
   `description`, `when_to_use`, `version`, `requires` {tools, connectors, skills},
   `parameters_schema`, `examples`, a resource index), a markdown body rendered as a Jinja

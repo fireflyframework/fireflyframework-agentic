@@ -362,12 +362,17 @@ class BaseTool(ABC):
         Kept private on purpose — :class:`ToolCallListener` is the extension point. A subclass
         that overrides this bypasses every listener the host registered, silently.
         """
+        # ``Exception``, not ``BaseException``: a run cancelled (deadline, shutdown) while a
+        # listener is mid-ledger-write must be cancelled, not answered to the model as a
+        # refused tool. ``CancelledError``, ``KeyboardInterrupt`` and ``SystemExit`` pass
+        # through every stage here untouched, and the listeners are not told — the call did
+        # not happen, so there is no outcome to record.
         try:
             await self._notify_before(kwargs, ctx)
         except (ApprovalRequired, CallDeferred) as signal:
             await self._notify("on_pause", kwargs, ctx, signal)
             raise
-        except BaseException as exc:
+        except Exception as exc:
             failure = (
                 exc
                 if isinstance(exc, ToolError) or _is_model_retry(exc)

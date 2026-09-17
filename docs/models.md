@@ -27,7 +27,7 @@ spec = ModelSpec(
 | Field | Meaning |
 |---|---|
 | `provider` | `anthropic`, `openai`, `azure`, `bedrock`, `google`, `google-vertex`, `mistral`, or any OpenAI-compatible endpoint (`ollama`, `openrouter`, `deepseek`, …) with a `base_url`. |
-| `model` | The provider's id, as the provider names it (`anthropic.claude-opus-5` on Bedrock, `claude-opus-5@…` on Vertex are recognised). |
+| `model` | The provider's id, as the provider names it (`anthropic.claude-opus-5` and the cross-region `us.anthropic.claude-opus-5-v1:0` on Bedrock, `claude-opus-5@…` on Vertex are recognised). |
 | `credential` | `Credential.api_key(secret)`, `Credential.reference(id, version)` redeemed through a `CredentialResolver`, or `Credential.none()`. |
 | `settings` | The parameter profile, in the console vocabulary (`maxTokens`, `thinkingBudgetTokens`, `topP`, `effort`, `serviceTier`) or pydantic-ai's (`max_tokens`, …). |
 | `capabilities` | Optional `ModelCapabilities`; derived from the model id when omitted. |
@@ -89,6 +89,28 @@ constructing a profile, so the SDK's own `thinking_tags` and tool versions survi
   `effort` wins. An effort-style model takes the label. A model without thinking drops the
   budget rather than sending a key the provider would reject or ignore.
 - `serviceTier` is passed only for a model whose capabilities declare it.
+
+### Claude on Bedrock
+
+Bedrock names the same Claude three ways — `anthropic.claude-opus-5` (single region),
+`us.anthropic.claude-opus-5` / `global.anthropic.claude-sonnet-5` / `eu.` / `apac.` /
+`us-gov.` (a cross-region inference profile, what a production account calls) and the dated
+`us.anthropic.claude-haiku-4-5-20251001-v1:0` — and every one is recognised as that Claude.
+`BedrockConverseModel` reads thinking from `bedrock_additional_model_requests_fields`, never
+from `anthropic_thinking` / `anthropic_effort`, so for `provider="bedrock"` the translation
+writes the Anthropic wire shape into that key:
+
+```python
+>>> model_settings_for(ModelSpec("bedrock", "us.anthropic.claude-opus-5", settings={"temperature": 0.2, "effort": "xhigh"}))
+{'bedrock_additional_model_requests_fields': {'thinking': {'type': 'adaptive'}, 'output_config': {'effort': 'xhigh'}}}
+>>> model_settings_for(ModelSpec("bedrock", "us.anthropic.claude-haiku-4-5-20251001-v1:0", settings={"thinkingBudgetTokens": 2048}))
+{'bedrock_additional_model_requests_fields': {'thinking': {'type': 'enabled', 'budget_tokens': 2048}}}
+```
+
+The built model's profile is the Bedrock provider's own (tool choice, prompt caching, the
+Bedrock JSON-schema transformer all kept) with the Claude 5 corrections mapped onto Bedrock's
+flags (`bedrock_supports_adaptive_thinking`, `bedrock_supports_effort`), not an Anthropic
+profile put in its place.
 
 ## Cost
 

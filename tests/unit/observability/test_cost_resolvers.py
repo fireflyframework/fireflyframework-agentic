@@ -285,6 +285,12 @@ def test_claude_5_cache_tokens_are_priced_at_the_provider_multipliers() -> None:
 def test_bedrock_and_dated_claude_5_ids_resolve_to_the_same_row() -> None:
     from fireflyframework_agentic.observability.cost_resolvers import framework_price_table_cost
 
-    for model in ("bedrock:anthropic.claude-opus-5", "anthropic:claude-opus-5-20260401", "claude-opus-5@20260401"):
+    for model in (
+        "bedrock:anthropic.claude-opus-5",
+        "bedrock:us.anthropic.claude-opus-5-v1:0",
+        "bedrock:global.anthropic.claude-opus-5",
+        "anthropic:claude-opus-5-20260401",
+        "claude-opus-5@20260401",
+    ):
         ctx = CostContext(model=model, input_tokens=1_000_000, output_tokens=0)
         assert framework_price_table_cost(ctx) == pytest.approx(5.0), model

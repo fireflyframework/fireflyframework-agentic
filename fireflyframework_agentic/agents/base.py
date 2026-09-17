@@ -58,6 +58,7 @@ from fireflyframework_agentic.observability.quota import (
     default_quota_manager,
 )
 from fireflyframework_agentic.observability.usage import (
+    UsageTracker,
     default_usage_tracker,
     reasoning_tokens_not_in_output,
     resolve_run_usage,
@@ -216,12 +217,18 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         hitl: bool = False,
         approval_handler: ApprovalHandler | None = None,
         config: FireflyAgenticConfig | None = None,
+        usage_tracker: UsageTracker | None = None,
     ) -> None:
         # The configuration this agent reads: the one it was given, else the process singleton.
         # Scoped rather than installed, so two agents built from two settings objects (a test
-        # harness, a multi-tenant host) do not fight over one global.
+        # harness, a multi-tenant host) do not fight over one global. What the scoped config
+        # governs: the default middleware, retries, temperature, the cost gate and the rate
+        # limit. What it does NOT govern: the process usage ledger, which is shared by every
+        # agent and sized by ``set_config`` — an agent that must record into a ledger of its own
+        # (per tenant, per test) is given one as ``usage_tracker``.
         cfg = config if config is not None else get_config()
         self._config = cfg
+        self._usage_tracker = usage_tracker
 
         self._name = name
         self._version = version
@@ -297,6 +304,16 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
     def config(self) -> FireflyAgenticConfig:
         """The :class:`FireflyAgenticConfig` this agent reads (its own, or the process singleton)."""
         return self._config
+
+    @property
+    def usage_tracker(self) -> UsageTracker:
+        """The ledger this agent's runs are recorded in: its own, else the process tracker.
+
+        The process tracker is read from its module at call time, so a test that patches
+        ``fireflyframework_agentic.agents.base.default_usage_tracker`` still intercepts an
+        agent without a tracker of its own.
+        """
+        return self._usage_tracker if self._usage_tracker is not None else default_usage_tracker
 
     @property
     def name(self) -> str:
@@ -597,7 +614,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             cache_creation = getattr(usage, "cache_write_tokens", 0) or getattr(usage, "cache_creation_tokens", 0) or 0
             cache_read = getattr(usage, "cache_read_tokens", 0) or 0
 
-            record = default_usage_tracker.record_call(
+            record = self.usage_tracker.record_call(
                 model=self.model_identifier,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,

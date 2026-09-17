@@ -201,6 +201,9 @@ ignore = ["E501", "TC001", "TC002", "TC003", "UP040", "UP046", "UP047", "B008"]
 # Bedrock, google-genai for Vertex, mistralai) and the factory must import cleanly without
 # them, failing with ModelBuildError only for the provider actually asked for.
 "fireflyframework_agentic/models/factory.py" = ["PLC0415"]
+# models.claude lazy-imports the Bedrock provider inside bedrock_claude_profile for the same
+# reason: boto3 is the [bedrock] extra and the Anthropic corrections must import without it.
+"fireflyframework_agentic/models/claude.py" = ["PLC0415"]
 # workflows.runner lazy-imports FireflyAgent / the agent registry inside
 # FireflyAgentRunner so the workflows package stays agents-free at import time
 # (only this opt-in runner needs them); the deferred import IS the design.

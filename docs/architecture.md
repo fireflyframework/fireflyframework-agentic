@@ -690,8 +690,25 @@ from fireflyframework_agentic.config import set_config
 set_config(FireflyAgenticConfig(default_model="anthropic:claude-opus-5", usage_tracker_max_records=1))
 ```
 
-`set_config` installs the instance `get_config()` returns from then on; install it before the
-first agent is built. An agent may also carry a config of its own — `FireflyAgent(config=...)`
-— which scopes it to that agent (its default middleware, retries, cost tracking and rate-limit
-back-off read it) without touching the singleton, so a test harness or a multi-tenant host can
-build two agents from two settings objects.
+`set_config` installs the instance `get_config()` returns from then on — and tells whatever
+was built from the previous one: the process usage tracker
+(`observability.default_usage_tracker`, created when `agents.base` is imported) takes the new
+`usage_tracker_max_records` and `budget_limit_usd` at once, so the install may follow the
+imports, where it naturally sits. Anything else built at import time from `get_config()`
+subscribes the same way with `on_config_installed(hook)`.
+
+An agent may also carry a config of its own — `FireflyAgent(config=...)` — which scopes it to
+that agent without touching the singleton, so a test harness or a multi-tenant host can build
+two agents from two settings objects. What the scoped config governs: the default middleware,
+`max_retries`, `default_temperature`, the cost gate (`cost_tracking_enabled`, `cost_strict`)
+and the rate-limit back-off. What it does not: the process usage ledger, which every agent
+shares and only `set_config` sizes. An agent that must record into a ledger of its own — one
+per tenant, one per test — is given one:
+
+```python
+from fireflyframework_agentic.observability import UsageTracker
+
+cfg = FireflyAgenticConfig(usage_tracker_max_records=1_000, budget_limit_usd=5.0)
+agent = FireflyAgent("tenant-a", config=cfg, usage_tracker=UsageTracker.for_config(cfg))
+agent.usage_tracker.get_summary()   # this agent's runs only
+```

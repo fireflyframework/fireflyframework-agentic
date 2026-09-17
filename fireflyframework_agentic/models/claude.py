@@ -37,6 +37,7 @@ becomes a no-op for the ids it covers, and that is the intended end of it.
 from __future__ import annotations
 
 import dataclasses
+import re
 
 from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.profiles.anthropic import AnthropicModelProfile, anthropic_model_profile
@@ -83,12 +84,31 @@ XHIGH_PREFIXES: tuple[str, ...] = (
 DEFAULT_CLAUDE_BUDGET_CEILING = 32_000
 
 
+#: A Bedrock cross-region inference profile prefixes the vendor with a geography:
+#: ``us.``, ``eu.``, ``apac.``, ``global.``, ``us-gov.`` … — that is what a production account
+#: calls, the bare ``anthropic.`` id being the single-region form. The version suffix
+#: ``-v1`` / ``-v1:0`` is Bedrock's, not the model's.
+_BEDROCK_GEO_PREFIX = re.compile(r"^[a-z]{2,6}(?:-gov)?\.(?=anthropic\.)")
+_BEDROCK_VERSION_SUFFIX = re.compile(r"-v\d+(?::\d+)?$")
+
+
 def _bare(model: str) -> str:
-    """The Claude id without a Bedrock vendor prefix or a Vertex ``@version`` suffix."""
-    name = model.lower()
+    """The Claude id without a Bedrock geo/vendor prefix and version, or a Vertex ``@version``.
+
+    ``us.anthropic.claude-haiku-4-5-20251001-v1:0`` → ``claude-haiku-4-5-20251001``;
+    ``anthropic.claude-opus-5`` → ``claude-opus-5``; ``claude-opus-4-5@20251101`` →
+    ``claude-opus-4-5``. Only the ``anthropic.`` vendor is unwrapped: ``us.amazon.nova-pro``
+    is not a Claude and must not become one by accident.
+    """
+    name = _BEDROCK_GEO_PREFIX.sub("", model.lower())
     if name.startswith("anthropic."):
-        name = name[len("anthropic.") :]
+        name = _BEDROCK_VERSION_SUFFIX.sub("", name[len("anthropic.") :])
     return name.split("@", 1)[0]
+
+
+def bare_claude_id(model: str) -> str:
+    """Public name of :func:`_bare`, for the price table and anything else keyed by the id."""
+    return _bare(model)
 
 
 def is_claude(model: str) -> bool:
@@ -119,18 +139,15 @@ def claude_capabilities(model: str) -> ModelCapabilities:
     )
 
 
-def claude_profile(model: str) -> AnthropicModelProfile:
-    """The SDK's derived profile for ``model`` with the framework's corrections applied.
+def claude_corrections(model: str) -> dict[str, object]:
+    """What the tables above say about ``model`` that the pinned SDK's profile does not.
 
-    For an id the SDK knows and gets right this is the SDK's own profile, replaced with the same
-    values. For the Claude 5 family it is the SDK's profile with adaptive thinking, every effort
-    level, refused budgets, refused sampling and native structured output switched on.
+    Keyed by the ``AnthropicModelProfile`` field names; :func:`bedrock_claude_profile` maps
+    the ones Bedrock's profile spells differently. Empty for a non-Claude id.
     """
     name = _bare(model)
-    derived: ModelProfile | None = anthropic_model_profile(name)
-    base = AnthropicModelProfile.from_profile(derived) if derived is not None else AnthropicModelProfile()
     if not name.startswith("claude"):
-        return base
+        return {}
     corrections: dict[str, object] = {"supports_thinking": True}
     if name.startswith(ADAPTIVE_PREFIXES):
         corrections["anthropic_supports_adaptive_thinking"] = True
@@ -142,4 +159,51 @@ def claude_profile(model: str) -> AnthropicModelProfile:
         corrections["anthropic_disallows_sampling_settings"] = True
     if name.startswith(CLAUDE_5_PREFIXES):
         corrections["supports_json_schema_output"] = True
-    return dataclasses.replace(base, **corrections)  # type: ignore[arg-type]
+    return corrections
+
+
+def claude_profile(model: str) -> AnthropicModelProfile:
+    """The SDK's derived profile for ``model`` with the framework's corrections applied.
+
+    For an id the SDK knows and gets right this is the SDK's own profile, replaced with the same
+    values. For the Claude 5 family it is the SDK's profile with adaptive thinking, every effort
+    level, refused budgets, refused sampling and native structured output switched on.
+    """
+    name = _bare(model)
+    derived: ModelProfile | None = anthropic_model_profile(name)
+    base = AnthropicModelProfile.from_profile(derived) if derived is not None else AnthropicModelProfile()
+    corrections = claude_corrections(name)
+    return dataclasses.replace(base, **corrections) if corrections else base  # type: ignore[arg-type]
+
+
+#: ``AnthropicModelProfile`` field → the ``BedrockModelProfile`` field that means the same thing.
+#: Bedrock's ``_translate_thinking`` reads its own flags, not the Anthropic ones, so a correction
+#: that stays under the Anthropic name is invisible there.
+_BEDROCK_FIELD_FOR: dict[str, str] = {
+    "anthropic_supports_adaptive_thinking": "bedrock_supports_adaptive_thinking",
+    "anthropic_supports_effort": "bedrock_supports_effort",
+}
+
+
+def bedrock_claude_profile(model: str) -> ModelProfile:
+    """The Bedrock provider's derived profile for a Claude id, with the corrections applied ON it.
+
+    On it, not instead of it. ``BedrockConverseModel`` given an ``AnthropicModelProfile`` as
+    its profile loses everything only the Bedrock profile carries — tool choice, prompt and
+    tool caching, sending thinking parts back, the Bedrock JSON-schema transformer — because
+    ``BedrockModelProfile.from_profile`` copies only the fields it has. The SDK's Bedrock
+    derivation (which already strips the geo prefix and the version suffix) is the base; the
+    Claude 5 corrections are mapped onto Bedrock's own flags; the Anthropic-only flags with no
+    Bedrock counterpart (``anthropic_disallows_*``) are left out, since Bedrock's model never
+    reads them — the sampling knobs are dropped by the settings translation instead.
+    """
+    from pydantic_ai.providers.bedrock import BedrockModelProfile, BedrockProvider
+
+    derived = BedrockProvider.model_profile(model)
+    base = BedrockModelProfile.from_profile(derived) if derived is not None else BedrockModelProfile()
+    corrections: dict[str, object] = {}
+    for field, value in claude_corrections(model).items():
+        target = _BEDROCK_FIELD_FOR.get(field, field)
+        if not field.startswith("anthropic_") or target != field:
+            corrections[target] = value
+    return dataclasses.replace(base, **corrections) if corrections else base  # type: ignore[arg-type]
