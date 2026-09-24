@@ -36,7 +36,7 @@ not hand the framework the settings it had built.
   so the SDK's own fields survive. Verified against the SDK's own `prepare_request`: the
   translated settings pass, and a `budget_tokens` on Opus 5 is refused by the SDK because the
   profile now says so. Proved live on `claude-sonnet-5`. On Bedrock the same Claude is
-  recognised under its cross-region inference ids (`us.` / `eu.` / `apac.` / `global.` /
+  recognized under its cross-region inference ids (`us.` / `eu.` / `apac.` / `global.` /
   `us-gov.` + `anthropic.` + `-v1:0`), the translation writes `thinking` and
   `output_config.effort` (or an enabled budget) into `bedrock_additional_model_requests_fields`
   — the key `BedrockConverseModel` reads; `anthropic_thinking` was silently ignored there — and
@@ -58,7 +58,7 @@ not hand the framework the settings it had built.
   optional; a listener that fails in `after_call` fails the call, because a ledger that silently
   missed a row is worse than a turn that failed loudly. Cancellation passes through untouched
   (`CancelledError`, `KeyboardInterrupt`, `SystemExit`) and no listener hears an outcome — a run
-  cancelled mid-ledger-write is cancelled, not answered to the model as a refused tool.
+  canceled mid-ledger-write is canceled, not answered to the model as a refused tool.
   `_guarded_execute` stays private.
 - **`BaseTool.require_approval(flag)`** — the supported way to raise (or lower) `requires_approval`
   after construction, for a host that learns which tools must stop for a person only once the
