@@ -1200,7 +1200,7 @@ wheels = [
 
 [[package]]
 name = "fireflyframework-agentic"
-version = "26.6.14"
+version = "26.6.15"
 source = { editable = "." }
 dependencies = [
     { name = "genai-prices" },
@@ -1213,6 +1213,7 @@ dependencies = [
     { name = "pydantic-ai" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
+    { name = "pyyaml" },
 ]
 
 [package.optional-dependencies]
@@ -1383,6 +1384,7 @@ requires-dist = [
     { name = "pytest-benchmark", marker = "extra == 'dev'", specifier = ">=5.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "qdrant-client", marker = "extra == 'vectorstores-qdrant'", specifier = ">=1.12.0" },
     { name = "ragas", marker = "extra == 'evaluation'", specifier = ">=0.2" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9.0" },

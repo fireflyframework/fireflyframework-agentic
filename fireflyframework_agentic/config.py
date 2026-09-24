@@ -21,7 +21,9 @@ in the environment will override the ``default_model`` field.
 
 from __future__ import annotations
 
+import logging
 import threading
+from collections.abc import Callable
 from typing import Any, Literal
 
 from pydantic import model_validator
@@ -306,19 +308,96 @@ class FireflyAgenticConfig(BaseSettings):
 _config_instance: FireflyAgenticConfig | None = None
 _config_lock = threading.Lock()
 
+#: Callables told when a configuration is installed (``set_config``) or dropped
+#: (``reset_config``). Anything built at import time from ``get_config()`` — the process usage
+#: tracker is the one that bit — subscribes here so a later install reaches it. Kept as a
+#: hook rather than an import: ``observability.usage`` imports this module, so this module
+#: cannot import the tracker back without a cycle.
+_installed_hooks: list[Callable[[FireflyAgenticConfig], None]] = []
+
+
+def on_config_installed(hook: Callable[[FireflyAgenticConfig], None]) -> Callable[[FireflyAgenticConfig], None]:
+    """Register *hook* to run with the config each time one is installed, built or reset.
+
+    The hook runs at once with the current instance (building it from the environment if
+    nothing is installed yet), so a subscriber registered before the application called
+    ``set_config`` still starts from the right values. Returns *hook* so it can be used as a
+    decorator.
+    """
+    _installed_hooks.append(hook)
+    hook(get_config())
+    return hook
+
+
+def _notify_installed(config: FireflyAgenticConfig) -> None:
+    for hook in list(_installed_hooks):
+        try:
+            hook(config)
+        except Exception:  # noqa: BLE001 — one subscriber must not veto the install for the others
+            logging.getLogger(__name__).warning("config hook %r failed", hook, exc_info=True)
+
 
 def get_config() -> FireflyAgenticConfig:
-    """Return the singleton :class:`FireflyAgenticConfig` instance.  Thread-safe."""
+    """Return the singleton :class:`FireflyAgenticConfig` instance.  Thread-safe.
+
+    The instance is built from the environment on first access, and the subscribers of
+    :func:`on_config_installed` are told then — a build is an install.
+    """
     global _config_instance  # noqa: PLW0603
     if _config_instance is None:
+        built: FireflyAgenticConfig | None = None
         with _config_lock:
             if _config_instance is None:
-                _config_instance = FireflyAgenticConfig()
+                _config_instance = built = FireflyAgenticConfig()
+        if built is not None:
+            _notify_installed(built)
     return _config_instance
 
 
+def set_config(config: FireflyAgenticConfig) -> None:
+    """Install ``config`` as the instance :func:`get_config` returns from now on.
+
+    For a host with its own configuration tree — a PyFly ``pyfly.yaml``, a settings service —
+    that builds the :class:`FireflyAgenticConfig` itself and needs the framework to read it,
+    rather than the process environment. Before this setter existed the singleton had no
+    public door, so such a host's translated settings never reached the framework: the usage
+    tracker kept its 10 000-record default, ``default_model`` stayed the framework's, and the
+    only alternatives were exporting ``FIREFLY_AGENTIC_*`` variables or writing the private
+    global.
+
+    Installing is not only assignment. Whatever was built at import time from the previous
+    instance is told (:func:`on_config_installed`): the process usage tracker
+    (``observability.usage.default_usage_tracker``) takes the new ``usage_tracker_max_records``
+    and ``budget_limit_usd`` at once, even though ``agents.base`` imported it long before this
+    call — so a host may install its config after its imports, where it naturally does. An
+    agent may also be given a config of its own (``FireflyAgent(config=...)``), which governs
+    that agent's middleware, retries, temperature, cost gate and rate limit; the process ledger
+    is shared and only ``set_config`` sizes it, unless the agent is given a ``usage_tracker``
+    of its own.
+    """
+    if not isinstance(config, FireflyAgenticConfig):
+        raise TypeError(f"set_config expects a FireflyAgenticConfig, got {type(config).__name__}")
+    global _config_instance  # noqa: PLW0603
+    with _config_lock:
+        _config_instance = config
+    _notify_installed(config)
+
+
 def reset_config() -> None:
-    """Reset the cached configuration.  Useful in tests."""
+    """Reset the cached configuration.  Useful in tests.
+
+    Subscribers registered with :func:`on_config_installed` are told, with a fresh
+    environment-built instance, so the process tracker returns to the defaults too.
+    """
     global _config_instance  # noqa: PLW0603
     with _config_lock:
         _config_instance = None
+    # The singleton stays unbuilt: it is read from the environment on the next ``get_config``
+    # (a test that changed the environment for its own duration relies on that — building
+    # here would cache its variables past its teardown). Subscribers are told now with a
+    # transient environment-built instance so the process tracker does not keep a limit that
+    # was reset, and told again when the singleton is built.
+    try:
+        _notify_installed(FireflyAgenticConfig())
+    except Exception:  # noqa: BLE001 — a bad environment surfaces on the next get_config(), not here
+        logging.getLogger(__name__).debug("reset_config: environment not readable, subscribers not told", exc_info=True)

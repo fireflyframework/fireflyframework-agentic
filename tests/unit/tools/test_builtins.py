@@ -548,3 +548,22 @@ class TestResolveToolsBridge:
         assert len(resolved) == 2
         assert isinstance(resolved[0], PydanticTool)
         assert resolved[1] is my_tool
+
+
+class TestCalculatorExponentCap:
+    async def test_a_huge_exponent_is_refused_before_it_is_computed(self) -> None:
+        """``2 ** 10_000_000`` allocates until the process dies; the cap answers instead."""
+        tool = CalculatorTool()
+        result = await tool.execute(expression="2 ** 10000000")
+        assert "error" in result
+        assert "exponent" in result["error"]
+        result = await tool.execute(expression="2 ** (2 ** 20)")
+        assert "exponent" in result["error"]
+
+    async def test_an_exponent_at_the_cap_still_works(self) -> None:
+        from fireflyframework_agentic.tools.builtins.calculator_tool import MAX_EXPONENT
+
+        tool = CalculatorTool()
+        assert (await tool.execute(expression=f"2 ** {MAX_EXPONENT}"))["result"] == 2**MAX_EXPONENT
+        assert (await tool.execute(expression="2 ** -1024"))["result"] == 2**-1024
+        assert (await tool.execute(expression="1.5 ** 2"))["result"] == 2.25

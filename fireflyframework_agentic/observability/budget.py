@@ -94,6 +94,23 @@ class BudgetGate:
         self._state: dict[str, tuple[str, float]] = {r.name: ("", 0.0) for r in self._rules}
         self._lock = threading.Lock()
 
+    @property
+    def rules(self) -> tuple[BudgetRule, ...]:
+        return self._rules
+
+    def with_rules(self, rules: Sequence[BudgetRule]) -> BudgetGate:
+        """A gate holding *rules*, keeping the accumulated spend of every rule it shares with this one.
+
+        Used when a configuration is re-installed: the ``config_global`` limit changes, the
+        other rules keep counting from where they were — a new limit is not a new month.
+        """
+        gate = BudgetGate(rules)
+        with self._lock:
+            for name, state in self._state.items():
+                if name in gate._state:
+                    gate._state[name] = state
+        return gate
+
     def precheck(self, estimated_cost_usd: float, ctx: ScopeContext | None = None) -> None:
         """Raise on HARD breach if the estimated cost would push spend over the limit."""
         if estimated_cost_usd <= 0.0:

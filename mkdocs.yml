@@ -130,6 +130,8 @@ nav:
       - Agents: agents.md
       - Template Agents: templates.md
       - Tools: tools.md
+      - Models: models.md
+      - Skills: skills.md
       - Prompts: prompts.md
       - Content: content.md
       - Memory: memory.md

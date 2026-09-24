@@ -28,7 +28,13 @@ Quick start::
 
 from importlib.metadata import PackageNotFoundError, version
 
-from fireflyframework_agentic.config import FireflyAgenticConfig, get_config, reset_config
+from fireflyframework_agentic.config import (
+    FireflyAgenticConfig,
+    get_config,
+    on_config_installed,
+    reset_config,
+    set_config,
+)
 
 try:
     __version__ = version("fireflyframework-agentic")
@@ -99,7 +105,9 @@ __all__ = [
     "__version__",
     "FireflyAgenticConfig",
     "get_config",
+    "on_config_installed",
     "reset_config",
+    "set_config",
     "FireflyAgenticError",
     "FireflyMemoryError",
     "ConfigurationError",

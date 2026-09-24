@@ -28,6 +28,19 @@ from typing import Any
 
 from fireflyframework_agentic.tools.base import BaseTool, GuardProtocol, ParameterSpec
 
+#: The largest absolute exponent ``**`` accepts. ``2 ** 10_000_000`` is a legal expression
+#: whose evaluation allocates a million-digit integer and stalls the event loop for as long as
+#: the machine has memory — a one-line denial of service from a model that was only asked to
+#: multiply. 1024 keeps every float-range power and everything a spreadsheet would ever want.
+MAX_EXPONENT = 1024
+
+
+def _bounded_pow(base: float | int, exponent: float | int) -> float | int:
+    if abs(exponent) > MAX_EXPONENT:
+        raise ValueError(f"exponent {exponent} exceeds the calculator's limit of {MAX_EXPONENT}")
+    return operator.pow(base, exponent)
+
+
 # Supported binary operators
 _BINARY_OPS: dict[type, Any] = {
     ast.Add: operator.add,
@@ -36,7 +49,7 @@ _BINARY_OPS: dict[type, Any] = {
     ast.Div: operator.truediv,
     ast.FloorDiv: operator.floordiv,
     ast.Mod: operator.mod,
-    ast.Pow: operator.pow,
+    ast.Pow: _bounded_pow,
 }
 
 # Supported unary operators

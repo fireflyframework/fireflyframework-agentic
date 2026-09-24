@@ -195,6 +195,32 @@ guard returns `GuardResult(passed=False, reason=...)`, `BaseTool.execute()` rais
 > native deferred-tools path described in
 > [Human-in-the-Loop Tool Approval](#human-in-the-loop-tool-approval), not a guard.
 
+### Call listeners
+
+A `ToolCallListener` sees every call a tool makes — the public seam around `_execute` for a
+per-turn ledger, an audit trail, a metering row or a trace. Register one per tool
+(`listeners=` at construction, or `tool.add_listener(...)`); every hook is optional:
+
+```python
+class Ledger:
+    async def before_call(self, tool, kwargs, ctx): ...          # raise to refuse the call
+    async def after_call(self, tool, kwargs, ctx, result): ...   # the result the caller receives
+    async def on_error(self, tool, kwargs, ctx, exc): ...        # ToolError / ToolTimeoutError / ToolGuardError / ModelRetry
+    async def on_pause(self, tool, kwargs, ctx, signal): ...     # ApprovalRequired / CallDeferred: waiting on a person
+```
+
+The guard chain is itself the **first** listener (`GuardChainListener`), so the order is one
+every observer can reason about: guards refuse first, then each listener's `before_call` in
+registration order; a refused call reaches every listener's `on_error` with the `ToolGuardError`
+the caller sees. `kwargs` are the tool's arguments, never `ctx`; `ctx` is the pydantic-ai
+`RunContext` when the call came through an agent **and** the tool opted in with `takes_ctx=True`
+(read `ctx.tool_call_id` to correlate), `None` otherwise. A listener that raises in `after_call`
+turns the call into a `ToolError`: a ledger that silently missed a row is worse than a turn that
+failed loudly. Cancellation is none of these: a run cancelled (deadline, shutdown) while a
+listener or the tool body is mid-flight propagates as `CancelledError` and no listener hears
+an outcome, because the call did not happen. `_guarded_execute` stays private — a subclass that
+overrides it bypasses every listener the host registered.
+
 ### Built-in Guards
 
 - **ValidationGuard** -- `ValidationGuard(required_keys)` — rejects the call when any
@@ -349,10 +375,18 @@ returned to the model, which continues (it is **not** a crash). On resume the to
 ### Auto-detection and forcing HITL
 
 `FireflyAgent` widens its output type to allow the `DeferredToolRequests` pause exactly when
-HITL is in play. It auto-detects this from any `requires_approval` tool (directly, inside a
-`ToolKit`, or inside a `ToolKit.as_toolset()`), or an `ApprovalRequiredToolset` in `toolsets`.
-If your tools defer **dynamically** (raising `pydantic_ai.exceptions.ApprovalRequired`) so
-detection can't see it statically, pass `hitl=True`.
+HITL is in play. It auto-detects this from any `requires_approval` or `defers` tool (directly,
+inside a `ToolKit`, or inside a `ToolKit.as_toolset()`), from an `ApprovalRequiredToolset`, and
+from any toolset nested at any depth of `CombinedToolset` / `FilteredToolset` / `WrapperToolset`
+that exposes such a tool. A tool that pauses from inside its body by raising
+`pydantic_ai.exceptions.CallDeferred` (a colleague ask, an out-of-band job) declares it with
+`defers=True`, so the pause is planned rather than a `UserError` from pydantic-ai at the first
+deferral. If detection still misses a case, pass `hitl=True`.
+
+To decide which tools must stop for a person only once the whole surface is built — a policy
+that names tools, a plan — call `tool.require_approval(True)` before the tool is handed to a
+`FireflyAgent` (the flag is copied into the native `pydantic_ai.Tool` at construction); it
+returns whether anything changed.
 
 ### Dynamic, predicate-based approval
 

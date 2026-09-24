@@ -58,6 +58,7 @@ from fireflyframework_agentic.observability.quota import (
     default_quota_manager,
 )
 from fireflyframework_agentic.observability.usage import (
+    UsageTracker,
     default_usage_tracker,
     reasoning_tokens_not_in_output,
     resolve_run_usage,
@@ -215,8 +216,19 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         auto_register: bool = True,
         hitl: bool = False,
         approval_handler: ApprovalHandler | None = None,
+        config: FireflyAgenticConfig | None = None,
+        usage_tracker: UsageTracker | None = None,
     ) -> None:
-        cfg = get_config()
+        # The configuration this agent reads: the one it was given, else the process singleton.
+        # Scoped rather than installed, so two agents built from two settings objects (a test
+        # harness, a multi-tenant host) do not fight over one global. What the scoped config
+        # governs: the default middleware, retries, temperature, the cost gate and the rate
+        # limit. What it does NOT govern: the process usage ledger, which is shared by every
+        # agent and sized by ``set_config`` — an agent that must record into a ledger of its own
+        # (per tenant, per test) is given one as ``usage_tracker``.
+        cfg = config if config is not None else get_config()
+        self._config = cfg
+        self._usage_tracker = usage_tracker
 
         self._name = name
         self._version = version
@@ -234,7 +246,9 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
 
         self._memory = memory
 
-        self._middleware = MiddlewareChain(self._build_middleware(middleware, default_middleware=default_middleware))
+        self._middleware = MiddlewareChain(
+            self._build_middleware(middleware, default_middleware=default_middleware, config=cfg)
+        )
 
         # Merge the framework default temperature when the caller omits one.
         # ``ModelSettings`` is a TypedDict, so both forms are plain dicts at
@@ -285,6 +299,21 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
     def agent(self) -> Agent[AgentDepsT, OutputT]:
         """The underlying Pydantic AI agent instance."""
         return self._agent
+
+    @property
+    def config(self) -> FireflyAgenticConfig:
+        """The :class:`FireflyAgenticConfig` this agent reads (its own, or the process singleton)."""
+        return self._config
+
+    @property
+    def usage_tracker(self) -> UsageTracker:
+        """The ledger this agent's runs are recorded in: its own, else the process tracker.
+
+        The process tracker is read from its module at call time, so a test that patches
+        ``fireflyframework_agentic.agents.base.default_usage_tracker`` still intercepts an
+        agent without a tracker of its own.
+        """
+        return self._usage_tracker if self._usage_tracker is not None else default_usage_tracker
 
     @property
     def name(self) -> str:
@@ -568,7 +597,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         correlation_id: str = "",
     ) -> None:
         """Extract token usage from a Pydantic AI result and feed the tracker."""
-        cfg = get_config()
+        cfg = self._config
         if not cfg.cost_tracking_enabled:
             return
         try:
@@ -585,7 +614,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             cache_creation = getattr(usage, "cache_write_tokens", 0) or getattr(usage, "cache_creation_tokens", 0) or 0
             cache_read = getattr(usage, "cache_read_tokens", 0) or 0
 
-            record = default_usage_tracker.record_call(
+            record = self.usage_tracker.record_call(
                 model=self.model_identifier,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
@@ -749,7 +778,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         on the default :class:`QuotaManager` when quota is enabled and no
         override is given, or a standalone backoff otherwise.
         """
-        cfg = get_config()
+        cfg = self._config
         override = retry_override or {}
         max_retries = override.get("max_retries", cfg.rate_limit_max_retries)
         max_delay = override.get("max_delay", cfg.rate_limit_max_delay)
@@ -813,23 +842,25 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         user_middleware: list[Any] | None,
         *,
         default_middleware: bool = True,
+        config: FireflyAgenticConfig | None = None,
     ) -> list[Any]:
         """Merge user-supplied middleware with auto-wired defaults.
 
         When *default_middleware* is True, prepends a
         :class:`LoggingMiddleware` and (when observability is enabled) an
         :class:`ObservabilityMiddleware` to the chain unless the user
-        already supplied one.
+        already supplied one. ``config`` is the agent's configuration; the
+        process singleton when omitted.
         """
         chain: list[Any] = []
         user_mw = list(user_middleware or [])
+        cfg = config if config is not None else get_config()
 
         if default_middleware:
             has_logging = any(isinstance(m, LoggingMiddleware) for m in user_mw)
             if not has_logging:
-                chain.append(LoggingMiddleware())
+                chain.append(LoggingMiddleware.for_config(cfg))
 
-            cfg = get_config()
             if cfg.observability_enabled:
                 has_obs = any(isinstance(m, ObservabilityMiddleware) for m in user_mw)
                 if not has_obs:
@@ -871,31 +902,50 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
 
     @staticmethod
     def _detect_hitl(tools: Sequence[Any], toolsets: Sequence[Any]) -> bool:
-        """Whether any tool/toolset can pause the run for approval.
+        """Whether any tool/toolset can pause the run for approval or deferral.
 
         True if a :class:`BaseTool` (directly or inside a ``ToolKit``) declares
-        ``requires_approval``, a toolset is a native
-        :class:`~pydantic_ai.toolsets.ApprovalRequiredToolset`, or a toolset
-        (e.g. ``ToolKit.as_toolset()``) exposes a tool that declares
-        ``requires_approval``. Raw ``pydantic_ai.Tool`` objects with
-        ``requires_approval`` are also honoured; if introspection misses a case,
-        pass ``hitl=True`` explicitly.
+        ``requires_approval`` or ``defers``, a toolset is a native
+        :class:`~pydantic_ai.toolsets.ApprovalRequiredToolset`, or a toolset —
+        at any depth of ``CombinedToolset`` / ``WrapperToolset`` / ``FilteredToolset``
+        nesting — exposes a tool that declares ``requires_approval``. Raw
+        ``pydantic_ai.Tool`` objects with ``requires_approval`` are also honoured.
+
+        ``defers`` is the declaration a tool makes when it pauses from inside its
+        body (``CallDeferred``) rather than by flag: nothing about such a tool is
+        visible from the outside, so the earlier one-level scan could not see it and
+        the first pause crashed the run with pydantic-ai's ``UserError``. If
+        introspection still misses a case, pass ``hitl=True`` explicitly.
         """
-        for item in tools:
-            if isinstance(item, ToolKit):
-                if any(getattr(t, "requires_approval", False) for t in item.tools):
-                    return True
-            elif getattr(item, "requires_approval", False):
-                return True
-        for ts in toolsets:
+
+        def pauses(tool: Any) -> bool:
+            return bool(getattr(tool, "requires_approval", False) or getattr(tool, "defers", False))
+
+        def toolset_pauses(ts: Any, depth: int = 0) -> bool:
+            if depth > 16:  # a cyclic wrapper graph is a bug, not a reason to hang
+                return False
             if isinstance(ts, ApprovalRequiredToolset):
                 return True
             # A FunctionToolset exposes its tools as a name -> Tool mapping; honour
             # any that declare requires_approval (so as_toolset() HITL kits work).
             ts_tools = getattr(ts, "tools", None)
-            if isinstance(ts_tools, dict) and any(getattr(t, "requires_approval", False) for t in ts_tools.values()):
+            if isinstance(ts_tools, dict) and any(pauses(t) for t in ts_tools.values()):
                 return True
-        return False
+            # CombinedToolset holds ``toolsets``; every WrapperToolset (Filtered,
+            # Prefixed, Renamed, Prepared, Approval…) holds ``wrapped``.
+            inner = getattr(ts, "toolsets", None)
+            if isinstance(inner, (list, tuple)) and any(toolset_pauses(t, depth + 1) for t in inner):
+                return True
+            wrapped = getattr(ts, "wrapped", None)
+            return wrapped is not None and wrapped is not ts and toolset_pauses(wrapped, depth + 1)
+
+        for item in tools:
+            if isinstance(item, ToolKit):
+                if any(pauses(t) for t in item.tools):
+                    return True
+            elif pauses(item):
+                return True
+        return any(toolset_pauses(ts) for ts in toolsets)
 
     @staticmethod
     def _build_capabilities(cfg: FireflyAgenticConfig, approval_handler: ApprovalHandler | None) -> list[Any]:

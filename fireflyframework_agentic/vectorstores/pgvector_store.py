@@ -66,6 +66,12 @@ class PgVectorVectorStore(BaseVectorStore):
         hnsw_ef_search: ``hnsw.ef_search`` set per query for recall/latency tuning.
         pool_min_size / pool_max_size: asyncpg connection-pool bounds.
         embedder: Optional embedder for auto-embedding (see :class:`BaseVectorStore`).
+        create_schema: When ``True`` (the default) the first use creates the extension, table
+            and indexes if absent. When ``False`` the store only VERIFIES they exist and raises
+            :class:`~fireflyframework_agentic.exceptions.VectorStoreError` naming what is
+            missing — for a deployment where the schema is migrated (Alembic, with RLS policies
+            and grants the store must not touch) and application pods run under a role that
+            must never run DDL.
     """
 
     def __init__(
@@ -80,6 +86,7 @@ class PgVectorVectorStore(BaseVectorStore):
         pool_min_size: int = 1,
         pool_max_size: int = 10,
         embedder: Any | None = None,
+        create_schema: bool = True,
         **kwargs: Any,
     ) -> None:
         super().__init__(embedder=embedder, **kwargs)
@@ -100,6 +107,7 @@ class PgVectorVectorStore(BaseVectorStore):
         self._pool_max_size = pool_max_size
         self._pool: Any = None
         self._initialised = False
+        self._create_schema_enabled = create_schema
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -131,12 +139,36 @@ class PgVectorVectorStore(BaseVectorStore):
             self._initialised = True
         return self._pool
 
+    @property
+    def create_schema(self) -> bool:
+        """Whether first use creates the schema (``True``) or only verifies it (``False``)."""
+        return self._create_schema_enabled
+
+    async def _verify_schema(self, conn: Any) -> None:
+        """Raise unless the ``vector`` extension and the table exist; never creates anything."""
+        has_extension = await conn.fetchval("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector')")
+        if not has_extension:
+            raise VectorStoreError(
+                "the 'vector' extension is not installed and this store was built with create_schema=False; "
+                "install it in a migration (CREATE EXTENSION vector)"
+            )
+        table = await conn.fetchval("SELECT to_regclass($1)", self._table)
+        if table is None:
+            raise VectorStoreError(
+                f"table {self._table!r} does not exist and this store was built with create_schema=False; "
+                "create it in a migration"
+            )
+
     async def _create_schema(self, conn: Any) -> None:
         """Create the extension, table, and indexes if absent. Idempotent.
 
+        With ``create_schema=False`` this verifies instead (see :meth:`_verify_schema`).
         Subclasses may override to add deployment concerns (e.g. RLS policies)
         on the same connection via ``await super()._create_schema(conn)``.
         """
+        if not self._create_schema_enabled:
+            await self._verify_schema(conn)
+            return
         await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
         await conn.execute(
             f"""

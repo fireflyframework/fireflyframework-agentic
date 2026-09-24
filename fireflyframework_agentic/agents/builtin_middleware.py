@@ -129,6 +129,18 @@ class LoggingMiddleware:
         self._preview_length = preview_length
         self._include_usage = include_usage
 
+    @classmethod
+    def for_config(cls, config: Any) -> LoggingMiddleware:
+        """The default instance for an agent: the prompt preview follows the content switch.
+
+        ``instrumentation_include_content`` decides whether prompt and response text reach
+        spans; until 26.06.15 the entry log line carried the first 80 characters of the prompt
+        regardless, so a host that had opted out of content in telemetry still had room text
+        in its logs. One privacy switch: content excluded means ``preview_length=0``.
+        """
+        include = bool(getattr(config, "instrumentation_include_content", False))
+        return cls(preview_length=80 if include else 0)
+
     # -- hooks ---------------------------------------------------------------
 
     async def before_run(self, context: MiddlewareContext) -> None:
