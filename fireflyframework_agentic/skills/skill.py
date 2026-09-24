@@ -52,6 +52,13 @@ ResourceKind = Literal["reference", "template", "script"]
 
 # The body is a template over the config: an undefined variable is an authoring error, not an
 # empty string in a partner-facing memo. ``default(...)`` remains available for optional values.
+#
+# ``autoescape=False`` is deliberate and load-bearing: what this environment renders is a markdown
+# prompt body destined for a model's context window, never a web response. HTML-escaping it would
+# corrupt every skill that mentions ``&``, ``<`` or a quote — the model would read ``&amp;``. The
+# same reasoning, and the same setting, govern ``prompts.template``. Code scanning flags the pattern
+# (``py/jinja2/autoescape-false``) because it cannot see the sink; a host that renders a skill body
+# into a page owns the escaping at that boundary, where the sink is known.
 _env = Environment(loader=BaseLoader(), autoescape=False, keep_trailing_newline=False, undefined=StrictUndefined)
 
 
