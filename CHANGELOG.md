@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.06.16] - 2026-09-24
+
+### Fixed
+
+- **`PgVectorVectorStore` could not open a pool against a managed PostgreSQL.** First use ran
+  `CREATE EXTENSION IF NOT EXISTS vector`, and on a managed service the PERMISSION check runs BEFORE
+  the existence check — so the statement fails against a database that already has the extension,
+  which is every managed database, because an administrator installs it there before anything else
+  runs. Azure Database for PostgreSQL answers:
+
+      Because vector isn't a trusted extension, only members of "azure_pg_admin" are allowed to
+      use CREATE EXTENSION vector
+
+  `vector` is untrusted in PostgreSQL's own sense, so a managed service is right to reserve it. The
+  answer is not to put the application role into the administrator group — that grant carries far
+  more than one extension, and a deployment whose roles are separated precisely so no application
+  role holds it would be undoing its own posture to get past one statement.
+
+  `_create_schema` now asks `pg_extension` first and issues the statement only when the extension is
+  absent. That is the same question `_verify_schema` already asked, so the two paths finally agree
+  about what "installed" means. Behavior on a database without the extension is unchanged: it is
+  still created. Found by a digital-workers host deploying onto Azure Container Apps, where the
+  store's first use was the last thing standing between the environment and its knowledge plane.
+
 ## [26.06.15] - 2026-09-24
 
 What a host building digital workers on the framework had to carry itself, now upstream — each

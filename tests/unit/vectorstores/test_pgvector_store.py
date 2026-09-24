@@ -85,11 +85,16 @@ class TestPgVectorVectorStoreUnit:
         from fireflyframework_agentic.vectorstores.pgvector_store import PgVectorVectorStore
 
         class FakeConn:
-            def __init__(self) -> None:
+            def __init__(self, extension_installed: bool = False) -> None:
                 self.statements: list[str] = []
+                self.extension_installed = extension_installed
 
             async def execute(self, sql: str, *args: object) -> None:
                 self.statements.append(sql)
+
+            async def fetchval(self, sql: str, *args: object) -> object:
+                self.statements.append(sql)
+                return self.extension_installed if "pg_extension" in sql else None
 
         store = PgVectorVectorStore(url="postgresql://localhost/db", dimension=8)
         assert store.create_schema is True
@@ -97,3 +102,11 @@ class TestPgVectorVectorStoreUnit:
         await store._create_schema(conn)
         assert any("CREATE EXTENSION" in s for s in conn.statements)
         assert any("CREATE TABLE" in s for s in conn.statements)
+
+        # AND THE REASON THE ASK EXISTS: on a managed PostgreSQL the permission check runs before
+        # the existence check, so issuing it against a database that already has the extension
+        # raises for any role outside the service's administrator group. Installed means skip.
+        ya = FakeConn(extension_installed=True)
+        await store._create_schema(ya)
+        assert not any("CREATE EXTENSION" in s for s in ya.statements)
+        assert any("CREATE TABLE" in s for s in ya.statements)

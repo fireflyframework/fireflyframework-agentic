@@ -169,7 +169,23 @@ class PgVectorVectorStore(BaseVectorStore):
         if not self._create_schema_enabled:
             await self._verify_schema(conn)
             return
-        await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        # GUARDED, AND NOT BY ``IF NOT EXISTS`` ALONE.
+        #
+        # On a managed PostgreSQL the PERMISSION check runs BEFORE the existence check, so
+        # ``CREATE EXTENSION IF NOT EXISTS vector`` raises against a database that already has it.
+        # Azure Database for PostgreSQL:
+        #
+        #     Because vector isn't a trusted extension, only members of "azure_pg_admin" are
+        #     allowed to use CREATE EXTENSION vector
+        #
+        # ``vector`` is untrusted in PostgreSQL's own sense, so a managed service is right to reserve
+        # it to an administrator; the application role that opens this pool is not one and must not
+        # be made one. Asking ``pg_extension`` first is the same question :meth:`_verify_schema`
+        # already asks, so the two paths now agree about what "installed" means, and first use stops
+        # failing on a database an administrator has already prepared.
+        installed = await conn.fetchval("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector')")
+        if not installed:
+            await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
         await conn.execute(
             f"""
             CREATE TABLE IF NOT EXISTS {self._table} (
