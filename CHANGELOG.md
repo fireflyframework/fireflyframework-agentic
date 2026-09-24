@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
-## [26.06.15] - 2026-09-17
+## [26.06.15] - 2026-09-24
 
 What a host building digital workers on the framework had to carry itself, now upstream — each
 found by one worker runtime on `claude-sonnet-5` that wrote its own model factory, subclassed a
