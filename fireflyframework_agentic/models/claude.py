@@ -12,39 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""What the framework knows about the Claude family that the pinned SDK's table does not.
+"""Claude capability rules shared by the factory and its settings translation.
 
-pydantic-ai 1.107's ``anthropic_model_profile`` predates Claude Opus 5 and Claude Sonnet 5
-(no 1.x release knows them; the profile table stops at the 4.8 line and Fable/Mythos 5). For
-those ids it derives a profile that says no adaptive thinking, no effort, budgets allowed and
-sampling allowed — and every one of those is the opposite of what the API does:
+The Claude 4.7+ and Claude 5 families require these request rules:
 
 * thinking is ``{"type": "adaptive"}`` and on by default; ``budget_tokens`` is a 400;
 * ``temperature`` / ``top_p`` / ``top_k`` are a 400, thinking or not;
 * effort is ``low`` … ``xhigh`` … ``max``.
 
-This module is the one place that table is corrected. The profile is MUTATED, NEVER
-CONSTRUCTED: ``Model.profile`` falls back to the provider-derived profile only when the model
-was given none, so passing a fresh ``AnthropicModelProfile(...)`` replaces the derived one
-wholesale and silently drops ``thinking_tags``, the code-execution tool versions and every
-flag the SDK did get right. ``dataclasses.replace`` keeps them and changes only what is wrong.
+Profiles are dictionaries in PydanticAI 2. Corrections are merged over the SDK's derived
+profile, retaining thinking tags, native-tool capabilities, code-execution versions and all
+other provider-specific fields.
 
-The rules come from the provider's documentation as of this release, and they are pinned by
-``tests/unit/models/test_factory.py``; when a pydantic-ai release carries them, this module
-becomes a no-op for the ids it covers, and that is the intended end of it.
+The rules are pinned by ``tests/unit/models/test_factory.py``. Where the SDK already carries
+them, merging the corrections leaves its values unchanged.
 """
 
 from __future__ import annotations
 
-import dataclasses
 import re
+from typing import cast
 
-from pydantic_ai.profiles import ModelProfile
+from pydantic_ai.profiles import DEFAULT_PROFILE, ModelProfile
 from pydantic_ai.profiles.anthropic import AnthropicModelProfile, anthropic_model_profile
 
 from fireflyframework_agentic.models.spec import ModelCapabilities, ThinkingStyle
 
-#: Ids (prefixes) whose profile the pinned SDK does not know: adaptive thinking, every effort
+#: Ids (prefixes) with adaptive thinking, every effort
 #: level, budgets and sampling refused, native structured output.
 CLAUDE_5_PREFIXES: tuple[str, ...] = ("claude-opus-5", "claude-sonnet-5", "claude-haiku-5")
 
@@ -140,7 +134,7 @@ def claude_capabilities(model: str) -> ModelCapabilities:
 
 
 def claude_corrections(model: str) -> dict[str, object]:
-    """What the tables above say about ``model`` that the pinned SDK's profile does not.
+    """The framework's Claude capability corrections for ``model``.
 
     Keyed by the ``AnthropicModelProfile`` field names; :func:`bedrock_claude_profile` maps
     the ones Bedrock's profile spells differently. Empty for a non-Claude id.
@@ -171,9 +165,7 @@ def claude_profile(model: str) -> AnthropicModelProfile:
     """
     name = _bare(model)
     derived: ModelProfile | None = anthropic_model_profile(name)
-    base = AnthropicModelProfile.from_profile(derived) if derived is not None else AnthropicModelProfile()
-    corrections = claude_corrections(name)
-    return dataclasses.replace(base, **corrections) if corrections else base  # type: ignore[arg-type]
+    return cast("AnthropicModelProfile", {**(derived or DEFAULT_PROFILE), **claude_corrections(name)})
 
 
 #: ``AnthropicModelProfile`` field → the ``BedrockModelProfile`` field that means the same thing.
@@ -188,22 +180,18 @@ _BEDROCK_FIELD_FOR: dict[str, str] = {
 def bedrock_claude_profile(model: str) -> ModelProfile:
     """The Bedrock provider's derived profile for a Claude id, with the corrections applied ON it.
 
-    On it, not instead of it. ``BedrockConverseModel`` given an ``AnthropicModelProfile`` as
-    its profile loses everything only the Bedrock profile carries — tool choice, prompt and
-    tool caching, sending thinking parts back, the Bedrock JSON-schema transformer — because
-    ``BedrockModelProfile.from_profile`` copies only the fields it has. The SDK's Bedrock
-    derivation (which already strips the geo prefix and the version suffix) is the base; the
-    Claude 5 corrections are mapped onto Bedrock's own flags; the Anthropic-only flags with no
-    Bedrock counterpart (``anthropic_disallows_*``) are left out, since Bedrock's model never
-    reads them — the sampling knobs are dropped by the settings translation instead.
+    The SDK's Bedrock derivation (which already strips the geo prefix and the version suffix)
+    is the base, preserving tool choice, prompt caching and its JSON-schema transformer. The
+    Claude 5 corrections are mapped onto Bedrock's own flags. Anthropic-only correction keys
+    without a Bedrock counterpart are left to the SDK's Bedrock profile; sampling is also
+    filtered by the settings translation.
     """
-    from pydantic_ai.providers.bedrock import BedrockModelProfile, BedrockProvider
+    from pydantic_ai.providers.bedrock import BedrockProvider
 
     derived = BedrockProvider.model_profile(model)
-    base = BedrockModelProfile.from_profile(derived) if derived is not None else BedrockModelProfile()
     corrections: dict[str, object] = {}
     for field, value in claude_corrections(model).items():
         target = _BEDROCK_FIELD_FOR.get(field, field)
         if not field.startswith("anthropic_") or target != field:
             corrections[target] = value
-    return dataclasses.replace(base, **corrections) if corrections else base  # type: ignore[arg-type]
+    return cast("ModelProfile", {**(derived or DEFAULT_PROFILE), **corrections})

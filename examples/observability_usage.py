@@ -14,6 +14,9 @@
 
 """Observability and usage tracking example.
 
+All records and prices below are illustrative fixtures, not provider billing.
+No model request is made.
+
 Demonstrates:
 - ``UsageTracker`` — record and summarise LLM usage.
 - ``max_records`` — bounded tracker with FIFO eviction.
@@ -40,7 +43,7 @@ def main() -> None:
     tracker.record(
         UsageRecord(
             agent="summarizer",
-            model="openai:gpt-4o-mini",
+            model="example:small-model",
             input_tokens=500,
             output_tokens=150,
             total_tokens=650,
@@ -52,7 +55,7 @@ def main() -> None:
     tracker.record(
         UsageRecord(
             agent="classifier",
-            model="openai:gpt-4o-mini",
+            model="example:small-model",
             input_tokens=200,
             output_tokens=50,
             total_tokens=250,
@@ -64,7 +67,7 @@ def main() -> None:
     tracker.record(
         UsageRecord(
             agent="summarizer",
-            model="openai:gpt-4o",
+            model="example:large-model",
             input_tokens=1000,
             output_tokens=300,
             total_tokens=1300,

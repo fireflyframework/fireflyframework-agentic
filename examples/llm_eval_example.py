@@ -20,11 +20,11 @@ Score a set of Q&A pairs using the evaluation metrics:
 
 Usage::
 
-    python examples/llm_eval_example.py --model anthropic:claude-haiku-4-5
+    python examples/llm_eval_example.py --model openai-responses:gpt-6-luna
 
     # Or score from a JSONL file instead of the built-in sample data:
     python examples/llm_eval_example.py \\
-        --model anthropic:claude-haiku-4-5 \\
+        --model openai-responses:gpt-6-luna \\
         --items-file items.jsonl
 
 Items JSONL format — one JSON object per line::
@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 from pathlib import Path
 
 from fireflyframework_agentic.evaluation import (
@@ -97,20 +98,18 @@ async def main(args: argparse.Namespace) -> None:
         aq = f"{r['addresses_question']:.2f}" if r["addresses_question"] is not None else "    n/a"
         print(f"{q:<45} {ca:>8} {aq:>9}")
 
-    scored = [r for r in results if r["contains_answer"] is not None]
-    if scored:
-        avg_ca = sum(r["contains_answer"] for r in scored) / len(scored)
-        avg_aq = sum(r["addresses_question"] for r in scored) / len(scored)
-        print("-" * 63)
-        print(f"{'Average':<45} {avg_ca:>8.2f} {avg_aq:>9.2f}")
-    print(f"\n{len(items)} items scored.")
+    print("-" * 63)
+    for metric in ("contains_answer", "addresses_question"):
+        scores = [row[metric] for row in results if row[metric] is not None]
+        average = f"{sum(scores) / len(scores):.2f}" if scores else "n/a"
+        print(f"{metric}: average={average}, scored={len(scores)}/{len(items)}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Score Q&A pairs with LLM-as-judge metrics.")
     parser.add_argument(
         "--model",
-        default="anthropic:claude-haiku-4-5",
+        default=os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "openai-responses:gpt-6-luna")),
         help="Judge model spec (provider:model).",
     )
     parser.add_argument(

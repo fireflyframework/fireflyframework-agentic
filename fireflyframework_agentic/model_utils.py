@@ -30,7 +30,7 @@ from pydantic_ai.models import Model
 
 # Defensive fallback only: the provider is normally read from the model's own
 # ``_provider.name`` (every pydantic-ai provider implements it). This map covers
-# any object that lacks a provider. Class names track pydantic-ai 1.x.
+# any object that lacks a provider.
 _CLASS_TO_PROVIDER: dict[str, str] = {
     "AnthropicModel": "anthropic",
     "BedrockConverseModel": "bedrock",
@@ -80,6 +80,40 @@ _PROVIDER_TO_FAMILY: dict[str, str] = {
 }
 
 
+_API_PROVIDER_ALIASES = {
+    "openai-chat": "openai",
+    "openai-responses": "openai",
+    "azure-chat": "azure",
+    "azure-responses": "azure",
+}
+
+
+def normalize_model(model: str | Model | None) -> str | Model | None:
+    """Keep Firefly's existing Chat Completions routes stable across upstream upgrades.
+
+    Explicit Responses selectors and preconfigured model objects pass through.
+    PydanticAI calls Azure's Chat Completions route ``azure``, without ``-chat``.
+    """
+    if not isinstance(model, str):
+        return model
+    provider, separator, name = model.partition(":")
+    if separator:
+        provider = {"openai": "openai-chat", "gateway/openai": "gateway/openai-chat", "azure-chat": "azure"}.get(
+            provider, provider
+        )
+        return f"{provider}:{name}"
+    for prefix, provider in (
+        ("gpt", "openai-chat"),
+        ("o1", "openai-chat"),
+        ("o3", "openai-chat"),
+        ("claude", "anthropic"),
+        ("gemini", "google"),
+    ):
+        if model.startswith(prefix):
+            return f"{provider}:{model}"
+    return model
+
+
 def extract_model_info(model: str | Model | None) -> tuple[str, str]:
     """Return ``(provider, model_name)`` from a model identifier.
 
@@ -102,7 +136,7 @@ def extract_model_info(model: str | Model | None) -> tuple[str, str]:
     if isinstance(model, str):
         if ":" in model:
             provider, _, model_name = model.partition(":")
-            return (provider, model_name)
+            return (_API_PROVIDER_ALIASES.get(provider, provider), model_name)
         return ("", model)
 
     # Model object — prefer the provider's own ``.name``. Every pydantic-ai

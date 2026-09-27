@@ -39,7 +39,6 @@ Use Cases:
 from __future__ import annotations
 
 import asyncio
-import random
 
 from fireflyframework_agentic.resilience.circuit_breaker import (
     CircuitBreaker,
@@ -58,7 +57,7 @@ async def demo_basic_circuit_breaker():
     )
 
     print(f"Initial state: {breaker.state.value}")
-    print(f"Failure threshold: {breaker._failure_threshold}")
+    print(f"Failure threshold: {breaker.get_metrics()['failure_threshold']}")
     print()
 
     # Simulate service that fails
@@ -159,10 +158,13 @@ async def demo_with_fallback():
     # Simulated cache for fallback
     cache = {"question1": "Cached answer 1", "question2": "Cached answer 2"}
 
+    attempt = 0
+
     async def call_llm_api(question: str) -> str:
-        """Simulated LLM API call that may fail."""
-        # Simulate random failures
-        if random.random() < 0.5:
+        """Deterministic failure fixture for exercising the real breaker."""
+        nonlocal attempt
+        attempt += 1
+        if attempt <= 2:
             raise ConnectionError("LLM API unavailable")
         return f"Fresh answer for: {question}"
 
@@ -227,7 +229,7 @@ async def demo_monitoring_metrics():
             async with breaker:
                 await service_call(fail=True)
         except Exception:
-            pass
+            print("  Expected service failure recorded")
 
     print_metrics()
 
@@ -236,7 +238,7 @@ async def demo_monitoring_metrics():
         async with breaker:
             await service_call(fail=True)
     except Exception:
-        pass
+        print("  Expected service failure recorded")
 
     print_metrics()
 
@@ -326,7 +328,6 @@ async def main():
     print()
     print("  agent = FireflyAgent(")
     print("      'resilient-agent',")
-    print("      model='openai:gpt-4o',")
     print("      middleware=[CircuitBreakerMiddleware(failure_threshold=3)],")
     print("  )")
     print()

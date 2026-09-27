@@ -97,8 +97,7 @@ def provider_reported_cost(ctx: CostContext) -> float | None:
       * OpenRouter — ``provider_payload["usage"]["cost"]`` (USD float).
 
     Runs first so a provider's authoritative per-call USD wins over the local
-    estimate. Note: pydantic-ai 1.107 does not surface OpenRouter's cost on the
-    result/usage, so ``provider_payload`` is currently populated only by custom
+    estimate. ``provider_payload`` is currently populated only by custom
     integrations that pass the raw response through to ``record_call``.
     """
     payload = ctx.provider_payload
@@ -204,7 +203,7 @@ class PriceRow:
         )
 
 
-#: Rows genai-prices 0.0.66 does not carry, keyed by the model-id PREFIX (a dated snapshot, a
+#: Framework-owned price rows, keyed by the model-id PREFIX (a dated snapshot, a
 #: Vertex ``@version`` suffix and a Bedrock ``anthropic.`` prefix all resolve to the same row).
 #: Anthropic first-party rates at the date of this release. A row is deleted the day
 #: genai-prices prices the id, so the community table stays the source of record; until then

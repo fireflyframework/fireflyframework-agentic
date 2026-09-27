@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import pytest
+from pydantic_ai.messages import ModelResponse, TextPart
+from pydantic_ai.models.function import FunctionModel
+
+from fireflyframework_agentic.agents.base import FireflyAgent
 from fireflyframework_agentic.pipeline.context import PipelineContext
 from fireflyframework_agentic.pipeline.dag import DAG, DAGEdge, DAGNode
 from fireflyframework_agentic.pipeline.engine import PipelineEngine
-from fireflyframework_agentic.pipeline.steps import BranchStep
+from fireflyframework_agentic.pipeline.steps import AgentStep, BranchStep
 
 
 class _EchoStep:
@@ -15,6 +20,24 @@ class _EchoStep:
     async def execute(self, context, inputs):
         val = inputs.get("input", "")
         return f"{self._prefix}{val}"
+
+
+@pytest.mark.parametrize(
+    ("inputs", "context_inputs", "expected"),
+    [
+        ({"input": "node prompt"}, {"input": "global prompt"}, "node prompt"),
+        ({}, {"input": "global prompt"}, "global prompt"),
+        ({"input": {"question": "why"}}, {}, '{"question": "why"}'),
+        ({}, {"question": "why"}, '{"question": "why"}'),
+    ],
+)
+async def test_agent_step_delivers_mapping_inputs_as_valid_prompts(inputs, context_inputs, expected):
+    def respond(messages, info):
+        return ModelResponse(parts=[TextPart(messages[-1].parts[-1].content)])
+
+    agent = FireflyAgent("pipeline-prompt", model=FunctionModel(respond), auto_register=False)
+    result = await AgentStep(agent).execute(PipelineContext(inputs=context_inputs), inputs)
+    assert result == expected
 
 
 class TestBranchStep:

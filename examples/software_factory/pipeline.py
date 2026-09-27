@@ -27,6 +27,7 @@ from examples.software_factory.agents import (
 from examples.software_factory.progress import ProgressHandler
 from examples.software_factory.state import BuildState
 from fireflyframework_agentic.pipeline import (
+    AuditLog,
     Checkpointer,
     PipelineBuilder,
     PipelineEngine,
@@ -38,12 +39,13 @@ def qa_router(state: BuildState) -> str:
     return "stable_release" if state.qa_status == "pass" else "codegen"
 
 
-def build_pipeline(checkpointer: Checkpointer) -> PipelineEngine:
+def build_pipeline(checkpointer: Checkpointer, *, audit_log: AuditLog | None = None) -> PipelineEngine:
     pipeline = (
         PipelineBuilder(
             "software-factory",
             state=BuildState,
             checkpointer=checkpointer,
+            audit_log=audit_log,
             recursion_limit=3,
             event_handler=ProgressHandler(),
         )

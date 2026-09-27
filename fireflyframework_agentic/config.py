@@ -94,15 +94,14 @@ class FireflyAgenticConfig(BaseSettings):
     — message events keep only their role/part-type skeleton. Overrides
     pydantic-ai's own ``include_content=True`` default."""
 
-    instrumentation_version: Literal[1, 2, 3, 4, 5] = 2
+    instrumentation_version: Literal[1, 2, 3, 4, 5, 6] = 5
     """GenAI semantic-convention version for native instrumentation span names
-    and attributes. ``2`` (default) matches pydantic-ai; ``>=3`` uses
-    ``invoke_agent <name>`` / ``execute_tool <name>`` span names."""
+    and attributes. ``5`` (default) matches pydantic-ai. Legacy values 1-4
+    are upgraded to 5; 6 opts into the newer telemetry format."""
 
     instrumentation_event_mode: Literal["attributes", "logs"] = "attributes"
-    """Where native instrumentation puts model-message events. ``"attributes"``
-    (default) keeps them on the span; ``"logs"`` routes them to a separate OTel
-    ``LoggerProvider``. Note: ``"logs"`` forces convention version 1."""
+    """Legacy setting retained for configuration compatibility. PydanticAI v2
+    stores message events as span attributes; this field no longer changes routing."""
 
     log_level: str = "INFO"
     """Logging level for the framework's internal logger."""

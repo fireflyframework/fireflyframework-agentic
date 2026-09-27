@@ -28,7 +28,7 @@
       <h1 class="ff-hero__title">Agents you can run in <span class="ff-grad">production</span>.</h1>
       <p class="ff-hero__lead">
         Firefly Agentic is the production-grade metaframework built on Pydantic AI.
-        Keep its <code>Agent</code>, <code>Tool</code> and <code>RunContext</code> — gain
+        Use Firefly agents, tools, memory and typed model options — gain
         lifecycle hooks, delegation, memory, reasoning patterns, validation loops, RAG
         and DAG pipelines. Protocol-driven, swappable, no lock-in.
       </p>
@@ -87,9 +87,9 @@
             couples to infrastructure.
           </p>
           <ul class="ff-why__list">
-            <li>Your <b>Agent</b>, <b>Tool</b> and <b>RunContext</b> APIs stay exactly as they are.</li>
+            <li>Build with <b>FireflyAgent</b>, <b>ToolKit</b>, <b>MemoryManager</b> and <b>ModelOptions</b>.</li>
             <li>Lifecycle hooks, registries, delegation, memory, reasoning, validation and pipelines wrap them — all optional, all composable.</li>
-            <li>Switch models, swap a memory backend or replace a component without touching agent code. <b>No vendor lock-in.</b></li>
+            <li>Keep model selection in configuration; Firefly validates options against each provider. Native SDK integrations remain available.</li>
           </ul>
         </div>
         <figure class="ff-figure">
@@ -148,7 +148,7 @@
       <div class="ff-section__head ff-reveal">
         <span class="ff-section__kicker">Five minutes in</span>
         <h2 class="ff-section__title">Familiar Python, all the way down</h2>
-        <p class="ff-section__sub">Async-first, typed, and decorator-friendly. Here's the shape of it.</p>
+        <p class="ff-section__sub">Async-first, typed, and decorator-friendly. Set your provider key and FIREFLY_AGENTIC_DEFAULT_MODEL, then run these cells in a notebook. Select openai-responses:gpt-6-luna for reasoning with tools.</p>
       </div>
       <div class="ff-code-wrap ff-reveal">
         <div class="ff-tabs">
@@ -164,36 +164,45 @@
           </div>
           <div class="ff-window">
             <div class="ff-window__bar"><i></i><i></i><i></i><span class="ff-window__file">assistant.py</span></div>
-<pre class="ff-code ff-panel p1"><span class="k">from</span> fireflyframework_agentic.agents <span class="k">import</span> FireflyAgent
+<pre class="ff-code ff-panel p1"><span class="kn">from</span><span class="w"> </span><span class="nn">fireflyframework_agentic.agents</span><span class="w"> </span><span class="kn">import</span> <span class="n">FireflyAgent</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">fireflyframework_agentic.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">ModelOptions</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">fireflyframework_agentic.tools.builtins</span><span class="w"> </span><span class="kn">import</span> <span class="n">CalculatorTool</span>
 
-agent = FireflyAgent(name=<span class="s">"assistant"</span>, model=<span class="s">"openai:gpt-4o"</span>)
-result = <span class="k">await</span> agent.run(<span class="s">"Summarize this contract in 3 bullets."</span>)
-<span class="f">print</span>(result.output)</pre>
-<pre class="ff-code ff-panel p2"><span class="k">from</span> fireflyframework_agentic.memory <span class="k">import</span> MemoryManager
+<span class="n">agent</span> <span class="o">=</span> <span class="n">FireflyAgent</span><span class="p">(</span>
+    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;assistant&quot;</span><span class="p">,</span> <span class="n">tools</span><span class="o">=</span><span class="p">[</span><span class="n">CalculatorTool</span><span class="p">()],</span>
+    <span class="n">model_options</span><span class="o">=</span><span class="n">ModelOptions</span><span class="p">(</span><span class="n">max_tokens</span><span class="o">=</span><span class="mi">4096</span><span class="p">),</span>
+<span class="p">)</span>
+<span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">&quot;Calculate 15 percent of 240.&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">output</span><span class="p">)</span></pre>
+<pre class="ff-code ff-panel p2"><span class="kn">from</span><span class="w"> </span><span class="nn">fireflyframework_agentic.agents</span><span class="w"> </span><span class="kn">import</span> <span class="n">FireflyAgent</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">fireflyframework_agentic.memory</span><span class="w"> </span><span class="kn">import</span> <span class="n">MemoryManager</span>
 
-memory = MemoryManager(max_conversation_tokens=<span class="o">32_000</span>)
-agent = FireflyAgent(name=<span class="s">"bot"</span>, model=<span class="s">"openai:gpt-4o"</span>, memory=memory)
+<span class="n">memory</span> <span class="o">=</span> <span class="n">MemoryManager</span><span class="p">(</span><span class="n">max_conversation_tokens</span><span class="o">=</span><span class="mi">32_000</span><span class="p">)</span>
+<span class="n">agent</span> <span class="o">=</span> <span class="n">FireflyAgent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;bot&quot;</span><span class="p">,</span> <span class="n">memory</span><span class="o">=</span><span class="n">memory</span><span class="p">)</span>
+<span class="n">cid</span> <span class="o">=</span> <span class="n">memory</span><span class="o">.</span><span class="n">new_conversation</span><span class="p">()</span>
+<span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">&quot;My name is Alice.&quot;</span><span class="p">,</span> <span class="n">conversation_id</span><span class="o">=</span><span class="n">cid</span><span class="p">)</span>
+<span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">&quot;What&#39;s my name?&quot;</span><span class="p">,</span> <span class="n">conversation_id</span><span class="o">=</span><span class="n">cid</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">output</span><span class="p">)</span></pre>
+<pre class="ff-code ff-panel p3"><span class="kn">from</span><span class="w"> </span><span class="nn">fireflyframework_agentic.agents</span><span class="w"> </span><span class="kn">import</span> <span class="n">FireflyAgent</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">fireflyframework_agentic.reasoning</span><span class="w"> </span><span class="kn">import</span> <span class="n">ReActPattern</span>
 
-cid = memory.new_conversation()
-<span class="k">await</span> agent.run(<span class="s">"My name is Alice."</span>, conversation_id=cid)
-<span class="k">await</span> agent.run(<span class="s">"What's my name?"</span>, conversation_id=cid)  <span class="c"># -> Alice</span></pre>
-<pre class="ff-code ff-panel p3"><span class="k">from</span> fireflyframework_agentic.reasoning <span class="k">import</span> ReActPattern
+<span class="n">agent</span> <span class="o">=</span> <span class="n">FireflyAgent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;reasoner&quot;</span><span class="p">)</span>
+<span class="n">react</span> <span class="o">=</span> <span class="n">ReActPattern</span><span class="p">(</span><span class="n">max_steps</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+<span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">react</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="s2">&quot;Explain bounded retries and backoff.&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">output</span><span class="p">)</span></pre>
+<pre class="ff-code ff-panel p4"><span class="kn">from</span><span class="w"> </span><span class="nn">fireflyframework_agentic.agents</span><span class="w"> </span><span class="kn">import</span> <span class="n">FireflyAgent</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">fireflyframework_agentic.pipeline</span><span class="w"> </span><span class="kn">import</span> <span class="n">PipelineBuilder</span><span class="p">,</span> <span class="n">AgentStep</span>
 
-react = ReActPattern(max_steps=<span class="o">5</span>)
-result = <span class="k">await</span> react.execute(agent, <span class="s">"What's the weather in London?"</span>)
-<span class="f">print</span>(result.output)  <span class="c"># structured ReasoningResult + trace</span></pre>
-<pre class="ff-code ff-panel p4"><span class="k">from</span> fireflyframework_agentic.pipeline.builder <span class="k">import</span> PipelineBuilder
-<span class="k">from</span> fireflyframework_agentic.pipeline.steps <span class="k">import</span> AgentStep, CallableStep
-
-pipeline = (
-    PipelineBuilder(<span class="s">"idp"</span>)
-    .add_node(<span class="s">"classify"</span>, AgentStep(classifier))
-    .add_node(<span class="s">"extract"</span>, AgentStep(extractor))
-    .add_node(<span class="s">"validate"</span>, CallableStep(check))
-    .chain(<span class="s">"classify"</span>, <span class="s">"extract"</span>, <span class="s">"validate"</span>)
-    .build()
-)
-result = <span class="k">await</span> pipeline.run(inputs=<span class="s">"Process this document"</span>)</pre>
+<span class="n">summarizer</span> <span class="o">=</span> <span class="n">FireflyAgent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;summarizer&quot;</span><span class="p">,</span> <span class="n">instructions</span><span class="o">=</span><span class="s2">&quot;Summarize in one sentence.&quot;</span><span class="p">)</span>
+<span class="n">editor</span> <span class="o">=</span> <span class="n">FireflyAgent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;editor&quot;</span><span class="p">,</span> <span class="n">instructions</span><span class="o">=</span><span class="s2">&quot;Rewrite the summary clearly.&quot;</span><span class="p">)</span>
+<span class="n">pipeline</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="n">PipelineBuilder</span><span class="p">(</span><span class="s2">&quot;summarize-and-edit&quot;</span><span class="p">)</span>
+    <span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="s2">&quot;summarize&quot;</span><span class="p">,</span> <span class="n">AgentStep</span><span class="p">(</span><span class="n">summarizer</span><span class="p">))</span>
+    <span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="s2">&quot;edit&quot;</span><span class="p">,</span> <span class="n">AgentStep</span><span class="p">(</span><span class="n">editor</span><span class="p">))</span>
+    <span class="o">.</span><span class="n">chain</span><span class="p">(</span><span class="s2">&quot;summarize&quot;</span><span class="p">,</span> <span class="s2">&quot;edit&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">build</span><span class="p">()</span>
+<span class="p">)</span>
+<span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">inputs</span><span class="o">=</span><span class="s2">&quot;Retries stop after three attempts.&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">final_output</span><span class="p">)</span></pre>
           </div>
         </div>
       </div>

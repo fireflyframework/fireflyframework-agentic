@@ -26,15 +26,22 @@ Then select the **Firefly Agentic** kernel when creating a new notebook.
 ```python
 # Cell 1 — configure
 import os
-os.environ["OPENAI_API_KEY"] = "sk-..."          # or set in .env
-os.environ["FIREFLY_AGENTIC_DEFAULT_MODEL"] = "openai:gpt-4o"
+from getpass import getpass
+from dotenv import load_dotenv
+
+load_dotenv()
+if not os.environ.get("OPENAI_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = getpass("OpenAI API key: ")
+os.environ["FIREFLY_AGENTIC_DEFAULT_MODEL"] = "openai-responses:gpt-6-luna"
 ```
 
 ```python
 # Cell 2 — create an agent
 from fireflyframework_agentic.agents import FireflyAgent
 
-agent = FireflyAgent(name="notebook-bot", model="openai:gpt-4o")
+from fireflyframework_agentic.models import ModelOptions
+
+agent = FireflyAgent(name="notebook-bot", model_options=ModelOptions(max_tokens=4096))
 result = await agent.run("Explain quantum entanglement in two sentences.")
 print(result.output)
 ```
@@ -44,7 +51,7 @@ print(result.output)
 from fireflyframework_agentic.memory import MemoryManager
 
 memory = MemoryManager(max_conversation_tokens=32_000)
-agent_with_mem = FireflyAgent(name="chat", model="openai:gpt-4o", memory=memory)
+agent_with_mem = FireflyAgent(name="chat", memory=memory)
 
 cid = memory.new_conversation()
 await agent_with_mem.run("My name is Alice.", conversation_id=cid)
@@ -71,8 +78,9 @@ class Summary(BaseModel):
     bullet_points: list[str]
     confidence: float
 
+summary_agent = FireflyAgent(name="summary", output_type=Summary)
 reviewer = OutputReviewer(output_type=Summary, max_retries=2)
-result = await reviewer.review(agent, "Summarize the benefits of async Python.")
+result = await reviewer.review(summary_agent, "Summarize the benefits of async Python.")
 result.output  # displays the structured Summary object in the notebook
 ```
 

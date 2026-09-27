@@ -5,6 +5,11 @@ description: Configure a provider, define an agent, add memory, reason, validate
 
 # 5-Minute Quick Start
 
+These Python blocks build on the preceding blocks and use notebook-style `await`.
+In a script, place the calls in `async def main()` and finish with
+`asyncio.run(main())`. For a complete executable script, see the
+[model-agnostic example](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/examples/model_agnostic_agent.py).
+
 This is the shape of the framework end to end. For the full, hands-on path, see
 **[The Complete Tutorial](../tutorial.md)**.
 
@@ -13,40 +18,58 @@ This is the shape of the framework end to end. For the full, hands-on path, see
 Create a `.env` file (or set environment variables):
 
 ```bash
-# Provider API key (Pydantic AI reads these automatically)
+# Provider API key (read from the environment)
 OPENAI_API_KEY=sk-...
 # ANTHROPIC_API_KEY=sk-ant-...
 # GEMINI_API_KEY=...
 
 # Framework settings
-FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o
-FIREFLY_AGENTIC_DEFAULT_TEMPERATURE=0.3
+FIREFLY_AGENTIC_DEFAULT_MODEL=openai-responses:gpt-6-luna
 ```
 
-The model string is `"provider:model_name"` — e.g. `"openai:gpt-4o"`,
-`"anthropic:claude-sonnet-4-20250514"`, `"google:gemini-2.0-flash"`. For
-programmatic credentials (Azure, Bedrock, custom endpoints), pass a Pydantic AI
-`Model` object to `FireflyAgent(model=...)` — see the
-[tutorial](../tutorial.md#model-providers-authentication).
+The model string selects the provider and API. Keep it in configuration; agent,
+tool, memory, and output-schema code can remain the same. Use `ModelOptions` for
+portable controls and [`ModelSpec` / `ModelFactory`](../models.md) for application-managed
+credentials, Azure deployments, and custom endpoints.
+
+Existing `openai:` / `azure:` prefixes retain Chat Completions. Select
+`openai-responses:` / `azure-responses:` explicitly for Responses. GPT-6 Astra
+requires Responses for tools; Sol and Luna require `reasoning="none"` for Chat
+tools. With Responses, reasoning and tools can be combined. Leave the global
+temperature unset for reasoning models; see [model compatibility](../models.md#openai-choose-the-api-explicitly).
 
 ## 2. Define an agent
 
 ```python
 from fireflyframework_agentic.agents import firefly_agent
+from fireflyframework_agentic.models import ModelOptions
 
-@firefly_agent(name="assistant", model="openai:gpt-4o")
+@firefly_agent(name="assistant", model_options=ModelOptions(max_tokens=4096))
 def assistant_instructions(ctx):
     return "You are a helpful conversational assistant."
 ```
 
-## 3. Register a tool
+## 3. Attach a tool
+
+Registering a tool makes it discoverable; passing it to `tools=` makes it callable
+by this agent. Firefly adapts decorated tools and `ToolKit` instances automatically.
 
 ```python
+from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.tools import firefly_tool
 
-@firefly_tool(name="lookup", description="Look up a term")
+GLOSSARY = {
+    "bounded retries": "Retry a failed operation up to a configured attempt limit.",
+    "backoff": "Increase the delay between retry attempts to reduce load.",
+}
+
+@firefly_tool(name="lookup", description="Look up a term in the local engineering glossary")
 async def lookup(query: str) -> str:
-    return f"Result for {query}"
+    return GLOSSARY.get(query.strip().lower(), "No glossary entry exists for that term.")
+
+agent = FireflyAgent(name="glossary", tools=[lookup])
+result = await agent.run("Use the glossary to explain bounded retries.")
+print(result.output)
 ```
 
 !!! tip "Human-in-the-loop"
@@ -63,7 +86,7 @@ from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.memory import MemoryManager
 
 memory = MemoryManager(max_conversation_tokens=32_000)
-agent = FireflyAgent(name="bot", model="openai:gpt-4o", memory=memory)
+agent = FireflyAgent(name="bot", tools=[lookup], memory=memory)
 
 cid = memory.new_conversation()
 result = await agent.run("Hello!", conversation_id=cid)
@@ -76,7 +99,7 @@ result = await agent.run("What did I just say?", conversation_id=cid)
 from fireflyframework_agentic.reasoning import ReActPattern
 
 react = ReActPattern(max_steps=5)
-result = await react.execute(agent, "What is the weather in London?")
+result = await react.execute(agent, "Explain why bounded retries and backoff work together.")
 print(result.output)
 ```
 
@@ -90,26 +113,30 @@ class Answer(BaseModel):
     answer: str
     confidence: float
 
+answer_agent = FireflyAgent(name="answer", output_type=Answer)
 reviewer = OutputReviewer(output_type=Answer, max_retries=2)
-result = await reviewer.review(agent, "What is 2+2?")
+result = await reviewer.review(answer_agent, "What is 2+2?")
 print(result.output)  # Answer(answer="4", confidence=0.99)
 ```
 
 ## 7. Wire a pipeline
 
 ```python
+from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.pipeline.builder import PipelineBuilder
-from fireflyframework_agentic.pipeline.steps import AgentStep, CallableStep
+from fireflyframework_agentic.pipeline.steps import AgentStep
 
+summarizer = FireflyAgent(name="summarizer", instructions="Summarize the supplied text in one sentence.")
+editor = FireflyAgent(name="editor", instructions="Rewrite the summary in clear, concise English.")
 pipeline = (
-    PipelineBuilder("my-pipeline")
-    .add_node("classify", AgentStep(classifier_agent))
-    .add_node("extract", AgentStep(extractor_agent))
-    .add_node("validate", CallableStep(validate_fn))
-    .chain("classify", "extract", "validate")
+    PipelineBuilder("summarize-and-edit")
+    .add_node("summarize", AgentStep(summarizer))
+    .add_node("edit", AgentStep(editor))
+    .chain("summarize", "edit")
     .build()
 )
-result = await pipeline.run(inputs="Process this document")
+result = await pipeline.run(inputs="Retries must stop after three attempts and wait longer between attempts.")
+print(result.outputs["edit"].output)
 ```
 
 ## 8. Embed and search (RAG)

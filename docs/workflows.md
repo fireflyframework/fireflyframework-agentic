@@ -22,46 +22,64 @@ It is a peer of, not a replacement for, two existing layers:
 
 ## Quick start
 
+Configure `FIREFLY_AGENTIC_DEFAULT_MODEL` and provider credentials using the
+[model guide](models.md). This example summarizes supplied source passages, reviews
+claims against those passages, and synthesizes a report. External retrieval is a
+separate tool integration; the example only uses the text supplied by the caller.
+
 ```python
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from fireflyframework_agentic import get_config
 from fireflyframework_agentic.workflows import (
     workflow, agent, parallel, pipeline, phase, run_workflow, WorkflowBudget,
 )
 
 class ResearchArgs(BaseModel):
-    queries: list[str]
-    model: str = "openai:gpt-4o-mini"
+    passages: list[str]
+    model: str = Field(default_factory=lambda: get_config().default_model)
 
 @workflow(name="deep_research", args_schema=ResearchArgs)
 async def deep_research(args, ctx):
-    with phase("search"):
-        # parallel() is a barrier; a failed branch resolves to None (never raises)
+    with phase("extract"):
         hits = await parallel([
-            (lambda q=q: agent(f"search the web for: {q}", model=args.model))
-            for q in args.queries
+            (lambda passage=passage: agent(f"Extract the key claims from this source: {passage}", model=args.model))
+            for passage in args.passages
         ])
 
-    # reduce in PLAIN PYTHON — deterministic, no model call
-    candidates = sorted({h for h in hits if h is not None})
-
+    candidates = [
+        {"source": source, "claims": claims, "model": args.model}
+        for source, claims in zip(args.passages, hits, strict=True) if claims is not None
+    ]
     with phase("verify"):
-        # pipeline() streams each item through every stage with no inter-stage barrier
         verified = await pipeline(candidates, verify_stage, score_stage)
 
     with phase("synthesize"):
-        return await agent("write a cited report", deps=verified, model=args.model)
+        notes = "\n".join(str(note) for note in verified if note is not None)
+        if not notes:
+            raise ValueError("No source passage completed review")
+        return await agent(f"Write a concise report using only these reviewed notes:\n{notes}", model=args.model)
 
 async def verify_stage(prev, item, index):
-    return prev  # ... call agent(), drop weak candidates, etc.
+    return await agent(
+        f"Keep only claims supported by source {index + 1}. Include the source number.\n"
+        f"Source: {item['source']}\nClaims: {prev['claims']}",
+        model=item["model"],
+    )
 
-async def score_stage(prev):
-    return prev
+async def score_stage(prev, item, index):
+    return await agent(
+        f"Rank these source-grounded claims by relevance to reliability engineering. "
+        f"Preserve their source numbers and return the ranked notes:\n{prev}",
+        model=item["model"],
+    )
 
-# Run it (the body returns whatever you return):
+args = ResearchArgs(passages=[
+    "Bounded retries stop after three attempts. Backoff increases the delay between attempts.",
+    "A circuit breaker stops requests after repeated failures and probes for recovery later.",
+])
 report = await run_workflow(
-    "deep_research",
-    {"queries": ["pydantic-ai durable execution", "pydantic v2.13 features"]},
-    budget=WorkflowBudget(max_concurrent_agents=8, max_tokens=500_000),
+    "deep_research", args,
+    budget=WorkflowBudget(max_concurrent_agents=8, max_tokens=50_000),
 )
 ```
 
@@ -214,13 +232,14 @@ construct it explicitly to configure it (a default model, or a specific agent
 source):
 
 ```python
+from fireflyframework_agentic import get_config
 from fireflyframework_agentic.workflows import workflow, agent, FireflyAgentRunner
 
 # The default — no runner needed; sub-agents are FireflyAgents already:
 await my_workflow(args)
 
 # Give every ephemeral sub-agent a default model (built auto_register=False, memory=None):
-await my_workflow(args, runner=FireflyAgentRunner(default_model="anthropic:claude-haiku-4-5"))
+await my_workflow(args, runner=FireflyAgentRunner(default_model=get_config().default_model))
 
 # Or reuse one configured agent for every call (keeps its model/tools/middleware):
 await my_workflow(args, runner=FireflyAgentRunner(my_configured_agent))
@@ -374,13 +393,14 @@ Built on the primitives, these encode the "fan-out → reduce → decide" patter
 that make multi-agent output trustworthy:
 
 ```python
+from fireflyframework_agentic import get_config
 from fireflyframework_agentic.workflows import adversarial_verify, judge_panel, loop_until_dry
 
 # Spawn N skeptics prompted to REFUTE; survives only if fewer than a majority refute.
-ok = await adversarial_verify("claim: X causes Y", model="openai:gpt-4o-mini", n=3)
+ok = await adversarial_verify("claim: X causes Y", model=get_config().default_model, n=3)
 
 # A panel of DIFFERENT models votes; returns a structured Verdict.
-verdict = await judge_panel("X causes Y", judges=["openai:gpt-4o-mini", "anthropic:claude-haiku-4-5"])
+verdict = await judge_panel("X causes Y", judges=["openai-responses:gpt-6-luna", "anthropic:claude-sonnet-5"])
 verdict.survived, verdict.support, verdict.votes   # bool, fraction, ((model, yes), ...)
 
 # Keep producing until K consecutive rounds surface nothing new (catches the tail).

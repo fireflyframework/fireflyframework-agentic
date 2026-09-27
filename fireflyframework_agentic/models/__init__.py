@@ -18,8 +18,8 @@
 * :class:`ModelFactory` — a pydantic-ai ``Model`` from a spec, credential resolved by reference.
 * :func:`model_settings_for` — the spec's parameter profile as ``ModelSettings`` keys, with the
   provider's thinking and sampling rules applied.
-* :func:`claude_profile` / :func:`capabilities_for` — what the framework knows about the Claude
-  family that the pinned pydantic-ai profile table does not.
+* :func:`claude_profile` / :func:`capabilities_for` — model capabilities and Claude profile
+  corrections, preserving the SDK's provider-specific fields.
 """
 
 from fireflyframework_agentic.models.claude import (
@@ -46,6 +46,7 @@ from fireflyframework_agentic.models.factory import (
     model_settings_for,
     profile_for,
 )
+from fireflyframework_agentic.models.options import ModelOptions, ModelOptionsError, resolve_model_options
 from fireflyframework_agentic.models.spec import (
     Credential,
     CredentialResolver,
@@ -66,6 +67,8 @@ __all__ = [
     "ModelBuildError",
     "ModelCapabilities",
     "ModelFactory",
+    "ModelOptions",
+    "ModelOptionsError",
     "ModelSpec",
     "ThinkingStyle",
     "anthropic_effort_for",
@@ -80,4 +83,5 @@ __all__ = [
     "is_claude",
     "model_settings_for",
     "profile_for",
+    "resolve_model_options",
 ]

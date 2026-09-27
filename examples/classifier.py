@@ -34,7 +34,7 @@ from fireflyframework_agentic.agents.templates import create_classifier_agent
 
 load_dotenv()
 
-MODEL = os.environ["MODEL"]
+MODEL = os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "openai-responses:gpt-6-luna"))
 
 SAMPLES = [
     "My invoice shows an incorrect charge for last month's subscription.",

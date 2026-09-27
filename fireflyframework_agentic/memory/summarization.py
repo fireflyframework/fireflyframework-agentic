@@ -42,6 +42,7 @@ except ImportError:  # pragma: no cover - optional dep
 
 from fireflyframework_agentic.config import get_config
 from fireflyframework_agentic.memory.types import ConversationTurn
+from fireflyframework_agentic.model_utils import normalize_model
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,7 @@ def create_llm_summarizer(
             if resolved_model is None:
                 resolved_model = get_config().default_model
 
-            agent = PydanticAgent(resolved_model, output_type=str)
+            agent = PydanticAgent(normalize_model(resolved_model), output_type=str, end_strategy="early")
             result = await agent.run(prompt)
             summary = result.output if hasattr(result, "output") else str(result)
             logger.debug("Summarized %d turns into %d chars", len(turns), len(summary))

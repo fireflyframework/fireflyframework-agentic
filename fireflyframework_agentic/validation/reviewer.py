@@ -311,7 +311,10 @@ class RubricReviewer:
         return self._revision_prompt.format(gaps=gap_text, original_prompt=str(original_prompt))
 
     def _make_default_grader(self, generator: AgentLike) -> AgentLike:
-        model = getattr(generator, "model_identifier", None)
+        # The accounting identifier omits the API selector and provider client.
+        # Reuse the actual model to preserve Responses and custom credentials.
+        inner = getattr(generator, "agent", generator)
+        model = getattr(inner, "model", None) or getattr(generator, "model_identifier", None)
         return FireflyAgent("rubric-grader", model=model, instructions=_GRADER_SYSTEM_PROMPT)
 
 

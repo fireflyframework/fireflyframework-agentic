@@ -24,20 +24,22 @@ lifecycle hooks, and sensible defaults drawn from
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
+import atexit
 import contextlib
 import logging
 import re
+import threading
 import time
 from collections.abc import Awaitable, Callable, Sequence
-from typing import TYPE_CHECKING, Any, Generic, cast
+from typing import TYPE_CHECKING, Any, Generic, Literal, cast
 
 from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults, RunContext
 from pydantic_ai import Tool as PydanticTool
-from pydantic_ai.capabilities import HandleDeferredToolCalls, Instrumentation
+from pydantic_ai.capabilities import AgentCapability, HandleDeferredToolCalls, Instrumentation
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.models import Model
 from pydantic_ai.models.instrumented import InstrumentationSettings
+from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.toolsets import ApprovalRequiredToolset
 
@@ -50,7 +52,8 @@ from fireflyframework_agentic.agents.middleware import MiddlewareChain, Middlewa
 from fireflyframework_agentic.agents.registry import agent_registry
 from fireflyframework_agentic.config import FireflyAgenticConfig, get_config
 from fireflyframework_agentic.exceptions import AgentError, BudgetExceededError, RateLimitError
-from fireflyframework_agentic.model_utils import get_model_identifier
+from fireflyframework_agentic.model_utils import get_model_identifier, normalize_model
+from fireflyframework_agentic.models.options import ModelOptions, resolve_model_options
 from fireflyframework_agentic.observability.budget import ScopeContext
 from fireflyframework_agentic.observability.cost_resolvers import UnknownModelCostError
 from fireflyframework_agentic.observability.quota import (
@@ -75,22 +78,69 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_sync_loop_lock = threading.Lock()
+_sync_agent_loop: asyncio.AbstractEventLoop | None = None
+_sync_agent_thread: threading.Thread | None = None
+
+
+def _serve_sync_agent_loop(loop: asyncio.AbstractEventLoop) -> None:
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_forever()
+    finally:
+        pending = asyncio.all_tasks(loop)
+        for task in pending:
+            task.cancel()
+        if pending:
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.close()
+
+
+def _get_sync_agent_loop() -> asyncio.AbstractEventLoop:
+    """Retain HTTP-client loop ownership across synchronous agent invocations."""
+    global _sync_agent_loop, _sync_agent_thread
+    with _sync_loop_lock:
+        if _sync_agent_loop is None:
+            _sync_agent_loop = asyncio.new_event_loop()
+            # Separate from the database loop: sync memory hooks may block this
+            # loop while the database worker services their requests.
+            _sync_agent_thread = threading.Thread(
+                target=_serve_sync_agent_loop, args=(_sync_agent_loop,), name="firefly-agent-sync", daemon=True
+            )
+            _sync_agent_thread.start()
+        return _sync_agent_loop
+
+
+def _shutdown_sync_agent_loop() -> None:
+    if _sync_agent_loop is not None and not _sync_agent_loop.is_closed():
+        _sync_agent_loop.call_soon_threadsafe(_sync_agent_loop.stop)
+    if _sync_agent_thread is not None:
+        _sync_agent_thread.join(timeout=5)
+
+
+atexit.register(_shutdown_sync_agent_loop)
+
 
 def _run_sync_coro(coro: Any) -> Any:
-    """Run an async coroutine from synchronous code without using the deprecated
-    ``asyncio.get_event_loop()`` pattern.  Creates a fresh event loop on a
-    background thread when a loop is already running, otherwise uses
-    ``asyncio.run``.
-    """
+    """Run on the persistent sync-agent loop, copying this invocation's context."""
+    loop = _get_sync_agent_loop()
     try:
-        asyncio.get_running_loop()
+        current = asyncio.get_running_loop()
     except RuntimeError:
-        # No running loop — safe to use asyncio.run
-        return asyncio.run(coro)
-
-    # A loop is running (e.g. Jupyter, nested async).  Run in a new thread.
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro).result()
+        current = None
+    if current is loop:
+        coro.close()
+        raise AgentError("run_sync cannot block its owning event loop; use await agent.run(...) instead")
+    # call_soon_threadsafe (used by this bridge) captures the caller's ContextVars;
+    # each request and all its middleware hooks execute in one independent task.
+    future = asyncio.run_coroutine_threadsafe(coro, loop)
+    try:
+        return future.result()
+    except BaseException:
+        # An interrupted blocking wait must not leave model/tool execution running.
+        future.cancel()
+        raise
 
 
 def _suggested_retry_delay(exc: BaseException) -> float | None:
@@ -171,13 +221,18 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         toolsets: Sequence of pydantic-ai toolsets (e.g. a ``ToolKit.as_toolset()``
             result, ``WrapperToolset``/``ApprovalRequiredToolset``, or an MCP
             server) made available to the agent alongside ``tools``.
+        capabilities: Native PydanticAI capabilities, including provider tools,
+            composed with Firefly's approval and instrumentation capabilities.
+        end_strategy: When to finish after an output tool succeeds. Defaults to
+            ``early`` to preserve existing Firefly behavior.
         description: Free-form description shown in documentation and agent
             discovery listings.
         version: Semantic version string for this agent definition.
         tags: Iterable of tags used for capability-based discovery.
         metadata: Arbitrary key-value pairs attached to the agent.
         retries: Override the default retry count.
-        model_settings: Pydantic AI model settings dict.
+        model_options: Portable Firefly options, translated for the selected model on every run.
+        model_settings: Native Pydantic AI settings for advanced integrations.
         memory: Optional :class:`MemoryManager` for conversation history
             and working memory.  When set, ``run()`` automatically passes
             ``message_history`` from conversation memory and stores new
@@ -204,12 +259,15 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         deps_type: type[AgentDepsT] = type(None),  # type: ignore[assignment]
         tools: Sequence[Any] = (),
         toolsets: Sequence[Any] = (),
+        capabilities: Sequence[AgentCapability[AgentDepsT]] = (),
+        end_strategy: Literal["early", "graceful", "exhaustive"] = "early",
         description: str = "",
         version: str = "0.1.0",
         tags: Sequence[str] = (),
         metadata: Metadata | None = None,
         retries: int | None = None,
         model_settings: ModelSettings | dict[str, Any] | None = None,
+        model_options: ModelOptions | None = None,
         memory: MemoryManager | None = None,
         middleware: list[AgentMiddleware] | None = None,
         default_middleware: bool = True,
@@ -229,6 +287,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         cfg = config if config is not None else get_config()
         self._config = cfg
         self._usage_tracker = usage_tracker
+        self._model_options = model_options
 
         self._name = name
         self._version = version
@@ -274,10 +333,10 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
                 existing.append(DeferredToolRequests)
             effective_output_type = existing
 
-        capabilities = self._build_capabilities(cfg, approval_handler)
+        resolved_capabilities = [*self._build_capabilities(cfg, approval_handler), *capabilities]
 
         self._agent: Agent[AgentDepsT, OutputT] = Agent(
-            resolved_model,
+            normalize_model(resolved_model),
             instructions=instructions,
             output_type=effective_output_type,
             deps_type=deps_type,
@@ -285,9 +344,13 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             toolsets=list(toolsets),
             retries=resolved_retries,
             model_settings=resolved_settings,
-            capabilities=capabilities,
+            capabilities=resolved_capabilities,
+            end_strategy=end_strategy,
             name=name,
         )
+
+        if model_options is not None:
+            resolve_model_options(self._agent.model, model_options, base_settings=merged_settings)
 
         if auto_register:
             agent_registry.register(self)
@@ -304,6 +367,11 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
     def config(self) -> FireflyAgenticConfig:
         """The :class:`FireflyAgenticConfig` this agent reads (its own, or the process singleton)."""
         return self._config
+
+    @property
+    def model_options(self) -> ModelOptions | None:
+        """Portable defaults, retranslated when a run selects a different model."""
+        return self._model_options
 
     @property
     def usage_tracker(self) -> UsageTracker:
@@ -365,6 +433,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         timeout: float | None = None,
         context: AgentContext | None = None,
         deferred_tool_results: DeferredToolResults | None = None,
+        model_options: ModelOptions | None = None,
         **kwargs: Any,
     ) -> Any:
         """Run the agent asynchronously.
@@ -387,6 +456,8 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         """
         if deferred_tool_results is not None:
             kwargs["deferred_tool_results"] = deferred_tool_results
+        if model_options is not None:
+            kwargs["model_options"] = model_options
         if context is None:
             context = _AgentContext()
 
@@ -396,6 +467,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             method="run",
             deps=deps,
             kwargs=kwargs,
+            metadata=self._model_metadata(),
             model=self.model_identifier,
             context=context,
         )
@@ -435,14 +507,21 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         timeout: float | None = None,
         context: AgentContext | None = None,
         deferred_tool_results: DeferredToolResults | None = None,
+        model_options: ModelOptions | None = None,
         **kwargs: Any,
     ) -> Any:
-        """Run the agent synchronously.  Delegates to ``pydantic_ai.Agent.run_sync``.
+        """Run synchronously on a persistent background loop using the async agent.
 
         Supports the same ``deferred_tool_results`` resume path as :meth:`run`.
+        Repeated calls reuse the same loop for pooled HTTP connections. Async
+        APIs retain their caller's loop; do not move an already-used async client
+        between those APIs and this synchronous runner. Prefer ``await run()``
+        when the caller already has an event loop.
         """
         if deferred_tool_results is not None:
             kwargs["deferred_tool_results"] = deferred_tool_results
+        if model_options is not None:
+            kwargs["model_options"] = model_options
         if context is None:
             context = _AgentContext()
 
@@ -452,42 +531,37 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             method="run_sync",
             deps=deps,
             kwargs=kwargs,
+            metadata=self._model_metadata(),
             model=self.model_identifier,
             context=context,
         )
-        if len(self._middleware) > 0:
-            _run_sync_coro(self._middleware.run_before(mw_ctx))
 
-        # Middleware short-circuit (e.g. cache hit)
-        if "_cache_result" in mw_ctx.metadata:
-            result = mw_ctx.metadata["_cache_result"]
-            if len(self._middleware) > 0:
-                result = _run_sync_coro(self._middleware.run_after(mw_ctx, result))
-            return result
+        async def execute() -> Any:
+            # Keep attached tracing/context-variable tokens in the same task
+            # through the request and cleanup, including notebook thread execution.
+            await self._middleware.run_before(mw_ctx)
+            if "_cache_result" in mw_ctx.metadata:
+                return await self._middleware.run_after(mw_ctx, mw_ctx.metadata["_cache_result"])
 
-        t0 = time.monotonic()
-        self._inject_memory(conversation_id, kwargs)
-        try:
-            result = _run_sync_coro(
-                self._run_with_rate_limit_retry(
+            t0 = time.monotonic()
+            self._inject_memory(conversation_id, kwargs)
+            try:
+                result = await self._run_with_rate_limit_retry(
                     mw_ctx.prompt,
                     deps=deps,
                     timeout=timeout,
                     retry_override=mw_ctx.metadata.get("_retry_config"),
                     **kwargs,
                 )
-            )
-            elapsed_ms = (time.monotonic() - t0) * 1000
-            self._persist_memory(conversation_id, prompt, result)
-            self._record_usage(result, elapsed_ms, correlation_id=context.correlation_id)
-        except Exception as exc:
-            if len(self._middleware) > 0:
-                _run_sync_coro(self._middleware.run_error(mw_ctx, exc))
-            raise
+                elapsed_ms = (time.monotonic() - t0) * 1000
+                self._persist_memory(conversation_id, prompt, result)
+                self._record_usage(result, elapsed_ms, correlation_id=context.correlation_id)
+            except Exception as exc:
+                await self._middleware.run_error(mw_ctx, exc)
+                raise
+            return await self._middleware.run_after(mw_ctx, result)
 
-        if len(self._middleware) > 0:
-            result = _run_sync_coro(self._middleware.run_after(mw_ctx, result))
-        return result
+        return _run_sync_coro(execute())
 
     async def run_stream(
         self,
@@ -498,6 +572,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         timeout: float | None = None,
         context: AgentContext | None = None,
         streaming_mode: str = "buffered",
+        model_options: ModelOptions | None = None,
         **kwargs: Any,
     ) -> Any:
         """Run the agent with streaming.  Delegates to ``pydantic_ai.Agent.run_stream``.
@@ -513,6 +588,9 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         if streaming_mode not in ("buffered", "incremental"):
             raise ValueError(f"Invalid streaming_mode: {streaming_mode!r}. Expected 'buffered' or 'incremental'.")
 
+        if model_options is not None:
+            kwargs["model_options"] = model_options
+
         if context is None:
             context = _AgentContext()
 
@@ -522,6 +600,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             method="run_stream",
             deps=deps,
             kwargs=kwargs,
+            metadata=self._model_metadata(),
             model=self.model_identifier,
             context=context,
         )
@@ -533,8 +612,13 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             await self._middleware.run_after(mw_ctx, result)
             return result
 
-        self._inject_memory(conversation_id, kwargs)
-        stream_ctx = self._agent.run_stream(mw_ctx.prompt, deps=deps, **kwargs)
+        try:
+            self._inject_memory(conversation_id, kwargs)
+            self._prepare_model_kwargs(kwargs)
+            stream_ctx = self._agent.run_stream(mw_ctx.prompt, deps=deps, **kwargs)
+        except Exception as exc:
+            await self._middleware.run_error(mw_ctx, exc)
+            raise
 
         if streaming_mode == "incremental":
             return _IncrementalStreamContext(
@@ -544,6 +628,8 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
                 mw_ctx,
                 correlation_id=context.correlation_id,
                 timeout=timeout,
+                conversation_id=conversation_id,
+                prompt=prompt,
             )
         else:
             return _UsageTrackingStreamContext(
@@ -553,6 +639,8 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
                 mw_ctx,
                 correlation_id=context.correlation_id,
                 timeout=timeout,
+                conversation_id=conversation_id,
+                prompt=prompt,
             )
 
     # -- Memory integration ------------------------------------------------
@@ -586,6 +674,15 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
         output_text = str(result.output) if hasattr(result, "output") else ""
         self._memory.add_turn(conversation_id, prompt_text, output_text, new_msgs)
         logger.debug("Agent '%s': persisted turn to conversation '%s'", self._name, conversation_id)
+
+    async def _persist_stream_memory(self, conversation_id: str | None, prompt: Any, stream: Any) -> None:
+        """Save completed streams, preserving the provider's typed history and reasoning items."""
+        if self._memory is None or conversation_id is None or not stream.is_complete or stream.cancelled:
+            return
+        output = await stream.get_output()
+        if isinstance(output, DeferredToolRequests):
+            return
+        self._memory.add_turn(conversation_id, str(prompt), str(output), stream.new_messages())
 
     # -- Usage tracking ------------------------------------------------------
 
@@ -759,6 +856,37 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
 
     # -- Rate limit retry -----------------------------------------------------
 
+    def _model_metadata(self) -> dict[str, Any]:
+        model = self._agent.model
+        while isinstance(model, WrapperModel):
+            model = model.wrapped
+        api = (
+            normalize_model(model) if isinstance(model, str) else f"{type(model).__module__}.{type(model).__qualname__}"
+        )
+        metadata: dict[str, Any] = {"_cache_model_api": api}
+        if self._model_options is not None:
+            metadata["_portable_model_options"] = self._model_options.model_dump(mode="json", exclude_unset=True)
+        return metadata
+
+    def _prepare_model_kwargs(self, kwargs: dict[str, Any]) -> None:
+        """Translate portable options at the invocation boundary, never on shared model state."""
+        if "model" in kwargs:
+            kwargs["model"] = normalize_model(kwargs["model"])
+        override = kwargs.pop("model_options", None)
+        if self._model_options is None and override is None:
+            return
+        values = self._model_options.model_dump(exclude_unset=True) if self._model_options is not None else {}
+        if override is not None:
+            values.update(override.model_dump(exclude_unset=True))
+        model = kwargs.get("model") or self._agent.model
+        settings = resolve_model_options(
+            model,
+            ModelOptions.model_validate(values),
+            base_settings=cast("dict[str, Any] | None", self._agent.model_settings),
+            override_settings=kwargs.get("model_settings"),
+        )
+        kwargs["model_settings"] = settings
+
     async def _run_with_rate_limit_retry(
         self,
         prompt: str | Sequence[UserContent] | None,
@@ -797,6 +925,7 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
             )
 
         key = self.model_identifier
+        self._prepare_model_kwargs(kwargs)
 
         for attempt in range(max_retries + 1):
             try:
@@ -969,8 +1098,10 @@ class FireflyAgent(Generic[AgentDepsT, OutputT]):
                     InstrumentationSettings(
                         include_content=cfg.instrumentation_include_content,
                         include_binary_content=cfg.instrumentation_include_content,
-                        version=cfg.instrumentation_version,
-                        event_mode=cfg.instrumentation_event_mode,
+                        include_model_request_parameters=cfg.instrumentation_include_content,
+                        # Upstream removed v1 and deprecated v2-v4; retain old
+                        # configurations by upgrading their telemetry format.
+                        version=6 if cfg.instrumentation_version == 6 else 5,
                     )
                 )
             )
@@ -994,6 +1125,8 @@ class _UsageTrackingStreamContext:
         *,
         correlation_id: str = "",
         timeout: float | None = None,
+        conversation_id: str | None = None,
+        prompt: Any = None,
     ) -> None:
         self._stream_ctx = stream_ctx
         self._agent = agent
@@ -1001,6 +1134,8 @@ class _UsageTrackingStreamContext:
         self._mw_ctx = mw_ctx
         self._correlation_id = correlation_id
         self._timeout = timeout
+        self._conversation_id = conversation_id
+        self._prompt = prompt
         self._stream: Any = None
 
     async def __aenter__(self) -> Any:
@@ -1022,6 +1157,7 @@ class _UsageTrackingStreamContext:
             return result
         # After the stream closes, usage() is available on the stream handle.
         if self._stream is not None:
+            await self._agent._persist_stream_memory(self._conversation_id, self._prompt, self._stream)
             self._agent._record_usage(
                 self._stream,
                 elapsed_ms,
@@ -1055,6 +1191,8 @@ class _IncrementalStreamContext:
         *,
         correlation_id: str = "",
         timeout: float | None = None,
+        conversation_id: str | None = None,
+        prompt: Any = None,
     ) -> None:
         self._stream_ctx = stream_ctx
         self._agent = agent
@@ -1062,6 +1200,8 @@ class _IncrementalStreamContext:
         self._mw_ctx = mw_ctx
         self._correlation_id = correlation_id
         self._timeout = timeout
+        self._conversation_id = conversation_id
+        self._prompt = prompt
         self._stream: Any = None
 
     async def __aenter__(self) -> Any:
@@ -1084,6 +1224,7 @@ class _IncrementalStreamContext:
             return result
         # After the stream closes, usage() is available on the stream handle.
         if self._stream is not None:
+            await self._agent._persist_stream_memory(self._conversation_id, self._prompt, self._stream)
             self._agent._record_usage(
                 self._stream,
                 elapsed_ms,

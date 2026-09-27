@@ -15,8 +15,7 @@ for submitting changes.
 - Python 3.13 or later
 - [UV](https://docs.astral.sh/uv/) for dependency and virtual-environment management
 - Git
-- Node.js 20+ and npm — only required if you intend to run or modify Firefly Studio
-  from source (the published wheel ships with a pre-built frontend)
+- Docker for the isolated PostgreSQL integration tests
 
 ### Setup
 
@@ -26,46 +25,39 @@ cd fireflyframework-agentic
 uv sync --all-extras
 ```
 
-This installs all runtime and development dependencies, including optional extras
-for REST, Kafka, RabbitMQ, and Redis.
+This installs runtime and development dependencies, including optional storage,
+embedding, evaluation, and document-processing integrations. The supported runtime
+is Pydantic AI 2.x (`>=2.51.0,<3`); keep `uv.lock` in sync with dependency changes.
 
-### Building the Studio Frontend (source installs only)
-
-The Studio frontend is a SvelteKit SPA that lives in `studio-frontend/` and is
-served by FastAPI from `src/fireflyframework_agentic/studio/static/`. The published
-wheel includes a pre-built bundle, but a fresh `git clone` does **not** — running
-`firefly studio` against an unbuilt source tree returns `{"detail":"Not Found"}`
-on every page.
-
-Build the frontend once after cloning (and again after pulling frontend changes):
-
-```bash
-uv run python scripts/build_studio.py
-```
-
-The script runs `npm install` (if needed), `npm run build`, and copies the output
-into the package's `static/` directory. After it completes, `firefly studio` will
-serve the UI normally.
+Firefly Studio is maintained in the separate
+[Studio repository](https://github.com/fireflyframework/fireflyframework-agentic-studio).
+This repository is an in-process Python library and has no frontend build step.
 
 ### Running Tests
 
 ```bash
-uv run pytest
+uv run pytest -m "not nightly"
 ```
 
 To generate a coverage report:
 
 ```bash
-uv run pytest --cov=fireflyframework_agentic --cov-report=term-missing
+uv run pytest -m "not nightly" --cov=fireflyframework_agentic --cov-report=term-missing
 ```
+
+PostgreSQL integration tests start a disposable container, so Docker must be
+running. Without Docker, use `uv run pytest -m "not nightly and not integration"`
+for a smaller local suite. Live model tests require explicit credentials and are
+outside the PR gate. See [the test guide](tests/README.md) for provider-gated
+commands, infrastructure requirements, and the nightly suite.
 
 ### Linting
 
 We use [Ruff](https://docs.astral.sh/ruff/) for linting and formatting:
 
 ```bash
-uv run ruff check src/ tests/
-uv run ruff format --check src/ tests/
+uv run ruff check .
+uv run ruff format --check .
 ```
 
 ### Type Checking
@@ -73,10 +65,23 @@ uv run ruff format --check src/ tests/
 We use [Pyright](https://github.com/microsoft/pyright) in standard mode:
 
 ```bash
-uv run pyright src/
+uv run pyright
 ```
 
 ---
+
+## Release Versioning
+
+Versions follow `YY.MM.Patch`: the release year and month, followed by a patch
+counter starting at `0` for each new month. For example, the first September 2026
+release is `26.09.0`, followed by `26.09.1`. Check existing remote tags before
+choosing the next patch; do not continue a previous month's counter.
+
+Update `pyproject.toml`, regenerate `uv.lock`, and date the matching changelog
+entry before releasing. Python package metadata normalizes `26.09.0` to `26.9.0`;
+Git tags retain the `v26.09.0` spelling. Merge through a pull request after the
+required checks pass, then tag the merged commit. The tag workflow publishes a
+GitHub release with the wheel and source archive.
 
 ## Coding Standards
 
@@ -164,9 +169,10 @@ Before opening a PR, confirm that:
 - All new code has the copyright header.
 - All public APIs have docstrings.
 - Tests cover the new or changed behaviour.
-- `uv run ruff check src/ tests/` reports no issues.
-- `uv run pyright src/` reports no errors.
-- `uv run pytest` passes.
+- `uv run ruff check .` reports no issues.
+- `uv run pyright` reports no errors.
+- `uv run pytest -m "not nightly"` passes.
+- Documentation changes pass `uv tool run --with-requirements docs/requirements.txt mkdocs build --strict`.
 
 ---
 

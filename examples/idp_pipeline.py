@@ -14,7 +14,7 @@
 
 """Intelligent Document Processing (IDP) pipeline example.
 
-Demonstrates **all major framework features** working together to process a
+Combines agents, tools, memory, validation, and explainability to process a
 real PDF document (Unilever Certificate of Incorporation & Bylaws):
 
 - **Agents**: ``FireflyAgent``, ``create_classifier_agent``, ``create_extractor_agent``
@@ -35,7 +35,8 @@ Pipeline stages::
 
 Usage::
 
-    export OPENAI_API_KEY="sk-..."
+    export FIREFLY_AGENTIC_DEFAULT_MODEL="openai-responses:gpt-6-luna"
+    # Set the selected provider's API key in your environment.
     uv run python examples/idp_pipeline.py
 """
 
@@ -88,7 +89,7 @@ from fireflyframework_agentic.validation.reviewer import OutputReviewer
 
 load_dotenv()
 
-MODEL = os.environ["MODEL"]
+MODEL = os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "openai-responses:gpt-6-luna"))
 
 # ── ANSI colour helpers ─────────────────────────────────────────────────────
 _USE_COLOR = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
@@ -318,7 +319,7 @@ def _build_extractor() -> FireflyAgent:
         },
         name="idp_extractor",
         model=MODEL,
-        tools=idp_toolkit.as_pydantic_tools(),
+        tools=[idp_toolkit],
         memory=memory.fork(working_scope_id="extractor"),
         middleware=_AGENT_MIDDLEWARE,
     )
@@ -469,7 +470,7 @@ async def split_step_fn(context: PipelineContext, inputs: dict[str, Any]) -> Any
     )
 
     splitter = _build_splitter()
-    result = await splitter.run(prompt)
+    result = await splitter.run(prompt.user)
     raw_output = result.output if hasattr(result, "output") else str(result)
 
     # Parse the JSON array from the agent's response
@@ -479,8 +480,8 @@ async def split_step_fn(context: PipelineContext, inputs: dict[str, Any]) -> Any
         match = re.search(r"\[.*\]", out_str, re.DOTALL)
         if match:
             boundaries = json.loads(match.group())
-    except (json.JSONDecodeError, TypeError):
-        pass
+    except (json.JSONDecodeError, TypeError) as exc:
+        print(f"     Invalid splitter JSON; treating the PDF as one document: {exc}")
 
     if not boundaries:
         boundaries = [{"title": "Full Document", "page_start": 1, "page_end": page_count}]
@@ -593,7 +594,7 @@ async def classify_step_fn(context: PipelineContext, inputs: dict[str, Any]) -> 
         # create_classifier_agent has output_type=ClassificationResult,
         # so agent.run() returns a typed object — no JSON parsing needed.
         classifier = _build_classifier()
-        result = await classifier.run(prompt)
+        result = await classifier.run(prompt.user)
         cls_result = result.output  # ClassificationResult (structured)
 
         classification = DocumentClassification(
@@ -679,7 +680,7 @@ async def _extract_single(
     )
 
     try:
-        review_result = await reviewer.review(extractor, rendered)
+        review_result = await reviewer.review(extractor, rendered.user)
         extracted = review_result.output
         if review_result.retry_history:
             print(f"     {YELLOW}OutputReviewer retried {len(review_result.retry_history)} time(s){RESET}")
@@ -687,7 +688,7 @@ async def _extract_single(
         return extracted  # type: ignore[return-value]
     except Exception:
         print(f"     {YELLOW}OutputReviewer exhausted retries, trying direct agent call...{RESET}")
-        result = await extractor.run(rendered)
+        result = await extractor.run(rendered.user)
         raw_output = result.output if hasattr(result, "output") else result
         if isinstance(raw_output, CorporateDocumentData):
             return raw_output
@@ -887,12 +888,14 @@ async def validate_step_fn(context: PipelineContext, inputs: dict[str, Any]) -> 
                 used_reflexion = True
 
                 try:
-                    if isinstance(correction.output, dict):
+                    if isinstance(correction.output, CorporateDocumentData):
+                        extracted = correction.output.model_dump()
+                    elif isinstance(correction.output, dict):
                         extracted = correction.output
                     else:
                         extracted = CorporateDocumentData.model_validate_json(str(correction.output)).model_dump()
-                except Exception:
-                    pass
+                except (ValueError, TypeError) as exc:
+                    print(f"     Invalid correction; retaining previous extraction: {exc}")
 
                 report = document_validator.validate(extracted)
                 status = "PASS" if report.valid else "FAIL"
@@ -1023,7 +1026,7 @@ async def explain_step_fn(context: PipelineContext, inputs: dict[str, Any]) -> A
     )
 
     explainer = _build_explainer()
-    result = await explainer.run(prompt)
+    result = await explainer.run(prompt.user)
     narrative = str(result.output if hasattr(result, "output") else result)
     print(f"   {GREEN}Narrative generated ({len(narrative):,} chars){RESET}")
 
@@ -1154,6 +1157,8 @@ async def main() -> None:
 
     print("🚀 Running pipeline: ingest → split → classify → extract → validate → assemble → explain\n")
     result = await pipeline.run(context=ctx)
+    if not result.success:
+        raise RuntimeError(f"IDP pipeline failed at {result.failed_node}: {result.error}")
 
     # ═══════════════════════════════════════════════════════════════════
     # RESULTS

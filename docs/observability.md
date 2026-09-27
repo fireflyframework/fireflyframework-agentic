@@ -51,7 +51,7 @@ tracer = FireflyTracer(service_name="my-genai-app")
 
 with tracer.agent_span("writer", model="gpt-4o") as span:
     result = await agent.run("Hello")
-    span.set_attribute("firefly.tokens.total", result.usage().total_tokens)
+    span.set_attribute("firefly.tokens.total", result.usage.total_tokens)
 ```
 
 Two helpers complement the span context managers:
@@ -73,11 +73,13 @@ qualified name; extra keyword args become span attributes. On exception it calls
 `set_error` and re-raises.
 
 ```python
+from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.observability import traced
 
 @traced(name="process_request")
-async def process_request(prompt: str) -> str:
-    ...
+async def process_request(agent: FireflyAgent, prompt: str) -> str:
+    result = await agent.run(prompt)
+    return str(result.output)
 ```
 
 ### Native Instrumentation (pydantic-ai)
@@ -104,8 +106,14 @@ export FIREFLY_AGENTIC_NATIVE_INSTRUMENTATION_ENABLED=false
 |---|---|---|---|
 | `native_instrumentation_enabled` | `FIREFLY_AGENTIC_NATIVE_INSTRUMENTATION_ENABLED` | `True` | Master switch (only effective when `observability_enabled` is also `True`). |
 | `instrumentation_include_content` | `FIREFLY_AGENTIC_INSTRUMENTATION_INCLUDE_CONTENT` | `False` | Whether prompt/response text and tool args/results are recorded as span attributes. Off by default so the framework never silently leaks prompts/PII into traces. |
-| `instrumentation_version` | `FIREFLY_AGENTIC_INSTRUMENTATION_VERSION` | `2` | GenAI semantic-convention version (`1`–`5`); `>=3` uses `invoke_agent <name>` / `execute_tool <name>` span names. |
-| `instrumentation_event_mode` | `FIREFLY_AGENTIC_INSTRUMENTATION_EVENT_MODE` | `attributes` | `attributes` keeps model-message events on the span; `logs` routes them to a separate OTel `LoggerProvider` (forces version 1). |
+| `instrumentation_version` | `FIREFLY_AGENTIC_INSTRUMENTATION_VERSION` | `5` | GenAI semantic-convention version. Select `5` or `6`; legacy configured values `1`–`4` are accepted and mapped to `5`. |
+| `instrumentation_event_mode` | `FIREFLY_AGENTIC_INSTRUMENTATION_EVENT_MODE` | `attributes` | Legacy compatibility setting with no effect. Pydantic AI 2.x puts model-message events in span attributes; `logs` no longer enables a separate log-event stream. |
+
+Pydantic AI 2.51 uses instrumentation version `5` by default. If upgrading a host
+that consumed version `1`–`4` telemetry or separate log events, update its queries
+and exporters for the effective version `5` span format. Version `6` is an explicit
+opt-in. `instrumentation_include_content` continues to control whether message
+content, tool arguments/results, and model-request parameters are included.
 
 **Two altitudes, one trace.** The native spans **nest under** the framework's
 `agent.{name}` span — `ObservabilityMiddleware` activates its span in the OTel
@@ -191,11 +199,13 @@ first parameter is `operation` (the label), defaulting to the function's qualifi
 name:
 
 ```python
+from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.observability import metered
 
 @metered("agent_call")
-async def call_agent(prompt: str) -> str:
-    ...
+async def call_agent(agent: FireflyAgent, prompt: str) -> str:
+    result = await agent.run(prompt)
+    return str(result.output)
 ```
 
 ---
@@ -268,7 +278,7 @@ resolves cost via the resolver chain, builds a `UsageRecord`, commits it to the
 
 ```python
 default_usage_tracker.record_call(
-    model="anthropic:claude-3-5-sonnet-latest",
+    model="anthropic:claude-sonnet-5",
     input_tokens=1_000,
     output_tokens=500,
     cache_read_tokens=8_000,   # optional cache / reasoning token fields
@@ -306,9 +316,9 @@ lifetime cost.
 
 ### How It Works
 
-`FireflyAgent.run()`, `run_sync()`, and `run_stream()` automatically extract
-`result.usage()` (including cache-write/cache-read token counts) from Pydantic AI
-results and call `default_usage_tracker.record_call(...)`, which prices the call via
+`FireflyAgent.run()`, `run_sync()`, and `run_stream()` automatically extract usage
+(including cache-write/cache-read token counts) from Pydantic AI results and call
+`default_usage_tracker.record_call(...)`, which prices the call via
 the [cost resolver chain](#cost-resolution). For streaming, usage is captured when
 the stream context manager exits (`__aexit__`), ensuring that token counts from
 streamed responses are tracked transparently. Reasoning patterns do the same for
@@ -321,10 +331,10 @@ into `PipelineResult.usage`.
 
 Each LLM call is priced by a chain of resolver callables, each returning `float | None`.
 The default chain (`DEFAULT_RESOLVERS`) tries `provider_reported_cost` first (an
-authoritative per-call USD from the provider payload — e.g. OpenRouter's
-`usage.cost`; this is a **seam** for custom integrations, since pydantic-ai 1.x
-does not surface that cost on the result), then falls back to `genai_prices_cost`
-for token-by-token computation against the `genai-prices` price table.
+authoritative per-call USD from a raw provider payload supplied by an integration,
+such as OpenRouter's `usage.cost`), then `framework_price_table_cost` for the model
+IDs with explicit framework rates, and finally `genai_prices_cost` for computation
+against the `genai-prices` catalogue. The first resolver with a known cost wins.
 
 **Model identity is provider-agnostic.** Pricing keys off
 `get_model_identifier(model)` (`model_utils`), which normalises both
@@ -338,7 +348,7 @@ token breakdown:
 from fireflyframework_agentic.observability.cost_resolvers import resolve_cost, CostContext
 
 cost = resolve_cost(CostContext(
-    model="anthropic:claude-3-5-sonnet-latest",
+    model="anthropic:claude-sonnet-5",
     input_tokens=1_000,
     output_tokens=500,
     cache_creation_tokens=0,
@@ -578,17 +588,16 @@ from fireflyframework_agentic.agents.builtin_middleware import CostGuardMiddlewa
 # Budget enforcement via middleware (cost is the BudgetGate's domain)
 agent = FireflyAgent(
     name="quota-agent",
-    model="openai:gpt-4o",
     middleware=[CostGuardMiddleware(budget_usd=10.0)],
 )
 
 # Manual rate-limit checks
-quota = QuotaManager(rate_limits={"openai:gpt-4o": 60})
+quota = QuotaManager(rate_limits={agent.model_identifier: 60})
 
 async def call_with_quota(prompt):
-    quota.check_quota_before_request(agent.model)  # raises RateLimitError if over
+    quota.check_quota_before_request(agent.model_identifier)  # raises RateLimitError if over
     result = await agent.run(prompt)
-    quota.record_request(agent.model, success=True)
+    quota.record_request(agent.model_identifier, success=True)
     return result
 ```
 

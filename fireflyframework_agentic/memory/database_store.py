@@ -14,9 +14,12 @@
 
 """Database-backed memory store implementations.
 
-This module provides production-grade persistence backends using PostgreSQL
-and MongoDB. Both implementations support connection pooling, automatic
-schema migration, and namespace-scoped isolation.
+This module provides PostgreSQL and MongoDB persistence with connection pooling,
+schema/index initialization, and namespace-scoped operations. Driver clients live
+on one lazily started background event loop shared by the database stores.
+Synchronous methods block their caller; async methods await the same owning loop.
+Close stores explicitly at application shutdown with ``await store.close()`` or
+``store.close_sync()``. The shared worker loop stops when the process exits.
 
 Examples:
     PostgreSQL backend::
@@ -47,11 +50,15 @@ Examples:
 from __future__ import annotations
 
 import asyncio
+import atexit
+import functools
+import json
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor
+import threading
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, ParamSpec, TypeVar
 
 try:
     import asyncpg  # type: ignore[import-not-found]
@@ -68,23 +75,75 @@ from fireflyframework_agentic.memory.types import MemoryEntry
 
 _SAFE_IDENTIFIER = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
-_sync_pool = ThreadPoolExecutor(max_workers=4)
-
 logger = logging.getLogger(__name__)
+
+_loop_lock = threading.Lock()
+_database_loop: asyncio.AbstractEventLoop | None = None
+_database_thread: threading.Thread | None = None
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
+
+
+def _serve_database_loop(loop: asyncio.AbstractEventLoop) -> None:
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_forever()
+    finally:
+        pending = asyncio.all_tasks(loop)
+        for task in pending:
+            task.cancel()
+        if pending:
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.close()
+
+
+def _owning_loop() -> asyncio.AbstractEventLoop:
+    """Keep driver clients on one process-owned loop across all caller contexts."""
+    global _database_loop, _database_thread
+    with _loop_lock:
+        if _database_loop is None:
+            _database_loop = asyncio.new_event_loop()
+            _database_thread = threading.Thread(
+                target=_serve_database_loop, args=(_database_loop,), name="firefly-memory-db", daemon=True
+            )
+            _database_thread.start()
+        return _database_loop
+
+
+def _shutdown_database_loop() -> None:
+    if _database_loop is not None and not _database_loop.is_closed():
+        _database_loop.call_soon_threadsafe(_database_loop.stop)
+    if _database_thread is not None:
+        _database_thread.join(timeout=5)
+
+
+atexit.register(_shutdown_database_loop)
+
+
+def _on_database_loop(function: Callable[_P, Coroutine[Any, Any, _T]]) -> Callable[_P, Coroutine[Any, Any, _T]]:
+    @functools.wraps(function)
+    async def run(*args: _P.args, **kwargs: _P.kwargs) -> _T:
+        loop = _owning_loop()
+        if asyncio.get_running_loop() is loop:
+            return await function(*args, **kwargs)
+        future = asyncio.run_coroutine_threadsafe(function(*args, **kwargs), loop)
+        return await asyncio.wrap_future(future)
+
+    return run
 
 
 def _run_sync(coro: Any) -> Any:
-    """Run *coro* synchronously, safe even when an event loop is already running."""
+    """Block the caller while the coroutine runs on the driver's owning loop."""
+    loop = _owning_loop()
     try:
-        loop = asyncio.get_running_loop()
+        current = asyncio.get_running_loop()
     except RuntimeError:
-        loop = None
-
-    if loop is not None:
-        # Already inside an event loop -- offload to a background thread.
-        future = _sync_pool.submit(asyncio.run, coro)
-        return future.result()
-    return asyncio.run(coro)
+        current = None
+    if current is loop:
+        coro.close()
+        raise DatabaseStoreError("Use async database methods from the database's owning event loop")
+    return asyncio.run_coroutine_threadsafe(coro, loop).result()
 
 
 # -- PostgreSQL Store -------------------------------------------------------
@@ -127,43 +186,41 @@ class PostgreSQLStore:
         self._schema_name = schema_name
         self._pool: Any = None
         self._initialized = False
+        self._initialization_lock = asyncio.Lock()
 
+    def initialize_sync(self) -> None:
+        """Initialize from synchronous code, including synchronous agent hooks."""
+        _run_sync(self.initialize())
+
+    @_on_database_loop
     async def initialize(self) -> None:
-        """Create the connection pool and initialize the schema.
-
-        This method must be called before any other operations.
-        It's safe to call multiple times (subsequent calls are no-ops).
-
-        Raises:
-            DatabaseConnectionError: If connection to PostgreSQL fails.
-        """
-        if self._initialized:
-            return
-
-        if asyncpg is None:
-            raise DatabaseStoreError(
-                "PostgreSQL support requires 'asyncpg' and 'sqlalchemy'. "
-                "Install with: pip install fireflyframework-agentic[postgres]"
-            )
-
-        try:
-            self._pool = await asyncpg.create_pool(
-                self._url,
-                min_size=self._pool_min_size,
-                max_size=self._pool_size,
-                timeout=self._timeout,
-            )
-            logger.info(
-                "PostgreSQL connection pool created (min=%d, max=%d)",
-                self._pool_min_size,
-                self._pool_size,
-            )
-        except Exception as exc:
-            raise DatabaseConnectionError(f"Failed to connect to PostgreSQL: {exc}") from exc
-
-        # Create schema and tables
-        await self._migrate_schema()
-        self._initialized = True
+        """Create the pool and schema once on the driver's owning event loop."""
+        async with self._initialization_lock:
+            if self._initialized:
+                return
+            if asyncpg is None:
+                raise DatabaseStoreError(
+                    "PostgreSQL support requires 'asyncpg' and 'sqlalchemy'. "
+                    "Install with: pip install fireflyframework-agentic[postgres]"
+                )
+            try:
+                self._pool = await asyncpg.create_pool(
+                    self._url, min_size=self._pool_min_size, max_size=self._pool_size, timeout=self._timeout
+                )
+                await self._migrate_schema()
+                self._initialized = True
+                logger.info("PostgreSQL memory backend initialized")
+            except (Exception, asyncio.CancelledError) as exc:
+                if self._pool is not None:
+                    try:
+                        await self._pool.close()
+                    except Exception:
+                        logger.exception("Failed to close PostgreSQL pool after initialization failure")
+                    finally:
+                        self._pool = None
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
+                raise DatabaseConnectionError(f"Failed to connect to PostgreSQL: {exc}") from exc
 
     async def _migrate_schema(self) -> None:
         """Create the schema and required tables if they don't exist."""
@@ -214,6 +271,7 @@ class PostgreSQLStore:
         """
         _run_sync(self.async_save(namespace, entry))
 
+    @_on_database_loop
     async def async_save(self, namespace: str, entry: MemoryEntry) -> None:
         """Async version of :meth:`save`."""
         if not self._initialized:
@@ -239,7 +297,7 @@ class PostgreSQLStore:
                     entry.scope.value,
                     entry.key,
                     entry.model_dump_json(),  # Store full entry as JSONB
-                    entry.metadata,
+                    json.dumps(entry.model_dump(mode="json")["metadata"]),
                     entry.created_at,
                     entry.expires_at,
                     entry.importance,
@@ -251,6 +309,7 @@ class PostgreSQLStore:
         """Return all non-expired entries stored under *namespace*."""
         return _run_sync(self.async_load(namespace))
 
+    @_on_database_loop
     async def async_load(self, namespace: str) -> list[MemoryEntry]:
         """Async version of :meth:`load`."""
         if not self._initialized:
@@ -277,6 +336,7 @@ class PostgreSQLStore:
         """Return the entry matching *key*, or *None*."""
         return _run_sync(self.async_load_by_key(namespace, key))
 
+    @_on_database_loop
     async def async_load_by_key(self, namespace: str, key: str) -> MemoryEntry | None:
         """Async version of :meth:`load_by_key`."""
         if not self._initialized:
@@ -309,6 +369,7 @@ class PostgreSQLStore:
         """Remove a single entry by ID."""
         _run_sync(self.async_delete(namespace, entry_id))
 
+    @_on_database_loop
     async def async_delete(self, namespace: str, entry_id: str) -> None:
         """Async version of :meth:`delete`."""
         if not self._initialized:
@@ -331,6 +392,7 @@ class PostgreSQLStore:
         """Remove all entries in *namespace*."""
         _run_sync(self.async_clear(namespace))
 
+    @_on_database_loop
     async def async_clear(self, namespace: str) -> None:
         """Async version of :meth:`clear`."""
         if not self._initialized:
@@ -345,6 +407,7 @@ class PostgreSQLStore:
         except Exception as exc:
             raise DatabaseStoreError(f"Failed to clear namespace: {exc}") from exc
 
+    @_on_database_loop
     async def cleanup_expired(self) -> int:
         """Remove all expired entries across all namespaces.
 
@@ -370,15 +433,19 @@ class PostgreSQLStore:
         except Exception as exc:
             raise DatabaseStoreError(f"Failed to cleanup expired entries: {exc}") from exc
 
-    async def close(self) -> None:
-        """Close the connection pool.
+    def close_sync(self) -> None:
+        """Close the pool synchronously; call after all users of this store finish."""
+        _run_sync(self.close())
 
-        Should be called during application shutdown.
-        """
-        if self._pool is not None:
-            await self._pool.close()
-            logger.info("PostgreSQL connection pool closed")
-            self._initialized = False
+    @_on_database_loop
+    async def close(self) -> None:
+        """Close the connection pool on its owning loop. Repeated calls are safe."""
+        async with self._initialization_lock:
+            if self._pool is not None:
+                await self._pool.close()
+                self._pool = None
+                self._initialized = False
+                logger.info("PostgreSQL connection pool closed")
 
 
 # -- MongoDB Store ----------------------------------------------------------
@@ -418,44 +485,38 @@ class MongoDBStore:
         self._db: Any = None
         self._collection: Any = None
         self._initialized = False
+        self._initialization_lock = asyncio.Lock()
 
+    def initialize_sync(self) -> None:
+        """Initialize from synchronous code, including synchronous agent hooks."""
+        _run_sync(self.initialize())
+
+    @_on_database_loop
     async def initialize(self) -> None:
-        """Create the connection and initialize indexes.
-
-        This method must be called before any other operations.
-        It's safe to call multiple times (subsequent calls are no-ops).
-
-        Raises:
-            DatabaseConnectionError: If connection to MongoDB fails.
-        """
-        if self._initialized:
-            return
-
-        if AsyncIOMotorClient is None:
-            raise DatabaseStoreError(
-                "MongoDB support requires 'motor' and 'pymongo'. "
-                "Install with: pip install fireflyframework-agentic[mongodb]"
-            )
-
-        try:
-            self._client = AsyncIOMotorClient(self._url, maxPoolSize=self._pool_size)
-            self._db = self._client[self._database_name]
-            self._collection = self._db[self._collection_name]
-
-            # Test connection
-            await self._client.admin.command("ping")
-            logger.info(
-                "MongoDB connected (database=%s, collection=%s, pool_size=%d)",
-                self._database_name,
-                self._collection_name,
-                self._pool_size,
-            )
-        except Exception as exc:
-            raise DatabaseConnectionError(f"Failed to connect to MongoDB: {exc}") from exc
-
-        # Create indexes
-        await self._create_indexes()
-        self._initialized = True
+        """Create the client and indexes once on the driver's owning event loop."""
+        async with self._initialization_lock:
+            if self._initialized:
+                return
+            if AsyncIOMotorClient is None:
+                raise DatabaseStoreError(
+                    "MongoDB support requires 'motor' and 'pymongo'. "
+                    "Install with: pip install fireflyframework-agentic[mongodb]"
+                )
+            try:
+                self._client = AsyncIOMotorClient(self._url, maxPoolSize=self._pool_size, tz_aware=True)
+                self._db = self._client[self._database_name]
+                self._collection = self._db[self._collection_name]
+                await self._client.admin.command("ping")
+                await self._create_indexes()
+                self._initialized = True
+                logger.info("MongoDB memory backend initialized")
+            except (Exception, asyncio.CancelledError) as exc:
+                if self._client is not None:
+                    self._client.close()
+                self._client = self._db = self._collection = None
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
+                raise DatabaseConnectionError(f"Failed to connect to MongoDB: {exc}") from exc
 
     async def _create_indexes(self) -> None:
         """Create indexes for efficient queries."""
@@ -480,12 +541,13 @@ class MongoDBStore:
 
             logger.debug("MongoDB indexes created")
         except Exception as exc:
-            logger.warning("Failed to create MongoDB indexes: %s", exc)
+            raise DatabaseStoreError(f"Failed to create MongoDB indexes: {exc}") from exc
 
     def save(self, namespace: str, entry: MemoryEntry) -> None:
         """Persist a single :class:`MemoryEntry` under *namespace*."""
         _run_sync(self.async_save(namespace, entry))
 
+    @_on_database_loop
     async def async_save(self, namespace: str, entry: MemoryEntry) -> None:
         """Async version of :meth:`save`."""
         if not self._initialized:
@@ -493,6 +555,9 @@ class MongoDBStore:
 
         try:
             doc = entry.model_dump(mode="json")
+            # BSON dates must remain datetimes for MongoDB comparison operators.
+            doc["created_at"] = entry.created_at
+            doc["expires_at"] = entry.expires_at
             doc["namespace"] = namespace
             doc["scope"] = entry.scope.value
 
@@ -508,6 +573,7 @@ class MongoDBStore:
         """Return all non-expired entries stored under *namespace*."""
         return _run_sync(self.async_load(namespace))
 
+    @_on_database_loop
     async def async_load(self, namespace: str) -> list[MemoryEntry]:
         """Async version of :meth:`load`."""
         if not self._initialized:
@@ -534,6 +600,7 @@ class MongoDBStore:
         """Return the entry matching *key*, or *None*."""
         return _run_sync(self.async_load_by_key(namespace, key))
 
+    @_on_database_loop
     async def async_load_by_key(self, namespace: str, key: str) -> MemoryEntry | None:
         """Async version of :meth:`load_by_key`."""
         if not self._initialized:
@@ -564,6 +631,7 @@ class MongoDBStore:
         """Remove a single entry by ID."""
         _run_sync(self.async_delete(namespace, entry_id))
 
+    @_on_database_loop
     async def async_delete(self, namespace: str, entry_id: str) -> None:
         """Async version of :meth:`delete`."""
         if not self._initialized:
@@ -578,6 +646,7 @@ class MongoDBStore:
         """Remove all entries in *namespace*."""
         _run_sync(self.async_clear(namespace))
 
+    @_on_database_loop
     async def async_clear(self, namespace: str) -> None:
         """Async version of :meth:`clear`."""
         if not self._initialized:
@@ -588,6 +657,7 @@ class MongoDBStore:
         except Exception as exc:
             raise DatabaseStoreError(f"Failed to clear namespace: {exc}") from exc
 
+    @_on_database_loop
     async def cleanup_expired(self) -> int:
         """Remove all expired entries across all namespaces.
 
@@ -605,12 +675,16 @@ class MongoDBStore:
         except Exception as exc:
             raise DatabaseStoreError(f"Failed to cleanup expired entries: {exc}") from exc
 
-    async def close(self) -> None:
-        """Close the MongoDB connection.
+    def close_sync(self) -> None:
+        """Close the client synchronously; call after all users of this store finish."""
+        _run_sync(self.close())
 
-        Should be called during application shutdown.
-        """
-        if self._client is not None:
-            self._client.close()
-            logger.info("MongoDB connection closed")
-            self._initialized = False
+    @_on_database_loop
+    async def close(self) -> None:
+        """Close the client on its owning loop. Repeated calls are safe."""
+        async with self._initialization_lock:
+            if self._client is not None:
+                self._client.close()
+                self._client = self._db = self._collection = None
+                self._initialized = False
+                logger.info("MongoDB connection closed")

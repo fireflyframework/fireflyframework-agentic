@@ -2,6 +2,10 @@
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+Unless an example explicitly compares models, it uses
+`FIREFLY_AGENTIC_DEFAULT_MODEL`. Set that and your provider credentials using the
+[model configuration guide](models.md) before running agent examples.
+
 The Agents module wraps Pydantic AI's `Agent` class and adds lifecycle management,
 a global registry, multi-agent delegation, execution context, and a decorator API.
 
@@ -55,7 +59,7 @@ The simplest way to create and register an agent is with the `@firefly_agent` de
 ```python
 from fireflyframework_agentic.agents import firefly_agent
 
-@firefly_agent(name="writer", model="openai:gpt-4o")
+@firefly_agent(name="writer")
 def writer_instructions(ctx):
     return "You are a writer."
 ```
@@ -69,36 +73,192 @@ dynamic instructions provider, and registers the agent in the global `AgentRegis
 from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.agents.registry import agent_registry
 
-agent = FireflyAgent(name="analyst", model="openai:gpt-4o")
+agent = FireflyAgent(name="analyst")  # Uses FIREFLY_AGENTIC_DEFAULT_MODEL.
 agent_registry.register(agent)
 ```
 
-### Using a Pydantic AI Model Object
+### Synchronous and asynchronous execution
 
-When you need explicit credential management (Azure, Bedrock, self-hosted, or vault-based
-keys), pass a pre-configured Pydantic AI `Model` instance instead of a string:
+Use `await agent.run(...)` and streaming APIs within your application's event loop.
+In ordinary synchronous code, `agent.run_sync(...)` uses a persistent background
+loop so repeated calls can reuse provider HTTP connections. Each invocation carries
+the caller's context variables through middleware, model execution, and cleanup.
+
+Keep an agent and its loop-bound tools or provider clients in one execution mode.
+An async client already used on an application loop cannot be moved into the
+synchronous runner. In notebooks, prefer top-level `await`; a tool running inside
+the synchronous runner must call child agents with `await child.run(...)` rather
+than trying to block that same loop with `run_sync()`.
+
+### Framework model options
+
+Use `ModelOptions` for application-level configuration. Firefly translates the
+options for the selected model and API, including provider-specific reasoning,
+storage, and output settings:
 
 ```python
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.models import ModelOptions
+
+agent = FireflyAgent(
+    name="assistant",
+    model_options=ModelOptions(max_tokens=4096),
+)
+result = await agent.run("Explain bounded retries.", model_options=ModelOptions(max_tokens=1024))
+```
+
+`model_options=` also works with `run_sync()` and `run_stream()`. Ordinary agent,
+tool, and memory code imports Firefly, with Pydantic models for structured outputs;
+provider selection stays in `FIREFLY_AGENTIC_DEFAULT_MODEL` or the agent's `model=`
+configuration. See the complete [model-agnostic example](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/examples/model_agnostic_agent.py).
+
+Per-run options override only fields explicitly set on that call; setting a field
+to `None` clears an inherited option. Native constructor `model_settings` has the
+lowest precedence, merged `ModelOptions` takes precedence over it, and native
+per-run `model_settings` takes final precedence. The `@firefly_agent` decorator
+accepts the same `model_options=` parameter.
+
+Options do not make model capabilities interchangeable. An explicitly unsupported
+request raises `ModelOptionsError`, so choose compatible options when changing
+models. See the [option reference](models.md#typed-model-options). Existing native
+`model_settings=` remains available for advanced integrations.
+
+### Application-managed credentials
+
+Use Firefly's [`Credential`, `ModelSpec`, and `ModelFactory`](models.md) to configure
+credentials and endpoints without provider SDK imports:
+
+```python
+import os
+
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.models import Credential, ModelFactory, ModelOptions, ModelSpec
+
+spec = ModelSpec(
+    provider="openai-responses",
+    model="gpt-6-luna",
+    credential=Credential.api_key(os.environ["OPENAI_API_KEY"]),
+    options=ModelOptions(reasoning="low", max_tokens=4096),
+)
+agent = FireflyAgent(
+    name="catalogue-analyst",
+    model=await ModelFactory().build(spec),
+    model_options=spec.options,
+)
+```
+
+The [tutorial](tutorial.md#model-providers-authentication) covers Azure, Bedrock,
+and local endpoints using the same factory interface.
+
+### Advanced: native model objects
+
+Existing preconfigured Pydantic AI `Model` instances remain supported, including
+custom provider clients. Use this escape hatch when you need a native SDK feature
+that `ModelSpec` does not expose:
+
+```python
+import os
+
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from fireflyframework_agentic.agents import FireflyAgent
 
-model = OpenAIChatModel("gpt-4o", provider=OpenAIProvider(api_key="sk-..."))
-agent = FireflyAgent(name="analyst", model=model)
+model = OpenAIChatModel("gpt-4o", provider=OpenAIProvider(api_key=os.environ["OPENAI_API_KEY"]))
+agent = FireflyAgent(name="native-analyst", model=model)
 ```
 
-This also works with the `@firefly_agent` decorator and all template agents. See the
-[tutorial](tutorial.md#model-providers-authentication) for full provider coverage
-including Azure OpenAI, Anthropic, Google, and OpenAI-compatible endpoints.
+### OpenAI Chat Completions and Responses
+
+Existing `FireflyAgent(model="openai:...")` and `model="azure:..."` configurations
+continue to use Chat Completions. Select the API explicitly for new integrations:
+
+```python
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.models import ModelOptions
+
+# Both read OPENAI_API_KEY from the environment.
+chat = FireflyAgent(name="chat", model="openai-chat:gpt-4o")
+responses = FireflyAgent(
+    name="responses",
+    model="openai-responses:gpt-6-luna",
+    model_options=ModelOptions(reasoning="low", store_responses=False),
+)
+```
+
+The same `run()`, `run_sync()`, `run_stream()`, `tools`, `output_type`, and memory
+interfaces apply to both model classes, subject to the model's capabilities. Azure
+has matching `azure-chat:` and `azure-responses:` prefixes; its deployment and endpoint
+configuration must support the selected API. Passing an `OpenAIChatModel` or
+`OpenAIResponsesModel` object also selects the API explicitly and preserves your
+provider client. See [Models](models.md#openai-choose-the-api-explicitly) for factory
+configuration and GPT-6 tool/reasoning constraints, and the runnable
+[Responses example](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/examples/openai_responses.py).
+
+### Native capabilities
+
+For advanced SDK integrations, pass Pydantic AI 2.x capabilities through `capabilities=`. For example, the
+Responses API can use provider-hosted web search:
+
+```python
+from pydantic_ai.capabilities import WebSearch
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.models import ModelOptions
+
+agent = FireflyAgent(
+    name="researcher",
+    model="openai-responses:gpt-6-luna",
+    capabilities=[WebSearch()],
+    model_options=ModelOptions(reasoning="low"),
+)
+```
+
+Capabilities are combined with Firefly's configured instrumentation and approval
+handling. Provider-hosted tools depend on the chosen model/API; regular Python
+functions and framework tools continue to go in `tools=`. See
+[Pydantic AI's native tools](https://pydantic.dev/docs/ai/native-tools/).
+
+Firefly keeps `end_strategy="early"` as its default: once a final output is
+available, additional function tools are not executed. Use `end_strategy="graceful"`
+or `"exhaustive"` only when your application deliberately needs the corresponding
+Pydantic AI tool-completion behavior. Review side effects before changing it.
+
+### Responses conversation state
+
+By default, you can manage history through `message_history=result.all_messages()`
+or a Firefly `MemoryManager`, just as with Chat Completions. For optional server-side
+chaining, enable storage and pass history containing the previous response:
+
+```python
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.models import ModelOptions
+
+agent = FireflyAgent(
+    name="stored-conversation",
+    model="openai-responses:gpt-6-luna",
+    model_options=ModelOptions(reasoning="low", store_responses=True),
+    model_settings={"openai_previous_response_id": "auto"},
+)
+first = await agent.run("Remember the project name: Lantern.")
+second = await agent.run("What is the project name?", message_history=first.all_messages())
+```
+
+Pydantic AI selects the latest response ID from the history and sends subsequent
+messages. This requires stored responses; if `openai_store=False` or your account
+disables storage, leave `openai_previous_response_id` unset and send the full history.
+See [Pydantic AI's conversation-state guidance](https://pydantic.dev/docs/ai/models/openai/#referencing-earlier-responses).
 
 ### Model settings & default temperature
 
-Pass per-call model parameters through `model_settings=` (a pydantic-ai
-`ModelSettings` dict — `temperature`, `max_tokens`, …). The framework merges a
+Prefer `model_options=` for typed framework settings. `model_settings=` accepts a
+native Pydantic AI `ModelSettings` dictionary as an advanced escape hatch and
+remains backward compatible. The framework merges a
 **default temperature** from config when you don't supply one:
 
 ```python
-agent = FireflyAgent(name="precise", model="openai:gpt-4o", model_settings={"temperature": 0.2})
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.models import ModelOptions
+
+agent = FireflyAgent(name="precise", model="openai:gpt-4o", model_options=ModelOptions(temperature=0.2))
 ```
 
 `config.default_temperature` (env `FIREFLY_AGENTIC_DEFAULT_TEMPERATURE`) defaults
@@ -126,11 +286,11 @@ from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.tools.builtins import DateTimeTool, CalculatorTool
 
 async def custom_lookup(query: str) -> str:
-    return f"Result for {query}"
+    glossary = {"retry": "Repeat a failed operation within a bounded attempt limit."}
+    return glossary.get(query.strip().lower(), "No glossary entry for that term.")
 
 agent = FireflyAgent(
     name="smart-assistant",
-    model="openai:gpt-4o",
     tools=[DateTimeTool(), CalculatorTool(), custom_lookup],
 )
 ```
@@ -256,7 +416,9 @@ return the first agent.
 ```python
 from fireflyframework_agentic.agents.delegation import ContentBasedStrategy, DelegationRouter
 
-strategy = ContentBasedStrategy(model="openai:gpt-4o-mini")
+from fireflyframework_agentic import get_config
+
+strategy = ContentBasedStrategy(model=get_config().default_model)
 router = DelegationRouter([agent_a, agent_b, agent_c], strategy)
 result = await router.route("Translate this legal document to French.")
 ```
@@ -320,11 +482,16 @@ result = await router.execute(decision, "Translate to French.")
 
 Attach a `MemoryManager` to an agent to enable multi-turn conversation history and a working-memory scratchpad. When you pass `conversation_id` to `run()`/`run_sync()`/`run_stream()`, the agent automatically loads and persists `message_history`.
 
+Streaming turns are persisted after successful completion in both buffered and
+incremental modes. The stored messages retain provider metadata, tool results, and
+Responses reasoning state for follow-up turns and conversation export/import.
+An interrupted stream does not save an incomplete turn.
+
 ```python
 from fireflyframework_agentic.memory import MemoryManager
 
 memory = MemoryManager(max_conversation_tokens=32_000)
-agent = FireflyAgent(name="assistant", model="openai:gpt-4o", memory=memory)
+agent = FireflyAgent(name="assistant", memory=memory)
 
 cid = memory.new_conversation()
 result = await agent.run("Hello!", conversation_id=cid)
@@ -343,7 +510,7 @@ from fireflyframework_agentic.memory import MemoryManager
 from fireflyframework_agentic.reasoning import ReActPattern
 
 memory = MemoryManager()
-agent = FireflyAgent(name="thinker", model="openai:gpt-4o", memory=memory)
+agent = FireflyAgent(name="thinker", memory=memory)
 cid = memory.new_conversation()
 
 result = await agent.run_with_reasoning(
@@ -374,7 +541,7 @@ See the [Template Agents Guide](templates.md) for full documentation and example
 ```python
 from fireflyframework_agentic.agents.templates import create_summarizer_agent
 
-agent = create_summarizer_agent(model="openai:gpt-4o", max_length="short")
+agent = create_summarizer_agent(max_length="short")
 result = await agent.run("Summarize this document: ...")
 ```
 
@@ -529,12 +696,11 @@ from fireflyframework_agentic.agents import FireflyAgent, firefly_agent
 # At construction
 agent = FireflyAgent(
     name="audited",
-    model="openai:gpt-4o",
     middleware=[AuditMiddleware()],
 )
 
 # Via decorator
-@firefly_agent("qa-bot", model="openai:gpt-4o", middleware=[AuditMiddleware()])
+@firefly_agent("qa-bot", middleware=[AuditMiddleware()])
 def qa_instructions(ctx):
     return "Answer questions accurately."
 
@@ -574,7 +740,6 @@ from fireflyframework_agentic.agents.builtin_middleware import RetryMiddleware
 # Custom retry settings
 agent = FireflyAgent(
     name="high-retry",
-    model="openai:gpt-4o",
     middleware=[RetryMiddleware(max_retries=5, base_delay=2.0, max_delay=120.0)],
 )
 ```
@@ -597,7 +762,6 @@ Disable auto-wiring by passing `default_middleware=False`:
 ```python
 agent = FireflyAgent(
     name="silent-agent",
-    model="openai:gpt-4o",
     default_middleware=False,
 )
 ```
@@ -612,7 +776,6 @@ import logging
 # Custom logging level — only one LoggingMiddleware ends up in the chain
 agent = FireflyAgent(
     name="verbose-agent",
-    model="openai:gpt-4o",
     middleware=[LoggingMiddleware(level=logging.DEBUG, preview_length=120)],
 )
 ```
@@ -644,7 +807,6 @@ import logging
 
 agent = FireflyAgent(
     name="debug-agent",
-    model="openai:gpt-4o",
     middleware=[LoggingMiddleware(level=logging.DEBUG)],
 )
 ```
@@ -660,14 +822,12 @@ from fireflyframework_agentic.agents import FireflyAgent, PromptGuardMiddleware
 
 agent = FireflyAgent(
     name="safe-agent",
-    model="openai:gpt-4o",
     middleware=[PromptGuardMiddleware()], # reject mode
 )
 
 # Or sanitise mode — replaces matched patterns with [REDACTED]
 agent = FireflyAgent(
     name="sanitised-agent",
-    model="openai:gpt-4o",
     middleware=[PromptGuardMiddleware(sanitise=True)],
 )
 ```
@@ -680,7 +840,6 @@ from fireflyframework_agentic.security import PromptGuard
 guard = PromptGuard(custom_patterns=[r"(?i)drop\s+table"], sanitise=True)
 agent = FireflyAgent(
     name="custom-guard",
-    model="openai:gpt-4o",
     middleware=[PromptGuardMiddleware(guard=guard, sanitise=True)],
 )
 ```
@@ -696,14 +855,12 @@ from fireflyframework_agentic.agents.builtin_middleware import OutputGuardMiddle
 
 agent = FireflyAgent(
     name="safe-output",
-    model="openai:gpt-4o",
     middleware=[OutputGuardMiddleware()], # reject mode
 )
 
 # Or sanitise mode — replaces matched content with [REDACTED]
 agent = FireflyAgent(
     name="redacted-output",
-    model="openai:gpt-4o",
     middleware=[OutputGuardMiddleware(sanitise=True)],
 )
 ```
@@ -735,14 +892,12 @@ from fireflyframework_agentic.agents import FireflyAgent, CostGuardMiddleware
 
 agent = FireflyAgent(
     name="budget-agent",
-    model="openai:gpt-4o",
     middleware=[CostGuardMiddleware(budget_usd=5.0)],
 )
 
 # Soft enforcement with per-call limit
 agent = FireflyAgent(
     name="monitored-agent",
-    model="openai:gpt-4o",
     middleware=[
         CostGuardMiddleware(
             budget_usd=10.0,
@@ -770,7 +925,6 @@ from fireflyframework_agentic.agents.builtin_middleware import ExplainabilityMid
 
 agent = FireflyAgent(
     name="audited-agent",
-    model="openai:gpt-4o",
     middleware=[ExplainabilityMiddleware()],
 )
 ```
@@ -787,7 +941,6 @@ from fireflyframework_agentic.agents.builtin_middleware import CacheMiddleware
 cache = ResultCache(ttl_seconds=300)
 agent = FireflyAgent(
     name="cached-agent",
-    model="openai:gpt-4o",
     middleware=[CacheMiddleware(cache=cache)],
 )
 ```
@@ -804,7 +957,6 @@ from fireflyframework_agentic.agents.builtin_middleware import ValidationMiddlew
 reviewer = OutputReviewer(output_type=MyModel, max_retries=0)
 agent = FireflyAgent(
     name="validated-agent",
-    model="openai:gpt-4o",
     middleware=[ValidationMiddleware(reviewer=reviewer)],
 )
 ```
@@ -893,7 +1045,6 @@ from fireflyframework_agentic.resilience.circuit_breaker import CircuitBreakerMi
 
 agent = FireflyAgent(
     name="resilient-agent",
-    model="openai:gpt-4o",
     middleware=[CircuitBreakerMiddleware(failure_threshold=3, recovery_timeout=30.0)],
 )
 ```
@@ -999,7 +1150,6 @@ from fireflyframework_agentic.resilience.circuit_breaker import CircuitBreakerMi
 
 agent = FireflyAgent(
     name="streaming-agent",
-    model="openai:gpt-4o",
     middleware=[
         PromptCacheMiddleware(),
         CircuitBreakerMiddleware(failure_threshold=3),
@@ -1038,22 +1188,28 @@ accepts both `"provider:model"` strings **and** pre-configured `Model` objects,
 so you can mix providers freely (e.g. fall from Azure to direct OpenAI to a
 local Ollama instance).
 
+This example evaluates two explicitly selected Responses models. Both support
+reasoning with tools; configure credentials for every provider in a fallback chain.
+
 ```mermaid
 flowchart LR
-    TRY1["openai:gpt-4o"] -->|fails| TRY2["openai:gpt-4o-mini"]
-    TRY2 -->|fails| TRY3["openai:gpt-3.5-turbo"]
-    TRY3 -->|fails| ERR([Raise last error])
+    TRY1["openai-responses:gpt-6-sol"] -->|fails| TRY2["openai-responses:gpt-6-luna"]
+    TRY2 -->|fails| ERR([Raise last error])
 ```
 
 ```python
+from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.agents.fallback import FallbackModelWrapper, run_with_fallback
+from fireflyframework_agentic.models import ModelOptions
 
 fallback = FallbackModelWrapper(
-    models=["openai:gpt-4o", "openai:gpt-4o-mini", "openai:gpt-3.5-turbo"],
+    models=["openai-responses:gpt-6-sol", "openai-responses:gpt-6-luna"],
 )
-
-agent = FireflyAgent(name="resilient", model=fallback.primary)
-result = await run_with_fallback(agent, "Hello!", fallback)
+agent = FireflyAgent(
+    name="resilient", model=fallback.primary,
+    model_options=ModelOptions(reasoning="low", max_tokens=4096),
+)
+result = await run_with_fallback(agent, "Explain bounded retries.", fallback)
 ```
 
 `run_with_fallback()` tries the current model, advances through the fallback
@@ -1070,22 +1226,25 @@ remain accurate for whichever model is currently active.
 You can mix `Model` objects and strings for cross-provider failover:
 
 ```python
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.azure import AzureProvider
+import os
 
-azure_model = OpenAIChatModel(
-    "my-gpt4o-deployment",
-    provider=AzureProvider(
-        azure_endpoint="https://my-resource.openai.azure.com",
-        api_version="2025-03-01-preview",
-        api_key="...",
-    ),
-)
+from fireflyframework_agentic.agents.fallback import FallbackModelWrapper
+from fireflyframework_agentic.models import Credential, ModelFactory, ModelSpec
 
+azure_model = await ModelFactory().build(ModelSpec(
+    provider="azure-responses",
+    model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
+    base_url=os.environ["AZURE_OPENAI_ENDPOINT"],
+    api_version=os.environ.get("OPENAI_API_VERSION"),
+    credential=Credential.api_key(os.environ["AZURE_OPENAI_API_KEY"]),
+))
 fallback = FallbackModelWrapper(
-    models=[azure_model, "openai:gpt-4o", "anthropic:claude-3-5-sonnet-latest"],
+    models=[azure_model, "openai-responses:gpt-6-luna", "anthropic:claude-sonnet-5"],
 )
 ```
+
+Choose `ModelOptions` supported by every model in the chain. Firefly resolves the
+options against each active model; incompatible options fail before that request.
 
 ---
 
@@ -1101,10 +1260,10 @@ from fireflyframework_agentic.agents.cache import ResultCache
 cache = ResultCache(ttl_seconds=300, max_size=100)
 
 # Check cache before running
-cached = cache.get("openai:gpt-4o", prompt)
+cached = cache.get(agent.model_identifier, prompt)
 if cached is None:
     result = await agent.run(prompt)
-    cache.put("openai:gpt-4o", prompt, result)
+    cache.put(agent.model_identifier, prompt, result)
 else:
     result = cached
 

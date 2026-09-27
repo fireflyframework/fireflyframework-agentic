@@ -1,8 +1,9 @@
-"""Integration tests for the pgvector vector store against a real Postgres.
+"""Integration tests for vector and memory stores against a real Postgres.
 
 Uses Testcontainers with the ``pgvector/pgvector`` image, so these exercise the
 real schema bootstrap, HNSW index, ANN ordering, namespace isolation, metadata
-filtering, and the ``_prepare_session`` extension hook -- no mocks.
+filtering, and the ``_prepare_session`` extension hook -- no mocks. Memory-store
+tests also verify mixed sync/async access, native JSONB metadata, and TTL cleanup.
 
 Marked ``integration``; deselect with ``-m "not integration"`` when Docker is
 unavailable.
@@ -11,6 +12,8 @@ unavailable.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -27,8 +30,18 @@ def _asyncpg_url(raw: str) -> str:
     return raw.replace("+psycopg2", "").replace("+psycopg", "")
 
 
+@pytest.fixture(scope="session")
+def _testcontainers_cleanup() -> Iterator[None]:
+    from testcontainers.core.container import Reaper
+
+    try:
+        yield
+    finally:
+        Reaper.delete_instance()
+
+
 @pytest.fixture(scope="module")
-def pg_url() -> str:
+def pg_url(_testcontainers_cleanup: None) -> Iterator[str]:
     from testcontainers.postgres import PostgresContainer
 
     with PostgresContainer("pgvector/pgvector:pg16") as pg:
@@ -159,3 +172,91 @@ class TestPgVectorIntegration:
             assert "ns_hook" in seen
         finally:
             await s.close()
+
+
+async def test_postgres_memory_mixes_sync_async_operations_and_native_jsonb_ttl(pg_url: str) -> None:
+    import json
+
+    import asyncpg
+
+    from fireflyframework_agentic.memory.database_store import PostgreSQLStore
+    from fireflyframework_agentic.memory.types import MemoryEntry
+
+    schema = f"memory_{uuid.uuid4().hex}"
+    namespace = f"tenant_{uuid.uuid4().hex}"
+    store = PostgreSQLStore(pg_url, schema_name=schema, pool_min_size=1, pool_size=2)
+    live = MemoryEntry(
+        key="live",
+        content={"values": [1, 2, 3]},
+        metadata={"tags": ["verified"], "created": datetime(2026, 1, 1, tzinfo=UTC)},
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    expired = MemoryEntry(key="expired", expires_at=datetime.now(UTC) - timedelta(hours=1))
+    inspection = None
+    try:
+        await store.initialize()
+        store.save(namespace, live)
+        await store.async_save(namespace, expired)
+        loaded = await store.async_load(namespace)
+        assert [entry.key for entry in loaded] == ["live"]
+        assert loaded[0].model_dump(mode="json") == live.model_dump(mode="json")
+        assert loaded[0].is_expired is False
+        assert store.load_by_key(namespace, "live").content == live.content
+        assert await store.async_load_by_key(namespace, "expired") is None
+        assert store.load(f"{namespace}_other") == []
+
+        inspection = await asyncpg.connect(pg_url)
+        row = await inspection.fetchrow(
+            f"SELECT metadata, jsonb_typeof(metadata) AS kind, expires_at "
+            f"FROM {schema}.memory_entries WHERE entry_id = $1",
+            live.entry_id,
+        )
+        assert row["kind"] == "object"
+        assert json.loads(row["metadata"]) == live.model_dump(mode="json")["metadata"]
+        assert row["expires_at"] == live.expires_at
+        assert await store.cleanup_expired() == 1
+        assert await store.cleanup_expired() == 0
+        assert await inspection.fetchval(f"SELECT COUNT(*) FROM {schema}.memory_entries") == 1
+
+        await store.async_delete(namespace, live.entry_id)
+        assert store.load(namespace) == []
+    finally:
+        try:
+            if inspection is not None:
+                await inspection.close()
+        finally:
+            await store.close()
+
+
+async def test_postgres_configured_memory_restores_facts_through_a_second_store(pg_url: str, monkeypatch) -> None:
+    from fireflyframework_agentic.config import FireflyAgenticConfig
+    from fireflyframework_agentic.memory import MemoryManager
+    from fireflyframework_agentic.memory import manager as manager_module
+
+    cfg = FireflyAgenticConfig(
+        memory_backend="postgres",
+        memory_postgres_url=pg_url,
+        memory_postgres_schema=f"facts_{uuid.uuid4().hex}",
+        memory_postgres_pool_min_size=1,
+        memory_postgres_pool_size=2,
+    )
+    monkeypatch.setattr(manager_module, "get_config", lambda: cfg)
+    scope = f"case_{uuid.uuid4().hex}"
+    original = MemoryManager.from_config()
+    scoped = original.fork(working_scope_id=scope)
+    value = {"items": ["one", "two"], "completed": True}
+    try:
+        scoped.set_fact("result", value)
+        assert scoped.get_fact("result") == value
+    finally:
+        original.close()
+
+    restored = MemoryManager.from_config()
+    try:
+        assert restored.store is not original.store
+        assert restored.fork(working_scope_id=scope).get_fact("result") == value
+        assert restored.fork(working_scope_id=f"{scope}_other").get_fact("result") is None
+        restored.fork(working_scope_id=scope).set_fact("result", {"updated": True})
+        assert restored.fork(working_scope_id=scope).get_fact("result") == {"updated": True}
+    finally:
+        await restored.aclose()

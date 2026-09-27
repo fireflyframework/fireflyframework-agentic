@@ -25,8 +25,8 @@ Usage::
     uv run python examples/conversation_export_import.py
 
 .. note:: This example does NOT require an OpenAI API key for the
-   export/import demo.  The LLM summarizer section is shown but not
-   executed without a key.
+   export/import demo. The summarizer factory is constructed but is never
+   invoked; no model requests are made.
 """
 
 from __future__ import annotations
@@ -111,9 +111,6 @@ def main() -> None:
 
     summarizer = create_llm_summarizer()
     print(f"  create_llm_summarizer() → {type(summarizer).__name__} (callable={callable(summarizer)})")
-
-    summarizer_mini = create_llm_summarizer(model="openai:gpt-4o-mini")
-    print(f"  create_llm_summarizer(model='openai:gpt-4o-mini') → callable={callable(summarizer_mini)}")
 
     print("\n  To use the summarizer with ConversationMemory:")
     print("    mem = ConversationMemory(summarizer=create_llm_summarizer())")

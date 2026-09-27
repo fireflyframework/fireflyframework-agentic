@@ -25,7 +25,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from fireflyframework_agentic.models.options import ModelOptions
 
 ThinkingStyle = Literal["none", "budget", "effort", "adaptive"]
 """How a model is asked to think.
@@ -113,16 +116,21 @@ class ModelSpec:
         provider: The provider key — ``anthropic``, ``openai``, ``azure``, ``bedrock``,
             ``google-vertex``, ``google``, ``mistral``, or any OpenAI-compatible endpoint
             (``ollama``, ``openrouter``, ``deepseek``, …) with a ``base_url``.
+            ``openai`` and ``azure`` retain their Chat Completions defaults. Select explicitly
+            with ``openai-chat``, ``openai-responses``, ``azure-chat`` or ``azure-responses``.
         model: The provider's model id, exactly as the provider names it.
         credential: See :class:`Credential`.
         settings: The parameter profile in the console vocabulary (``maxTokens``,
             ``thinkingBudgetTokens``, ``topP`` …) or pydantic-ai's (``max_tokens`` …); both
-            spellings are read.
+            spellings are read. Native settings, including Responses state, storage and
+            reasoning options, pass through. Native thinking settings take precedence over
+            portable console effort/budget aliases.
         capabilities: What the model takes; derived from the id when omitted.
+        options: Typed Firefly options. These override equivalent legacy settings.
         model_class: The pydantic-ai class to build, when the provider alone does not decide
             it (``OpenAIResponsesModel`` beside ``OpenAIChatModel``).
         profile_overrides: Measured corrections to the SDK's derived
-            :class:`~pydantic_ai.profiles.ModelProfile`, applied with ``dataclasses.replace``.
+            :class:`~pydantic_ai.profiles.ModelProfile`, merged over the derived dictionary.
         base_url, api_version, region, project: Provider arguments where they apply
             (an OpenAI-compatible endpoint, Azure, Bedrock, Vertex).
     """
@@ -138,6 +146,7 @@ class ModelSpec:
     api_version: str | None = None
     region: str | None = None
     project: str | None = None
+    options: ModelOptions | None = None
 
     def __post_init__(self) -> None:
         # Frozen all the way down: a spec is a value, and a host may cache models by it.

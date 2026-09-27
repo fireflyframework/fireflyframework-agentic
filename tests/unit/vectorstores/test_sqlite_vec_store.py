@@ -8,10 +8,14 @@ from fireflyframework_agentic.vectorstores.types import VectorDocument
 
 
 @pytest.fixture
-def store(tmp_path):
+async def store(tmp_path):
     from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
 
-    return SqliteVecVectorStore(db_path=tmp_path / "test.sqlite", dimension=4)
+    instance = SqliteVecVectorStore(db_path=tmp_path / "test.sqlite", dimension=4)
+    try:
+        yield instance
+    finally:
+        await instance.close()
 
 
 async def test_upsert_and_search_returns_closest_first(store):
@@ -69,10 +73,8 @@ async def test_delete_nonexistent_id_is_silent(store):
     await store.delete(["ghost"])
 
 
-async def test_namespace_isolation(tmp_path):
-    from fireflyframework_agentic.vectorstores.sqlite_vec_store import SqliteVecVectorStore
-
-    s = SqliteVecVectorStore(db_path=tmp_path / "ns.sqlite", dimension=4)
+async def test_namespace_isolation(store):
+    s = store
     await s.upsert(
         [VectorDocument(id="ns_a_doc", text="", embedding=[1.0, 0.0, 0.0, 0.0])],
         namespace="ns_a",

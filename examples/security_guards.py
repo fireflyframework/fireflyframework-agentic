@@ -17,8 +17,6 @@
 Demonstrates:
 - ``PromptGuard`` — detects prompt injection, jailbreaks, and encoding attacks.
 - ``OutputGuard`` — scans LLM output for PII, secrets, harmful content.
-- ``PromptGuardMiddleware`` — automatic input scanning on agents.
-- ``OutputGuardMiddleware`` — automatic output scanning on agents.
 - Sanitise mode — redacts matched patterns instead of blocking.
 - Custom deny patterns.
 

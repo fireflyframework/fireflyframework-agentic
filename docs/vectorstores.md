@@ -97,7 +97,7 @@ from fireflyframework_agentic.vectorstores import PineconeVectorStore
 
 store = PineconeVectorStore(
     index_name="my-index",
-    api_key="...",           # falls back to PINECONE_API_KEY env var
+    # Reads PINECONE_API_KEY from the environment.
     embedder=my_embedder,
 )
 ```
@@ -112,7 +112,7 @@ from fireflyframework_agentic.vectorstores import QdrantVectorStore
 store = QdrantVectorStore(
     collection_name="my_collection",
     url="http://localhost:6333",    # default
-    api_key="...",                  # for Qdrant Cloud
+    # For Qdrant Cloud, pass api_key from your secret store.
     vector_size=1536,               # must match your embedder dimensions
     embedder=my_embedder,
 )
@@ -197,7 +197,7 @@ from fireflyframework_agentic.vectorstores import VectorDocument
 doc = VectorDocument(
     id="unique-id",              # required
     text="The document text",    # required
-    embedding=[0.1, 0.2, ...],  # optional (auto-embedded if None)
+    embedding=[0.1, 0.2, 0.3],  # all vectors must match the configured embedding dimension
     metadata={"source": "web"}, # optional key-value metadata
     namespace="default",        # optional namespace scoping
 )
@@ -380,31 +380,29 @@ no embedder is supplied, the input is assumed to already be an embedding.
 
 ## Custom Backend
 
-Subclass `BaseVectorStore` and implement three methods:
+Subclass `BaseVectorStore` and implement `_upsert`, `_search`, and `_delete` for a
+new storage driver. For an existing backend, you can extend its implemented hooks.
+This complete in-memory variant validates every document before accepting the batch:
 
 ```python
-from fireflyframework_agentic.vectorstores.base import BaseVectorStore
-from fireflyframework_agentic.vectorstores.types import SearchFilter, SearchResult, VectorDocument
+from fireflyframework_agentic.vectorstores import InMemoryVectorStore, VectorDocument
 
-class MyVectorStore(BaseVectorStore):
+class AttributedVectorStore(InMemoryVectorStore):
     async def _upsert(self, documents: list[VectorDocument], namespace: str) -> None:
-        # Store documents (embeddings are guaranteed to be present)
-        ...
+        missing = [doc.id for doc in documents if not doc.metadata.get("source")]
+        if missing:
+            raise ValueError(f"Documents require source metadata: {', '.join(missing)}")
+        await super()._upsert(documents, namespace)
 
-    async def _search(
-        self,
-        query_embedding: list[float],
-        top_k: int,
-        namespace: str,
-        filters: list[SearchFilter] | None,
-    ) -> list[SearchResult]:
-        # Return top_k most similar documents
-        ...
-
-    async def _delete(self, ids: list[str], namespace: str) -> None:
-        # Remove documents by ID within the namespace
-        ...
+store = AttributedVectorStore()
+await store.upsert([
+    VectorDocument(id="guide-1", text="Bound retry attempts.", embedding=[1.0, 0.0], metadata={"source": "guide.md"}),
+])
+results = await store.search([1.0, 0.0], top_k=1)
+assert results[0].document.id == "guide-1"
 ```
+
+The inherited backend implements search, filtering, namespace isolation, and deletion.
 
 The base class fills in the contract for you: all public ops default to
 `namespace="default"`; `search()`/`search_text()` default to `top_k=5`; `upsert()`

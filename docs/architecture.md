@@ -9,7 +9,7 @@ relationships between its modules, and the design principles that guided its con
 
 ## Design Principles
 
-The framework follows four guiding principles:
+The framework follows five guiding principles:
 
 1. **Protocol-driven contracts** -- Public APIs are defined as Python `Protocol` classes
    or abstract base classes. This allows any module to be replaced or extended without
@@ -34,6 +34,20 @@ The framework follows four guiding principles:
    cross-service trace propagation is the host's responsibility.
 
 ---
+
+## Application boundary
+
+Application code uses `FireflyAgent`, `@firefly_tool` / `ToolKit`, `MemoryManager`,
+and typed `ModelOptions`. Firefly resolves options against the selected provider
+on every run, including per-run model overrides, and rejects unsupported controls.
+`ModelSpec` and `ModelFactory` handle credential and endpoint configuration for
+applications that maintain a model catalogue. Pydantic AI 2.x remains the model
+transport and tool-execution engine; native settings and capabilities are advanced
+integration surfaces.
+
+Existing `openai:` / `azure:` configurations retain Chat Completions. Select
+`openai-responses:` / `azure-responses:` explicitly for Responses. See
+[Models](models.md) and the [migration guide](migration.md) for compatibility rules.
 
 ## Layer Diagram
 
@@ -659,7 +673,7 @@ All configuration is managed through `FireflyAgenticConfig`, which reads values 
 environment variables prefixed with `FIREFLY_AGENTIC_`. For example:
 
 ```bash
-export FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o
+export FIREFLY_AGENTIC_DEFAULT_MODEL=openai-responses:gpt-6-luna
 export FIREFLY_AGENTIC_LOG_LEVEL=DEBUG
 export FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true
 export FIREFLY_AGENTIC_NATIVE_INSTRUMENTATION_ENABLED=true  # native pydantic-ai GenAI spans (see observability.md)
@@ -675,7 +689,7 @@ export FIREFLY_AGENTIC_REASONING_OUTPUT_MODE=prompted  # reasoning structured-ou
 The configuration singleton is available via:
 
 ```python
-from fireflyframework_agentic.core import FireflyAgenticConfig
+from fireflyframework_agentic import FireflyAgenticConfig
 
 config = FireflyAgenticConfig()
 print(config.default_model)

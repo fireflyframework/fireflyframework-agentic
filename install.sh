@@ -702,14 +702,16 @@ print_summary() {
 
     printf "  %s# %d. Configure your model provider%s\n" "$DIM" "$step_num" "$RESET"
     printf "  export OPENAI_API_KEY=sk-...\n"
-    printf "  export FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o\n\n"
+    printf "  export FIREFLY_AGENTIC_DEFAULT_MODEL=openai-responses:gpt-6-luna\n\n"
     step_num=$((step_num + 1))
 
     printf "  %s# %d. Create your first agent%s\n" "$DIM" "$step_num" "$RESET"
-    printf "  from fireflyframework_agentic.agents import firefly_agent\n\n"
-    printf "  @firefly_agent(name=\"assistant\", model=\"openai:gpt-4o\")\n"
+    printf "  from fireflyframework_agentic.agents import firefly_agent\n"
+    printf "  from fireflyframework_agentic.models import ModelOptions\n\n"
+    printf "  @firefly_agent(name=\"assistant\", model_options=ModelOptions(max_tokens=4096))\n"
     printf "  def instructions(ctx):\n"
     printf "      return \"You are a helpful assistant.\"\n\n"
+    printf "  print(instructions.run_sync(\"Explain bounded retries.\").output)\n\n"
 
     printf "  %s%sResources:%s\n\n" "$BOLD" "$WHITE" "$RESET"
     printf "  %sDocs      :%s  https://github.com/fireflyframework/fireflyframework-agentic/tree/main/docs\n" "$DIM" "$RESET"

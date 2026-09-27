@@ -2,6 +2,10 @@
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+Unless an example explicitly compares models, it uses
+`FIREFLY_AGENTIC_DEFAULT_MODEL`. Set that and your provider credentials using the
+[model configuration guide](models.md) before running agent examples.
+
 The Resilience module provides a **circuit breaker** for fault tolerance and failure
 isolation. When an LLM provider or downstream service starts failing, the breaker
 trips and fails fast — rejecting calls immediately instead of piling up timeouts —
@@ -95,7 +99,6 @@ from fireflyframework_agentic.resilience import CircuitBreakerMiddleware, Circui
 
 agent = FireflyAgent(
     "resilient-agent",
-    model="openai:gpt-4o",
     middleware=[
         CircuitBreakerMiddleware(failure_threshold=3, recovery_timeout=30.0),
     ],

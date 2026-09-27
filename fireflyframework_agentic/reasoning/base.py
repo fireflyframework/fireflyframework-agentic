@@ -46,7 +46,7 @@ from fireflyframework_agentic.exceptions import (
     ReasoningStepLimitError,
 )
 from fireflyframework_agentic.memory.manager import MemoryManager
-from fireflyframework_agentic.model_utils import get_model_identifier
+from fireflyframework_agentic.model_utils import get_model_identifier, normalize_model
 from fireflyframework_agentic.observability.budget import ScopeContext
 from fireflyframework_agentic.observability.usage import (
     default_usage_tracker,
@@ -251,7 +251,11 @@ class AbstractReasoningPattern(ABC):
                 result = await agent.run(prompt, **run_kwargs)
                 return result.output if hasattr(result, "output") else result
             if resolved_model is not None:
-                ephemeral = PydanticAgent(resolved_model, output_type=self._wrap_output_type(output_type))
+                ephemeral = PydanticAgent(
+                    normalize_model(resolved_model),
+                    output_type=self._wrap_output_type(output_type),
+                    end_strategy="early",
+                )
                 result = await ephemeral.run(prompt)
                 _result_holder.append(result)
                 return result.output

@@ -13,302 +13,80 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""API quota management and rate limiting example.
+"""Offline budget, rate-limit, and retry controls using public framework APIs.
 
-This example demonstrates how to use Firefly Agentic's quota management system
-to enforce production-grade budget and rate limits for LLM API calls.
-
-Features demonstrated:
-- Daily budget enforcement in USD
-- Per-model rate limiting (requests per minute)
-- Adaptive exponential backoff for 429 responses
-- Token quota tracking
-- Budget alerts and warnings
-
-Prerequisites:
-    Set environment variables:
-       export FIREFLY_AGENTIC_QUOTA_ENABLED=true
-       export FIREFLY_AGENTIC_QUOTA_BUDGET_DAILY_USD=5.0
-       export FIREFLY_AGENTIC_QUOTA_RATE_LIMITS='{"openai:gpt-4o-mini": 10}'
-       export OPENAI_API_KEY=sk-...
-
-Usage:
-    python examples/quota_management.py
+No model requests are made. Known usage records stand in for provider billing
+reports so that the budget boundary can be reproduced without spending money.
+The retry example really waits, using millisecond delays for a local exercise.
+Run: uv run python examples/quota_management.py
 """
+
+from __future__ import annotations
 
 import asyncio
 
-from fireflyframework_agentic.agents.base import FireflyAgent
-from fireflyframework_agentic.config import get_config
 from fireflyframework_agentic.exceptions import BudgetExceededError, RateLimitError
-from fireflyframework_agentic.observability.quota import QuotaManager
-from fireflyframework_agentic.observability.usage import default_usage_tracker
+from fireflyframework_agentic.observability.budget import BudgetGate, BudgetRule, BudgetWindow
+from fireflyframework_agentic.observability.quota import AdaptiveBackoff, QuotaManager
+from fireflyframework_agentic.observability.usage import UsageRecord, UsageTracker
+
+MODEL = "example:local-workload"
 
 
-async def demonstrate_budget_enforcement():
-    """Demonstrate daily budget enforcement."""
-    print("\n" + "=" * 70)
-    print("Budget Enforcement Demonstration")
-    print("=" * 70)
-
-    # Create quota manager with $2 daily budget
-    quota = QuotaManager(daily_budget_usd=2.0)
-
-    print(f"\n✓ Daily budget: ${quota._daily_budget:.2f}")
-    print(f"✓ Current spend: ${quota.get_daily_spend():.2f}")
-    print(f"✓ Remaining: ${quota.get_budget_remaining():.2f}")
-
-    agent = FireflyAgent(
-        name="budget_demo_agent",
-        model="openai:gpt-4o-mini",  # Cheap model for testing
-        description="Agent with budget constraints",
-    )
-
-    print("\n--- Making API calls until budget is exhausted ---")
-
-    for i in range(1, 100):
+async def demonstrate_budget_enforcement() -> float:
+    """Accept two known-cost records; reject a third before recording it."""
+    gate = BudgetGate([BudgetRule(name="daily", limit_usd=0.02, window=BudgetWindow.DAILY)])
+    tracker = UsageTracker(gate=gate)
+    for index in range(3):
         try:
-            # Check quota before making request
-            estimated_cost = 0.001  # Rough estimate
-            quota.check_quota_before_request("openai:gpt-4o-mini", estimated_cost)
-
-            # Make request
-            await agent.run(f"Say 'hello {i}' in one word")
-
-            # Get actual cost from usage tracker
-            default_usage_tracker.get_summary()
-
-            # Record actual cost
-            quota.record_request("openai:gpt-4o-mini", cost_usd=estimated_cost, success=True)
-
-            print(
-                f"  Request #{i}: OK (spend=${quota.get_daily_spend():.4f}, remaining=${quota.get_budget_remaining():.4f})"
-            )
-
-        except BudgetExceededError as e:
-            print(f"\n✗ Request #{i} BLOCKED: {e}")
-            print(f"  Final spend: ${quota.get_daily_spend():.4f}")
-            print(f"  Budget limit: ${quota._daily_budget:.2f}")
+            gate.precheck(estimated_cost_usd=0.01)
+        except BudgetExceededError as exc:
+            print(f"Budget blocked request {index + 1}: {exc}")
             break
+        tracker.record(UsageRecord(model=MODEL, request_count=1, cost_usd=0.01))
+    spend = tracker.get_summary().total_cost_usd
+    print(f"Recorded illustrative spend: ${spend:.2f}")
+    return spend
 
-    print("\n✓ Budget enforcement successful - requests blocked after limit reached")
 
-
-async def demonstrate_rate_limiting():
-    """Demonstrate per-model rate limiting."""
-    print("\n" + "=" * 70)
-    print("Rate Limiting Demonstration")
-    print("=" * 70)
-
-    # Create quota manager with strict rate limit
-    quota = QuotaManager(
-        rate_limits={
-            "openai:gpt-4o-mini": 5,  # 5 requests per minute
-        }
-    )
-
-    print("\n✓ Rate limit: 5 requests/minute for openai:gpt-4o-mini")
-
-    agent = FireflyAgent(
-        name="rate_limit_demo_agent",
-        model="openai:gpt-4o-mini",
-        description="Agent with rate limits",
-    )
-
-    print("\n--- Making rapid API calls ---")
-
-    for i in range(1, 10):
+async def demonstrate_rate_limiting() -> int:
+    """Apply a three-request window to real local word-count operations."""
+    quota = QuotaManager(rate_limits={MODEL: 3}, rate_limit_window=60)
+    completed = 0
+    for document in ("Small workloads", "Use explicit limits", "Record each success", "Blocked document"):
         try:
-            # Check rate limit
-            quota.check_quota_before_request("openai:gpt-4o-mini")
-
-            # Make request
-            await agent.run(f"Count to {i}")
-
-            # Record request
-            quota.record_request("openai:gpt-4o-mini", cost_usd=0.0, success=True)
-
-            remaining = quota.get_rate_limit_remaining("openai:gpt-4o-mini")
-            print(f"  Request #{i}: OK (remaining={remaining})")
-
-        except RateLimitError as e:
-            print(f"\n✗ Request #{i} BLOCKED: {e}")
-            remaining = quota.get_rate_limit_remaining("openai:gpt-4o-mini")
-            print(f"  Remaining: {remaining}")
-            print("  Rate limit enforced - requests blocked")
+            quota.check_quota_before_request(MODEL)
+        except RateLimitError as exc:
+            print(f"Rate limiter blocked the fourth operation: {exc}")
             break
-
-    print("\n✓ Rate limiting successful")
-
-
-async def demonstrate_adaptive_backoff():
-    """Demonstrate adaptive exponential backoff for 429 errors."""
-    print("\n" + "=" * 70)
-    print("Adaptive Backoff Demonstration")
-    print("=" * 70)
-
-    quota = QuotaManager(
-        enable_adaptive_backoff=True,
-    )
-
-    print("\n✓ Adaptive backoff enabled")
-    print("✓ Simulating consecutive 429 (rate limit) errors...")
-
-    model = "openai:gpt-4o-mini"
-
-    # Simulate multiple 429 errors
-    for attempt in range(1, 6):
-        print(f"\n--- Attempt {attempt} ---")
-
-        # Simulate rate limit error
-        quota.record_rate_limit_error(model)
-
-        # Get recommended backoff delay
-        delay = quota.get_backoff_delay(model)
-        failure_count = quota._backoff.get_failure_count(model) if quota._backoff else 0
-
-        print("  ✗ Received 429 (Rate Limit) error")
-        print(f"  Failure count: {failure_count}")
-        print(f"  Recommended backoff: {delay:.2f}s")
-        print(f"  Waiting {delay:.2f}s before retry...")
-
-        # In a real application, you would sleep here
-        # await asyncio.sleep(delay)
-
-    # Simulate successful request
-    print("\n--- Successful request ---")
-    quota.record_request(model, cost_usd=0.0, success=True)
-    print("  ✓ Request succeeded")
-    print("  Backoff reset - next failure will start from base delay")
-
-    print("\n✓ Adaptive backoff demonstration complete")
+        print(f"Document word count: {len(document.split())}")
+        quota.record_request(MODEL)
+        completed += 1
+    print(f"Requests remaining in window: {quota.get_rate_limit_remaining(MODEL)}")
+    return completed
 
 
-async def demonstrate_config_integration():
-    """Demonstrate quota management from configuration."""
-    print("\n" + "=" * 70)
-    print("Configuration Integration")
-    print("=" * 70)
-
-    cfg = get_config()
-
-    print(f"\n✓ Quota enabled: {cfg.quota_enabled}")
-    print(f"✓ Daily budget: ${cfg.quota_budget_daily_usd}")
-    print(f"✓ Rate limits: {cfg.quota_rate_limits}")
-    print(f"✓ Adaptive backoff: {cfg.quota_adaptive_backoff}")
-
-    if cfg.quota_enabled:
-        # Quota manager is automatically created from config
-        from fireflyframework_agentic.observability.quota import default_quota_manager
-
-        if default_quota_manager:
-            print("\n✓ Default quota manager created from configuration")
-            print(f"  Daily budget: ${default_quota_manager._daily_budget}")
-            print(f"  Rate limits: {default_quota_manager._rate_limits}")
-        else:
-            print("\n⚠ Quota enabled but no default manager created")
-    else:
-        print("\n⚠ Quota management is disabled")
-        print("  Set FIREFLY_AGENTIC_QUOTA_ENABLED=true to enable")
+async def demonstrate_adaptive_backoff() -> list[float]:
+    """Exercise retry timing for three explicitly simulated failures."""
+    backoff = AdaptiveBackoff(base_delay=0.01, max_delay=0.1, jitter=False)
+    delays = []
+    for _ in range(3):
+        backoff.record_failure(MODEL)
+        delay = backoff.get_delay(MODEL)
+        delays.append(delay)
+        await asyncio.sleep(delay)
+        print(f"Waited {delay:.2f}s after simulated failure {backoff.get_failure_count(MODEL)}")
+    backoff.reset(MODEL)
+    print(f"Failure count after recovery: {backoff.get_failure_count(MODEL)}")
+    return delays
 
 
-async def demonstrate_production_pattern():
-    """Demonstrate production-ready quota management pattern."""
-    print("\n" + "=" * 70)
-    print("Production Pattern")
-    print("=" * 70)
-
-    quota = QuotaManager(
-        daily_budget_usd=100.0,
-        rate_limits={
-            "openai:gpt-4o": 60,  # Premium model: 60 req/min
-            "openai:gpt-4o-mini": 200,  # Budget model: 200 req/min
-        },
-        enable_adaptive_backoff=True,
-    )
-
-    agent = FireflyAgent(
-        name="production_agent",
-        model="openai:gpt-4o-mini",
-        description="Production agent with quota management",
-    )
-
-    print("\n--- Production request pattern with quota checks ---")
-
-    max_retries = 3
-    prompt = "Explain quantum computing in one sentence."
-
-    for attempt in range(1, max_retries + 1):
-        try:
-            print(f"\n  Attempt {attempt}/{max_retries}")
-
-            # 1. Check quota before making request
-            print("  → Checking quotas...")
-            quota.check_quota_before_request(agent.model, estimated_cost=0.01)
-            print("  ✓ Quota check passed")
-
-            # 2. Make API request
-            print("  → Making API call...")
-            result = await agent.run(prompt)
-            print(f"  ✓ Response: {result.output[:50]}...")
-
-            # 3. Record successful request
-            quota.record_request(agent.model, cost_usd=0.008, success=True)
-            print("  ✓ Usage recorded")
-
-            # Success - exit retry loop
-            break
-
-        except BudgetExceededError as e:
-            print(f"  ✗ Budget exceeded: {e}")
-            print("  Cannot retry - budget limit reached")
-            break
-
-        except RateLimitError as e:
-            print(f"  ✗ Rate limit exceeded: {e}")
-
-            if attempt < max_retries:
-                # Record rate limit error
-                quota.record_rate_limit_error(agent.model)
-
-                # Get adaptive backoff delay
-                delay = quota.get_backoff_delay(agent.model)
-                print(f"  → Waiting {delay:.2f}s before retry...")
-
-                # In production, you would actually sleep here
-                # await asyncio.sleep(delay)
-            else:
-                print("  Max retries reached - giving up")
-
-        except Exception as e:
-            print(f"  ✗ Unexpected error: {e}")
-            break
-
-    print("\n✓ Production pattern demonstration complete")
-
-
-async def main():
-    """Run all quota management demonstrations."""
-    print("=" * 70)
-    print("API Quota Management & Rate Limiting Example")
-    print("=" * 70)
-
-    # Run demonstrations
-    await demonstrate_config_integration()
+async def main() -> None:
     await demonstrate_budget_enforcement()
     await demonstrate_rate_limiting()
     await demonstrate_adaptive_backoff()
-    await demonstrate_production_pattern()
-
-    print("\n" + "=" * 70)
-    print("Key Benefits of Quota Management")
-    print("=" * 70)
-    print("✓ Cost control: Prevent unexpected API bills")
-    print("✓ Rate limiting: Respect provider API limits")
-    print("✓ Adaptive backoff: Automatic retry with exponential backoff")
-    print("✓ Production-ready: Thread-safe, configurable, observable")
-    print("✓ Integration: Works seamlessly with existing usage tracking")
-    print("=" * 70)
+    print("Use UsageTracker(gate=...) on a FireflyAgent for actual model billing records.")
+    print("Configure automatic rate checks with FIREFLY_AGENTIC_QUOTA_ENABLED and FIREFLY_AGENTIC_QUOTA_RATE_LIMITS.")
 
 
 if __name__ == "__main__":

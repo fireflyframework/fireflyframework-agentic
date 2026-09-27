@@ -35,7 +35,7 @@ from fireflyframework_agentic.agents import FireflyAgent
 
 load_dotenv()
 
-MODEL = os.environ["MODEL"]
+MODEL = os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "openai-responses:gpt-6-luna"))
 
 
 async def main() -> None:

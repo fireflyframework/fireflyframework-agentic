@@ -34,7 +34,7 @@ from fireflyframework_agentic.agents.templates import create_summarizer_agent
 
 load_dotenv()
 
-MODEL = os.environ["MODEL"]
+MODEL = os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "openai-responses:gpt-6-luna"))
 
 ARTICLE = """\
 Artificial intelligence has undergone a dramatic transformation over the past

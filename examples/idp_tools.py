@@ -31,7 +31,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from fireflyframework_agentic.prompts.template import PromptTemplate, PromptVariable
+from fireflyframework_agentic.prompts.template import PromptTemplate
 from fireflyframework_agentic.tools import ToolKit, firefly_tool
 from fireflyframework_agentic.validation.rules import (
     CustomRule,
@@ -338,6 +338,7 @@ idp_toolkit = ToolKit(
 
 classification_prompt = PromptTemplate(
     "idp_classification",
+    "",
     (
         "Classify the following corporate document text into the appropriate "
         "category. Pay close attention to the document title and opening lines "
@@ -352,14 +353,12 @@ classification_prompt = PromptTemplate(
         "(via create_classifier_agent + extra_instructions), so this template "
         "only needs to supply the document content."
     ),
-    variables=[
-        PromptVariable(name="max_chars", description="How many characters of document text are included"),
-        PromptVariable(name="document_text", description="The document text to classify"),
-    ],
+    required_variables=["max_chars", "document_text"],
 )
 
 split_prompt = PromptTemplate(
     "idp_split",
+    "",
     (
         "You are an expert at analysing corporate/legal PDF documents.\n\n"
         "The following text was extracted from a PDF and contains [PAGE N] markers "
@@ -381,15 +380,12 @@ split_prompt = PromptTemplate(
     ),
     version="1.0.0",
     description="Identifies document boundaries within a multi-document PDF.",
-    variables=[
-        PromptVariable(name="page_markers", description="List of [PAGE N] positions found"),
-        PromptVariable(name="max_chars", description="Character count of text provided"),
-        PromptVariable(name="document_text", description="The document text to analyse"),
-    ],
+    required_variables=["page_markers", "max_chars", "document_text"],
 )
 
 explainability_prompt = PromptTemplate(
     "idp_explainability",
+    "",
     (
         "You are an expert technical writer producing an explainability report for an "
         "AI-powered Intelligent Document Processing pipeline.\n\n"
@@ -415,15 +411,12 @@ explainability_prompt = PromptTemplate(
     ),
     version="1.0.0",
     description="LLM-powered narrative explainability report for the IDP pipeline.",
-    variables=[
-        PromptVariable(name="trace_json", description="JSON-serialized execution trace records"),
-        PromptVariable(name="audit_json", description="JSON-serialized audit trail"),
-        PromptVariable(name="assembled_json", description="JSON-serialized assembled pipeline output"),
-    ],
+    required_variables=["trace_json", "audit_json", "assembled_json"],
 )
 
 extraction_prompt = PromptTemplate(
     "idp_extraction",
+    "",
     (
         "You are an expert data extractor for corporate legal documents.\n\n"
         "Extract structured data from the following {{ doc_type }} document.\n"
@@ -467,10 +460,7 @@ extraction_prompt = PromptTemplate(
     ),
     version="2.0.0",
     description="Extracts structured data from a corporate document (page-aware, role-aware).",
-    variables=[
-        PromptVariable(name="doc_type", description="The classified document type"),
-        PromptVariable(name="document_text", description="The full document text to extract from"),
-    ],
+    required_variables=["doc_type", "document_text"],
 )
 
 # ---------------------------------------------------------------------------

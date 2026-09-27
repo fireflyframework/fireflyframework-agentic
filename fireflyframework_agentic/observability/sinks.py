@@ -65,8 +65,13 @@ class OTelMetricsSink:
         if record.latency_ms > 0:
             default_metrics.record_latency(record.latency_ms, operation="agent.run", agent=record.agent)
 
-    def flush(self) -> None: ...
-    def close(self) -> None: ...
+    def flush(self) -> None:
+        """Records are forwarded immediately; exporter flushing belongs to its owner."""
+        return None
+
+    def close(self) -> None:
+        """The shared metrics provider remains owned by application instrumentation."""
+        return None
 
 
 class EventBusSink:
@@ -83,8 +88,13 @@ class EventBusSink:
             output_tokens=record.output_tokens,
         )
 
-    def flush(self) -> None: ...
-    def close(self) -> None: ...
+    def flush(self) -> None:
+        """Events are published synchronously, so this sink has no pending records."""
+        return None
+
+    def close(self) -> None:
+        """The shared event bus remains available to other sinks."""
+        return None
 
 
 class LoggingSink:
@@ -96,8 +106,13 @@ class LoggingSink:
     def emit(self, record: UsageRecord) -> None:
         logger.log(self._level, "cost_record %s", record.model_dump_json())
 
-    def flush(self) -> None: ...
-    def close(self) -> None: ...
+    def flush(self) -> None:
+        """Logging handlers own their buffers and are managed by the application."""
+        return None
+
+    def close(self) -> None:
+        """Leave shared logging handlers open for other application loggers."""
+        return None
 
 
 class JSONLFileSink:
@@ -131,5 +146,10 @@ class JSONLFileSink:
         rotated = self._path.with_suffix(self._path.suffix + f".{stamp}")
         self._path.rename(rotated)
 
-    def flush(self) -> None: ...
-    def close(self) -> None: ...
+    def flush(self) -> None:
+        """Each emit closes its file before returning, leaving no buffered data."""
+        return None
+
+    def close(self) -> None:
+        """Each emit owns its file handle, so no persistent handle needs closing."""
+        return None

@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 from pydantic_ai import Agent as PydanticAgent
 
 from fireflyframework_agentic.exceptions import DelegationError
+from fireflyframework_agentic.model_utils import normalize_model
 from fireflyframework_agentic.observability.cost_resolvers import (
     DEFAULT_RESOLVERS,
     CostContext,
@@ -281,7 +282,9 @@ class ContentBasedStrategy:
             if self._router is None:
                 async with self._router_lock:
                     if self._router is None:
-                        self._router = PydanticAgent(self._model, instructions="You pick the best agent.")
+                        self._router = PydanticAgent(
+                            normalize_model(self._model), instructions="You pick the best agent.", end_strategy="early"
+                        )
             result = await self._router.run(routing_prompt)
         except Exception:
             logger.warning("Content-based routing LLM call failed", exc_info=True)

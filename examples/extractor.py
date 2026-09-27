@@ -35,7 +35,7 @@ from fireflyframework_agentic.agents.templates import create_extractor_agent
 
 load_dotenv()
 
-MODEL = os.environ["MODEL"]
+MODEL = os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "openai-responses:gpt-6-luna"))
 
 
 class ContactInfo(BaseModel):

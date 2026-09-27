@@ -38,6 +38,7 @@ from fireflyframework_agentic.types import Metadata
 if TYPE_CHECKING:
     from fireflyframework_agentic.agents.middleware import AgentMiddleware
     from fireflyframework_agentic.memory.manager import MemoryManager
+    from fireflyframework_agentic.models.options import ModelOptions
 
 
 def firefly_agent(
@@ -53,6 +54,7 @@ def firefly_agent(
     metadata: Metadata | None = None,
     retries: int | None = None,
     model_settings: dict[str, Any] | None = None,
+    model_options: ModelOptions | None = None,
     memory: MemoryManager | None = None,
     middleware: list[AgentMiddleware] | None = None,
     default_middleware: bool = True,
@@ -77,6 +79,7 @@ def firefly_agent(
         metadata: Arbitrary key-value metadata.
         retries: Override the default retry count.
         model_settings: Pydantic AI model settings.
+        model_options: Portable Firefly model options.
         memory: Optional :class:`MemoryManager` for conversation history.
         middleware: List of :class:`AgentMiddleware` instances.
         default_middleware: Auto-wire ``LoggingMiddleware``.
@@ -108,6 +111,7 @@ def firefly_agent(
             metadata=metadata,
             retries=retries,
             model_settings=model_settings,
+            model_options=model_options,
             memory=memory,
             middleware=middleware,
             default_middleware=default_middleware,

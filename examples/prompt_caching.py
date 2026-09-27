@@ -13,37 +13,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Example demonstrating provider prompt caching for cost optimization.
+"""Inspect provider cache usage and reproduce an illustrative cost calculation.
 
-Prompt caching allows providers to cache portions of prompts (system prompts,
-long contexts, few-shot examples) and reuse them across requests.
-
-Benefits:
-    - 90-95% cost reduction on cached tokens
-    - Reduced latency (no reprocessing of cached content)
-    - Better throughput
-
-Supported Providers:
-    - Anthropic Claude (prompt caching API)
-    - OpenAI (automatic caching in supported models)
-    - Gemini (context caching API)
-
-Example Savings:
-    - System prompt: 10,000 tokens
-    - Without caching: 100 requests × $0.03 = $3.00
-    - With caching: $0.03 + 99 × $0.003 = $0.327
-    - Savings: $2.67 (89% cost reduction)
+The default run is offline. Pass --live to make six billable requests using
+FIREFLY_AGENTIC_DEFAULT_MODEL (MODEL is a legacy fallback). Cache eligibility,
+minimum prompt length, retention, and prices vary by model. Omitting middleware
+does not disable a provider's automatic cache, so this is not a controlled
+uncached-versus-cached benchmark.
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import os
 
-from fireflyframework_agentic.agents.base import FireflyAgent
+from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.agents.prompt_cache import CacheStatistics, PromptCacheMiddleware
+from fireflyframework_agentic.models import ModelOptions
 
-# Sample long system prompt that would benefit from caching
 LEGAL_ASSISTANT_PROMPT = (
     """You are an expert legal assistant specializing in contract analysis.
 
@@ -82,244 +70,59 @@ references to relevant legal principles and potential implications.
 )  # Repeat to create a ~5000 token system prompt
 
 
-async def demo_without_caching():
-    """Demonstrate cost without prompt caching."""
-    print("\n=== Demonstration WITHOUT Prompt Caching ===\n")
-
-    agent = FireflyAgent(
-        "legal-no-cache",
-        model=os.getenv("MODEL", "anthropic:claude-3-5-sonnet-20241022"),
-        instructions=LEGAL_ASSISTANT_PROMPT,
-        auto_register=False,
-        # No caching middleware
-    )
-
-    questions = [
-        "What are standard termination clauses?",
-        "Explain indemnification provisions.",
-        "What is force majeure?",
-    ]
-
-    print(f"System prompt length: ~{len(LEGAL_ASSISTANT_PROMPT.split())} words")
-    print(f"Processing {len(questions)} questions without caching...\n")
-
-    from fireflyframework_agentic.observability.usage import default_usage_tracker
-
-    initial_cost = default_usage_tracker.get_summary().total_cost_usd
-
-    for i, question in enumerate(questions, 1):
-        print(f"Question {i}: {question}")
-        result = await agent.run(question)
-        print(f"Answer: {str(result.output)[:100]}...")
-        print()
-
-    final_cost = default_usage_tracker.get_summary().total_cost_usd
-    total_cost = final_cost - initial_cost
-
-    print(f"Total cost WITHOUT caching: ${total_cost:.6f}")
-    print("(System prompt is reprocessed for each request)")
-
-
-async def demo_with_caching():
-    """Demonstrate cost savings with prompt caching."""
-    print("\n\n=== Demonstration WITH Prompt Caching ===\n")
-
-    cache_stats = CacheStatistics()
-
-    agent = FireflyAgent(
-        "legal-cached",
-        model=os.getenv("MODEL", "anthropic:claude-3-5-sonnet-20241022"),
-        instructions=LEGAL_ASSISTANT_PROMPT,
-        middleware=[
-            PromptCacheMiddleware(
-                cache_system_prompt=True,
-                cache_min_tokens=1024,
-            ),
-        ],
-        auto_register=False,
-    )
-
-    questions = [
-        "What are standard termination clauses?",
-        "Explain indemnification provisions.",
-        "What is force majeure?",
-    ]
-
-    print(f"System prompt length: ~{len(LEGAL_ASSISTANT_PROMPT.split())} words")
-    print(f"Processing {len(questions)} questions with caching...\n")
-
-    from fireflyframework_agentic.observability.usage import default_usage_tracker
-
-    initial_cost = default_usage_tracker.get_summary().total_cost_usd
-
-    for i, question in enumerate(questions, 1):
-        print(f"Question {i}: {question}")
-        result = await agent.run(question)
-
-        # Record cache usage
-        if hasattr(result, "usage") and callable(result.usage):
-            usage = result.usage()
-            cache_creation = getattr(usage, "cache_creation_tokens", 0) or 0
-            cache_read = getattr(usage, "cache_read_tokens", 0) or 0
-            cache_stats.record_usage(cache_creation, cache_read)
-
-            if cache_creation > 0:
-                print(f"  → Cache MISS (created {cache_creation} token cache)")
-            elif cache_read > 0:
-                print(f"  → Cache HIT (read {cache_read} cached tokens)")
-
-        print(f"Answer: {str(result.output)[:100]}...")
-        print()
-
-    final_cost = default_usage_tracker.get_summary().total_cost_usd
-    total_cost = final_cost - initial_cost
-
-    print(f"Total cost WITH caching: ${total_cost:.6f}")
-    print(f"Cache hit rate: {cache_stats.cache_hit_rate():.1%}")
-    print(f"Estimated savings: ${cache_stats.estimated_savings_usd():.6f}")
-
-
-async def demo_cache_statistics():
-    """Demonstrate cache statistics tracking."""
-    print("\n\n=== Cache Statistics Demonstration ===\n")
-
+async def demo_live_caching(*, with_middleware: bool) -> None:
     stats = CacheStatistics()
-
-    # Simulate cache usage pattern
-    print("Simulating 10 requests with caching:\n")
-
-    # First request: cache miss (creation)
-    print("Request 1: Cache MISS - Creating cache (10,000 tokens)")
-    stats.record_usage(cache_creation_tokens=10000, cache_read_tokens=0)
-
-    # Next 9 requests: cache hits
-    for i in range(2, 11):
-        print(f"Request {i}: Cache HIT - Reading from cache (10,000 tokens)")
-        stats.record_usage(cache_creation_tokens=0, cache_read_tokens=10000)
-
-    print(f"\n{'-' * 60}")
-    print("Cache Statistics Summary:")
-    print(f"{'-' * 60}")
-
-    summary = stats.summary()
-    print(f"Total requests: {summary['total_requests']}")
-    print(f"Cache hits: {summary['cache_hits']}")
-    print(f"Cache hit rate: {summary['cache_hit_rate']:.1%}")
-    print(f"Total cache creation tokens: {summary['total_cache_creation_tokens']:,}")
-    print(f"Total cache read tokens: {summary['total_cache_read_tokens']:,}")
-    print(f"Estimated savings: ${summary['estimated_savings_usd']:.2f}")
-
-    print(f"\n{'-' * 60}")
-    print("Cost Breakdown:")
-    print(f"{'-' * 60}")
-
-    # Calculate detailed cost breakdown
-    input_cost_per_1k = 3.00 / 1000  # $3 per 1M input tokens for Sonnet
-    cache_read_cost_per_1k = 0.30 / 1000  # $0.30 per 1M cached tokens
-
-    without_cache = 100000 * input_cost_per_1k  # 10 requests × 10k tokens
-    cache_creation = 10000 * input_cost_per_1k
-    cache_reads = 90000 * cache_read_cost_per_1k
-    with_cache = cache_creation + cache_reads
-
-    print("Without caching:")
-    print(f"  100,000 tokens @ ${input_cost_per_1k * 1000:.2f}/1M = ${without_cache:.3f}")
-    print("\nWith caching:")
-    print(f"  Cache creation: 10,000 tokens @ ${input_cost_per_1k * 1000:.2f}/1M = ${cache_creation:.3f}")
-    print(f"  Cache reads: 90,000 tokens @ ${cache_read_cost_per_1k * 1000:.2f}/1M = ${cache_reads:.3f}")
-    print(f"  Total: ${with_cache:.3f}")
-    print(
-        f"\nSavings: ${without_cache - with_cache:.3f} ({((without_cache - with_cache) / without_cache * 100):.1f}% reduction)"
+    agent = FireflyAgent(
+        "cache-observer",
+        model=os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "anthropic:claude-sonnet-5")),
+        model_options=ModelOptions(max_tokens=2048),
+        instructions=LEGAL_ASSISTANT_PROMPT,
+        middleware=[PromptCacheMiddleware()] if with_middleware else [],
+        auto_register=False,
     )
+    print(f"PromptCacheMiddleware enabled: {with_middleware}")
+    for question in (
+        "Define termination clauses briefly.",
+        "Define indemnification briefly.",
+        "What is force majeure?",
+    ):
+        result = await agent.run(question)
+        usage = result.usage
+        stats.record_usage(usage.cache_write_tokens, usage.cache_read_tokens)
+        print(result.output)
+        print(f"Cache tokens reported: written={usage.cache_write_tokens}, read={usage.cache_read_tokens}")
+    print(f"Requests reporting cache reads: {stats.cache_hit_rate():.1%}")
 
 
-async def demo_best_practices():
-    """Demonstrate best practices for prompt caching."""
-    print("\n\n=== Prompt Caching Best Practices ===\n")
-
-    print("1. WHEN TO USE PROMPT CACHING:")
-    print("   ✓ System prompts > 1024 tokens")
-    print("   ✓ Repeated questions with same context")
-    print("   ✓ Document Q&A with long documents")
-    print("   ✓ Few-shot examples (same examples, different inputs)")
-    print()
-
-    print("2. WHEN NOT TO USE PROMPT CACHING:")
-    print("   ✗ Short system prompts (< 1024 tokens)")
-    print("   ✗ One-off requests")
-    print("   ✗ Frequently changing contexts")
-    print("   ✗ Real-time pricing (check provider docs)")
-    print()
-
-    print("3. CONFIGURATION RECOMMENDATIONS:")
-    print("   • cache_min_tokens: 1024 (Anthropic minimum)")
-    print("   • cache_ttl_seconds: 300 (5 minutes, auto-extended)")
-    print("   • Enable for document Q&A, customer support, legal analysis")
-    print()
-
-    print("4. COST OPTIMIZATION STRATEGIES:")
-    print("   • Batch similar queries within cache TTL window")
-    print("   • Structure prompts to maximize cacheable content")
-    print("   • Monitor cache hit rates and adjust strategy")
-    print("   • Use CacheStatistics to track savings")
-    print()
-
-    print("5. EXAMPLE USE CASES:")
-    print("   • Legal document analysis (long system prompts)")
-    print("   • Customer support chatbots (consistent personality/rules)")
-    print("   • Document Q&A (cache document context)")
-    print("   • Code review assistants (cache coding standards)")
-    print()
+def illustrative_costs() -> dict[str, float]:
+    """Compute a hypothetical tariff, including a cache-write premium."""
+    input_price = 3.0 / 1_000_000
+    read_price = 0.3 / 1_000_000
+    write_price = 1.25 * input_price
+    without_cache = 100_000 * input_price
+    with_cache = 10_000 * write_price + 90_000 * read_price
+    return {"without_cache": without_cache, "with_cache": with_cache, "savings": without_cache - with_cache}
 
 
-async def main():
-    """Run all demonstrations."""
-    print("=" * 70)
-    print("Provider Prompt Caching Demonstrations")
-    print("=" * 70)
+async def demo_cache_statistics() -> None:
+    stats = CacheStatistics()
+    stats.record_usage(cache_creation_tokens=10_000)
+    for _ in range(9):
+        stats.record_usage(cache_read_tokens=10_000)
+    print("Offline fixture: one cache write followed by nine cache reads.")
+    print(f"Cache hit rate: {stats.cache_hit_rate():.1%}")
+    print("Illustrative tariff only: input $3/M, cache write $3.75/M, cache read $0.30/M.")
+    print(illustrative_costs())
 
-    if not os.getenv("ANTHROPIC_API_KEY") and not os.getenv("OPENAI_API_KEY"):
-        print("\n⚠️  Warning: No API keys set.")
-        print("For full demonstrations with real cost savings:")
-        print()
-        print("Anthropic (recommended for prompt caching demo):")
-        print("  export ANTHROPIC_API_KEY=your-key-here")
-        print("  export MODEL=anthropic:claude-3-5-sonnet-20241022")
-        print()
-        print("OpenAI:")
-        print("  export OPENAI_API_KEY=your-key-here")
-        print("  export MODEL=openai:gpt-4o")
-        print()
 
-        # Run statistics demo (doesn't need API)
-        await demo_cache_statistics()
-        await demo_best_practices()
-        return
-
-    # Run full demonstrations
-    await demo_without_caching()
-    await demo_with_caching()
+async def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--live", action="store_true", help="Make six model requests using configured credentials.")
+    args = parser.parse_args()
     await demo_cache_statistics()
-    await demo_best_practices()
-
-    # Summary
-    print("\n" + "=" * 70)
-    print("Summary")
-    print("=" * 70)
-    print("\n✓ Prompt caching provides 90-95% cost reduction on cached tokens")
-    print("✓ Ideal for long system prompts and repeated contexts")
-    print("✓ Reduces latency by avoiding reprocessing")
-    print("✓ Works best with >1024 token cacheable content")
-    print("\nUsage:")
-    print("  from fireflyframework_agentic.agents.prompt_cache import PromptCacheMiddleware")
-    print()
-    print("  agent = FireflyAgent(")
-    print("      'assistant',")
-    print("      model='anthropic:claude-3-5-sonnet-20241022',")
-    print("      instructions=long_system_prompt,  # Will be cached")
-    print("      middleware=[PromptCacheMiddleware()],")
-    print("  )")
-    print()
+    if args.live:
+        await demo_live_caching(with_middleware=False)
+        await demo_live_caching(with_middleware=True)
 
 
 if __name__ == "__main__":

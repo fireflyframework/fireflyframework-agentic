@@ -92,7 +92,7 @@ class TestDetectHitl:
     def test_a_toolset_without_approval_tools_is_not_found(self) -> None:
         plain = FunctionToolset()
 
-        @plain.tool
+        @plain.tool_plain
         def echo(x: str) -> str:
             return x
 

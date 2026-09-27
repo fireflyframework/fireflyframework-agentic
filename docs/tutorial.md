@@ -118,8 +118,9 @@ uv init
 uv add fireflyframework-agentic
 ```
 
-This installs the core framework with its minimal dependencies: `pydantic-ai`,
-`pydantic`, `pydantic-settings`, `jinja2`, and `opentelemetry-api/sdk`.
+This installs the framework with Pydantic AI `>=2.51.0,<3`, its explicitly
+declared agent provider integrations, Pydantic, Jinja2, HTTPX, pricing metadata,
+and OpenTelemetry. Storage and document-processing libraries remain optional extras.
 
 ### Installing Extras
 
@@ -155,7 +156,7 @@ from fireflyframework_agentic import FireflyAgenticConfig, get_config
 
 # get_config() returns a thread-safe singleton
 config = get_config()
-print(config.default_model) # "openai:gpt-4o"
+print(config.default_model) # Built-in fallback: "openai:gpt-4o"; overridden by your environment.
 print(config.default_temperature) # None (no temperature forced; provider default)
 print(config.max_retries) # 3
 ```
@@ -165,7 +166,7 @@ Override any setting via environment variables or a `.env` file:
 ```bash
 # .env
 
-# --- Provider API keys (read by Pydantic AI automatically) ---
+# --- Provider API keys (read from the environment) ---
 OPENAI_API_KEY=sk-...
 # ANTHROPIC_API_KEY=sk-ant-...
 # GEMINI_API_KEY=...
@@ -173,15 +174,14 @@ OPENAI_API_KEY=sk-...
 # DEEPSEEK_API_KEY=...
 
 # --- Framework settings ---
-FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o
-FIREFLY_AGENTIC_DEFAULT_TEMPERATURE=0.3
+FIREFLY_AGENTIC_DEFAULT_MODEL=openai-responses:gpt-6-luna
 FIREFLY_AGENTIC_LOG_LEVEL=DEBUG
 FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true
 ```
 
 Here are the most commonly used configuration fields:
 
-- `default_model` — LLM model string (e.g. `"openai:gpt-4o"`, `"anthropic:claude-3-5-sonnet"`).
+- `default_model` — Provider and model selector (e.g. `"openai-responses:gpt-6-luna"`, `"anthropic:claude-sonnet-5"`). The built-in fallback remains `"openai:gpt-4o"` for compatibility; this tutorial sets it explicitly.
 - `default_temperature` — Default sampling temperature. `None` (default) forces no temperature, so each provider uses its own default (some models, e.g. OpenAI `o1`/`o3`, reject an explicit temperature). When set, it's merged into an agent's settings only if the caller omits one.
 - `max_retries` — Default retry count for agent runs.
 - `observability_enabled` — Toggle OpenTelemetry instrumentation.
@@ -211,136 +211,128 @@ provider. fireflyframework-agentic delegates model communication entirely to
 The simplest method — set the appropriate API key as an environment variable and use the
 `"provider:model_name"` string format:
 
-| Provider | Env Variable | Model String Example |
+| Provider | Credentials | Model selector prefix |
 |---|---|---|
-| OpenAI | `OPENAI_API_KEY` | `"openai:gpt-4o"` |
-| Anthropic | `ANTHROPIC_API_KEY` | `"anthropic:claude-sonnet-4-20250514"` |
-| Google Gemini | `GEMINI_API_KEY` | `"google:gemini-2.0-flash"` |
-| Groq | `GROQ_API_KEY` | `"groq:llama-3.3-70b"` |
-| DeepSeek | `DEEPSEEK_API_KEY` | `"deepseek:deepseek-chat"` |
-| Mistral | `MISTRAL_API_KEY` | `"mistral:mistral-large-latest"` |
-| AWS Bedrock | `AWS_*` credentials | `"bedrock:anthropic.claude-3-5-sonnet-latest"` |
-| Ollama (local) | *(none required)* | `"ollama:llama3.2"` |
+| OpenAI | `OPENAI_API_KEY` | `openai-responses:` or `openai-chat:` |
+| Anthropic | `ANTHROPIC_API_KEY` | `anthropic:` |
+| Google Gemini | `GEMINI_API_KEY` | `google:` |
+| Groq | `GROQ_API_KEY` | `groq:` |
+| DeepSeek | `DEEPSEEK_API_KEY` | `deepseek:` |
+| Mistral | `MISTRAL_API_KEY` | `mistral:` |
+| AWS Bedrock | Host AWS credential chain | `bedrock:` |
+| Ollama (local) | No key for a local instance | `ollama:` |
 
-Pydantic AI reads these variables automatically — you do not need to pass them to the
-framework. Just set the key and use the model string:
+Append the exact model ID enabled for your account or local server. Prefix support
+does not guarantee that a particular model is available. Azure deployment names and
+custom endpoints are configured through `ModelSpec` below. The framework and provider
+clients read credentials from the environment; ordinary agent code only needs the
+configured model. The following setup selects Responses with GPT-6 Luna:
 
 ```bash
 # .env
 OPENAI_API_KEY=sk-...
-FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o
+FIREFLY_AGENTIC_DEFAULT_MODEL=openai-responses:gpt-6-luna
 ```
 
 ```python
 from fireflyframework_agentic.agents import FireflyAgent
 
 # Uses OPENAI_API_KEY from the environment
-agent = FireflyAgent(name="my-agent", model="openai:gpt-4o")
+agent = FireflyAgent(name="my-agent")
 ```
 
-To switch providers, change the model string and API key — no code changes required:
+To switch providers, change the configured model and credential, then validate your
+`ModelOptions` and tool/output requirements against the new model:
 
 ```bash
 # .env — switch to Anthropic
 ANTHROPIC_API_KEY=sk-ant-...
-FIREFLY_AGENTIC_DEFAULT_MODEL=anthropic:claude-sonnet-4-20250514
+FIREFLY_AGENTIC_DEFAULT_MODEL=anthropic:claude-sonnet-5
 ```
 
-#### Approach 2: Programmatic Model Objects
+#### Approach 2: Firefly model specifications
 
-For scenarios that require explicit credential management — Azure OpenAI, AWS Bedrock,
-custom endpoints, or when you don't want to use environment variables — construct a
-Pydantic AI `Model` object and pass it directly to `FireflyAgent`:
+Use `ModelSpec` and `ModelFactory` for application-managed credentials and custom
+endpoints. Ordinary application code does not need provider SDK imports:
 
 ```python
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.openai import OpenAIProvider
+import os
+
 from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.models import Credential, ModelFactory, ModelOptions, ModelSpec
 
-# Explicit API key (e.g. loaded from a vault)
-model = OpenAIChatModel(
-    "gpt-4o",
-    provider=OpenAIProvider(api_key="sk-...")
+spec = ModelSpec(
+    provider="openai-responses",
+    model="gpt-6-luna",
+    credential=Credential.api_key(os.environ["OPENAI_API_KEY"]),
+    options=ModelOptions(max_tokens=4096, reasoning="low", store_responses=False),
 )
-agent = FireflyAgent(name="my-agent", model=model)
+factory = ModelFactory()
+agent = FireflyAgent(
+    name="configured-agent",
+    model=await factory.build(spec),
+    model_options=spec.options,
+)
 ```
 
-**Azure OpenAI:**
+**Azure OpenAI** uses your deployment name and endpoint. Set
+`OPENAI_API_VERSION` for a versioned endpoint; a deployment using `/openai/v1`
+does not require a dated API version:
 
 ```python
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.azure import AzureProvider
-
-model = OpenAIChatModel(
-    "my-gpt4o-deployment",
-    provider=AzureProvider(
-        azure_endpoint="https://my-resource.openai.azure.com",
-        api_version="2025-03-01-preview",
-        api_key="...", # or use DefaultAzureCredential
-    ),
+azure_spec = ModelSpec(
+    provider="azure-responses",
+    model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
+    base_url=os.environ["AZURE_OPENAI_ENDPOINT"],
+    api_version=os.environ.get("OPENAI_API_VERSION"),
+    credential=Credential.api_key(os.environ["AZURE_OPENAI_API_KEY"]),
+    options=ModelOptions(max_tokens=4096),
 )
-agent = FireflyAgent(name="azure-agent", model=model)
+azure_agent = FireflyAgent(
+    name="azure-agent",
+    model=await factory.build(azure_spec),
+    model_options=azure_spec.options,
+)
 ```
 
-**Anthropic with explicit key:**
+**AWS Bedrock** uses the host's AWS credential chain when no credential is passed:
 
 ```python
-from pydantic_ai.models.anthropic import AnthropicModel
-from pydantic_ai.providers.anthropic import AnthropicProvider
-
-model = AnthropicModel(
-    "claude-sonnet-4-20250514",
-    provider=AnthropicProvider(api_key="sk-ant-...")
+bedrock_spec = ModelSpec(
+    provider="bedrock",
+    model=os.environ["BEDROCK_MODEL_ID"],
+    region=os.environ["AWS_REGION"],
 )
-agent = FireflyAgent(name="claude-agent", model=model)
+bedrock_agent = FireflyAgent(name="bedrock-agent", model=await factory.build(bedrock_spec))
 ```
 
-**AWS Bedrock:**
+**A local OpenAI-compatible endpoint**, such as Ollama's Chat API:
 
 ```python
-from pydantic_ai.models.bedrock import BedrockConverseModel
-
-model = BedrockConverseModel(
-    "anthropic.claude-3-5-sonnet-20241022-v2:0",
-    region_name="us-east-1",
-)
-agent = FireflyAgent(name="bedrock-agent", model=model)
+local_spec = ModelSpec(provider="ollama", model="llama3.2", base_url="http://localhost:11434/v1")
+local_agent = FireflyAgent(name="local-agent", model=await factory.build(local_spec))
 ```
 
-The framework's observability layer automatically detects Bedrock-hosted
-models and resolves them to the correct model family for cost tracking
-(Anthropic pricing), prompt caching (Anthropic cache configuration), and
-rate-limit retry (Bedrock `ThrottlingException` detection).
+Model availability and endpoint support remain provider-specific. Firefly keeps
+legacy `openai:` and `azure:` selectors on Chat Completions; use `openai-responses:`
+or `azure-responses:` explicitly for Responses. GPT-6 Astra needs Responses for
+tools; Sol and Luna need `ModelOptions(reasoning="none")` for Chat tools. Responses
+supports reasoning with tools. See [Models](models.md) for capabilities and credentials.
 
-**OpenAI-compatible endpoints** (e.g. Ollama, vLLM, LiteLLM):
+#### Model controls and per-run overrides
+
+Use Firefly's typed options on an agent or decorator and override individual fields
+for a run. Explicit `None` clears an inherited option; omitted fields keep it:
 
 ```python
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.openai import OpenAIProvider
-
-model = OpenAIChatModel(
-    "llama3.2",
-    provider=OpenAIProvider(
-        base_url="http://localhost:11434/v1",
-        api_key="ollama", # Ollama doesn't require a real key
-    ),
-)
-agent = FireflyAgent(name="local-agent", model=model)
+agent = FireflyAgent(name="portable", model_options=ModelOptions(max_tokens=4096))
+result = await agent.run("Explain bounded retries.", model_options=ModelOptions(max_tokens=1024))
 ```
 
-#### Which Approach Should I Use?
-
-- **Environment variables** for standard cloud providers (OpenAI, Anthropic, Google,
-  Groq, DeepSeek). This is the simplest path and works well in most deployments.
-- **Programmatic `Model` objects** for Azure OpenAI, AWS Bedrock, self-hosted models,
-  OpenAI-compatible servers, or when API keys are loaded from a secrets manager at
-  runtime.
-
-Both approaches work identically with every framework feature — tools, reasoning
-patterns, pipelines, cost tracking, prompt caching,
-and all other modules. The framework's `model_utils` module normalizes model
-identity from both strings and `Model` objects, so observability and resilience
-features work uniformly across all providers.
+Firefly validates options against the selected model on every run and raises
+`ModelOptionsError` for unsupported controls. Avoid a global temperature when
+switching to reasoning models. Native `model_settings=` and preconfigured Pydantic AI
+`Model` objects remain advanced escape hatches; see [Agents](agents.md#advanced-native-model-objects).
 
 #### IDP Tie-In
 
@@ -350,8 +342,7 @@ API key for whichever provider you choose:
 ```bash
 # .env
 OPENAI_API_KEY=sk-...
-FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o
-FIREFLY_AGENTIC_DEFAULT_TEMPERATURE=0.3
+FIREFLY_AGENTIC_DEFAULT_MODEL=openai-responses:gpt-6-luna
 FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true
 ```
 
@@ -420,7 +411,7 @@ from fireflyframework_agentic.agents import firefly_agent
 
 # The decorator creates a FireflyAgent, uses this function as the dynamic
 # instructions provider, and registers the agent in the global AgentRegistry.
-@firefly_agent(name="greeter", model="openai:gpt-4o")
+@firefly_agent(name="greeter")
 def greeter_instructions(ctx):
     # This function is called at the start of every run.
     # You can inspect `ctx` to customise the prompt per-request.
@@ -429,7 +420,7 @@ def greeter_instructions(ctx):
 
 What happens behind the scenes:
 
-1. A `FireflyAgent` named `"greeter"` is created with model `"openai:gpt-4o"`.
+1. A `FireflyAgent` named `"greeter"` is created with the configured default model.
 2. The decorated function becomes the agent's **dynamic instructions provider** — it is
    called at the start of every run and can use the context to customise the system prompt.
 3. The agent is automatically registered in the global `AgentRegistry`, so any module
@@ -448,7 +439,6 @@ from fireflyframework_agentic.agents.registry import agent_registry
 # The `output_type` tells Pydantic AI to validate the LLM's response as a dict.
 classifier = FireflyAgent(
     name="document_classifier",
-    model="openai:gpt-4o",
     instructions=(
         "You are a document classification expert. "
         "Given a document, determine its type (invoice, receipt, contract, form), "
@@ -569,7 +559,7 @@ added when `config.observability_enabled` is true. You can attach more from
 ```python
 from fireflyframework_agentic.agents import FireflyAgent, PromptGuardMiddleware
 
-agent = FireflyAgent(name="assistant", model="openai:gpt-4o")
+agent = FireflyAgent(name="assistant")
 agent.middleware.add(PromptGuardMiddleware())
 ```
 
@@ -590,7 +580,6 @@ from fireflyframework_agentic.agents import FireflyAgent
 # will be routed through digitisation, extraction, and validation.
 classifier_agent = FireflyAgent(
     name="document_classifier",
-    model="openai:gpt-4o",
     instructions=(
         "You are a document classification expert. Given a document (text or image), "
         "determine its type, language, and page count. "
@@ -665,7 +654,7 @@ graph TB
 
     subgraph "Registration & Bridging"
         TR["ToolRegistry\n(global catalog)"]
-        TK["ToolKit\n(group + as_pydantic_tools)"]
+        TK["ToolKit\n(group related tools)"]
     end
 
     subgraph "Agent Integration"
@@ -685,7 +674,7 @@ graph TB
     BT -.->|"compose"| FB
     BT -.->|"compose"| COND
     TR --> TK
-    TK -->|"as_pydantic_tools"| FA
+    TK -->|"tools=[kit]"| FA
     FA -->|"tools list"| PAI
 ```
 
@@ -714,9 +703,9 @@ use the fluent `ToolBuilder`:
 from fireflyframework_agentic.tools import ToolBuilder
 
 async def fetch_exchange_rate(currency: str) -> float:
-    """Simulated exchange rate lookup."""
+    """Read the fixed rates used by this invoice exercise, not live market quotes."""
     rates = {"USD": 1.0, "EUR": 0.85, "GBP": 0.73}
-    return rates.get(currency, 0.0)
+    return rates[currency.upper()]
 
 # The builder pattern lets you set each property explicitly.
 # Call .build() to produce the final BaseTool instance.
@@ -749,7 +738,8 @@ from fireflyframework_agentic.tools.guards import ValidationGuard
 @guarded(ValidationGuard(required_keys=["vendor_name"]))
 @firefly_tool(name="lookup_vendor", description="Look up vendor")
 async def lookup_vendor(vendor_name: str) -> str:
-    ...
+    vendors = {"Acme Corp": "V-001", "Globex": "V-002"}
+    return vendors.get(vendor_name, "Vendor not found")
 ```
 
 #### Rate Limit Guard
@@ -764,7 +754,13 @@ from fireflyframework_agentic.tools.guards import RateLimitGuard
 @guarded(RateLimitGuard(max_calls=10, period_seconds=60))
 @firefly_tool(name="web_search", description="Search the web")
 async def web_search(query: str) -> str:
-    ...
+    import os
+    import httpx
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(os.environ["SEARCH_ENDPOINT"], params={"q": query})
+        response.raise_for_status()
+        return response.text
 ```
 
 #### Sandbox Guard
@@ -782,7 +778,12 @@ from fireflyframework_agentic.tools.guards import SandboxGuard
 ))
 @firefly_tool(name="read_file", description="Read a file")
 async def read_file(path: str) -> str:
-    ...
+    import asyncio
+    from pathlib import Path
+
+    resolved = Path(path).resolve()
+    resolved.relative_to(Path("/tmp/uploads").resolve())
+    return await asyncio.to_thread(resolved.read_text, encoding="utf-8")
 ```
 
 #### Human-in-the-loop approval
@@ -793,12 +794,17 @@ caller resumes with an approval decision. See
 [Human-in-the-Loop Tool Approval](tools.md#human-in-the-loop-tool-approval) for the full flow.
 
 ```python
-from fireflyframework_agentic.agents import is_deferred
+from fireflyframework_agentic.agents import FireflyAgent, is_deferred
 from fireflyframework_agentic.tools import DeferredToolResults
 
-@firefly_tool(name="delete_record", description="Delete a database record", requires_approval=True)
+records = {"42": {"title": "Draft invoice"}}
+
+@firefly_tool(name="delete_record", description="Delete a record from the local example store", requires_approval=True)
 async def delete_record(record_id: str) -> str:
-    ...
+    removed = records.pop(record_id, None)
+    return "Deleted" if removed is not None else "Record not found"
+
+agent = FireflyAgent(name="approval-example", tools=[delete_record])
 
 result = await agent.run("Delete record 42.")
 if is_deferred(result):  # paused for sign-off
@@ -832,8 +838,16 @@ from fireflyframework_agentic.tools import firefly_tool, retryable
 @retryable(max_retries=3, backoff=1.0)
 @firefly_tool(name="call_erp", description="Fetch data from the ERP API")
 async def call_erp(query: str) -> str:
-    # On failure, retries up to 3 times with 1s → 2s → 4s backoff
-    ...
+    import os
+    import httpx
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(
+            os.environ["ERP_ENDPOINT"], params={"q": query},
+            headers={"Authorization": f"Bearer {os.environ['ERP_API_KEY']}"},
+        )
+        response.raise_for_status()
+        return response.text
 ```
 
 `@retryable` stacks with `@guarded` — guards run first, then retries wrap the handler:
@@ -843,7 +857,13 @@ async def call_erp(query: str) -> str:
 @guarded(RateLimitGuard(max_calls=10, period_seconds=60))
 @firefly_tool(name="web_search", description="Search the web")
 async def web_search(query: str) -> str:
-    ...
+    import os
+    import httpx
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(os.environ["SEARCH_ENDPOINT"], params={"q": query})
+        response.raise_for_status()
+        return response.text
 ```
 
 ### Tool Composition
@@ -932,77 +952,39 @@ kit.register_all(tool_registry)
 
 ### Attaching Tools to Agents
 
-The Firefly tool system (ToolRegistry, `@firefly_tool`, ToolKit) is a separate layer
-from the Pydantic AI tool system baked into each agent. Here is how they connect:
-
-**Approach 1: Pass Pydantic AI tool functions directly to `FireflyAgent`**
-
-The `tools` parameter on `FireflyAgent` accepts any objects that Pydantic AI
-recognises as tools — plain functions, `pydantic_ai.Tool` objects, etc.:
+Pass Firefly tools or a `ToolKit` directly to `FireflyAgent(tools=...)`. The framework
+adapts their schemas, guards, retries, and approval metadata to the runtime:
 
 ```python
 from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.tools import ToolKit, firefly_tool
+from fireflyframework_agentic.tools.builtins import CalculatorTool, DateTimeTool
 
-async def lookup_vendor(ctx, vendor_name: str) -> str:
-    return f"Details for {vendor_name}"
+@firefly_tool(name="lookup_vendor", description="Look up a vendor in the local directory")
+async def lookup_vendor(vendor_name: str) -> str:
+    vendors = {"Acme Corp": "Vendor V-001; payment terms NET30", "Globex": "Vendor V-002; payment terms NET60"}
+    return vendors.get(vendor_name, "Vendor not found in the directory")
 
-agent = FireflyAgent(
-    name="extractor",
-    model="openai:gpt-4o",
-    tools=[lookup_vendor], # Pydantic AI tool functions
-)
+kit = ToolKit("utilities", [lookup_vendor, CalculatorTool(), DateTimeTool()])
+agent = FireflyAgent(name="helper", tools=[kit])
 ```
 
-**Approach 2: Register tools after creation with decorator proxies**
-
-`FireflyAgent` exposes `.tool()` and `.tool_plain()` decorator proxies that delegate
-to the underlying Pydantic AI agent:
-
-```python
-agent = FireflyAgent(name="assistant", model="openai:gpt-4o")
-
-@agent.tool_plain
-async def calculate(expression: str) -> str:
-    """Evaluate a math expression."""
-    return str(eval(expression)) # simplified example
-
-@agent.tool
-async def get_user(ctx, user_id: str) -> str:
-    """Look up a user by ID (receives RunContext)."""
-    return f"User {user_id}"
-```
-
-**Approach 3: Bridge Firefly tools via `ToolKit.as_pydantic_tools()`**
-
-Firefly `BaseTool` instances (created with `@firefly_tool`, `ToolBuilder`, or built-ins)
-live in the `ToolRegistry`. To feed them into an agent, convert via `as_pydantic_tools()`:
-
-```python
-from fireflyframework_agentic.tools import ToolKit
-from fireflyframework_agentic.tools.builtins import DateTimeTool, JsonTool
-from fireflyframework_agentic.agents import FireflyAgent
-
-kit = ToolKit("utilities", [DateTimeTool(), JsonTool()])
-
-agent = FireflyAgent(
-    name="helper",
-    model="openai:gpt-4o",
-    tools=kit.as_pydantic_tools(), # Convert to Pydantic AI tools
-)
-```
-
-> **Key distinction:** `ToolRegistry` is a framework-level catalog for discovery and
-> metadata. An agent only calls tools that are in its own Pydantic AI tools list.
-> Use `ToolKit.as_pydantic_tools()` or `agent.tool()` to bridge between the two.
+`ToolRegistry` is a catalogue for discovery; registration alone does not grant an
+agent access. Bind only the tools that agent needs. For native SDK integrations,
+`kit.as_pydantic_tools()`, `kit.as_toolset()`, and the `.tool()` / `.tool_plain()`
+decorator proxies remain available.
 
 ### IDP Tie-In: OCR and Vendor Lookup Tools
 
 For our IDP pipeline, we need tools the extraction agent can call. We define them
-with `@firefly_tool`, group them into a `ToolKit`, and attach them to the agent
-via `as_pydantic_tools()`. This is the pattern you will see end-to-end in
+with `@firefly_tool`, group them into a `ToolKit`, and pass it through `tools=[extraction_kit]`. This is the pattern you will see end-to-end in
 Chapter 6 (reasoning patterns) and Chapter 18 (full IDP application).
 
 **Step 1 — Define the tools:**
+
+Configure `OCR_ENDPOINT` and `OCR_API_KEY` for an OCR service accepting
+`{"image_base64": "base64 encoded image"}` and returning `{"text": "recognized text"}`.
+The vendor directory below is local exercise data; missing vendors are reported explicitly.
 
 ```python
 from fireflyframework_agentic.tools import firefly_tool, guarded
@@ -1011,8 +993,21 @@ from fireflyframework_agentic.tools.guards import RateLimitGuard
 @guarded(RateLimitGuard(max_calls=100, period_seconds=60))
 @firefly_tool(name="ocr_extract", description="Extract text from a document image via OCR")
 async def ocr_extract(image_data: str) -> str:
-    """In production, call an OCR service like AWS Textract or Google Vision."""
-    return "Invoice #INV-2026-001\nVendor: Acme Corp\nAmount: $1,234.56\nDate: 2026-01-15"
+    """POST a base64 image to the host's OCR endpoint and return its text field."""
+    import os
+    import httpx
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            os.environ["OCR_ENDPOINT"],
+            headers={"Authorization": f"Bearer {os.environ['OCR_API_KEY']}"},
+            json={"image_base64": image_data},
+        )
+        response.raise_for_status()
+        text = response.json()["text"]
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("OCR endpoint returned no text")
+        return text
 
 @firefly_tool(name="vendor_lookup", description="Look up vendor details from the ERP system")
 async def vendor_lookup(vendor_name: str) -> str:
@@ -1038,9 +1033,8 @@ extraction_kit = ToolKit(
 
 extractor_agent = FireflyAgent(
     name="extractor",
-    model="openai:gpt-4o",
     instructions="You are an invoice data extraction specialist.",
-    tools=extraction_kit.as_pydantic_tools(), # Bridge Firefly tools → Pydantic AI
+    tools=[extraction_kit], # Firefly adapts the toolkit
 )
 ```
 
@@ -1219,7 +1213,7 @@ extraction_prompt = PromptTemplate(
 # Use the template's system text as the agent's instructions.
 prompt = extraction_prompt.render(document_text=ocr_output)
 agent = FireflyAgent(
-    name="extractor", model="openai:gpt-4o", instructions=prompt.system, output_type=dict
+    name="extractor", instructions=prompt.system, output_type=dict
 )
 result = await agent.run(prompt.user)
 print(result.output) # {"invoice_number": "INV-001", ...}
@@ -1411,54 +1405,27 @@ This means you must attach tools to the agent *before* passing it to a pattern.
 Here is the canonical flow, using the framework's tool system end-to-end:
 
 ```python
-# ── Step 1: Define tools with @firefly_tool (see Chapter 4) ──────────────
-# These are automatically registered in the global ToolRegistry.
-
-from fireflyframework_agentic.tools import firefly_tool, ToolKit
-
-@firefly_tool(name="vendor_lookup", description="Look up vendor in the ERP system")
-async def vendor_lookup(vendor_name: str) -> str:
-    return '{"id": "V-001", "tax_id": "US-12345"}'
-
-@firefly_tool(name="calculate", description="Evaluate a math expression safely")
-async def calculate(expression: str) -> str:
-    return str(eval(expression)) # simplified
-
-# ── Step 2: Group tools in a ToolKit and bridge to Pydantic AI ───────────
-# ToolKit.as_pydantic_tools() converts framework BaseTool instances into
-# pydantic_ai.Tool objects that the LLM can call during agent.run().
-
-extraction_tools = ToolKit(
-    "extraction-tools",
-    [vendor_lookup, calculate],
-    description="Tools available during invoice extraction",
-)
-
-# ── Step 3: Create an agent WITH the bridged tools ──────────────────────
-
 from fireflyframework_agentic.agents import FireflyAgent
-
-extractor = FireflyAgent(
-    name="extractor",
-    model="openai:gpt-4o",
-    tools=extraction_tools.as_pydantic_tools(), # Bridge: Firefly → Pydantic AI
-)
-
-# ── Step 4: Pass the tool-equipped agent to a reasoning pattern ─────────
-# The pattern calls extractor.run() internally, which triggers Pydantic AI's
-# tool dispatch — the LLM decides when to call vendor_lookup or calculate.
-
 from fireflyframework_agentic.reasoning import ReActPattern
+from fireflyframework_agentic.tools import ToolKit, firefly_tool
+from fireflyframework_agentic.tools.builtins import CalculatorTool
 
+@firefly_tool(name="vendor_lookup", description="Look up a vendor in the local directory")
+async def vendor_lookup(vendor_name: str) -> str:
+    vendors = {"Acme Corp": '{"id": "V-001", "tax_id": "US-12345"}'}
+    return vendors.get(vendor_name, '{"error": "Vendor not found"}')
+
+extraction_tools = ToolKit("extraction-tools", [vendor_lookup, CalculatorTool()])
+extractor = FireflyAgent(name="reasoning-extractor", tools=[extraction_tools])
 react = ReActPattern(max_steps=5)
-result = await react.execute(extractor, "What is the total with tax for vendor Acme Corp?")
+result = await react.execute(extractor, "Look up Acme Corp and calculate 100 plus 8 percent tax.")
 ```
 
 The runtime flow is: **Pattern → `agent.run(prompt)` → Pydantic AI → LLM decides to call tools → tool results → back to pattern loop**.
 
 You can also skip the framework tool system and pass plain Pydantic AI tool functions
 directly to `FireflyAgent(tools=[...])` — see Chapter 4 → *Attaching Tools to Agents*
-for all three approaches.
+for framework and advanced integration options.
 
 ### Architecture: Why Tools Are Explicitly Bound to Agents
 
@@ -1502,8 +1469,7 @@ extraction_kit = ToolKit("extraction", [
 
 extractor = FireflyAgent(
     name="extractor",
-    model="openai:gpt-4o",
-    tools=extraction_kit.as_pydantic_tools(),
+    tools=[extraction_kit],
 )
 ```
 
@@ -1727,39 +1693,36 @@ Every pattern records its work in a `ReasoningTrace`. The trace contains typed s
 
 ```python
 for step in result.trace.steps:
-    print(f"[{step.step_type}] {step.content[:80]}...")
+    print(step.kind, step.model_dump(exclude_none=True))
 ```
 
 ### Creating a Custom Pattern
 
-Extend `AbstractReasoningPattern` and override the template methods:
+Extend `AbstractReasoningPattern` and override its hooks. This implementation asks
+the agent for an answer, then asks it to check and correct that answer in a second
+call. The trace records the two operations; independent domain validation can be
+added through an `OutputReviewer`.
 
 ```python
 from fireflyframework_agentic.reasoning.base import AbstractReasoningPattern
+from fireflyframework_agentic.reasoning.trace import ObservationStep, ThoughtStep
 
 class VerifyAndCorrectPattern(AbstractReasoningPattern):
-    def __init__(self, *, max_steps: int = 5):
-        super().__init__("verify_and_correct", max_steps=max_steps)
+    def __init__(self):
+        super().__init__("verify_and_correct", max_steps=1)
 
     async def _reason(self, state):
-        # Generate a thought about the current state
-        ...
+        draft = await state["agent"].run(str(state["input"]))
+        state["draft"] = str(draft.output)
+        return ThoughtStep(content="Generated a draft for verification.")
 
     async def _act(self, state):
-        # Perform verification action
-        ...
-
-    async def _observe(self, state, action):
-        # Process verification result
-        ...
-
-    async def _should_continue(self, state):
-        # Continue until verification passes or max steps reached
-        ...
-
-    async def _extract_output(self, state):
-        # Return the verified/corrected output
-        ...
+        review = await state["agent"].run(
+            f"Check the draft against the task. Return a corrected final answer.\n"
+            f"Task: {state['input']}\nDraft: {state['draft']}"
+        )
+        state["output"] = review.output
+        return ObservationStep(content=str(review.output), source="verification")
 ```
 
 Register it to make it available framework-wide:
@@ -1775,7 +1738,7 @@ reasoning_registry.register("verify_and_correct", VerifyAndCorrectPattern)
 Now let's put reasoning patterns to work in our invoice pipeline. In Chapter 4
 we defined IDP tools (`ocr_extract`, `vendor_lookup`) and grouped them into
 `extraction_kit`. We also created `extractor_agent` with those tools attached
-via `extraction_kit.as_pydantic_tools()`. Here we pass that agent — tools and
+via `tools=[extraction_kit]`. Here we pass that agent — tools and
 all — to reasoning patterns.
 
 The extraction phase is the hardest part — we need to find invoice numbers,
@@ -1789,8 +1752,7 @@ from fireflyframework_agentic.reasoning import PlanAndExecutePattern, ReflexionP
 # ── Recall from Chapter 4 ───────────────────────────────────────────
 # extractor_agent = FireflyAgent(
 # name="extractor",
-# model="openai:gpt-4o",
-# tools=extraction_kit.as_pydantic_tools(), # ocr_extract, vendor_lookup, CalculatorTool
+# tools=[extraction_kit], # ocr_extract, vendor_lookup, CalculatorTool
 # )
 # The tools are already bound — reasoning patterns call agent.run() internally,
 # so the agent can invoke any of its tools during each reasoning step.
@@ -1801,7 +1763,7 @@ from fireflyframework_agentic.reasoning import PlanAndExecutePattern, ReflexionP
 # and executes each step with status tracking. If a step fails, it can replan.
 extraction_pattern = PlanAndExecutePattern(max_steps=15, allow_replan=True)
 extraction_result = await extraction_pattern.execute(
-    extractor_agent, # Tools already attached in Ch4 via ToolKit.as_pydantic_tools()
+    extractor_agent, # Tools already attached in Ch4 via tools=[extraction_kit]
     f"Extract invoice fields from:\n{ocr_text}",
 )
 
@@ -2147,7 +2109,7 @@ memory = MemoryManager(max_conversation_tokens=32_000)
 
 # Wire the memory into the agent. From now on, every run() call
 # can participate in a persistent conversation.
-agent = FireflyAgent(name="assistant", model="openai:gpt-4o", memory=memory)
+agent = FireflyAgent(name="assistant", memory=memory)
 
 # Start a new conversation — this returns a unique conversation ID.
 conv_id = memory.new_conversation()
@@ -2253,8 +2215,28 @@ store = SQLiteStore(path=".firefly_memory/memory.db")
 
 For larger deployments the `memory_backend` config field also accepts `"postgres"` and
 `"mongodb"` (configured via `memory_postgres_url` / `memory_mongodb_url`). Conversation
-memory can auto-summarise evicted turns with a summariser built by
-`create_llm_summarizer(agent)`.
+memory can auto-summarise evicted turns with `create_llm_summarizer()` using the
+configured model, or `create_llm_summarizer(model=...)` for an explicit summarizer.
+
+`MemoryManager.from_config()` initializes database-backed memory from configuration.
+It is synchronous; offload it during async startup and close the manager after all
+agents and forks using its backend have finished:
+
+```python
+import asyncio
+from fireflyframework_agentic.memory import MemoryManager
+
+memory = await asyncio.to_thread(MemoryManager.from_config)
+try:
+    await asyncio.to_thread(memory.set_fact, "document_type", "invoice")
+finally:
+    await memory.aclose()
+```
+
+For a synchronous host use `memory.close()`. PostgreSQL and MongoDB operations share
+a persistent owning loop, so their initialized clients are not moved across loops.
+Direct async store operations await that loop; synchronous facade calls intentionally
+block. See [memory lifecycle](memory.md#shutdown) for shared-backend ownership.
 
 #### Custom Backends
 
@@ -2262,13 +2244,34 @@ Implement the `MemoryStore` protocol:
 
 ```python
 from fireflyframework_agentic.memory import MemoryStore, MemoryEntry
+from fireflyframework_agentic.memory.store import InMemoryStore
 
-class RedisStore:
-    def save(self, namespace: str, entry: MemoryEntry) -> None: ...
-    def load(self, namespace: str) -> list[MemoryEntry]: ...
-    def load_by_key(self, namespace: str, key: str) -> MemoryEntry | None: ...
-    def delete(self, namespace: str, entry_id: str) -> None: ...
-    def clear(self, namespace: str) -> None: ...
+class PrefixedStore:
+    def __init__(self, prefix: str, backend: MemoryStore) -> None:
+        self._prefix = prefix
+        self._backend = backend
+
+    def _namespace(self, namespace: str) -> str:
+        return f"{len(self._prefix)}:{self._prefix}:{namespace}"
+
+    def save(self, namespace: str, entry: MemoryEntry) -> None:
+        self._backend.save(self._namespace(namespace), entry)
+
+    def load(self, namespace: str) -> list[MemoryEntry]:
+        return self._backend.load(self._namespace(namespace))
+
+    def load_by_key(self, namespace: str, key: str) -> MemoryEntry | None:
+        return self._backend.load_by_key(self._namespace(namespace), key)
+
+    def delete(self, namespace: str, entry_id: str) -> None:
+        self._backend.delete(self._namespace(namespace), entry_id)
+
+    def clear(self, namespace: str) -> None:
+        self._backend.clear(self._namespace(namespace))
+
+store = PrefixedStore("invoice-service", InMemoryStore())
+store.save("working", MemoryEntry(key="vendor", content="Acme Corp"))
+assert store.load_by_key("working", "vendor").content == "Acme Corp"
 ```
 
 ### MemoryManager
@@ -3048,7 +3051,8 @@ with tracer.agent_span("classifier", model="openai:gpt-4o") as span:
 
 # Or a generic span with arbitrary attributes:
 with tracer.custom_span("agent.run", phase="classify") as span:
-    ...
+    result = await classifier_agent.run("Classify this document")
+    span.set_attribute("output.type", type(result.output).__name__)
 ```
 
 #### The `@traced` Decorator
@@ -3350,10 +3354,10 @@ from fireflyframework_agentic.experiments import Experiment, Variant
 
 experiment = Experiment(
     name="extraction_model_comparison",
-    hypothesis="Claude 3.5 Sonnet beats GPT-4o on invoice extraction.",
+    hypothesis="Claude Haiku produces more accurate extractions than GPT-4o on invoice extraction.",
     variants=[
         Variant(name="gpt4o", model="openai:gpt-4o"),
-        Variant(name="claude", model="anthropic:claude-3-5-sonnet"),
+        Variant(name="claude", model="anthropic:claude-haiku-4-5"),
     ],
     dataset=[
         "Extract fields from: Invoice #INV-001, Acme Corp, $500, 2026-01-15",
@@ -3372,11 +3376,13 @@ variant. It returns a `list[VariantResult]`:
 ```python
 from fireflyframework_agentic.experiments import ExperimentRunner
 from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.models import ModelOptions
 
 def make_agent(variant):
     return FireflyAgent(
         name=f"extractor-{variant.name}",
         model=variant.model,
+        model_options=ModelOptions(temperature=variant.temperature),
         instructions="You are an invoice data extraction specialist.",
     )
 
@@ -3415,6 +3421,10 @@ print(comparator.summary(results))
 
 ### IDP Tie-In: Finding the Best Extraction Model
 
+This experiment deliberately compares sampling on models that support temperature.
+For reasoning models, leave temperature unset or select a supported non-reasoning
+mode; `ModelOptions` validates the combination.
+
 ```python
 experiment = Experiment(
     name="idp_extraction_ab_test",
@@ -3422,7 +3432,7 @@ experiment = Experiment(
     variants=[
         Variant(name="gpt4o", model="openai:gpt-4o", temperature=0.1),
         Variant(name="gpt4o_warm", model="openai:gpt-4o", temperature=0.5),
-        Variant(name="claude", model="anthropic:claude-3-5-sonnet"),
+        Variant(name="claude", model="anthropic:claude-haiku-4-5"),
     ],
     dataset=test_invoices,
 )
@@ -3431,6 +3441,7 @@ def make_agent(variant):
     return FireflyAgent(
         name=f"extractor-{variant.name}",
         model=variant.model,
+        model_options=ModelOptions(temperature=variant.temperature),
         instructions="You are an invoice data extraction specialist.",
     )
 
@@ -3579,7 +3590,6 @@ agent = create_summarizer_agent(
     max_length="short", # concise | short | medium | detailed
     style="technical", # professional | casual | technical | academic
     output_format="bullets", # paragraph | bullets | numbered
-    model="openai:gpt-4o",
 )
 result = await agent.run("Long invoice description text here...")
 ```
@@ -3599,7 +3609,6 @@ agent = create_classifier_agent(
         "contract": "Legal agreements between parties",
         "form": "Fillable forms and applications",
     },
-    model="openai:gpt-4o",
 )
 result = await agent.run("Invoice from Acme Corp, Amount Due: $1,234.56")
 # result.output → ClassificationResult(category="invoice", confidence=0.95, ...)
@@ -3625,7 +3634,6 @@ agent = create_extractor_agent(
         "vendor": "The company that issued the invoice",
         "amount": "Total monetary amount",
     },
-    model="openai:gpt-4o",
 )
 result = await agent.run("Invoice from Acme Corp, $1,234.56, 2026-01-15")
 # result.output → Invoice(vendor="Acme Corp", amount=1234.56, ...)
@@ -3644,7 +3652,6 @@ agent = create_conversational_agent(
     personality="friendly and concise",
     domain="accounts payable",
     memory=memory,
-    model="openai:gpt-4o",
 )
 
 cid = memory.new_conversation()
@@ -3666,7 +3673,6 @@ agent = create_router_agent(
         "support": "General questions about the IDP system",
     },
     fallback_agent="support",
-    model="openai:gpt-4o",
 )
 result = await agent.run("Process this invoice from Acme Corp")
 # result.output → RoutingDecision(target_agent="invoice_processor", confidence=0.92, ...)
@@ -3696,7 +3702,6 @@ from fireflyframework_agentic.agents.templates import (
 classifier_agent = create_classifier_agent(
     categories=["invoice", "receipt", "contract", "form"],
     name="document_classifier",
-    model="openai:gpt-4o",
 )
 
 # Phase 3: Use the built-in extractor template
@@ -3709,7 +3714,6 @@ extractor_agent = create_extractor_agent(
         "due_date": "Payment due date in ISO format",
     },
     name="field_extractor",
-    model="openai:gpt-4o",
 )
 ```
 
@@ -4010,8 +4014,7 @@ idp-service/
 ### Configuration (.env)
 
 ```bash
-FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o
-FIREFLY_AGENTIC_DEFAULT_TEMPERATURE=0.1
+FIREFLY_AGENTIC_DEFAULT_MODEL=openai-responses:gpt-6-luna
 FIREFLY_AGENTIC_MAX_RETRIES=3
 FIREFLY_AGENTIC_OBSERVABILITY_ENABLED=true
 FIREFLY_AGENTIC_MEMORY_BACKEND=file
@@ -4043,13 +4046,11 @@ class InvoiceData(BaseModel):
 classifier_agent = create_classifier_agent(
     categories=["invoice", "receipt", "contract", "form", "other"],
     name="document_classifier",
-    model="openai:gpt-4o",
 )
 
 # Phase 2: OCR/digitisation agent
 ocr_agent = FireflyAgent(
     name="ocr_agent",
-    model="openai:gpt-4o",
     instructions="Extract all text from this document. Preserve layout and structure.",
 )
 
@@ -4058,7 +4059,6 @@ summary_agent = create_summarizer_agent(
     name="doc_summariser",
     max_length="medium",
     style="technical",
-    model="openai:gpt-4o",
 )
 
 # Phase 3: Field extractor — with tools from tools.py attached
@@ -4074,8 +4074,7 @@ extractor_agent = create_extractor_agent(
         "line_items": "List of line items with description, quantity, unit_price",
     },
     name="field_extractor",
-    model="openai:gpt-4o",
-    tools=extraction_kit.as_pydantic_tools(), # Bridge Firefly tools → Pydantic AI
+    tools=[extraction_kit], # Firefly adapts the toolkit
 )
 ```
 
@@ -4083,7 +4082,7 @@ extractor_agent = create_extractor_agent(
 
 Tools live in their own module. Each `@firefly_tool` call creates a `BaseTool`,
 registers it in the global `ToolRegistry`, and returns the instance. The `ToolKit`
-bundles them for agent injection via `as_pydantic_tools()`:
+bundles them for agent injection via `tools=[extraction_kit]`:
 
 ```python
 from fireflyframework_agentic.tools import firefly_tool, guarded, retryable, ToolKit
@@ -4095,8 +4094,21 @@ from fireflyframework_agentic.tools.builtins import CalculatorTool
 @guarded(RateLimitGuard(max_calls=100, period_seconds=60))
 @firefly_tool(name="ocr_extract", description="Extract text from a document image via OCR")
 async def ocr_extract(image_data: str) -> str:
-    """In production, call an OCR service like AWS Textract or Google Vision."""
-    return "Invoice #INV-2026-001\nVendor: Acme Corp\nAmount: $1,234.56\nDate: 2026-01-15"
+    """POST a base64 image to the host's OCR endpoint and return its text field."""
+    import os
+    import httpx
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            os.environ["OCR_ENDPOINT"],
+            headers={"Authorization": f"Bearer {os.environ['OCR_API_KEY']}"},
+            json={"image_base64": image_data},
+        )
+        response.raise_for_status()
+        text = response.json()["text"]
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("OCR endpoint returned no text")
+        return text
 
 # Vendor lookup — validates that vendor_name is present
 @guarded(ValidationGuard(required_keys=["vendor_name"]))
@@ -4112,7 +4124,7 @@ async def vendor_lookup(vendor_name: str) -> str:
 calculator = CalculatorTool()
 
 # Bundle the tools the extractor agent needs.
-# as_pydantic_tools() bridges them into the Pydantic AI tool format.
+# Pass the toolkit directly to FireflyAgent(tools=[extraction_kit]).
 extraction_kit = ToolKit(
     "extraction-tools",
     [ocr_extract, vendor_lookup, calculator],

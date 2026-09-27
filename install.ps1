@@ -403,14 +403,16 @@ function Show-Summary {
     Write-Host ""
     Write-Host "  # Configure your model provider" -ForegroundColor DarkGray
     Write-Host '  $env:OPENAI_API_KEY = "sk-..."' -ForegroundColor White
-    Write-Host '  $env:FIREFLY_AGENTIC_DEFAULT_MODEL = "openai:gpt-4o"' -ForegroundColor White
+    Write-Host '  $env:FIREFLY_AGENTIC_DEFAULT_MODEL = "openai-responses:gpt-6-luna"' -ForegroundColor White
     Write-Host ""
     Write-Host "  # Create your first agent" -ForegroundColor DarkGray
     Write-Host "  from fireflyframework_agentic.agents import firefly_agent" -ForegroundColor White
+    Write-Host "  from fireflyframework_agentic.models import ModelOptions" -ForegroundColor White
     Write-Host ""
-    Write-Host '  @firefly_agent(name="assistant", model="openai:gpt-4o")' -ForegroundColor White
+    Write-Host '  @firefly_agent(name="assistant", model_options=ModelOptions(max_tokens=4096))' -ForegroundColor White
     Write-Host "  def instructions(ctx):" -ForegroundColor White
     Write-Host '      return "You are a helpful assistant."' -ForegroundColor White
+    Write-Host '  print(instructions.run_sync("Explain bounded retries.").output)' -ForegroundColor White
     Write-Host ""
     Write-Info "Resources:"
     Write-Host "  Documentation:  https://github.com/fireflyframework/fireflyframework-agentic/tree/main/docs" -ForegroundColor DarkGray

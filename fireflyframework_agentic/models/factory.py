@@ -23,7 +23,7 @@ a 400 from the provider, rather than a sentence anyone could read.
 
 Two things the factory knows that a host should not have to:
 
-* **the profile is mutated, never constructed** — see :mod:`~fireflyframework_agentic.models.claude`;
+* **profile corrections preserve provider fields** — see :mod:`~fireflyframework_agentic.models.claude`;
 * **the provider's rules for thinking and sampling** — :func:`model_settings_for` translates a
   parameter profile into pydantic-ai ``ModelSettings`` keys and sends only what the model takes:
   the sampling knobs are dropped for a model that refuses them and for a budget-style thinking
@@ -35,13 +35,13 @@ Two things the factory knows that a host should not have to:
 
 from __future__ import annotations
 
-import dataclasses
 import logging
+import os
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import Any, cast
 
 from pydantic_ai.models import Model
-from pydantic_ai.profiles import ModelProfile
+from pydantic_ai.profiles import DEFAULT_PROFILE, ModelProfile
 
 from fireflyframework_agentic.model_utils import detect_model_family
 from fireflyframework_agentic.models.claude import (
@@ -95,7 +95,8 @@ def effort_for(budget: int) -> str:
 
     The table read backwards: the boundary between two labels is the midpoint of their budgets,
     so a budget that came from ``high`` maps back to ``high`` however hard it was clamped on the
-    way through. ``xhigh`` folds to ``high`` because the OpenAI vocabulary has no fifth level.
+    way through. This preserves the original budget mapping; newer effort levels such as
+    ``xhigh`` can be selected explicitly through ``effort`` or ``openai_reasoning_effort``.
     """
     if budget < _midpoint("minimal", "low"):
         return "minimal"
@@ -128,8 +129,6 @@ def anthropic_effort_for(budget: int) -> str:
 # Capabilities
 # ---------------------------------------------------------------------------
 
-_OPENAI_EFFORT_PREFIXES = ("gpt-5", "o1", "o3", "o4")
-
 
 def capabilities_for(provider: str, model: str) -> ModelCapabilities:
     """Derive :class:`ModelCapabilities` from a provider and model id.
@@ -144,8 +143,11 @@ def capabilities_for(provider: str, model: str) -> ModelCapabilities:
         return claude_capabilities(model)
     family = detect_model_family(f"{provider}:{model}")
     name = model.lower()
-    if family == "openai" and name.startswith(_OPENAI_EFFORT_PREFIXES):
-        return ModelCapabilities(thinking=True, thinking_style="effort", service_tier=True)
+    if family == "openai":
+        from pydantic_ai.profiles.openai import openai_model_profile
+
+        if openai_model_profile(name).get("supports_thinking", False):
+            return ModelCapabilities(thinking=True, thinking_style="effort", service_tier=True)
     if family == "google" and name.startswith(("gemini-2.5", "gemini-3")):
         return ModelCapabilities(thinking=True, thinking_style="budget", max_thinking_budget_tokens=32_768)
     return ModelCapabilities()
@@ -165,8 +167,14 @@ _PLAIN_SETTINGS: tuple[tuple[str, str, Callable[[Any], Any]], ...] = (
     ("maxTokens", "max_tokens", int),
     ("stopSequences", "stop_sequences", list),
     ("seed", "seed", int),
-    ("timeout", "timeout", float),
 )
+
+_CONSOLE_SETTINGS = {camel for camel, snake, _ in _PLAIN_SETTINGS if camel != snake} | {
+    "thinkingBudgetTokens",
+    "thinking_budget_tokens",
+    "effort",
+    "serviceTier",
+}
 
 
 def _setting(settings: Mapping[str, Any], camel: str, snake: str) -> Any:
@@ -180,14 +188,14 @@ def _setting(settings: Mapping[str, Any], camel: str, snake: str) -> Any:
 def model_settings_for(spec: ModelSpec) -> dict[str, Any]:
     """The spec's parameter profile as pydantic-ai ``ModelSettings`` keys.
 
-    Renamed, not passed through: a console speaks ``maxTokens`` / ``thinkingBudgetTokens`` and
-    pydantic-ai speaks ``max_tokens`` and a provider-specific thinking block; sending the
-    console's names would make every one of them silently ignored. A capability the model does
-    not have is DROPPED rather than sent; see the module docstring for the provider rules.
+    Console aliases are translated; native PydanticAI settings pass through, including
+    provider-specific options and structured timeout values. Explicit native thinking settings
+    take precedence over the console's portable effort/budget aliases. Unsupported console
+    capabilities and incompatible Anthropic sampling settings are dropped.
     """
     settings: Mapping[str, Any] = spec.settings
     capabilities = spec.capabilities if spec.capabilities is not None else capabilities_for(spec.provider, spec.model)
-    out: dict[str, Any] = {}
+    out: dict[str, Any] = {key: value for key, value in settings.items() if key not in _CONSOLE_SETTINGS}
 
     for camel, snake, convert in _PLAIN_SETTINGS:
         value = _setting(settings, camel, snake)
@@ -212,13 +220,7 @@ def model_settings_for(spec: ModelSpec) -> dict[str, Any]:
         style = capabilities.thinking_style
         # One of the two is set here; a label with no budget is folded onto the table's budget.
         resolved_budget = budget if budget is not None else EFFORT_BUDGETS.get(str(effort), EFFORT_BUDGETS["medium"])
-        # BEDROCK READS ITS OWN KEY. `BedrockConverseModel` builds `additionalModelRequestFields`
-        # from `bedrock_additional_model_requests_fields` (or from the portable `thinking`
-        # setting, gated on ITS profile table, which predates Claude 5 too); `anthropic_thinking`
-        # and `anthropic_effort` are the Anthropic model's keys and Bedrock ignores them —
-        # a Claude turn on Bedrock ran with no thinking at all and nothing said so. The wire
-        # shape inside the fields is the Anthropic one (`thinking`, `output_config.effort`),
-        # which is what Bedrock forwards to the model.
+        # Bedrock reads `additionalModelRequestFields`, not Anthropic's native setting names.
         bedrock = spec.provider == "bedrock" and is_claude(spec.model)
         if style == "budget":
             ceiling = capabilities.max_thinking_budget_tokens
@@ -228,47 +230,74 @@ def model_settings_for(spec: ModelSpec) -> dict[str, Any]:
                 # a little too ambitiously would fail every turn rather than think a little less.
                 tokens = min(tokens, ceiling)
             if family == "google":
-                out["google_thinking_config"] = {"thinking_budget": tokens}
+                out.setdefault("google_thinking_config", {"thinking_budget": tokens})
             elif bedrock:
-                out["bedrock_additional_model_requests_fields"] = {
-                    "thinking": {"type": "enabled", "budget_tokens": tokens}
-                }
-                for key in _SAMPLING_KEYS:
-                    out.pop(key, None)
+                fields = dict(out.get("bedrock_additional_model_requests_fields") or {})
+                fields.setdefault("thinking", {"type": "enabled", "budget_tokens": tokens})
+                out["bedrock_additional_model_requests_fields"] = fields
             else:
-                out["anthropic_thinking"] = {"type": "enabled", "budget_tokens": tokens}
-                # THINKING AND SAMPLING KNOBS ARE MUTUALLY EXCLUSIVE AT ANTHROPIC. With extended
-                # thinking on, the API refuses any temperature other than 1 and refuses top_p
-                # and top_k outright ("`temperature` may only be set to 1 when thinking is
-                # enabled"). An OpenAI-compatible local endpoint ignores keys it does not know,
-                # so the same profile "works" there and fails on the first real Claude turn.
-                for key in _SAMPLING_KEYS:
-                    out.pop(key, None)
+                out.setdefault("anthropic_thinking", {"type": "enabled", "budget_tokens": tokens})
         elif style == "effort":
-            out["openai_reasoning_effort"] = str(effort) if effort is not None else effort_for(resolved_budget)
+            from pydantic_ai.profiles.openai import openai_model_profile
+
+            level = str(effort) if effort is not None else effort_for(resolved_budget)
+            profile = openai_model_profile(spec.model)
+            if level == "minimal" and not profile.get("openai_supports_minimal_reasoning_effort", True):
+                level = "low"
+            out.setdefault("openai_reasoning_effort", level)
         elif style == "adaptive":
-            # THE PROVIDER-SPECIFIC KEYS, NOT THE PORTABLE ONE. pydantic-ai maps its portable
-            # `thinking` setting to adaptive thinking only when its OWN profile table says the
-            # model supports effort, and the pinned table predates the Claude 5 family; the
-            # portable key produced a request with no thinking at all. `anthropic_thinking` and
-            # `anthropic_effort` are read directly, whatever the table thinks. A budget is
-            # folded onto an effort level — `{"type": "enabled", "budget_tokens": N}` is a 400
-            # on these models.
+            # Adaptive models take an effort level; a fixed enabled budget is invalid.
             level = str(effort) if effort is not None else anthropic_effort_for(resolved_budget)
             if bedrock:
-                out["bedrock_additional_model_requests_fields"] = {
-                    "thinking": {"type": "adaptive"},
-                    "output_config": {"effort": level},
-                }
+                fields = dict(out.get("bedrock_additional_model_requests_fields") or {})
+                fields.setdefault("thinking", {"type": "adaptive"})
+                output_config = dict(fields.get("output_config") or {})
+                output_config.setdefault("effort", level)
+                fields["output_config"] = output_config
+                out["bedrock_additional_model_requests_fields"] = fields
             else:
-                out["anthropic_thinking"] = {"type": "adaptive"}
-                out["anthropic_effort"] = level
-            for key in _SAMPLING_KEYS:
-                out.pop(key, None)
+                out.setdefault("anthropic_thinking", {"type": "adaptive"})
+                out.setdefault("anthropic_effort", level)
 
-    tier = _setting(settings, "serviceTier", "service_tier")
+    # Apply sampling rules to the effective setting after native overrides have won.
+    native_thinking = out.get("anthropic_thinking")
+    if spec.provider == "bedrock":
+        native_thinking = (out.get("bedrock_additional_model_requests_fields") or {}).get("thinking")
+    if isinstance(native_thinking, Mapping) and native_thinking.get("type") in {"enabled", "adaptive"}:
+        for key in _SAMPLING_KEYS:
+            out.pop(key, None)
+
+    tier = settings.get("serviceTier")
     if capabilities.service_tier and tier is not None:
         out["service_tier"] = str(tier)
+
+    if spec.options is not None:
+        from fireflyframework_agentic.models.options import ModelOptionsError, resolve_model_options
+
+        if capabilities.refuses_sampling:
+            for key in _SAMPLING_KEYS:
+                if getattr(spec.options, key) is not None:
+                    raise ModelOptionsError(
+                        f"{key} is not supported for {spec.model}: model capabilities refuse sampling"
+                    )
+        requested_budget = spec.options.reasoning_budget_tokens
+        if (
+            requested_budget is not None
+            and capabilities.max_thinking_budget_tokens is not None
+            and requested_budget > capabilities.max_thinking_budget_tokens
+        ):
+            raise ModelOptionsError(
+                f"reasoning_budget_tokens exceeds {spec.model}'s declared limit of {capabilities.max_thinking_budget_tokens}"
+            )
+        provider = spec.provider
+        class_name = spec.model_class or DEFAULT_CLASS_BY_PROVIDER.get(provider)
+        if class_name in {"OpenAIChatModel", "OpenAIResponsesModel"}:
+            family = "azure" if provider.startswith("azure") else "openai"
+            provider = f"{family}-{'responses' if class_name == 'OpenAIResponsesModel' else 'chat'}"
+        profile = dict(profile_for(spec) or _derived_profile(spec))
+        if spec.capabilities is not None:
+            profile["supports_thinking"] = spec.capabilities.thinking
+        out = resolve_model_options(f"{provider}:{spec.model}", spec.options, profile=profile, base_settings=out)
 
     return out
 
@@ -281,8 +310,7 @@ def model_settings_for(spec: ModelSpec) -> dict[str, Any]:
 def _derived_profile(spec: ModelSpec) -> ModelProfile:
     """The SDK's own profile for this model, corrected where the framework knows better.
 
-    A model id the SDK's table does not carry derives ``None``; a bare ``ModelProfile`` gives
-    ``replace`` a dataclass to work from, so the overrides apply either way.
+    Unknown ids fall back to the SDK's default profile so measured overrides still apply.
     """
     if is_claude(spec.model):
         if spec.provider == "bedrock":
@@ -296,18 +324,41 @@ def _derived_profile(spec: ModelSpec) -> ModelProfile:
         if family == "openai":
             from pydantic_ai.profiles.openai import openai_model_profile
 
-            return openai_model_profile(spec.model) or ModelProfile()
+            return openai_model_profile(spec.model) or DEFAULT_PROFILE.copy()
         if family == "google":
             from pydantic_ai.profiles.google import google_model_profile
 
-            return google_model_profile(spec.model) or ModelProfile()
+            return google_model_profile(spec.model) or DEFAULT_PROFILE.copy()
         if family == "mistral":
             from pydantic_ai.profiles.mistral import mistral_model_profile
 
-            return mistral_model_profile(spec.model) or ModelProfile()
+            return mistral_model_profile(spec.model) or DEFAULT_PROFILE.copy()
     except ImportError:  # pragma: no cover - depends on the installed SDK's layout
         logger.warning("no profile module for family %s; using a bare profile", family)
-    return ModelProfile()
+    return DEFAULT_PROFILE.copy()
+
+
+def _profile_fields(spec: ModelSpec, derived: ModelProfile) -> set[str]:
+    """Known override keys, including optional provider fields absent from a derived profile."""
+    schema: Any = ModelProfile
+    family = detect_model_family(f"{spec.provider}:{spec.model}")
+    if spec.provider == "bedrock":
+        from pydantic_ai.providers.bedrock import BedrockModelProfile
+
+        schema = BedrockModelProfile
+    elif is_claude(spec.model):
+        from pydantic_ai.profiles.anthropic import AnthropicModelProfile
+
+        schema = AnthropicModelProfile
+    elif family == "openai" or spec.base_url or spec.model_class in {"OpenAIChatModel", "OpenAIResponsesModel"}:
+        from pydantic_ai.profiles.openai import OpenAIModelProfile
+
+        schema = OpenAIModelProfile
+    elif family == "google":
+        from pydantic_ai.profiles.google import GoogleModelProfile
+
+        schema = GoogleModelProfile
+    return set(schema.__annotations__) | derived.keys()
 
 
 def profile_for(spec: ModelSpec) -> ModelProfile | None:
@@ -323,7 +374,7 @@ def profile_for(spec: ModelSpec) -> ModelProfile | None:
     if not overrides:
         return derived if is_claude(spec.model) else None
 
-    fields = {f.name for f in dataclasses.fields(derived)}
+    fields = _profile_fields(spec, derived)
     applicable = {key: value for key, value in overrides.items() if key in fields}
     ignored = set(overrides) - applicable.keys()
     if ignored:
@@ -336,7 +387,9 @@ def profile_for(spec: ModelSpec) -> ModelProfile | None:
             sorted(ignored),
             type(derived).__name__,
         )
-    return dataclasses.replace(derived, **applicable) if applicable else (derived if is_claude(spec.model) else None)
+    return (
+        cast("ModelProfile", {**derived, **applicable}) if applicable else (derived if is_claude(spec.model) else None)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -354,27 +407,25 @@ def _anthropic(spec: ModelSpec, secret: str | None, profile: ModelProfile | None
     from pydantic_ai.models.anthropic import AnthropicModel
     from pydantic_ai.providers.anthropic import AnthropicProvider
 
-    return AnthropicModel(spec.model, provider=AnthropicProvider(api_key=secret or ""), **_profile_kwargs(profile))
+    return AnthropicModel(spec.model, provider=AnthropicProvider(api_key=secret), **_profile_kwargs(profile))
 
 
 def _openai_provider(spec: ModelSpec, secret: str | None) -> Any:
-    if spec.provider == "azure":
+    if spec.provider in {"azure", "azure-chat", "azure-responses"}:
+        from pydantic_ai.exceptions import UserError
         from pydantic_ai.providers.azure import AzureProvider
 
-        if not spec.base_url or not spec.api_version:
-            raise ModelBuildError(
-                "Azure needs both an endpoint (base_url) and an API version (api_version); the spec is missing one. "
-                "Both are required fields on the provider, so this is a configuration gap rather than a transient failure."
-            )
-        return AzureProvider(azure_endpoint=spec.base_url, api_version=spec.api_version, api_key=secret or "")
+        try:
+            return AzureProvider(azure_endpoint=spec.base_url, api_version=spec.api_version, api_key=secret)
+        except UserError as exc:
+            raise ModelBuildError(f"Azure endpoint, API version or credential configuration is invalid: {exc}") from exc
 
     from pydantic_ai.providers.openai import OpenAIProvider
 
-    if spec.base_url:
-        # An OpenAI-compatible endpoint (Ollama, OpenRouter, DeepSeek, a gateway): the key may be
-        # empty, the URL is what matters.
-        return OpenAIProvider(base_url=spec.base_url, api_key=secret or "unused")
-    return OpenAIProvider(api_key=secret or "")
+    # Empty environment values should also permit keyless compatible endpoints.
+    if spec.base_url and secret is None and not (os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_ADMIN_KEY")):
+        secret = "unused"
+    return OpenAIProvider(base_url=spec.base_url, api_key=secret)
 
 
 def _openai_chat(spec: ModelSpec, secret: str | None, profile: ModelProfile | None) -> Model:
@@ -400,7 +451,7 @@ def _bedrock(spec: ModelSpec, secret: str | None, profile: ModelProfile | None) 
     # single secret without a second table for a two-part credential. Split on the FIRST colon
     # only: an AWS secret can contain one.
     access_key, _, secret_key = (secret or "").partition(":")
-    if not access_key or not secret_key:
+    if secret is not None and (not access_key or not secret_key):
         raise ModelBuildError(
             "A Bedrock credential is carried as 'accessKeyId:secretAccessKey'. This one does not have that shape, "
             "so it cannot be split into the two values the SDK needs."
@@ -408,7 +459,7 @@ def _bedrock(spec: ModelSpec, secret: str | None, profile: ModelProfile | None) 
     return BedrockConverseModel(
         spec.model,
         provider=BedrockProvider(
-            region_name=spec.region, aws_access_key_id=access_key, aws_secret_access_key=secret_key
+            region_name=spec.region, aws_access_key_id=access_key or None, aws_secret_access_key=secret_key or None
         ),
         **_profile_kwargs(profile),
     )
@@ -449,12 +500,16 @@ BUILDERS: Mapping[str, Builder] = {
     "MistralModel": _mistral,
 }
 
-#: The class a provider key means when the spec names none. Every OpenAI-compatible endpoint
-#: is Chat Completions unless the spec says ``OpenAIResponsesModel``.
+#: The class a provider key means when the spec names none. Legacy OpenAI/Azure keys and
+#: custom endpoints retain Chat Completions; explicit API aliases select either protocol.
 DEFAULT_CLASS_BY_PROVIDER: Mapping[str, str] = {
     "anthropic": "AnthropicModel",
     "openai": "OpenAIChatModel",
+    "openai-chat": "OpenAIChatModel",
+    "openai-responses": "OpenAIResponsesModel",
     "azure": "OpenAIChatModel",
+    "azure-chat": "OpenAIChatModel",
+    "azure-responses": "OpenAIResponsesModel",
     "ollama": "OpenAIChatModel",
     "openrouter": "OpenAIChatModel",
     "deepseek": "OpenAIChatModel",

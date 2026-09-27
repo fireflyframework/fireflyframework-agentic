@@ -14,8 +14,10 @@
 
 """Performance benchmarks for streaming latency.
 
-These benchmarks compare buffered vs incremental streaming modes
-to measure time-to-first-token (TTFT) and overall streaming latency.
+These benchmarks use Pydantic AI's local test model to measure framework
+overhead when consuming the first chunk, a full response, or no response.
+The reported callable durations include stream teardown; they do not measure
+provider latency or establish relative performance for deployed workloads.
 
 Run with:
     pytest tests/performance/test_bench_streaming_latency.py --benchmark-only
@@ -39,11 +41,9 @@ def bench_loop() -> Iterator[asyncio.AbstractEventLoop]:
     `pytest-benchmark` runs the benchmarked callable many times. Sharing one
     loop avoids per-iteration setup cost from dominating the measurement.
     """
-    loop = asyncio.new_event_loop()
-    try:
-        yield loop
-    finally:
-        loop.close()
+    # Early exit from a stream leaves async-generator finalizers to be drained.
+    with asyncio.Runner(loop_factory=asyncio.new_event_loop) as runner:
+        yield runner.get_loop()
 
 
 @pytest.mark.nightly
@@ -120,8 +120,6 @@ def test_bench_full_response_buffered(benchmark, bench_loop):
         async with stream_ctx as stream:
             async for chunk in stream.stream_text():
                 chunks.append(chunk)
-                if len(chunks) >= 5:
-                    break
         return len(chunks)
 
     benchmark(lambda: bench_loop.run_until_complete(stream_full_buffered()))
@@ -138,8 +136,6 @@ def test_bench_full_response_incremental(benchmark, bench_loop):
         async with stream_ctx as stream:
             async for token in stream.stream_tokens():
                 tokens.append(token)
-                if len(tokens) >= 5:
-                    break
         return len(tokens)
 
     benchmark(lambda: bench_loop.run_until_complete(stream_full_incremental()))
@@ -156,32 +152,3 @@ def test_bench_stream_context_manager_overhead(benchmark, bench_loop):
             pass
 
     benchmark(lambda: bench_loop.run_until_complete(create_stream_context()))
-
-
-@pytest.mark.nightly
-def test_bench_time_to_first_token_comparison():
-    """Compare time-to-first-token between modes.
-
-    Meta-benchmark stub: actual comparison is done by inspecting the results of
-    the `streaming-latency` group benchmarks above. Expected: incremental mode
-    should have lower TTFT.
-    """
-
-
-@pytest.mark.nightly
-def test_bench_throughput_comparison():
-    """Compare overall throughput between modes.
-
-    Meta-benchmark stub: actual comparison is done by inspecting the results of
-    the `streaming-latency` group benchmarks above. Expected: buffered mode may
-    have slightly higher throughput, but incremental provides better perceived
-    performance.
-    """
-
-
-# Performance expectations (documented for regression detection):
-# - Incremental mode should show 20-40% lower time-to-first-token (TTFT)
-# - Incremental mode provides better perceived performance for users
-# - Buffered mode may have slightly higher total throughput
-# - Debouncing adds latency but reduces message frequency
-# - Context manager overhead should be minimal (<1ms)

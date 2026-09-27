@@ -2,6 +2,10 @@
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+Unless an example explicitly compares models, it uses
+`FIREFLY_AGENTIC_DEFAULT_MODEL`. Set that and your provider credentials using the
+[model configuration guide](models.md) before running agent examples.
+
 This guide demonstrates how to build a production-grade Intelligent Document Processing
 pipeline using fireflyframework-agentic. The pipeline takes a raw document (PDF, image,
 or scanned file), splits it into logical sub-documents, classifies each one, extracts
@@ -67,7 +71,6 @@ from fireflyframework_agentic.agents import FireflyAgent
 
 splitter_agent = FireflyAgent(
     name="document_splitter",
-    model="openai:gpt-4o",
     instructions="Analyse page summaries and detect document boundaries.",
     output_type=dict,
     auto_register=False,
@@ -95,16 +98,17 @@ from fireflyframework_agentic.reasoning import PlanAndExecutePattern
 
 DOCUMENT_TYPES = ["certificate_of_incorporation", "bylaws", "corporate_filing", "amendment", "other"]
 DOCUMENT_TYPE_DESCRIPTIONS = {
-    "certificate_of_incorporation": "The founding charter filed with the Secretary of State...",
-    "bylaws": "The internal governance rules adopted by the board...",
-    # ...
+    "certificate_of_incorporation": "The founding charter establishing the corporation and its registered identity.",
+    "bylaws": "Internal governance rules for directors, officers, meetings, and shareholder decisions.",
+    "corporate_filing": "A periodic or event-driven submission updating the corporation's official public record.",
+    "amendment": "A document that changes specific provisions of an existing charter, bylaws, or filing.",
+    "other": "A document that does not fit the defined corporate document categories.",
 }
 
 classifier_agent = create_classifier_agent(
     categories=DOCUMENT_TYPES,
     descriptions=DOCUMENT_TYPE_DESCRIPTIONS,
     name="idp_classifier",
-    model="openai:gpt-4o",
 )
 
 # Classify with Plan-and-Execute reasoning. run_with_reasoning takes the
@@ -140,7 +144,6 @@ from fireflyframework_agentic.validation.rules import RegexRule, FormatRule, Enu
 extractor_agent = create_extractor_agent(
     CorporateDocumentData, # Pydantic model
     name="idp_extractor",
-    model="openai:gpt-4o",
 )
 
 # Custom retry prompt that doesn't resend the full document
@@ -253,7 +256,6 @@ audit = AuditTrail()
 # LLM-powered narrative generation
 explainer_agent = FireflyAgent(
     name="idp_explainer",
-    model="openai:gpt-4o",
     instructions="You are an expert technical writer producing an explainability report.",
     auto_register=False,
 )

@@ -2,6 +2,10 @@
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+Unless an example explicitly compares models, it uses
+`FIREFLY_AGENTIC_DEFAULT_MODEL`. Set that and your provider credentials using the
+[model configuration guide](models.md) before running agent examples.
+
 The Security module provides prompt injection detection, input sanitisation,
 and output scanning to protect agents from adversarial user input **and**
 prevent sensitive data leakage in LLM responses.
@@ -122,7 +126,6 @@ from fireflyframework_agentic.agents.builtin_middleware import OutputGuardMiddle
 
 agent = FireflyAgent(
     name="guarded",
-    model="openai:gpt-4o",
     middleware=[
         PromptGuardMiddleware(), # input: reject injections
         OutputGuardMiddleware(), # output: reject PII/secrets
@@ -132,7 +135,6 @@ agent = FireflyAgent(
 # Or sanitise mode — replaces matched content with [REDACTED]
 agent = FireflyAgent(
     name="sanitised",
-    model="openai:gpt-4o",
     middleware=[
         PromptGuardMiddleware(sanitise=True),
         OutputGuardMiddleware(sanitise=True),
@@ -411,21 +413,35 @@ HashiCorp Vault, etc.) rather than environment variables in production.
 Before the query reaches `_execute_query`, the tool applies two security checks —
 SQL-injection heuristics and a read-only guard.
 
+The following adapter uses the standard library and an existing SQLite database.
+`DATABASE_PATH` must point to a database with a `users` table; opening it in `ro`
+mode also enforces read-only access at the database layer.
+
 ```python
+import asyncio
+import os
+import sqlite3
+from pathlib import Path
 from typing import Any
 
 from fireflyframework_agentic.tools.builtins.database import DatabaseTool
 
-class PostgresTool(DatabaseTool):
-    async def _execute_query(self, query: str, params: dict[str, Any] | None) -> Any:
-        # run query through your async driver, e.g. asyncpg / psycopg
-        ...
+class SQLiteQueryTool(DatabaseTool):
+    def __init__(self, database_path: str):
+        super().__init__(name="database", read_only=True, enable_injection_detection=True)
+        self._uri = Path(database_path).resolve().as_uri() + "?mode=ro"
 
-db_tool = PostgresTool(
-    name="database",          # keyword-only; defaults to "database"
-    read_only=True,           # default: only SELECT / WITH queries allowed
-    enable_injection_detection=True,  # default: heuristic SQL-injection scan
-)
+    async def _execute_query(self, query: str, params: dict[str, Any] | None) -> Any:
+        def fetch():
+            connection = sqlite3.connect(self._uri, uri=True)
+            try:
+                connection.row_factory = sqlite3.Row
+                return [dict(row) for row in connection.execute(query, params or {}).fetchall()]
+            finally:
+                connection.close()
+        return await asyncio.to_thread(fetch)
+
+db_tool = SQLiteQueryTool(os.environ["DATABASE_PATH"])
 ```
 
 The constructor is keyword-only with `name="database"`, `read_only=True`,
@@ -519,7 +535,6 @@ memory = MemoryManager(store=encrypted_store)
 # Agent with security middleware
 agent = FireflyAgent(
     name="secure-agent",
-    model="openai:gpt-4o",
     memory=memory,
     middleware=[
         PromptGuardMiddleware(sanitise=True), # Input validation

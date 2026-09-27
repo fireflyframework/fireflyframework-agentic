@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 from pydantic_ai import Agent as PydanticAgent
 from pydantic_ai.exceptions import UserError
 
-from fireflyframework_agentic.model_utils import get_model_identifier
+from fireflyframework_agentic.model_utils import get_model_identifier, normalize_model
 from fireflyframework_agentic.observability.cost_resolvers import CostContext, UnknownModelCostError, resolve_cost
 from fireflyframework_agentic.observability.usage import reasoning_tokens_not_in_output, resolve_run_usage
 
@@ -221,11 +221,11 @@ class DefaultAgentRunner:
             raise ValueError(
                 "DefaultAgentRunner requires a model; pass model= to agent() or default_model= to the runner"
             )
-        return resolved
+        return normalize_model(resolved)
 
     @staticmethod
     def _agent_kwargs(output_type: Any, instructions: Any, tools: Any, toolsets: Any, deps: Any) -> dict[str, Any]:
-        kwargs: dict[str, Any] = {}
+        kwargs: dict[str, Any] = {"end_strategy": "early"}
         if output_type is not None:
             kwargs["output_type"] = output_type
         if instructions is not None:

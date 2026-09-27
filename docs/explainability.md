@@ -65,7 +65,7 @@ recorder.record(
 
 `record()` is the only mutating call:
 
-```python
+```text
 def record(
     self,
     category: str,
@@ -157,7 +157,7 @@ trail.append(
 
 `append()` builds and stores an `AuditEntry`, returning it:
 
-```python
+```text
 def append(
     self,
     actor: str,
