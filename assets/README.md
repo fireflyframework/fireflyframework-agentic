@@ -13,6 +13,7 @@ supports the same features.
 
 | Asset | Dimensions | Purpose |
 |-------|------------|---------|
+| [`brand-logo.svg`](brand-logo.svg) | 300 × 64 | Compact Firefly Agentic wordmark for the documentation header and mobile navigation. |
 | [`banner.svg`](banner.svg) | 1280 × 320 | Firefly wordmark, Agentic lockup and a constellation of connected agents. |
 | [`architecture.svg`](architecture.svg) | 1100 × 710 | FireflyAgent, tools, memory and model configuration, with optional composition around the Pydantic AI 2 engine. |
 | [`agent-anatomy.svg`](agent-anatomy.svg) | 1100 × 760 | A normal successful agent run, with default and optional middleware shown separately. |
@@ -54,7 +55,7 @@ python assets/tools/build_brand_assets.py
 python assets/tools/build_brand_assets.py --check
 ```
 
-The build writes the banner and nine diagrams to both `assets/` and
+The build writes the compact logo, banner and nine diagrams to both `assets/` and
 `docs/assets/`. `--check` regenerates them in memory and exits unsuccessfully if
 any file is missing or differs; it does not change files. Both modes check card
 geometry and measured text fit. Fixed embedded character advances make layout

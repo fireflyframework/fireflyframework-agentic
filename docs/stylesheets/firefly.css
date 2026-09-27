@@ -571,3 +571,16 @@ body:has(.ff-home) .md-header--shadow {
 }
 .md-typeset .ff-diagram-toggle:focus-visible,
 .md-typeset .ff-diagram-scroll:focus-visible { outline: 2px solid var(--md-accent-fg-color); outline-offset: 3px; }
+
+
+/* The complete Agentic lockup is the home link at every viewport size. */
+.md-header__button.md-logo { display: block; }
+.md-header__button.md-logo img { width: 7.5rem; height: 1.6rem; }
+.md-header__topic:first-child { visibility: hidden; }
+.md-nav__button.md-logo img { width: 9rem; height: auto; }
+.md-header__button.md-logo:focus-visible { outline: 2px solid #d6c6ff; outline-offset: 3px; }
+@media screen and (max-width: 44.984375em) {
+  .md-header__title { display: none; }
+  .md-header__button.md-logo { margin-right: auto; }
+  .md-header__button[for="__drawer"] { order: -1; }
+}
