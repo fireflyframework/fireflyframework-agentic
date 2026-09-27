@@ -4,8 +4,8 @@
 site_name: Firefly Agentic
 site_url: https://fireflyframework.github.io/fireflyframework-agentic/
 site_description: >-
-  The production-grade agentic metaframework, built on Pydantic AI. Keep
-  Pydantic AI's Agent, Tool and RunContext — gain lifecycle hooks, delegation,
+  The production-grade agentic metaframework, built on Pydantic AI. Build with
+  Firefly agents, tools and typed model options — gain lifecycle hooks, delegation,
   memory, reasoning patterns, validation loops, RAG and DAG pipelines.
 site_author: Firefly Software Foundation
 copyright: Copyright &copy; 2026 Firefly Software Foundation — Apache-2.0
@@ -141,6 +141,7 @@ nav:
   - Intelligence:
       - Reasoning Patterns: reasoning.md
       - Validation & QoS: validation.md
+      - Evaluation: evaluation.md
   - Security:
       - Security: security.md
       - Secure Script Execution: execution.md

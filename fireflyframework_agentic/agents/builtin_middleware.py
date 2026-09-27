@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import json
 import logging
 import time
 from typing import Any
@@ -497,8 +498,24 @@ class CacheMiddleware:
 
     async def before_run(self, context: MiddlewareContext) -> None:
         """Check the cache; on hit, store result in metadata."""
+        # Native settings and model objects may contain non-serializable state.
+        # Such overrides must not reuse or populate the default result cache.
+        if "model" in context.kwargs or "model_settings" in context.kwargs:
+            context.metadata["_cache_bypass"] = True
+            return
+        namespace = context.agent_name
+        options = dict(context.metadata.get("_portable_model_options", {}))
+        override = context.kwargs.get("model_options")
+        if override is not None:
+            options.update(override.model_dump(mode="json", exclude_unset=True))
+        if options:
+            namespace += ":" + json.dumps(
+                {"model": context.model, "api": context.metadata.get("_cache_model_api"), "options": options},
+                sort_keys=True,
+            )
+        context.metadata["_cache_namespace"] = namespace
         prompt_str = str(context.prompt) if context.prompt is not None else ""
-        cached = self._cache.get(context.agent_name, prompt_str)
+        cached = self._cache.get(namespace, prompt_str)
         if cached is not None:
             context.metadata["_cache_result"] = cached
             logger.debug("CacheMiddleware: hit for agent '%s'", context.agent_name)
@@ -509,9 +526,11 @@ class CacheMiddleware:
             # Never cache a paused run — a later identical prompt would be served
             # a stale ``DeferredToolRequests`` instead of running for real.
             return result
+        if context.metadata.get("_cache_bypass"):
+            return result
         if "_cache_result" not in context.metadata:
             prompt_str = str(context.prompt) if context.prompt is not None else ""
-            self._cache.put(context.agent_name, prompt_str, result)
+            self._cache.put(context.metadata.get("_cache_namespace", context.agent_name), prompt_str, result)
         return result
 
 

@@ -283,7 +283,8 @@ class ImageTiler:
 
         Returns :class:`Chunk` objects where ``metadata`` contains
         ``x``, ``y``, ``width``, ``height`` of each tile.  ``content``
-        is set to a descriptive placeholder (callers fill in actual data).
+        is the tile identifier (``tile_<row>_<column>``). This geometry-only
+        method does not receive or extract image pixels.
         """
         step_x = max(1, self._tile_width - self._overlap)
         step_y = max(1, self._tile_height - self._overlap)

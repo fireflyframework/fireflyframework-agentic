@@ -19,13 +19,6 @@
 minimum_pre_commit_version: "3.8.0"
 fail_fast: false
 
-# Bundled frontend build artifacts — checked in but not source code.
-exclude: |
-  (?x)^(
-    studio-desktop/frontend-dist/.*|
-    src/fireflyframework_agentic/studio/static/.*
-  )$
-
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -74,6 +67,6 @@ repos:
       - id: pytest
         name: pytest
         language: system
-        entry: python -m pytest tests/unit/ tests/integration/ -m "not nightly" -q --tb=short
+        entry: python -m pytest -m "not nightly" -q --tb=short
         pass_filenames: false
         stages: [pre-push]

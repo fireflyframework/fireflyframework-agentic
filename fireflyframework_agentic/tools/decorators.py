@@ -17,10 +17,10 @@
 The :func:`firefly_tool` decorator transforms an async function into a
 registered :class:`~fireflyframework_agentic.tools.base.BaseTool` instance::
 
-    @firefly_tool("search", tags=["web"])
-    async def search(query: str) -> str:
-        '''Search the web for *query*.'''
-        ...
+    @firefly_tool("word_count", tags=["text"])
+    async def word_count(text: str) -> int:
+        '''Count whitespace-separated words in text.'''
+        return len(text.split())
 
 :func:`guarded` and :func:`retryable` add cross-cutting concerns to any
 :class:`~fireflyframework_agentic.tools.base.BaseTool`.
@@ -129,8 +129,9 @@ def guarded(guard: GuardProtocol) -> Callable[[BaseTool], BaseTool]:
     Usage::
 
         @guarded(RateLimitGuard(max_calls=10))
-        @firefly_tool("search")
-        async def search(query: str) -> str: ...
+        @firefly_tool("word_count")
+        async def word_count(text: str) -> int:
+            return len(text.split())
     """
 
     def decorator(tool: BaseTool) -> BaseTool:

@@ -13,23 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Example demonstrating batch LLM processing for cost optimization.
+"""Concurrent LLM requests, completion callbacks, and a classification pipeline.
 
-Batch processing allows processing multiple prompts concurrently or through
-provider batch APIs (when available), providing significant benefits:
-
-Benefits:
-    - Cost savings: Up to 50% discount with provider batch APIs
-    - Higher throughput: Process hundreds/thousands of prompts efficiently
-    - Resource optimization: Better utilization of API quotas
-    - Ideal for non-real-time workloads
-
-Use Cases:
-    - Bulk document classification
-    - Large-scale sentiment analysis
-    - Data extraction from thousands of documents
-    - Batch translation tasks
-    - Content generation pipelines
+Requires credentials for FIREFLY_AGENTIC_DEFAULT_MODEL (MODEL is a legacy
+fallback). Running all demonstrations makes approximately 43 model requests.
+BatchLLMStep uses bounded concurrency; it does not submit provider batch jobs
+or guarantee a pricing discount.
 """
 
 from __future__ import annotations
@@ -49,7 +38,7 @@ async def demo_basic_batch_processing():
 
     agent = FireflyAgent(
         "classifier",
-        model=os.getenv("MODEL", "openai:gpt-4o-mini"),
+        model=os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "openai-responses:gpt-6-luna")),
         instructions="You are a sentiment classifier. Respond with only: positive, negative, or neutral.",
         auto_register=False,
     )
@@ -95,7 +84,7 @@ async def demo_large_scale_batch():
 
     agent = FireflyAgent(
         "summarizer",
-        model=os.getenv("MODEL", "openai:gpt-4o-mini"),
+        model=os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "openai-responses:gpt-6-luna")),
         instructions="Summarize the following in 10 words or less.",
         auto_register=False,
     )
@@ -140,7 +129,7 @@ async def demo_batch_with_callback():
 
     agent = FireflyAgent(
         "extractor",
-        model=os.getenv("MODEL", "openai:gpt-4o-mini"),
+        model=os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "openai-responses:gpt-6-luna")),
         instructions="Extract the main keyword from the text. Respond with just the keyword.",
         auto_register=False,
     )
@@ -190,7 +179,7 @@ async def demo_batch_in_pipeline():
 
     classifier_agent = FireflyAgent(
         "topic-classifier",
-        model=os.getenv("MODEL", "openai:gpt-4o-mini"),
+        model=os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "openai-responses:gpt-6-luna")),
         instructions="Classify the topic. Respond with: technology, business, or other.",
         auto_register=False,
     )
@@ -199,15 +188,13 @@ async def demo_batch_in_pipeline():
 
     # Load step (normally would read from database/file)
     async def load_documents(context, inputs):
-        return {
-            "documents": [
-                "AI is revolutionizing software development",
-                "Quarterly revenue exceeded expectations",
-                "New smartphone features announced",
-                "Market share continues to grow",
-                "Climate change impacts discussed",
-            ]
-        }
+        return [
+            "AI is revolutionizing software development",
+            "Quarterly revenue exceeded expectations",
+            "New smartphone features announced",
+            "Market share continues to grow",
+            "Climate change impacts discussed",
+        ]
 
     builder.add_node("load", load_documents)
 
@@ -216,48 +203,46 @@ async def demo_batch_in_pipeline():
         "classify",
         BatchLLMStep(
             classifier_agent,
-            prompts_key="documents",
+            prompts_key="load",
             batch_size=10,
         ),
-        depends_on=["load"],
     )
 
     # Aggregate step
     async def aggregate_results(context, inputs):
-        classifications = inputs.get("classify", [])
+        classifications = context.get_node_result("classify").output
         counts = {}
         for classification in classifications:
             topic = str(classification).strip().lower()
             counts[topic] = counts.get(topic, 0) + 1
         return counts
 
-    builder.add_node("aggregate", aggregate_results, depends_on=["classify"])
+    builder.add_node("aggregate", aggregate_results)
+    builder.chain("load", "classify", "aggregate")
 
     # Build and run pipeline
     pipeline = builder.build()
 
     print("Running pipeline with batch processing...")
-    result = await pipeline.run({})
+    result = await pipeline.run(inputs={})
+    if not result.success:
+        raise RuntimeError(result.error)
 
     print("\nPipeline result:")
-    print(f"  Documents loaded: {len(result.get_node_result('load')['documents'])}")
-    print(f"  Classifications: {result.get_node_result('classify')}")
-    print(f"  Topic distribution: {result.output}")
+    print(f"  Documents loaded: {len(result.outputs['load'].output)}")
+    print(f"  Classifications: {result.outputs['classify'].output}")
+    print(f"  Topic distribution: {result.final_output}")
 
 
 async def demo_cost_comparison():
     """Demonstrate cost comparison: sequential vs batch."""
     print("\n\n=== Cost Comparison: Sequential vs Batch ===\n")
 
-    if not os.getenv("OPENAI_API_KEY"):
-        print("⚠️  Skipping cost comparison (requires OPENAI_API_KEY)")
-        return
-
     from fireflyframework_agentic.observability.usage import default_usage_tracker
 
     agent = FireflyAgent(
         "cost-test",
-        model="openai:gpt-4o-mini",
+        model=os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "openai-responses:gpt-6-luna")),
         instructions="Say 'done'",
         auto_register=False,
     )
@@ -290,7 +275,7 @@ async def demo_cost_comparison():
     print(f"  Batch:      ${batch_cost:.6f}")
     print(f"  Difference: ${abs(sequential_cost - batch_cost):.6f}")
     print()
-    print("Note: True batch APIs (when available) can provide up to 50% cost savings.")
+    print("Costs are catalogue estimates for the selected model and observed token usage.")
     print("This demo uses concurrent processing, not provider batch APIs.")
 
 
@@ -299,14 +284,6 @@ async def main():
     print("=" * 70)
     print("Batch LLM Processing Demonstrations")
     print("=" * 70)
-
-    if not os.getenv("OPENAI_API_KEY"):
-        print("\n⚠️  Warning: OPENAI_API_KEY not set.")
-        print("These demos require a real LLM to show batch processing benefits.")
-        print("\nTo run with OpenAI:")
-        print("  export OPENAI_API_KEY=your-key-here")
-        print("  python examples/batch_processing.py")
-        return
 
     # Run demonstrations
     await demo_basic_batch_processing()
@@ -321,7 +298,7 @@ async def main():
     print("=" * 70)
     print("\n✓ Batch processing enables cost-effective large-scale LLM usage")
     print("✓ Concurrent execution provides better throughput")
-    print("✓ Provider batch APIs can offer up to 50% cost savings")
+    print("✓ BatchLLMStep limits concurrent requests; provider batch discounts do not apply")
     print("✓ Ideal for non-real-time workloads")
     print("\nUsage:")
     print("  step = BatchLLMStep(")

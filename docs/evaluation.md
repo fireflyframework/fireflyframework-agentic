@@ -39,7 +39,7 @@ Both are re-exported from `fireflyframework_agentic.evaluation`.
 
 Each judge metric is an **async function** with the same signature:
 
-```python
+```text
 async def metric(item: dict, ctx: EvalContext) -> dict | None
 ```
 
@@ -74,12 +74,30 @@ The RAGAS metrics reuse this same framework embedder (wrapped for RAGAS), so the
 evaluator embeds with the same provider as the rest of your pipeline.
 
 `JudgeClient` is an async multi-provider judge backed by the framework's `FireflyAgent`
-(pydantic-ai). The model spec is `"<provider>:<model>"`, where provider is one of
-`anthropic`, `openai`, `azure`, `ollama`. Each call returns a **validated, typed** Pydantic
-model — the LLM's structured output is schema-checked rather than hand-parsed — and
-`temperature` is pinned to `0.0` for stable verdicts. The provider reads its API key
-(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AZURE_OPENAI_*`, `OLLAMA_HOST`) when the underlying
-agent is first built, so constructing a `JudgeClient` never requires a secret.
+(pydantic-ai). It accepts the same model selectors as `FireflyAgent`, including
+explicit `openai-chat:` and `openai-responses:`. Legacy `openai:` / `azure:` retain
+Chat Completions. Each call returns a **validated, typed** Pydantic model. By default,
+the judge uses temperature `0.0` where supported and omits sampling on profiles
+that reject it; this reduces sampling variation but does not guarantee identical
+verdicts. The provider reads credentials when the underlying agent is first built.
+
+Use typed options for a reasoning judge:
+
+```python
+from fireflyframework_agentic.evaluation import EvalContext, JudgeClient
+from fireflyframework_agentic.models import ModelOptions
+
+ctx = EvalContext(client=JudgeClient(
+    "openai-responses:gpt-6-luna",
+    model_options=ModelOptions(reasoning="low", store_responses=False),
+))
+```
+
+For GPT-6 Sol/Luna on Chat, set `reasoning="none"` so the judge can use structured
+output tools. Astra requires Responses for those tools. Unsupported explicit
+options raise `ModelOptionsError`; each `judge(max_tokens=...)` call controls its
+own token limit. These options configure Firefly-backed judge calls; optional
+RAGAS metrics use their separate LangChain adapter and do not inherit these options.
 
 ### Item schema
 
@@ -93,7 +111,7 @@ item = {
     "question":  "What is the boiling point of water at sea level?",
     "answer":    "Water boils at 100 degrees Celsius at sea level.",
     "reference": "Water boils at 100 °C at standard atmospheric pressure.",
-    "contexts":  ["...retrieved passage...", "..."],   # used by RAGAS metrics
+    "contexts":  ["At standard atmospheric pressure, pure water boils at 100 °C."],
 }
 ```
 
@@ -101,15 +119,18 @@ item = {
 
 ```python
 item = {
-    "findings":        [{"id": ..., "title": ..., "description": ..., "severity": ...,
-                         "evidence_refs": [{"evidence_id": ...}], ...}],
-    "evidence_index":  [{"id": ..., "locator": "doc.md#L1", "excerpt": "..."}],
-    "process_graph":   {"processes": [{"name": ..., "activities": [...], "decisions": [...]}]},
-    "proposed_actions": [{"title": ..., "finding_id": ..., "expected_savings_fte": ...}],
-    "workspace":       {"name": ..., "description": ...},
-    "nc_items":        [{"id": ..., "description": "a statement that is factually false"}],
-    "lexical_missed_ids": ["..."],   # ids the lexical pass missed (semantic_recovery)
-    "champion":        { ... another item ... },   # baseline for comparative_vs_champion
+    "findings": [{
+        "id": "F-1", "title": "Duplicate invoice checks", "severity": "medium",
+        "description": "Two teams independently verify the same invoice totals.",
+        "evidence_refs": [{"evidence_id": "E-1"}],
+    }],
+    "evidence_index": [{"id": "E-1", "locator": "process.md#L1", "excerpt": "AP and Finance both check totals."}],
+    "process_graph": {"processes": [{"name": "Pay invoice", "activities": ["Check totals"], "decisions": []}]},
+    "proposed_actions": [{"title": "Use one shared check", "finding_id": "F-1", "expected_savings_fte": 0.2}],
+    "workspace": {"name": "Accounts payable", "description": "Invoice intake and payment"},
+    "nc_items": [{"id": "N-1", "description": "Every invoice is processed without a totals check."}],
+    "lexical_missed_ids": ["F-1"],
+    "champion": {"findings": [], "proposed_actions": []},
 }
 ```
 

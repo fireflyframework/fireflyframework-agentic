@@ -19,6 +19,7 @@ arbitrary callables usable as DAG nodes.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import warnings
 from collections.abc import Callable, Coroutine
@@ -69,7 +70,13 @@ class AgentStep:
         self._kwargs = kwargs
 
     async def execute(self, context: PipelineContext, inputs: dict[str, Any]) -> Any:
-        prompt = inputs.get(self._prompt_key, context.inputs)
+        fallback = context.inputs
+        if isinstance(fallback, dict):
+            fallback = fallback.get(self._prompt_key, fallback)
+        prompt = inputs.get(self._prompt_key, fallback)
+        # PydanticAI v2 requires text or multimodal content, not a raw mapping.
+        if isinstance(prompt, dict):
+            prompt = json.dumps(prompt, default=str)
         # Propagate pipeline memory to the agent if available
         if context.memory is not None and hasattr(self._agent, "memory"):
             self._agent.memory = context.memory  # type: ignore[attr-defined]

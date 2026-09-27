@@ -2,6 +2,10 @@
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+Unless an example explicitly compares models, it uses
+`FIREFLY_AGENTIC_DEFAULT_MODEL`. Set that and your provider credentials using the
+[model configuration guide](models.md) before running agent examples.
+
 The `agents.templates` package provides pre-built, factory-function agents for common
 GenAI use cases. Each factory returns a fully configured `FireflyAgent` ready for
 immediate use, while accepting keyword arguments for customisation.
@@ -20,7 +24,7 @@ from fireflyframework_agentic.agents.templates import (
 )
 
 # One-liner: production-ready summarizer
-summarizer = create_summarizer_agent(model="openai:gpt-4o")
+summarizer = create_summarizer_agent()
 result = await summarizer.run("Summarize this document: ...")
 ```
 
@@ -58,7 +62,6 @@ agent = create_summarizer_agent(
     max_length="short", # concise | short | medium | detailed
     style="technical", # professional | casual | technical | academic
     output_format="bullets", # paragraph | bullets | numbered
-    model="openai:gpt-4o",
 )
 result = await agent.run("Long document text here...")
 ```
@@ -91,7 +94,6 @@ agent = create_classifier_agent(
         "feature": "New feature requests",
         "question": "General questions about usage",
     },
-    model="openai:gpt-4o",
 )
 result = await agent.run("The app crashes when I click save.")
 # result.output -> ClassificationResult(category="bug", confidence=0.95, reasoning="...")
@@ -136,7 +138,6 @@ agent = create_extractor_agent(
         "vendor": "The company or person that issued the invoice",
         "amount": "Total monetary amount",
     },
-    model="openai:gpt-4o",
 )
 result = await agent.run("Invoice from Acme Corp, $1,234.56, dated 2026-01-15")
 # result.output -> Invoice(vendor="Acme Corp", amount=1234.56, ...)
@@ -167,7 +168,6 @@ agent = create_conversational_agent(
     personality="friendly and concise",
     domain="customer support",
     memory=memory,
-    model="openai:gpt-4o",
 )
 
 cid = memory.new_conversation()
@@ -204,7 +204,6 @@ agent = create_router_agent(
         "sales": "Handles product questions and purchasing",
     },
     fallback_agent="general",
-    model="openai:gpt-4o",
 )
 result = await agent.run("I was charged twice for my subscription.")
 # result.output -> RoutingDecision(target_agent="billing", confidence=0.92, reasoning="...")
@@ -242,11 +241,10 @@ from fireflyframework_agentic.agents.templates import (
 )
 
 # Create specialised agents
-create_summarizer_agent(name="summarizer", model="openai:gpt-4o")
+create_summarizer_agent(name="summarizer")
 create_classifier_agent(
     ["positive", "negative", "neutral"],
     name="sentiment",
-    model="openai:gpt-4o",
 )
 
 # Create a router that delegates to them
@@ -255,6 +253,5 @@ router = create_router_agent(
         "summarizer": "Summarizes documents and long text",
         "sentiment": "Analyses sentiment of text",
     },
-    model="openai:gpt-4o",
 )
 ```

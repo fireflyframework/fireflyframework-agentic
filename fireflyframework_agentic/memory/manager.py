@@ -22,9 +22,7 @@ pipeline steps, and reasoning patterns.
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from pydantic_ai.messages import ModelMessage
@@ -91,20 +89,6 @@ class MemoryManager:
             ``pip install fireflyframework-agentic[mongodb]``
         """
 
-        def _run_sync(coro: Any) -> Any:
-            """Run *coro* synchronously, safe even when an event loop is already running."""
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-            if loop is not None:
-                pool = ThreadPoolExecutor(max_workers=1)
-                try:
-                    return pool.submit(asyncio.run, coro).result()
-                finally:
-                    pool.shutdown(wait=False)
-            return asyncio.run(coro)
-
         cfg = get_config()
 
         store: MemoryStore
@@ -125,7 +109,7 @@ class MemoryManager:
                 schema_name=cfg.memory_postgres_schema,
             )
             # Initialize the database connection pool
-            _run_sync(store.initialize())
+            store.initialize_sync()
             logger.info("PostgreSQL memory backend initialized")
 
         elif cfg.memory_backend == "mongodb":
@@ -142,7 +126,7 @@ class MemoryManager:
                 pool_size=cfg.memory_mongodb_pool_size,
             )
             # Initialize the database connection pool
-            _run_sync(store.initialize())
+            store.initialize_sync()
             logger.info("MongoDB memory backend initialized")
 
         else:
@@ -207,6 +191,20 @@ class MemoryManager:
         return self._working.to_context_string()
 
     # -- Lifecycle ---------------------------------------------------------
+
+    def close(self) -> None:
+        """Close a database backend after this manager and its forks finish using it.
+
+        Forks share the same backend; closing any manager closes that shared store.
+        In-memory and file backends have no persistent connections to close.
+        """
+        if isinstance(self._store, (PostgreSQLStore, MongoDBStore)):
+            self._store.close_sync()
+
+    async def aclose(self) -> None:
+        """Async counterpart of :meth:`close`, without blocking the caller's loop."""
+        if isinstance(self._store, (PostgreSQLStore, MongoDBStore)):
+            await self._store.close()
 
     def clear_conversation(self, conversation_id: str) -> None:
         """Clear a single conversation."""

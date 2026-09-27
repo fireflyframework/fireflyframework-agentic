@@ -14,7 +14,10 @@
 
 """Performance benchmarks for HTTP connection pooling.
 
-These benchmarks compare performance with and without connection pooling.
+These benchmarks measure local HTTP tool overhead with mocked requests and
+different pooling configurations. Compare their measured callable durations
+to detect local regressions; the mocks do not measure network reuse benefits
+or establish an optimal pool size for a deployed workload.
 
 Run with:
     pytest tests/performance/test_bench_http_pool.py --benchmark-only
@@ -52,11 +55,8 @@ def bench_loop() -> Iterator[asyncio.AbstractEventLoop]:
     detach pooled httpx clients from their loop, so we keep one loop for the
     whole test.
     """
-    loop = asyncio.new_event_loop()
-    try:
-        yield loop
-    finally:
-        loop.close()
+    with asyncio.Runner(loop_factory=asyncio.new_event_loop) as runner:
+        yield runner.get_loop()
 
 
 @pytest.mark.nightly
@@ -77,7 +77,7 @@ def test_bench_with_connection_pool(benchmark, bench_loop, mock_http_response):
 
 
 @pytest.mark.nightly
-def test_bench_without_connection_pool(benchmark, mock_http_response):
+def test_bench_without_connection_pool(benchmark, bench_loop, mock_http_response):
     """Benchmark HTTP requests without connection pooling (urllib fallback)."""
     tool = HttpTool(use_pool=False)
 
@@ -90,7 +90,7 @@ def test_bench_without_connection_pool(benchmark, mock_http_response):
                 method="GET",
             )
 
-    benchmark(lambda: asyncio.run(make_request()))
+    benchmark(lambda: bench_loop.run_until_complete(make_request()))
 
 
 @pytest.mark.nightly
@@ -207,21 +207,3 @@ def test_bench_different_urls_with_pool(benchmark, bench_loop, mock_http_respons
 
     benchmark(lambda: bench_loop.run_until_complete(make_requests_to_different_urls()))
     bench_loop.run_until_complete(tool.close())
-
-
-@pytest.mark.nightly
-def test_bench_pool_vs_no_pool_single_request():
-    """Compare pooled vs non-pooled for single request.
-
-    Meta-benchmark stub: actual comparison is done by inspecting the results of
-    the `http-pool` group benchmarks above. The overhead difference shows up in
-    repeated requests.
-    """
-
-
-# Performance expectations (documented for regression detection):
-# - Connection pooling should show 30-50% improvement for sequential requests
-# - Concurrent requests should show 50-70% improvement with pooling
-# - Pool size of 100 is optimal for most workloads
-# - Larger pools (200+) show diminishing returns
-# - Small pools (10) can become bottleneck under high concurrency

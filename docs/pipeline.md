@@ -2,6 +2,10 @@
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+Unless an example explicitly compares models, it uses
+`FIREFLY_AGENTIC_DEFAULT_MODEL`. Set that and your provider credentials using the
+[model configuration guide](models.md) before running agent examples.
+
 The Pipeline module provides a DAG-based orchestrator for composing multi-step GenAI
 workflows. It supports parallel execution, conditional branching, retries, timeouts,
 and fan-out/fan-in patterns -- everything needed to model real-world enterprise
@@ -249,11 +253,28 @@ The builder accepts `recursion_limit` (default 25) as a safety net — a runaway
 loop surfaces as `result.success=False` with a clean error, not an infinite hang.
 
 ```python
-def route(state):
+from pydantic import BaseModel
+from fireflyframework_agentic.pipeline import PipelineBuilder
+
+class LoopState(BaseModel):
+    counter: int = 0
+    complete: bool = False
+
+async def step(state: LoopState):
+    return {"counter": state.counter + 1}
+
+async def done(state: LoopState):
+    return {"complete": True}
+
+def route(state: LoopState):
     return "done" if state.counter >= 3 else "step"
 
-PipelineBuilder("loop", state=LoopState, recursion_limit=25)
+pipeline = (
+    PipelineBuilder("loop", state=LoopState, recursion_limit=25)
     .add_node(step).add_node(done).branch(step, route).build()
+)
+result = await pipeline.invoke(LoopState())
+assert result.state.counter == 3 and result.state.complete
 ```
 
 ### Runtime Fan-Out via `Send`
@@ -264,16 +285,38 @@ payload is applied to a copy of the current state before its target runs;
 results reduce back into shared state. Replaces the legacy `FanOutStep`.
 
 ```python
-from fireflyframework_agentic.pipeline import Send
+from typing import Annotated
+from pydantic import BaseModel, Field
+from fireflyframework_agentic.pipeline import PipelineBuilder, Send
+from fireflyframework_agentic.pipeline.reducers import extend
 
-def dispatch(state):
-    return [Send("worker", {"item": x}) for x in state.items]
+class MapReduceState(BaseModel):
+    items: list[int] = Field(default_factory=list)
+    item: int = 0
+    results: Annotated[list[int], extend] = Field(default_factory=list)
+    total: int = 0
 
-PipelineBuilder("mapreduce", state=MapReduceState)
+async def planner(state: MapReduceState):
+    return {"items": [1, 2, 3]}
+
+async def worker(state: MapReduceState):
+    return {"results": [state.item * state.item]}
+
+async def collect(state: MapReduceState):
+    return {"total": sum(state.results)}
+
+def dispatch(state: MapReduceState):
+    return [Send("worker", {"item": item}) for item in state.items]
+
+pipeline = (
+    PipelineBuilder("mapreduce", state=MapReduceState)
     .add_node(planner).add_node(worker).add_node(collect)
     .add_edge(worker, collect)
     .branch(planner, dispatch)
     .build()
+)
+result = await pipeline.invoke(MapReduceState())
+assert result.state.total == 14
 ```
 
 When all worker targets share a common successor, the engine continues there
@@ -479,7 +522,6 @@ from fireflyframework_agentic.pipeline.builder import PipelineBuilder
 
 classifier = FireflyAgent(
     name="sentiment-classifier",
-    model="openai:gpt-4o-mini",
     instructions="Classify sentiment as: positive, negative, or neutral.",
 )
 

@@ -33,6 +33,7 @@ import logging
 import sqlite3
 import threading
 from collections import defaultdict
+from contextlib import closing
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -222,7 +223,8 @@ class SQLiteStore:
         self._path = Path(path)
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            with sqlite3.connect(str(self._path)) as conn:
+            # SQLite's transaction context commits or rolls back without closing.
+            with closing(sqlite3.connect(str(self._path))) as conn, conn:
                 conn.execute(
                     f"""
                     CREATE TABLE IF NOT EXISTS {self._TABLE} (
@@ -237,14 +239,14 @@ class SQLiteStore:
             raise DatabaseConnectionError(f"Failed to initialise SQLite database at {self._path}: {exc}") from exc
 
     def save(self, namespace: str, entry: MemoryEntry) -> None:
-        with sqlite3.connect(str(self._path)) as conn:
+        with closing(sqlite3.connect(str(self._path))) as conn, conn:
             conn.execute(
                 f"INSERT OR REPLACE INTO {self._TABLE} (entry_id, namespace, content) VALUES (?, ?, ?)",
                 (entry.entry_id, namespace, entry.model_dump_json()),
             )
 
     def load(self, namespace: str) -> list[MemoryEntry]:
-        with sqlite3.connect(str(self._path)) as conn:
+        with closing(sqlite3.connect(str(self._path))) as conn, conn:
             rows = conn.execute(
                 f"SELECT content FROM {self._TABLE} WHERE namespace = ? ORDER BY rowid",
                 (namespace,),
@@ -259,14 +261,14 @@ class SQLiteStore:
         return None
 
     def delete(self, namespace: str, entry_id: str) -> None:
-        with sqlite3.connect(str(self._path)) as conn:
+        with closing(sqlite3.connect(str(self._path))) as conn, conn:
             conn.execute(
                 f"DELETE FROM {self._TABLE} WHERE namespace = ? AND entry_id = ?",
                 (namespace, entry_id),
             )
 
     def clear(self, namespace: str) -> None:
-        with sqlite3.connect(str(self._path)) as conn:
+        with closing(sqlite3.connect(str(self._path))) as conn, conn:
             conn.execute(
                 f"DELETE FROM {self._TABLE} WHERE namespace = ?",
                 (namespace,),

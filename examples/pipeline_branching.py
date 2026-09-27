@@ -34,6 +34,7 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass, field
 
 from fireflyframework_agentic.pipeline.builder import PipelineBuilder
@@ -86,8 +87,8 @@ def sentiment_router(inputs: dict) -> str:
     text = inputs.get("input", "").lower()
     positive_words = {"good", "great", "love", "amazing", "wonderful", "happy", "excellent"}
     negative_words = {"bad", "terrible", "hate", "awful", "horrible", "sad", "poor"}
-    pos = sum(1 for w in text.split() if w in positive_words)
-    neg = sum(1 for w in text.split() if w in negative_words)
+    pos = sum(1 for w in re.findall(r"\b\w+\b", text) if w in positive_words)
+    neg = sum(1 for w in re.findall(r"\b\w+\b", text) if w in negative_words)
     return "positive" if pos >= neg else "negative"
 
 

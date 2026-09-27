@@ -37,7 +37,7 @@ from typing import Any
 
 from pydantic_ai.models import Model
 
-from fireflyframework_agentic.model_utils import get_model_identifier
+from fireflyframework_agentic.model_utils import get_model_identifier, normalize_model
 
 logger = logging.getLogger(__name__)
 
@@ -132,26 +132,24 @@ async def run_with_fallback(
     original_identifier = agent.model_identifier
     last_error: Exception | None = None
 
-    while True:
-        try:
-            result = await agent.run(prompt, deps=deps, **kwargs)
-            return result
-        except Exception as exc:  # noqa: BLE001
-            model = fallback.current
-            logger.warning("Model '%s' failed: %s", model, exc)
-            last_error = exc
+    try:
+        while True:
+            try:
+                return await agent.run(prompt, deps=deps, **kwargs)
+            except Exception as exc:  # noqa: BLE001
+                model = fallback.current
+                logger.warning("Model '%s' failed: %s", model, exc)
+                last_error = exc
 
-            next_model = fallback.next_model()
-            if next_model is None:
-                break
-            # Swap the underlying model on the pydantic_ai agent
-            agent.agent.model = next_model
-            agent.model_identifier = get_model_identifier(next_model)
-
-    # Restore the original model regardless of outcome
-    agent.agent.model = original_model
-    agent.model_identifier = original_identifier
-    fallback.reset()
+                next_model = fallback.next_model()
+                if next_model is None:
+                    break
+                agent.agent.model = normalize_model(next_model)
+                agent.model_identifier = get_model_identifier(next_model)
+    finally:
+        agent.agent.model = original_model
+        agent.model_identifier = original_identifier
+        fallback.reset()
     if last_error is not None:
         raise last_error
     raise RuntimeError("run_with_fallback exhausted all models without capturing an error")

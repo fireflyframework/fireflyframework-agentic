@@ -2,6 +2,10 @@
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+Unless an example explicitly compares models, it uses
+`FIREFLY_AGENTIC_DEFAULT_MODEL`. Set that and your provider credentials using the
+[model configuration guide](models.md) before running agent examples.
+
 The Memory module provides conversation history, working memory, and pluggable
 storage backends for agents, multi-agent delegation, reasoning patterns, and
 pipelines. It ensures that LLM interactions are stateful and context-aware
@@ -52,7 +56,6 @@ memory = MemoryManager(max_conversation_tokens=32_000)
 # Attach to an agent
 agent = FireflyAgent(
     name="assistant",
-    model="openai:gpt-4o",
     memory=memory,
 )
 
@@ -280,45 +283,49 @@ Production-grade PostgreSQL persistence with connection pooling. Requires
 `asyncpg` (install via `pip install fireflyframework-agentic[postgres]`).
 
 The constructor is `PostgreSQLStore(url, *, pool_size=10, pool_min_size=2,
-timeout=30.0, schema_name="firefly_memory")`. You must `await
-store.initialize()` before use — it creates the connection pool and migrates
-the schema (it is idempotent and safe to call more than once).
+timeout=30.0, schema_name="firefly_memory")`. Call `await store.initialize()`
+during startup to create the pool and schema. Initialization is idempotent;
+`store.initialize_sync()` is the synchronous equivalent.
 
 ```python
+import os
+from fireflyframework_agentic.memory import MemoryManager
 from fireflyframework_agentic.memory.database_store import PostgreSQLStore
 
 store = PostgreSQLStore(
-    url="postgresql://user:pass@localhost/firefly",
+    url=os.environ["FIREFLY_AGENTIC_MEMORY_POSTGRES_URL"],
     pool_size=10,
     pool_min_size=2,
     schema_name="firefly_memory",
 )
-await store.initialize()  # required before any operation
-
-# Use with MemoryManager
+await store.initialize()
 memory = MemoryManager(store=store)
-
-# During application shutdown
-await store.close()
+# During application shutdown, after all users have finished:
+await memory.aclose()
 ```
 
-The sync `save`/`load`/etc. methods run their async counterparts in a worker
-thread and will lazily call `initialize()` if you skipped it, but the
-async-native path (`async_save`, `async_load`, ...) is recommended. The store
-also exposes `await store.cleanup_expired() -> int`, which deletes all
-expired entries (by `expires_at`) and returns the count removed.
+The pool belongs to one persistent event loop managed by the store. Both sync
+`save` / `load` methods and async `async_save` / `async_load` methods dispatch to
+that loop and initialize lazily when needed. Sync methods block the caller;
+async methods await the worker without blocking the caller's event loop. Never
+use the private pool directly from an application loop.
+
+Use `await store.close()` or `store.close_sync()` to shut down a standalone store.
+`await store.cleanup_expired()` deletes expired entries and returns their count.
 
 **Environment Configuration:**
 
 ```bash
 export FIREFLY_AGENTIC_MEMORY_BACKEND=postgres
-export FIREFLY_AGENTIC_MEMORY_POSTGRES_URL=postgresql://user:pass@localhost/firefly
+export FIREFLY_AGENTIC_MEMORY_POSTGRES_URL="$DATABASE_URL"
 export FIREFLY_AGENTIC_MEMORY_POSTGRES_POOL_SIZE=10
 export FIREFLY_AGENTIC_MEMORY_POSTGRES_POOL_MIN_SIZE=2
 export FIREFLY_AGENTIC_MEMORY_POSTGRES_SCHEMA=firefly_memory
 ```
 
-`MemoryManager.from_config()` reads these and calls `initialize()` for you.
+`MemoryManager.from_config()` reads these and initializes the database backend
+through `initialize_sync()` on its owning loop. Supply `DATABASE_URL` through the
+host environment or secret store.
 
 **Schema** (created automatically on `initialize()`):
 
@@ -356,21 +363,26 @@ collection="entries", pool_size=10)`. As with `PostgreSQLStore`, call
 `await store.close()` on shutdown.
 
 ```python
+import os
+from fireflyframework_agentic.memory import MemoryManager
 from fireflyframework_agentic.memory.database_store import MongoDBStore
 
 store = MongoDBStore(
-    url="mongodb://localhost:27017/",
+    url=os.environ["FIREFLY_AGENTIC_MEMORY_MONGODB_URL"],
     database="firefly_memory",
     collection="entries",
     pool_size=10,
 )
-await store.initialize()  # required before any operation
-
+await store.initialize()
 memory = MemoryManager(store=store)
-
-# During application shutdown
-await store.close()
+# During application shutdown, after all users have finished:
+await memory.aclose()
 ```
+
+MongoDB uses the same owning-loop lifecycle as PostgreSQL. Synchronous hosts can
+use `initialize_sync()` / `close_sync()`; asynchronous hosts can await
+`initialize()` / `close()`. Stored timestamps use timezone-aware BSON datetimes,
+so expiry queries compare dates rather than strings.
 
 `MongoDBStore` also exposes `await store.cleanup_expired() -> int` to purge
 expired entries.
@@ -413,17 +425,40 @@ db.entries.createIndex({ entry_id: 1 }, { unique: true })
 
 ### Custom Backends
 
-Implement the `MemoryStore` protocol for Redis, SQL, or any other backend:
+Implement the `MemoryStore` protocol for a new backend or compose an existing one.
+This complete adapter prefixes namespaces while delegating persistence and expiry
+to its backend; use `SQLiteStore` or `FileStore` when persistence is required:
 
 ```python
 from fireflyframework_agentic.memory import MemoryStore, MemoryEntry
+from fireflyframework_agentic.memory.store import InMemoryStore
 
-class RedisStore:
-    def save(self, namespace: str, entry: MemoryEntry) -> None: ...
-    def load(self, namespace: str) -> list[MemoryEntry]: ...
-    def load_by_key(self, namespace: str, key: str) -> MemoryEntry | None: ...
-    def delete(self, namespace: str, entry_id: str) -> None: ...
-    def clear(self, namespace: str) -> None: ...
+class PrefixedStore:
+    def __init__(self, prefix: str, backend: MemoryStore) -> None:
+        self._prefix = prefix
+        self._backend = backend
+
+    def _namespace(self, namespace: str) -> str:
+        return f"{len(self._prefix)}:{self._prefix}:{namespace}"
+
+    def save(self, namespace: str, entry: MemoryEntry) -> None:
+        self._backend.save(self._namespace(namespace), entry)
+
+    def load(self, namespace: str) -> list[MemoryEntry]:
+        return self._backend.load(self._namespace(namespace))
+
+    def load_by_key(self, namespace: str, key: str) -> MemoryEntry | None:
+        return self._backend.load_by_key(self._namespace(namespace), key)
+
+    def delete(self, namespace: str, entry_id: str) -> None:
+        self._backend.delete(self._namespace(namespace), entry_id)
+
+    def clear(self, namespace: str) -> None:
+        self._backend.clear(self._namespace(namespace))
+
+store = PrefixedStore("invoice-service", InMemoryStore())
+store.save("working", MemoryEntry(key="vendor", content="Acme Corp"))
+assert store.load_by_key("working", "vendor").content == "Acme Corp"
 ```
 
 ---
@@ -460,7 +495,7 @@ ephemeral Pydantic AI agent to compress evicted turns into a concise summary.
 ```python
 from fireflyframework_agentic.memory.summarization import create_llm_summarizer
 
-summarizer = create_llm_summarizer(model="openai:gpt-4o-mini")
+summarizer = create_llm_summarizer()
 conv_mem = ConversationMemory(
     max_tokens=4_000,
     summarize_threshold=3_000,
@@ -515,10 +550,15 @@ print(mgr.get_working_context())  # text block for prompt injection
 `memory_backend`, `memory_max_conversation_tokens`, and
 `memory_summarize_threshold` from the framework config, selects the matching
 backend (`in_memory` / `file` / `postgres` / `mongodb`), raises if a required
-URL is missing, and calls `initialize()` on database backends for you:
+URL is missing, and initializes database backends for you. It is a synchronous
+factory; use it during synchronous startup or offload initialization in an async
+host:
 
 ```python
-mgr = MemoryManager.from_config()
+import asyncio
+from fireflyframework_agentic.memory import MemoryManager
+
+mgr = await asyncio.to_thread(MemoryManager.from_config)
 ```
 
 ### Accessors and Lifecycle
@@ -535,6 +575,28 @@ mgr.clear_conversation(cid)  # clear one conversation
 mgr.clear_working()          # clear working memory
 mgr.clear_all()              # clear both
 ```
+
+### Shutdown
+
+Call `mgr.close()` during synchronous shutdown or `await mgr.aclose()` during async
+shutdown. These release supported database clients and their owning event loops;
+they do not delete stored memory. For example, a synchronous application's lifetime
+can use `try/finally`:
+
+```python
+from fireflyframework_agentic.memory import MemoryManager
+
+mgr = MemoryManager.from_config()
+try:
+    mgr.set_fact("status", "ready")
+    print(mgr.get_fact("status"))
+finally:
+    mgr.close()
+```
+
+Forked managers share the backend. Close it only after every manager, fork, and
+in-flight operation using that backend has finished; closing any manager closes
+the shared database store. `clear_all()` removes state and is separate from closing.
 
 ### Forking
 
@@ -554,7 +616,7 @@ child.set_fact("classification", "invoice")
 ### Agents
 
 ```python
-agent = FireflyAgent(name="bot", model="openai:gpt-4o", memory=mgr)
+agent = FireflyAgent(name="bot", memory=mgr)
 result = await agent.run("Hi", conversation_id=cid)
 # message_history is auto-injected, new messages auto-stored
 ```
@@ -610,7 +672,7 @@ export FIREFLY_AGENTIC_MEMORY_SUMMARIZE_THRESHOLD=10  # token count (small defau
 export FIREFLY_AGENTIC_MEMORY_FILE_DIR=.firefly_memory  # used by the "file" backend
 
 # PostgreSQL backend
-export FIREFLY_AGENTIC_MEMORY_POSTGRES_URL=postgresql://user:pass@localhost/firefly
+export FIREFLY_AGENTIC_MEMORY_POSTGRES_URL="$DATABASE_URL"
 export FIREFLY_AGENTIC_MEMORY_POSTGRES_POOL_SIZE=10
 export FIREFLY_AGENTIC_MEMORY_POSTGRES_POOL_MIN_SIZE=2
 export FIREFLY_AGENTIC_MEMORY_POSTGRES_SCHEMA=firefly_memory

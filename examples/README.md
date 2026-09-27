@@ -2,89 +2,96 @@
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
-Runnable example scripts demonstrating the major features of `fireflyframework-agentic`.
+These scripts use Firefly's public application APIs. Start with [model_agnostic_agent.py](model_agnostic_agent.py): it combines `FireflyAgent`, typed `ModelOptions`, a `@firefly_tool`, conversation memory, Pydantic structured output, and streaming without importing a provider SDK.
 
-## Prerequisites
+## Setup and model selection
 
-- Python 3.13+
-- [uv](https://docs.astral.sh/uv/) package manager
-- An OpenAI API key (set `OPENAI_API_KEY` or enter it when prompted)
-
-All examples use the model `openai:gpt-4o`.
-
-## Running
-
-From the repository root:
+From the repository root, with Python 3.13+ and [uv](https://docs.astral.sh/uv/):
 
 ```bash
-export OPENAI_API_KEY="sk-..."
-uv run python examples/<example_name>.py
+uv sync --extra dev
+export FIREFLY_AGENTIC_DEFAULT_MODEL="openai-responses:gpt-6-luna"
+# Set OPENAI_API_KEY in your shell; never put credentials in source.
+uv run python examples/model_agnostic_agent.py
 ```
 
-If `OPENAI_API_KEY` is not set, each script will prompt you interactively.
+For another provider, set its model identifier and credentials. Most model examples use `FIREFLY_AGENTIC_DEFAULT_MODEL`, then the legacy `MODEL` variable, then `openai-responses:gpt-6-luna`. Exceptions are listed below. Scripts do not prompt for keys. Some scripts also load `.env` explicitly; shell variables work for all model examples. Provider authentication is checked when an agent makes a request.
 
-## Agent Examples
+`openai:` and `azure:` retain Chat Completions behavior in Firefly. Use `openai-chat:` / `azure-chat:` to select it explicitly, or `openai-responses:` / `azure-responses:` for Responses. Endpoint selection stays explicit. GPT-6 Astra tool calls require Responses; GPT-6 Sol/Luna Chat tool calls require reasoning to be disabled. Choose an endpoint and model that support the example's tools, structured output, and reasoning controls.
 
-- **`basic_agent.py`** — Create a `FireflyAgent` with instructions and tags, run a prompt.
-- **`conversational_memory.py`** — Multi-turn conversation with `MemoryManager` and `create_conversational_agent`.
-- **`summarizer.py`** — `create_summarizer_agent` with tuneable length, style, and format.
-- **`classifier.py`** — `create_classifier_agent` with categories and `ClassificationResult` structured output.
-- **`extractor.py`** — `create_extractor_agent` with a custom Pydantic model for structured data extraction.
-- **`router.py`** — `create_router_agent` with an agent map and `RoutingDecision` structured output.
+Use `ModelOptions` for application controls such as `max_tokens`, `reasoning`, and `store_responses`. Unsupported combinations raise `ModelOptionsError`; portability does not mean every model supports every setting. Provider-specific `model_settings` remain an advanced escape hatch. See the [model guide](../docs/models.md) and [migration guide](../docs/migration.md).
 
-## Security Examples
+## Agent, memory, and evaluation examples
 
-- **`security_guards.py`** — `PromptGuard` and `OutputGuard` standalone scanning. Demonstrates injection detection, PII/secrets/harmful content scanning, sanitise mode, custom deny patterns, and max output length. **No API key required.**
+**Model** means configured provider credentials and billable requests are required. Model outputs and reported usage vary; examples do not guarantee a particular answer or cost.
 
-## Tool Examples
+| Script | Demonstration | Requirements and notes |
+| --- | --- | --- |
+| [model_agnostic_agent.py](model_agnostic_agent.py) | Framework tools, memory, structured output, streaming, per-run `ModelOptions` | Model; `FIREFLY_AGENTIC_DEFAULT_MODEL` or explicit Responses fallback, without the legacy `MODEL` fallback |
+| [basic_agent.py](basic_agent.py) | Create and run an agent; inspect metadata | Model |
+| [conversational_memory.py](conversational_memory.py) | Multi-turn conversational agent with `MemoryManager` | Model; local memory |
+| [classifier.py](classifier.py) | Categories and typed `ClassificationResult` | Model with structured output |
+| [extractor.py](extractor.py) | Extract a Pydantic contact schema | Model with tools and structured output |
+| [summarizer.py](summarizer.py) | Configure summary length, style, and format | Model with tools |
+| [router.py](router.py) | Produce structured routing decisions | Model with structured output |
+| [delegation_strategies.py](delegation_strategies.py) | Round robin, capability, cost-aware, content-based, and chained selection | Model; `MODEL_CHEAP`, `MODEL_MED`, `MODEL_EXPENSIVE` default to Responses GPT-6 Luna/Sol/Astra; routing itself may make requests; unknown prices are reported |
+| [openai_responses.py](openai_responses.py) | Explicit Responses endpoint, tools, memory, structured output, streaming, storage disabled | `OPENAI_API_KEY`; `OPENAI_MODEL` is an unprefixed ID, default `gpt-6-luna` |
+| [conversation_export_import.py](conversation_export_import.py) | Export/import conversation records, metadata, and summaries | Offline; constructs but does not invoke an LLM summarizer |
+| [llm_eval_example.py](llm_eval_example.py) | Judge answer correctness and relevance | Model; `--model` overrides environment selection; optional `--items-file` JSONL; these metrics do not require the Ragas evaluation extra |
+| [rubric_reviewer.py](rubric_reviewer.py) | Separate generator/grader and bounded revision loop | Model; optional `--question`; unsatisfied reviews raise after the retry limit |
 
-- **`cached_tool.py`** — `CachedTool` wrapping a slow tool with TTL-based memoisation. Shows cache hits/misses, TTL expiry, `invalidate()`, `clear()`, and `max_entries` eviction. **No API key required.**
-- **`tool_timeout.py`** — `BaseTool(timeout=...)` per-tool execution timeout and `ToolTimeoutError` handling. Shows fast/slow/no-timeout tools and graceful fallback patterns. **No API key required.**
+## Reasoning examples
 
-## Memory Examples
+All reasoning scripts require a model that supports structured output. They make multiple calls, and may stop with a step-limit error when the model does not reach the required completion condition. Their traces contain application-generated intermediate steps, not access to hidden provider reasoning.
 
-- **`conversation_export_import.py`** — `export_conversation()` and `import_conversation()` for conversation backup, migration, and restoration. Also demonstrates `create_llm_summarizer()`. **No API key required** for export/import.
+| Script | Demonstration |
+| --- | --- |
+| [reasoning_cot.py](reasoning_cot.py) | Structured thoughts and explicit completion |
+| [reasoning_react.py](reasoning_react.py) | Reason/act/observe through `run_with_reasoning()` |
+| [reasoning_reflexion.py](reasoning_reflexion.py) | Generate, critique, and revise |
+| [reasoning_plan.py](reasoning_plan.py) | Create and execute a structured plan |
+| [reasoning_tot.py](reasoning_tot.py) | Generate and score alternative approaches |
+| [reasoning_goal.py](reasoning_goal.py) | Decompose a goal into phases and tasks |
+| [reasoning_pipeline.py](reasoning_pipeline.py) | Compose chain-of-thought and reflexion patterns |
+| [reasoning_memory.py](reasoning_memory.py) | Enrich reasoning with working memory |
 
-## Observability Examples
+## Local tools, workflows, and controls
 
-- **`observability_usage.py`** — `UsageTracker` with bounded `max_records`, cumulative cost tracking, per-agent and per-correlation summaries. **No API key required.**
+These run without provider credentials. Simulated failures, latency, and usage records are explicitly identified fixtures used to exercise real framework controls.
 
-## Delegation Examples
+| Script | Demonstration | Runtime notes |
+| --- | --- | --- |
+| [cached_tool.py](cached_tool.py) | Cache hits, expiry, invalidation, and eviction | Local lookup with simulated latency |
+| [tool_timeout.py](tool_timeout.py) | Tool deadlines and timeout handling | Local functions with real short sleeps |
+| [security_guards.py](security_guards.py) | Prompt/output scans, redaction, deny patterns, length limits | Scanners run locally; no model invocation |
+| [observability_usage.py](observability_usage.py) | Usage aggregation, bounded records, cumulative cost | Illustrative records and prices, not provider invoices |
+| [quota_management.py](quota_management.py) | `BudgetGate`, rate limiting, exponential retry delays | Known-cost records and local word-count operations; no provider spend |
+| [circuit_breaker.py](circuit_breaker.py) | Closed/open/half-open transitions, recovery, cached fallback | Deterministic failure fixtures and real recovery waits |
+| [prompt_caching.py](prompt_caching.py) | Cache statistics and hypothetical tariff arithmetic | Offline by default; `--live` makes six requests, using configured model or `anthropic:claude-sonnet-5`; cache hits are not guaranteed |
+| [pipeline_branching.py](pipeline_branching.py) | Conditional DAG routing, progress events, retries | Rule-based local steps |
+| [pipeline_state.py](pipeline_state.py) | State branching, document-statistics fan-out, checkpoint/pause/resume | Creates a real tar archive, verifies its digest, and copies it to a local release directory; approval is simulated; all artifacts are scoped to a temporary directory |
 
-- **`delegation_strategies.py`** — `DelegationRouter` with all four strategies: `RoundRobinStrategy`, `CapabilityStrategy`, `CostAwareStrategy`, and `ContentBasedStrategy` (LLM routing).
+## Integration and service examples
 
-## Pipeline Examples
+| Script | Demonstration | Requirements and effects |
+| --- | --- | --- |
+| [batch_processing.py](batch_processing.py) | Bounded concurrency, callbacks, classification DAG, usage comparison | Model; approximately 43 requests across all demos; does not submit native provider batch jobs or obtain batch discounts |
+| [incremental_streaming.py](incremental_streaming.py) | Buffered/incremental text fragments, debouncing, measured timing | Model with streaming; fragments are not billing tokens; timing is measured rather than guaranteed |
+| [full_integration.py](full_integration.py) | Agent middleware, guards, local memory, streaming, batch DAG, usage | Model; eight requests; telemetry export needs host OTel setup; database storage and encryption are not configured here |
+| [cost_tracking.py](cost_tracking.py) | Isolated usage ledger, budget rules, JSONL/OTel sinks | Model; new `firefly-cost-*` temporary directory retained for inspection; `--inflated-prices` changes local accounting only; OTel export needs host setup |
+| [http_connection_pooling.py](http_connection_pooling.py) | Sequential/concurrent HTTP, POST/header echo, pooled/urllib timing | HTTP network; default `https://httpbin.org`; `HTTP_EXAMPLE_BASE_URL` may point to a compatible local echo service; no model |
+| [database_persistence.py](database_persistence.py) | PostgreSQL conversation/fact restoration through a second manager | `[postgres]`, disposable PostgreSQL service, model credentials; requires backend/URL settings; creates schema and retains namespaced demo records |
+| [mongodb_persistence.py](mongodb_persistence.py) | MongoDB conversation isolation and fact restoration | `[mongodb]`, disposable MongoDB service, model credentials; requires backend/URL settings; creates indexes and retains namespaced demo records |
+| [idp_pipeline.py](idp_pipeline.py) | PDF ingestion → splitting → classification → extraction → validation → assembly → explanation | Model with tools/structured output, network access to the sample PDF, `pdfplumber` from dev dependencies; multiple calls/retries; document counts depend on input and model |
+| [idp_tools.py](idp_tools.py) | IDP schemas, PDF/section/date tools, prompt templates, validators | Support module for `idp_pipeline.py`; importing it makes no requests |
+| [software_factory/](software_factory/) | Executable state-based software delivery workflow | See its [README](software_factory/README.md) for local execution and optional database adapters |
 
-- **`pipeline_branching.py`** — `BranchStep` for conditional routing in a DAG, `PipelineEventHandler` for live progress, and `DAGNode.backoff_factor` for exponential retry backoff. **No API key required.**
-- **`pipeline_state.py`** — Three short scenarios with the state-based `PipelineBuilder` (`state=` mode): sentiment branching with `.branch()`, map-reduce with `Send` fan-out, and a HITL deploy gate using `Pause` plus `FileAuditLog`. **No API key required.**
-- **`software_factory/`** — Self-contained example package showing a state-mode agentic SDLC pipeline (`architect → codegen → builder → qa → stable_release`) with the QA feedback loop (`recursion_limit=3`), checkpoint + resume on a transient `builder` failure, and a `StatePipelineEventHandler` printing progress. Includes plug-and-play `Checkpointer` Protocol implementations for Postgres and Redis under `checkpointers/`, and a `QueryableAuditLog` Postgres template under `audit/`. **No API key required.**
+For database examples, install the extra with `uv sync --extra dev --extra postgres` or `--extra mongodb`, set `FIREFLY_AGENTIC_MEMORY_BACKEND`, and set `FIREFLY_AGENTIC_MEMORY_POSTGRES_URL` or `FIREFLY_AGENTIC_MEMORY_MONGODB_URL`. The scripts validate the selected backend and close both managers' stores. They do not print connection URLs or delete records across other namespaces.
 
-## Complex Examples
+## Offline verification
 
-- **`idp_pipeline.py`** _(+ `idp_tools.py`)_ — Full **Intelligent Document Processing** pipeline that downloads a real 33-page PDF (Unilever Certificate of Incorporation & Bylaws) and processes it end-to-end through a **7-node DAG**: `ingest → split → classify → extract → validate → assemble → explain`. Exercises **all major framework features** together:
-  - **Agents** — `FireflyAgent`, `create_classifier_agent` (with category descriptions), `create_extractor_agent`
-  - **Tools** — `@firefly_tool`, `ToolKit`, `CachedTool` (TTL-based memoisation of PDF downloads), tool-to-agent bridging via `as_pydantic_tools()`
-  - **Security** — `PromptGuardMiddleware` (injection detection/sanitisation), `OutputGuardMiddleware` (PII/secrets/harmful content scanning), `CostGuardMiddleware` (budget tracking in warn-only mode)
-  - **Prompts** — `PromptTemplate` with declared variables (split, classification, extraction, explainability)
-  - **Reasoning patterns** — `ReflexionPattern` for validation self-correction
-  - **Content processing** — `TextChunker`, `ContextCompressor`, `TruncationStrategy`
-  - **Memory** — `MemoryManager` with working memory and conversation memory
-  - **Validation** — `OutputValidator`, `GroundingChecker`, `OutputReviewer` (custom retry prompt), field rules, cross-field rules
-  - **Pipeline DAG** — `PipelineBuilder`, `CallableStep`, `.chain()`, `PipelineEngine`, `PipelineEventHandler` (live progress logging)
-  - **Document splitting** — LLM-powered boundary detection splits the PDF into 4 sub-documents, each processed independently
-  - **Explainability** — `TraceRecorder`, `AuditTrail`, `ReportBuilder`, plus an LLM agent that generates a comprehensive human-readable narrative
-  - **Pretty JSON output** — ANSI-colored JSON rendering with key/value colour differentiation
-  - **Logging** — `configure_logging`
+```bash
+uv run pytest tests/integration/test_examples_offline.py
+```
 
-  Requires `pdfplumber` (included in dev dependencies).
-
-## Reasoning Pattern Examples
-
-- **`reasoning_cot.py`** — Chain of Thought: step-by-step reasoning with `ReasoningThought` and trace inspection.
-- **`reasoning_react.py`** — ReAct: Reason-Act-Observe loop via `run_with_reasoning()`.
-- **`reasoning_reflexion.py`** — Reflexion: Execute-Reflect-Retry with `ReflectionVerdict` self-critique.
-- **`reasoning_plan.py`** — Plan-and-Execute: structured planning with `PlanStepDef` status tracking.
-- **`reasoning_tot.py`** — Tree of Thoughts: parallel branch exploration with `BranchEvaluation` scoring.
-- **`reasoning_goal.py`** — Goal Decomposition: hierarchical `GoalPhase` breakdown and task execution.
-- **`reasoning_pipeline.py`** — Pipeline: chaining Chain-of-Thought into Reflexion with a merged trace.
-- **`reasoning_memory.py`** — Memory: reasoning with `MemoryManager` working memory enrichment.
+These checks verify import safety without credentials or network access, document and artifact processing, quota boundaries, cache arithmetic, actual HTTP requests against a local echo server, and agent/reasoning flows with explicit test-provider responses. They do not establish live provider quality, availability, or billing accuracy. Provider HTTP compatibility and credential-gated live tests are described in the [test guide](../tests/README.md).

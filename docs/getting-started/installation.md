@@ -13,6 +13,11 @@ description: Install Firefly Agentic with the interactive installer, uv, or pip 
   `GEMINI_API_KEY`, `GROQ_API_KEY`, or any
   [Pydantic AI-supported provider](https://ai.pydantic.dev/models/).
 
+The runtime requires **Pydantic AI `>=2.51.0,<3`**. Firefly declares its agent
+provider integrations explicitly; optional extras below add storage, embeddings,
+and document processing. Existing installations should review the
+[migration guide](../migration.md) before upgrading.
+
 ## One-line installer (recommended)
 
 The interactive installer detects your platform, checks Python and uv, lets you

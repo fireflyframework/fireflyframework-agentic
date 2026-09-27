@@ -13,21 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Example demonstrating incremental token-by-token streaming.
+"""Measure buffered and incremental text streams for a configured model.
 
-This example shows the difference between buffered and incremental streaming
-modes, highlighting the latency improvements for interactive applications.
-
-Incremental Streaming Benefits:
-    - Lower time-to-first-token (TTFT)
-    - Better perceived performance for users
-    - Minimal latency - tokens appear as they're generated
-    - Ideal for chatbots, interactive assistants, live demos
-
-Buffered Streaming Benefits:
-    - Slightly higher throughput
-    - Better for batch processing
-    - Simpler client-side handling
+Set FIREFLY_AGENTIC_DEFAULT_MODEL and the provider credentials. Fragments can
+contain multiple tokens; fragment counts are not billing-token counts. Results
+depend on provider timing and network conditions, so no latency advantage is
+guaranteed. All measured streams are consumed to completion.
 """
 
 from __future__ import annotations
@@ -39,15 +30,19 @@ import time
 from fireflyframework_agentic.agents.base import FireflyAgent
 
 
+def format_first_fragment(seconds: float | None) -> str:
+    return "no text received" if seconds is None else f"{seconds * 1000:.1f}ms"
+
+
 async def demo_buffered_streaming():
     """Demonstrate buffered streaming mode (default)."""
     print("\n=== Buffered Streaming Demo ===\n")
     print("Buffered mode streams in chunks/messages.")
-    print("Good for most use cases, slightly higher throughput.\n")
+    print("Text chunks arrive according to the provider and debounce settings.\n")
 
     agent = FireflyAgent(
         "buffered-demo",
-        model=os.getenv("MODEL", "openai:gpt-4o-mini"),
+        model=os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "openai-responses:gpt-6-luna")),
         auto_register=False,
     )
 
@@ -60,27 +55,27 @@ async def demo_buffered_streaming():
     first_chunk_time = None
 
     async with await agent.run_stream(prompt, streaming_mode="buffered") as stream:
-        async for chunk in stream.stream_text():
+        async for chunk in stream.stream_text(delta=True):
             if first_chunk_time is None:
                 first_chunk_time = time.perf_counter() - start
-                print(f"\n[First chunk received after {first_chunk_time * 1000:.1f}ms]\n")
+                print(f"\n[First chunk received after {format_first_fragment(first_chunk_time)}]\n")
 
             print(chunk, end="", flush=True)
 
     total_time = time.perf_counter() - start
     print(f"\n\n[Total time: {total_time * 1000:.1f}ms]")
-    print(f"[Time to first chunk: {first_chunk_time * 1000:.1f}ms]")
+    print(f"[Time to first chunk: {format_first_fragment(first_chunk_time)}]")
 
 
 async def demo_incremental_streaming():
     """Demonstrate incremental token-by-token streaming."""
     print("\n\n=== Incremental Streaming Demo ===\n")
-    print("Incremental mode streams individual tokens as they arrive.")
-    print("Provides minimal latency and best perceived performance.\n")
+    print("Incremental mode yields text fragments as they arrive.")
+    print("Fragments can contain more than one model token.\n")
 
     agent = FireflyAgent(
         "incremental-demo",
-        model=os.getenv("MODEL", "openai:gpt-4o-mini"),
+        model=os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "openai-responses:gpt-6-luna")),
         auto_register=False,
     )
 
@@ -97,15 +92,15 @@ async def demo_incremental_streaming():
         async for token in stream.stream_tokens():
             if first_token_time is None:
                 first_token_time = time.perf_counter() - start
-                print(f"\n[First token received after {first_token_time * 1000:.1f}ms]\n")
+                print(f"\n[First token received after {format_first_fragment(first_token_time)}]\n")
 
             print(token, end="", flush=True)
             token_count += 1
 
     total_time = time.perf_counter() - start
     print(f"\n\n[Total time: {total_time * 1000:.1f}ms]")
-    print(f"[Time to first token: {first_token_time * 1000:.1f}ms]")
-    print(f"[Total tokens: {token_count}]")
+    print(f"[Time to first token: {format_first_fragment(first_token_time)}]")
+    print(f"[Total text fragments: {token_count}]")
 
 
 async def demo_incremental_with_debounce():
@@ -116,7 +111,7 @@ async def demo_incremental_with_debounce():
 
     agent = FireflyAgent(
         "debounce-demo",
-        model=os.getenv("MODEL", "openai:gpt-4o-mini"),
+        model=os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "openai-responses:gpt-6-luna")),
         auto_register=False,
     )
 
@@ -134,14 +129,14 @@ async def demo_incremental_with_debounce():
         async for token_batch in stream.stream_tokens(debounce_ms=50.0):
             if first_token_time is None:
                 first_token_time = time.perf_counter() - start
-                print(f"\n[First batch after {first_token_time * 1000:.1f}ms]\n")
+                print(f"\n[First batch after {format_first_fragment(first_token_time)}]\n")
 
             print(token_batch, end="", flush=True)
             batch_count += 1
 
     total_time = time.perf_counter() - start
     print(f"\n\n[Total time: {total_time * 1000:.1f}ms]")
-    print(f"[Time to first batch: {first_token_time * 1000:.1f}ms]")
+    print(f"[Time to first batch: {format_first_fragment(first_token_time)}]")
     print(f"[Total batches: {batch_count}]")
 
 
@@ -151,7 +146,7 @@ async def demo_comparison():
 
     agent = FireflyAgent(
         "comparison-demo",
-        model=os.getenv("MODEL", "openai:gpt-4o-mini"),
+        model=os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "openai-responses:gpt-6-luna")),
         auto_register=False,
     )
 
@@ -163,10 +158,9 @@ async def demo_comparison():
     ttft_buf = None
 
     async with await agent.run_stream(prompt, streaming_mode="buffered") as stream:
-        async for _chunk in stream.stream_text():
+        async for _chunk in stream.stream_text(delta=True):
             if ttft_buf is None:
                 ttft_buf = time.perf_counter() - start_buf
-            break  # Just measure first chunk
 
     total_buf = time.perf_counter() - start_buf
 
@@ -179,22 +173,21 @@ async def demo_comparison():
         async for _token in stream.stream_tokens():
             if ttft_inc is None:
                 ttft_inc = time.perf_counter() - start_inc
-            break  # Just measure first token
 
     total_inc = time.perf_counter() - start_inc
 
     # Show comparison
     print("\nResults:")
     print("  Buffered mode:")
-    print(f"    - Time to first chunk: {ttft_buf * 1000:.1f}ms")
+    print(f"    - Time to first chunk: {format_first_fragment(ttft_buf)}")
     print(f"    - Total time: {total_buf * 1000:.1f}ms")
     print("\n  Incremental mode:")
-    print(f"    - Time to first token: {ttft_inc * 1000:.1f}ms")
+    print(f"    - Time to first token: {format_first_fragment(ttft_inc)}")
     print(f"    - Total time: {total_inc * 1000:.1f}ms")
 
     if ttft_inc and ttft_buf:
         improvement = ((ttft_buf - ttft_inc) / ttft_buf) * 100
-        print(f"\n  Improvement: {improvement:.1f}% faster time-to-first-token")
+        print(f"\n  Observed relative difference in first-fragment latency: {improvement:.1f}%")
 
 
 async def demo_interactive_chat():
@@ -205,7 +198,7 @@ async def demo_interactive_chat():
 
     agent = FireflyAgent(
         "chat-demo",
-        model=os.getenv("MODEL", "openai:gpt-4o-mini"),
+        model=os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "openai-responses:gpt-6-luna")),
         auto_register=False,
     )
 
@@ -234,18 +227,6 @@ async def main():
     print("Incremental Streaming Demonstrations")
     print("=" * 70)
 
-    if not os.getenv("OPENAI_API_KEY"):
-        print("\n⚠️  Warning: OPENAI_API_KEY not set.")
-        print("These demos require a real LLM to show streaming behavior.")
-        print("\nTo run with OpenAI:")
-        print("  export OPENAI_API_KEY=your-key-here")
-        print("  python examples/incremental_streaming.py")
-        print("\nTo run with another provider:")
-        print("  export MODEL=anthropic:claude-3-5-sonnet-20241022")
-        print("  export ANTHROPIC_API_KEY=your-key-here")
-        print("  python examples/incremental_streaming.py")
-        return
-
     # Run demonstrations
     await demo_buffered_streaming()
     await demo_incremental_streaming()
@@ -257,9 +238,9 @@ async def main():
     print("\n\n" + "=" * 70)
     print("Summary")
     print("=" * 70)
-    print("\n✓ Incremental streaming provides 20-40% lower time-to-first-token")
+    print("\n✓ Both streaming modes deliver text progressively")
     print("✓ Better perceived performance for interactive applications")
-    print("✓ Tokens appear immediately as they're generated")
+    print("✓ Text fragment timing depends on the provider and network")
     print("✓ Ideal for chatbots, assistants, and live demos")
     print("\nUsage:")
     print("  # Incremental streaming")
@@ -268,7 +249,7 @@ async def main():
     print("          print(token, end='', flush=True)")
     print("\n  # With debouncing to reduce message frequency")
     print("  async for token in stream.stream_tokens(debounce_ms=50.0):")
-    print("      ...")
+    print("      print(token, end='', flush=True)")
     print()
 
 

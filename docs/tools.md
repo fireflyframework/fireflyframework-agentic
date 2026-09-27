@@ -2,6 +2,10 @@
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+Unless an example explicitly compares models, it uses
+`FIREFLY_AGENTIC_DEFAULT_MODEL`. Set that and your provider credentials using the
+[model configuration guide](models.md) before running agent examples.
+
 The Tools module provides a protocol-driven system for defining, guarding, composing,
 and registering tools that agents can invoke.
 
@@ -87,9 +91,11 @@ classDiagram
 ```python
 from fireflyframework_agentic.tools import firefly_tool
 
-@firefly_tool(name="calculator", description="Evaluate a math expression")
-async def calculator(expression: str) -> str:
-    return str(eval(expression))
+@firefly_tool(name="invoice_total", description="Compute an invoice total from its line amounts")
+async def invoice_total(amounts: list[float], tax_rate: float = 0.0) -> float:
+    if not 0 <= tax_rate <= 1:
+        raise ValueError("tax_rate must be between 0 and 1")
+    return round(sum(amounts) * (1 + tax_rate), 2)
 ```
 
 ### Using the Builder
@@ -203,10 +209,28 @@ per-turn ledger, an audit trail, a metering row or a trace. Register one per too
 
 ```python
 class Ledger:
-    async def before_call(self, tool, kwargs, ctx): ...          # raise to refuse the call
-    async def after_call(self, tool, kwargs, ctx, result): ...   # the result the caller receives
-    async def on_error(self, tool, kwargs, ctx, exc): ...        # ToolError / ToolTimeoutError / ToolGuardError / ModelRetry
-    async def on_pause(self, tool, kwargs, ctx, signal): ...     # ApprovalRequired / CallDeferred: waiting on a person
+    def __init__(self):
+        self.events = []
+
+    def _record(self, tool, ctx, status, detail=""):
+        self.events.append({
+            "tool": tool.name,
+            "call_id": getattr(ctx, "tool_call_id", None),
+            "status": status,
+            "detail": detail,
+        })
+
+    async def before_call(self, tool, kwargs, ctx):
+        self._record(tool, ctx, "started")
+
+    async def after_call(self, tool, kwargs, ctx, result):
+        self._record(tool, ctx, "completed")
+
+    async def on_error(self, tool, kwargs, ctx, exc):
+        self._record(tool, ctx, "failed", type(exc).__name__)
+
+    async def on_pause(self, tool, kwargs, ctx, signal):
+        self._record(tool, ctx, "paused", type(signal).__name__)
 ```
 
 The guard chain is itself the **first** listener (`GuardChainListener`), so the order is one
@@ -244,7 +268,13 @@ from fireflyframework_agentic.tools.guards import RateLimitGuard
 @guarded(RateLimitGuard(max_calls=10, period_seconds=60))
 @firefly_tool("search", description="Search the web")
 async def search(query: str) -> str:
-    ...
+    import os
+    import httpx
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(os.environ["SEARCH_ENDPOINT"], params={"q": query})
+        response.raise_for_status()
+        return response.text
 ```
 
 Or pass a guard chain straight to a tool's constructor via the `guards=` keyword
@@ -277,7 +307,12 @@ from fireflyframework_agentic.tools import firefly_tool, retryable
 @retryable(max_retries=3, backoff=0.5)
 @firefly_tool("fetch", description="Fetch a flaky upstream")
 async def fetch(url: str) -> str:
-    ...
+    import httpx
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        return response.text
 ```
 
 ---
@@ -298,9 +333,12 @@ subclasses, and tools added to a `ToolKit` (via either `as_pydantic_tools()` or
 ```python
 from fireflyframework_agentic.tools import firefly_tool
 
-@firefly_tool("delete_record", description="Delete a database record", requires_approval=True)
+records = {"42": {"title": "Draft invoice"}}
+
+@firefly_tool("delete_record", description="Delete a record from the local example store", requires_approval=True)
 async def delete_record(record_id: str) -> str:
-    ...
+    removed = records.pop(record_id, None)
+    return "Deleted" if removed is not None else "Record not found"
 ```
 
 ### Pause → approve → resume
@@ -314,7 +352,7 @@ messages and a `DeferredToolResults`:
 from fireflyframework_agentic.agents import FireflyAgent, is_deferred
 from fireflyframework_agentic.tools import DeferredToolResults, ToolApproved, ToolDenied
 
-agent = FireflyAgent("ops", model="anthropic:claude-haiku-4-5", tools=[delete_record])
+agent = FireflyAgent("ops", tools=[delete_record])
 
 result = await agent.run("Delete record 42.")
 if is_deferred(result):
@@ -512,7 +550,6 @@ from fireflyframework_agentic.tools.builtins import DateTimeTool, CalculatorTool
 
 agent = FireflyAgent(
     name="assistant",
-    model="openai:gpt-4o",
     tools=[DateTimeTool(), CalculatorTool()], # auto-converted
 )
 ```
@@ -524,7 +561,7 @@ from fireflyframework_agentic.tools.toolkit import ToolKit
 from fireflyframework_agentic.tools.builtins import DateTimeTool, JsonTool, TextTool
 
 kit = ToolKit("utilities", [DateTimeTool(), JsonTool(), TextTool()], description="Common helpers")
-agent = FireflyAgent(name="helper", model="openai:gpt-4o", tools=[kit])
+agent = FireflyAgent(name="helper", tools=[kit])
 ```
 
 The constructor is `ToolKit(name, tools, *, description="", tags=())`. Beyond direct use
@@ -636,7 +673,6 @@ from fireflyframework_agentic.tools.builtins import HttpTool
 
 agent = FireflyAgent(
     name="api-agent",
-    model="openai:gpt-4o",
     tools=[HttpTool(use_pool=True, pool_size=50)],
 )
 

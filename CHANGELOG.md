@@ -3,9 +3,83 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project uses calendar versioning: `YY.MM.Patch`. The patch starts at `0`
+for the first release in a month and increments for subsequent releases that month.
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
+
+## [26.09.0] - 2026-09-26
+
+### Changed
+
+- Upgrade to `pydantic-ai>=2.51.0,<3` and `genai-prices>=0.1.9,<0.2`, with explicit
+  provider extras and dictionary-based model-profile merging for Pydantic AI 2.x.
+- Preserve Chat Completions routing for existing Firefly `openai:` and `azure:`
+  model strings and `ModelSpec` provider names, despite the changed upstream
+  `openai:` default. Preconfigured model objects retain their API selection.
+- Preserve native provider settings in `ModelSpec.settings` alongside portable
+  console settings, including Responses storage and reasoning options.
+- Migrate native instrumentation to version `5` (legacy versions `1`–`4` map to
+  `5`; version `6` is selectable). The retained `instrumentation_event_mode` setting
+  is a compatibility no-op because upstream events now use span attributes.
+- Bound the optional `[evaluation]` extra to Ragas 0.2.6 and LangChain Community
+  0.3.x. Ragas 0.4.3's Instructor dependency conflicts with OpenAI 3.19's `jiter`
+  requirement; intermediate Ragas releases also patch asyncio during import.
+  See the [migration caveat](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/docs/migration.md#optional-evaluation-dependencies).
+- Refresh onboarding, API guides, tutorials, installer quickstarts, and examples
+  around the Firefly agent/tool/memory abstraction and typed model options.
+- Replace simulated software-factory stages with a complete local Python recipe:
+  source compilation, behavioral tests, repair, and a checksum-verified ZIP release.
+
+### Added
+
+- Typed `ModelOptions` for Firefly agents, decorators, per-run overrides, and model
+  specifications, covering common controls and provider features such as reasoning,
+  response storage, and output verbosity. Unsupported options raise
+  `ModelOptionsError`; native settings remain an advanced compatibility escape hatch.
+- A model-agnostic example using Firefly tools, memory, streaming, and typed options
+  with plain Pydantic output schemas and model selection from configuration.
+- Explicit `openai-chat:`, `openai-responses:`, `azure-chat:`, and
+  `azure-responses:` agent model prefixes and matching `ModelSpec` providers.
+- Public `capabilities=` support for Pydantic AI 2.x native tools and capabilities,
+  plus explicit `end_strategy=` selection while preserving Firefly's `"early"` default.
+- OpenAI API migration guidance, current GPT-6 endpoint/reasoning constraints,
+  and a runnable Responses example with tools, structured output, history, and
+  streaming. The default model remains unchanged.
+- Offline HTTP-boundary compatibility tests for Chat Completions and Responses,
+  plus optional credential-gated live OpenAI tests. Offline coverage does not
+  establish availability or behavior of a live model or deployment.
+- Documentation contracts that validate Python snippets and public imports, plus
+  offline execution tests for examples and a strict documentation build in CI.
+- Explicit database-memory cleanup through `MemoryManager.close()` / `aclose()`
+  and synchronous store initialization/cleanup helpers.
+
+### Fixed
+
+- Keep synchronous middleware, model execution, and tracing cleanup in one async
+  context; preserve context variables when running from notebooks or ordinary scripts.
+- Reuse a persistent event loop for repeated synchronous agent calls so pooled
+  HTTP connections remain usable across Chat Completions and Responses turns.
+- Include portable options and the selected API in result-cache identity, and bypass
+  result caching for native model/settings overrides.
+- Persist completed buffered and incremental streaming turns to conversation
+  memory with their provider metadata and reasoning state; leave interrupted
+  streams out of persisted history.
+- Preserve explicit API selection in evaluation judges and fallback models, and
+  restore the original model and fallback state after every fallback outcome.
+- Pass evaluation LLM and embedding clients through Ragas `evaluate(...)` so its
+  native wrappers are applied. Offline tests exercise the real metric adapters
+  and check that importing the pinned extra preserves asyncio.
+- Accept portable `ModelOptions` in `JudgeClient` and use its default zero
+  temperature only when the selected model supports sampling controls.
+- Repair examples using removed prompt, batch-pipeline, and quota APIs; generate
+  actual local artifacts and verify checksums in the state-pipeline example.
+- Select Redis checkpoints by numeric sequence, handle expired records and byte
+  keys, and validate positive checkpoint lifetimes in the example adapter.
+- Keep PostgreSQL and MongoDB memory clients on their owning event loop across
+  sync and async calls; serialize PostgreSQL JSONB metadata and MongoDB expiry
+  dates correctly, and close partially initialized resources on failure.
+- Close SQLite memory connections after each operation, including failed writes.
 
 ## [26.06.16] - 2026-09-24
 

@@ -62,8 +62,8 @@ skill = parse_skill(text, key="x_local_gaap")       # text only; attach resource
 ```python
 bound = skill.with_config({"entity": "Acme SL"})
 bound.render()                      # the body with the config and schema defaults substituted
-skill.validate_config({...})        # every problem at once, [] when valid
-skill.unmet(tools={...}, connectors={...}, skills={...})   # what the host does not provide
+skill.validate_config({"entity": "Acme SL"})        # every problem at once, [] when valid
+skill.unmet(tools={"dw_workspace_write"}, connectors=set(), skills=set())   # what the host does not provide
 skill.digest()                      # SHA-256 over everything the model can see
 ```
 

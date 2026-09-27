@@ -248,7 +248,7 @@ def test_default_resolvers_is_tuple() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_claude_5_is_priced_although_genai_prices_does_not_know_it() -> None:
+def test_claude_5_framework_prices_agree_with_current_catalog() -> None:
     from fireflyframework_agentic.observability.cost_resolvers import (
         DEFAULT_RESOLVERS,
         framework_price_table_cost,
@@ -257,7 +257,7 @@ def test_claude_5_is_priced_although_genai_prices_does_not_know_it() -> None:
     )
 
     ctx = CostContext(model="anthropic:claude-opus-5", input_tokens=1_000_000, output_tokens=1_000_000)
-    assert genai_prices_cost(ctx) is None
+    assert genai_prices_cost(ctx) == pytest.approx(30.0)
     assert framework_price_table_cost(ctx) == pytest.approx(30.0)
     assert resolve_cost(ctx) == pytest.approx(30.0)
     # The table runs before genai-prices, and only for ids it carries.

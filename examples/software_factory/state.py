@@ -21,10 +21,14 @@ from fireflyframework_agentic.pipeline import extend
 
 class BuildState(BaseModel):
     request: str
+    workspace: str
     iteration: int = 0
     adr: str | None = None
     code: str | None = None
     build_status: str | None = None
     qa_status: str | None = None
     qa_feedback: Annotated[list[str], extend] = []
+    source_sha256: str | None = None
     release_tag: str | None = None
+    artifact_path: str | None = None
+    artifact_sha256: str | None = None

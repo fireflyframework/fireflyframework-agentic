@@ -39,7 +39,7 @@ from fireflyframework_agentic.reasoning import PlanAndExecutePattern
 
 load_dotenv()
 
-MODEL = os.environ["MODEL"]
+MODEL = os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "openai-responses:gpt-6-luna"))
 
 # Enable INFO-level logging so that plan generation and step execution
 # progress is printed in real time — only for fireflyframework_agentic loggers.

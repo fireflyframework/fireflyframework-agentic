@@ -31,7 +31,6 @@ from typing import Any
 import pytest
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
-from pydantic_ai.profiles.anthropic import AnthropicModelProfile
 
 from fireflyframework_agentic.models import (
     EFFORT_BUDGETS,
@@ -67,26 +66,25 @@ class TestClaudeProfile:
     @pytest.mark.parametrize("model", ["claude-opus-5", "claude-sonnet-5", "claude-opus-5-20260401"])
     def test_the_claude_5_family_is_known_even_when_the_sdk_table_is_not(self, model: str) -> None:
         profile = claude_profile(model)
-        assert isinstance(profile, AnthropicModelProfile)
-        assert profile.supports_thinking is True
-        assert profile.anthropic_supports_adaptive_thinking is True
-        assert profile.anthropic_supports_effort is True
-        assert profile.anthropic_supports_xhigh_effort is True
-        assert profile.anthropic_disallows_budget_thinking is True
-        assert profile.anthropic_disallows_sampling_settings is True
-        assert profile.supports_json_schema_output is True
+        assert profile["supports_thinking"] is True
+        assert profile["anthropic_supports_adaptive_thinking"] is True
+        assert profile["anthropic_supports_effort"] is True
+        assert profile["anthropic_supports_xhigh_effort"] is True
+        assert profile["anthropic_disallows_budget_thinking"] is True
+        assert profile["anthropic_disallows_sampling_settings"] is True
+        assert profile["supports_json_schema_output"] is True
 
     def test_haiku_4_5_keeps_the_budget_rules(self) -> None:
         profile = claude_profile("claude-haiku-4-5")
-        assert profile.anthropic_supports_adaptive_thinking is False
-        assert profile.anthropic_disallows_budget_thinking is False
-        assert profile.anthropic_disallows_sampling_settings is False
+        assert profile["anthropic_supports_adaptive_thinking"] is False
+        assert profile["anthropic_disallows_budget_thinking"] is False
+        assert profile["anthropic_disallows_sampling_settings"] is False
 
-    def test_the_sdk_profile_is_replaced_never_constructed(self) -> None:
+    def test_the_sdk_profile_fields_survive_corrections(self) -> None:
         """Fields the SDK derives (thinking tags, code-execution versions) survive the corrections."""
         profile = claude_profile("claude-sonnet-5")
-        assert profile.thinking_tags == ("<thinking>", "</thinking>")
-        assert profile.anthropic_default_code_execution_tool_version
+        assert profile["thinking_tags"] == ("<thinking>", "</thinking>")
+        assert profile["anthropic_default_code_execution_tool_version"]
 
 
 class TestCapabilities:
@@ -114,7 +112,7 @@ class TestEffortVocabulary:
         assert effort_for(4096) == "low"
         assert effort_for(8192) == "medium"
         assert effort_for(16384) == "high"
-        assert effort_for(32768) == "high"  # no fifth level on OpenAI's vocabulary
+        assert effort_for(32768) == "high"  # preserve the original budget-to-effort mapping
         assert anthropic_effort_for(1024) == "low"
         assert anthropic_effort_for(8192) == "medium"
         assert anthropic_effort_for(16384) == "high"
@@ -205,15 +203,15 @@ class TestBuild:
         model = await ModelFactory().build(_spec("claude-opus-5"))
         assert isinstance(model, AnthropicModel)
         assert model.model_name == "claude-opus-5"
-        profile = AnthropicModelProfile.from_profile(model.profile)
-        assert profile.anthropic_supports_adaptive_thinking is True
-        assert profile.anthropic_disallows_budget_thinking is True
+        profile = model.profile
+        assert profile["anthropic_supports_adaptive_thinking"] is True
+        assert profile["anthropic_disallows_budget_thinking"] is True
 
-    async def test_profile_overrides_are_applied_with_replace_and_unknown_fields_ignored(self, caplog: Any) -> None:
+    async def test_profile_overrides_are_merged_and_unknown_fields_ignored(self, caplog: Any) -> None:
         spec = _spec("claude-haiku-4-5", profile_overrides={"supports_json_schema_output": False, "not_a_field": 1})
         model = await ModelFactory().build(spec)
-        assert model.profile.supports_json_schema_output is False
-        assert model.profile.supports_thinking is True
+        assert model.profile["supports_json_schema_output"] is False
+        assert model.profile["supports_thinking"] is True
         assert "not_a_field" in caplog.text
 
     async def test_the_credential_is_resolved_by_reference(self) -> None:
@@ -417,32 +415,59 @@ class TestBedrockSettings:
         ``AnthropicModelProfile`` handed to ``BedrockConverseModel`` loses the Bedrock-only
         flags (tool choice, prompt caching, the Bedrock JSON-schema transformer)."""
         pytest.importorskip("boto3")
-        from pydantic_ai.models.bedrock import BedrockModelProfile
         from pydantic_ai.providers.bedrock import BedrockJsonSchemaTransformer
 
         model = await ModelFactory().build(_bedrock_spec("us.anthropic.claude-opus-5"))
         profile = model.profile
-        assert isinstance(profile, BedrockModelProfile)
-        assert profile.bedrock_supports_adaptive_thinking is True
-        assert profile.bedrock_supports_effort is True
-        assert profile.bedrock_supports_tool_choice is True
-        assert profile.bedrock_supports_prompt_caching is True
-        assert profile.supports_thinking is True
-        assert profile.json_schema_transformer is BedrockJsonSchemaTransformer
+        assert profile["bedrock_supports_adaptive_thinking"] is True
+        assert profile["bedrock_supports_effort"] is True
+        assert profile["bedrock_supports_tool_choice"] is True
+        assert profile["bedrock_supports_prompt_caching"] is True
+        assert profile["supports_thinking"] is True
+        assert profile["json_schema_transformer"] is BedrockJsonSchemaTransformer
 
     async def test_the_sdk_sends_the_translated_thinking_on_bedrock(self) -> None:
         """Through pydantic-ai's own translation: what reaches ``additionalModelRequestFields``."""
         pytest.importorskip("boto3")
+        from botocore.stub import Stubber
+        from pydantic_ai.messages import ModelRequest, UserPromptPart
         from pydantic_ai.models import ModelRequestParameters
 
-        spec = _bedrock_spec("us.anthropic.claude-opus-5", settings={"thinkingBudgetTokens": 4096, "temperature": 0.2})
-        model = await ModelFactory().build(spec)
-        prepared, params = model.prepare_request(model_settings_for(spec), ModelRequestParameters())  # type: ignore[arg-type]
-        assert "temperature" not in prepared
-        fields = model._translate_thinking(prepared, params)  # type: ignore[attr-defined]
-        assert fields == {"thinking": {"type": "adaptive"}, "output_config": {"effort": "low"}}
-
-        haiku = _bedrock_spec("us.anthropic.claude-haiku-4-5-20251001-v1:0", settings={"thinkingBudgetTokens": 2048})
-        model = await ModelFactory().build(haiku)
-        prepared, params = model.prepare_request(model_settings_for(haiku), ModelRequestParameters())  # type: ignore[arg-type]
-        assert model._translate_thinking(prepared, params) == {"thinking": {"type": "enabled", "budget_tokens": 2048}}  # type: ignore[attr-defined]
+        for model_id, budget, fields in [
+            (
+                "us.anthropic.claude-opus-5",
+                4096,
+                {"thinking": {"type": "adaptive"}, "output_config": {"effort": "low"}},
+            ),
+            (
+                "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                2048,
+                {"thinking": {"type": "enabled", "budget_tokens": 2048}},
+            ),
+        ]:
+            spec = _bedrock_spec(model_id, settings={"thinkingBudgetTokens": budget, "temperature": 0.2})
+            model = await ModelFactory().build(spec)
+            with Stubber(model.client) as stubber:  # type: ignore[attr-defined]
+                stubber.add_response(
+                    "converse",
+                    {
+                        "output": {"message": {"role": "assistant", "content": [{"text": "Done"}]}},
+                        "stopReason": "end_turn",
+                        "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
+                        "metrics": {"latencyMs": 1},
+                    },
+                    {
+                        "modelId": model_id,
+                        "messages": [{"role": "user", "content": [{"text": "Hello"}]}],
+                        "system": [],
+                        "inferenceConfig": {},
+                        "additionalModelRequestFields": fields,
+                    },
+                )
+                response = await model.request(
+                    [ModelRequest(parts=[UserPromptPart("Hello")])],
+                    model_settings_for(spec),  # type: ignore[arg-type]
+                    ModelRequestParameters(),
+                )
+                assert response.parts[0].content == "Done"
+                stubber.assert_no_pending_responses()

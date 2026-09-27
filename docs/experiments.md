@@ -44,10 +44,10 @@ from fireflyframework_agentic.experiments import Experiment, Variant
 
 experiment = Experiment(
     name="model_comparison",
-    hypothesis="Claude 3.5 produces shorter summaries than GPT-4o.",
+    hypothesis="Claude Haiku produces shorter summaries than GPT-4o.",
     variants=[
         Variant(name="gpt4o", model="openai:gpt-4o"),
-        Variant(name="claude", model="anthropic:claude-3-5-sonnet"),
+        Variant(name="claude", model="anthropic:claude-haiku-4-5"),
     ],
     dataset=["Summarise this article.", "Explain quantum computing."],
 )
@@ -75,19 +75,23 @@ collects a `VariantResult` (outputs, average latency, and run count).
 ```python
 from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.experiments import ExperimentRunner
+from fireflyframework_agentic.models import ModelOptions
 
 
 def build_agent(variant):
     return FireflyAgent(
         name=variant.name,
         model=variant.model,
-        model_settings={"temperature": variant.temperature},
+        model_options=ModelOptions(temperature=variant.temperature),
     )
 
 
 runner = ExperimentRunner()
 results = await runner.run(experiment, build_agent)
 ```
+
+Choose variant controls supported by each model; reasoning models may require
+`temperature=None`. `ModelOptions` rejects unsupported settings before a request.
 
 The runner owns an `ExperimentTracker` internally. By default it creates one
 (`ExperimentRunner(tracker=None)` auto-instantiates an in-memory tracker), and it

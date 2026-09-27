@@ -80,9 +80,9 @@ from fireflyframework_agentic.exceptions import EmbeddingError, EmbeddingProvide
 try:
     result = await embedder.embed(["Hello world"])
 except EmbeddingProviderError as exc:
-    ...  # provider/API-level failure
+    raise RuntimeError("The embedding provider rejected the request") from exc
 except EmbeddingError as exc:
-    ...  # any other embedding failure
+    raise RuntimeError("Embedding failed before completion") from exc
 ```
 
 ---
@@ -97,7 +97,7 @@ from fireflyframework_agentic.embeddings.providers import OpenAIEmbedder
 embedder = OpenAIEmbedder(
     model="text-embedding-3-small",  # or "text-embedding-3-large"
     dimensions=512,                   # optional dimension reduction
-    api_key="sk-...",                 # falls back to OPENAI_API_KEY env var
+    # Reads OPENAI_API_KEY from the environment.
 )
 ```
 
@@ -106,13 +106,14 @@ Install: `pip install fireflyframework-agentic[openai-embeddings]`
 ### Azure OpenAI
 
 ```python
+import os
 from fireflyframework_agentic.embeddings.providers import AzureEmbedder
 
 embedder = AzureEmbedder(
-    model="my-embedding-deployment",
-    azure_endpoint="https://my-resource.openai.azure.com/",
-    api_version="2024-02-01",
-    api_key="...",                    # falls back to AZURE_OPENAI_API_KEY env var
+    model=os.environ["AZURE_OPENAI_EMBEDDING_DEPLOYMENT"],
+    azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+    api_version=os.environ.get("OPENAI_API_VERSION", "2024-02-01"),
+    # Reads AZURE_OPENAI_API_KEY from the environment.
     dimensions=512,                   # optional
 )
 ```
@@ -126,7 +127,7 @@ from fireflyframework_agentic.embeddings.providers import CohereEmbedder
 
 embedder = CohereEmbedder(
     model="embed-english-v3.0",
-    api_key="...",                    # falls back to CO_API_KEY env var
+    # Reads CO_API_KEY from the environment.
     input_type="search_document",     # or "search_query"
 )
 ```
@@ -140,7 +141,7 @@ from fireflyframework_agentic.embeddings.providers import GoogleEmbedder
 
 embedder = GoogleEmbedder(
     model="models/text-embedding-004",
-    api_key="...",                    # falls back to GOOGLE_API_KEY env var
+    # Reads GOOGLE_API_KEY from the environment.
 )
 ```
 
@@ -153,7 +154,7 @@ from fireflyframework_agentic.embeddings.providers import MistralEmbedder
 
 embedder = MistralEmbedder(
     model="mistral-embed",
-    api_key="...",                    # falls back to MISTRAL_API_KEY env var
+    # Reads MISTRAL_API_KEY from the environment.
 )
 ```
 
@@ -166,7 +167,7 @@ from fireflyframework_agentic.embeddings.providers import VoyageEmbedder
 
 embedder = VoyageEmbedder(
     model="voyage-3",
-    api_key="...",                    # falls back to VOYAGE_API_KEY env var
+    # Reads VOYAGE_API_KEY from the environment.
 )
 ```
 

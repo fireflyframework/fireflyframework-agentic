@@ -39,7 +39,7 @@ from fireflyframework_agentic.validation import RubricReviewer
 
 load_dotenv()
 
-MODEL = os.environ["MODEL"]
+MODEL = os.getenv("FIREFLY_AGENTIC_DEFAULT_MODEL", os.getenv("MODEL", "openai-responses:gpt-6-luna"))
 
 RUBRIC = [
     "The answer directly addresses the question without padding.",

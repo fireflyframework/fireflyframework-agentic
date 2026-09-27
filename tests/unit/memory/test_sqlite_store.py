@@ -21,6 +21,7 @@ Each test gets its own temp file via the ``tmp_path`` fixture.
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -49,6 +50,36 @@ def test_save_and_load_roundtrip(tmp_path):
     assert loaded[0].key == "k1"
     assert loaded[0].content == "hello"
     assert loaded[0].scope == MemoryScope.WORKING
+
+
+@pytest.mark.parametrize("serialization_error", [False, True])
+def test_operation_connections_are_closed_even_on_failure(tmp_path, monkeypatch, serialization_error):
+    connections = []
+    connect = sqlite3.connect
+
+    def track_connection(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        connections.append(connection)
+        return connection
+
+    monkeypatch.setattr(sqlite3, "connect", track_connection)
+    try:
+        store = SQLiteStore(tmp_path / "memory.sqlite")
+        if serialization_error:
+            with pytest.raises(ValueError, match="serialize"):
+                store.save("ns", _entry(content=object()))
+        else:
+            entry = _entry(key="key", content="saved")
+            store.save("ns", entry)
+            assert store.load_by_key("ns", "key").content == "saved"
+            store.delete("ns", entry.entry_id)
+            store.clear("ns")
+        for connection in connections:
+            with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+                connection.execute("SELECT 1")
+    finally:
+        for connection in connections:
+            connection.close()
 
 
 def test_save_overwrites_same_entry_id(tmp_path):

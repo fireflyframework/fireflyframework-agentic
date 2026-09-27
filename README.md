@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <em>Keep Pydantic AI's <code>Agent</code>, <code>Tool</code> and <code>RunContext</code> — gain lifecycle hooks, delegation, memory, reasoning patterns, validation loops, RAG, and DAG pipelines, all protocol-driven and swappable.</em>
+  <em>Build with Firefly agents, tools, memory and typed model options — gain lifecycle hooks, delegation, memory, reasoning patterns, validation loops, RAG, and DAG pipelines, all protocol-driven and swappable.</em>
 </p>
 
 <p align="center">
@@ -75,12 +75,13 @@ You write your business logic; the framework provides the architecture.
 
 **What "metaframework" means in practice:**
 
-- You keep Pydantic AI's familiar `Agent`, `Tool`, and `RunContext` APIs unchanged.
+- Use `FireflyAgent`, `@firefly_tool`, `MemoryManager`, and `ModelOptions` as the
+  application interface; native Pydantic AI APIs remain available for advanced integrations.
 - The framework wraps them with lifecycle hooks, registries, delegation routers,
   memory managers, reasoning patterns, validation loops, and DAG pipelines — all
   optional, all composable, all swappable through Python protocols.
-- No vendor lock-in: switch models, swap memory backends, or replace components
-  without touching your agent code.
+- Keep provider selection in configuration and validate options against each model's
+  capabilities. Swap memory backends or other protocol implementations independently.
 
 ---
 
@@ -107,10 +108,11 @@ You write your business logic; the framework provides the architecture.
    Higher layers depend on lower layers but never the reverse, keeping the
    dependency graph acyclic and each module independently testable.
 
-4. **Optional dependencies** — Heavy libraries (`chromadb`, `pinecone`, `openai`,
-   `asyncpg`) are declared as pip extras (`[openai-embeddings]`,
-   `[vectorstores-chroma]`, `[postgres]`, `[all]`). The core framework imports them
-   lazily inside factory functions so that you install only what your deployment requires.
+4. **Optional dependencies** — Storage and numerical libraries (`chromadb`,
+   `pinecone`, `asyncpg`, `numpy`) are declared as pip extras
+   (`[vectorstores-chroma]`, `[postgres]`, `[embeddings]`, `[all]`). The framework
+   imports them lazily so that you install only what your deployment requires.
+   Agent provider integrations are declared explicitly with the Pydantic AI dependency.
 
 ---
 
@@ -389,14 +391,14 @@ Firefly Agentic is the **agentic member** of the [Firefly Framework](https://git
 
 **Core dependencies** (installed automatically):
 
-- [pydantic-ai](https://ai.pydantic.dev/) `>=1.99.0` — Agent engine (model calls, tool dispatch, streaming)
-- [pydantic](https://docs.pydantic.dev/) `>=2.10.0` — Data validation and settings
-- [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) `>=2.7.0` — Environment-based configuration
+- [pydantic-ai](https://pydantic.dev/docs/ai/) `>=2.51.0,<3` — Agent engine (model calls, tool dispatch, streaming), with provider extras declared explicitly
+- [pydantic](https://docs.pydantic.dev/) `>=2.13,<3` — Data validation and settings
+- [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) `>=2.14.2,<3` — Environment-based configuration
 - [Jinja2](https://jinja.palletsprojects.com/) `>=3.1.0` — Prompt template engine
 - [httpx](https://www.python-httpx.org/) `>=0.28.0` — Async HTTP client (built-in HTTP tool, Gotenberg converter)
 - [OpenTelemetry API](https://opentelemetry.io/docs/languages/python/) `>=1.29.0` — Tracing and metrics
 - [OpenTelemetry SDK](https://opentelemetry.io/docs/languages/python/) `>=1.29.0` — Telemetry primitives
-- [genai-prices](https://pypi.org/project/genai-prices/) `>=0.0.1` — LLM pricing data for cost resolution
+- [genai-prices](https://pypi.org/project/genai-prices/) `>=0.1.9,<0.2` — LLM pricing data for cost resolution
 - [markdown-it-py](https://pypi.org/project/markdown-it-py/) `>=3.0` — Structure-aware Markdown chunking
 - [python-dotenv](https://pypi.org/project/python-dotenv/) `>=1.0.0` — `.env` loading for example scripts
 
@@ -512,46 +514,88 @@ Or manually remove the cloned directory and its virtual environment.
 
 ## 5-Minute Quick Start
 
+These Python blocks build on the preceding blocks and use notebook-style `await`.
+In a script, place the calls in `async def main()` and finish with
+`asyncio.run(main())`. For a complete executable script, see the
+[model-agnostic example](examples/model_agnostic_agent.py).
+
 ### 1. Configure
 
 Create a `.env` file (or set environment variables):
 
 ```bash
-# Provider API key (Pydantic AI reads these automatically)
+# Provider API key (the framework reads it from the environment)
 OPENAI_API_KEY=sk-...
 # ANTHROPIC_API_KEY=sk-ant-...
 # GEMINI_API_KEY=...
 # GROQ_API_KEY=gsk_...
 
 # Framework settings
-FIREFLY_AGENTIC_DEFAULT_MODEL=openai:gpt-4o
-FIREFLY_AGENTIC_DEFAULT_TEMPERATURE=0.3
+FIREFLY_AGENTIC_DEFAULT_MODEL=openai-responses:gpt-6-luna
 ```
 
-The model string format is `"provider:model_name"` — e.g. `"openai:gpt-4o"`,
-`"anthropic:claude-sonnet-4-20250514"`, `"google:gemini-2.0-flash"`. Pydantic AI resolves
-the matching API key from environment variables automatically. For programmatic credential
-management (Azure, Bedrock, custom endpoints), pass a Pydantic AI `Model` object directly
-to `FireflyAgent(model=...)` — see the [tutorial](docs/tutorial.md#model-providers--authentication).
+Keep model and endpoint selection in configuration. Application code uses Firefly
+agents, tools, memory, and typed `ModelOptions`; it does not need provider SDK imports
+or provider-specific parameter names:
+
+```python
+from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.models import ModelOptions
+
+agent = FireflyAgent(
+    name="assistant",
+    model_options=ModelOptions(max_tokens=4096),
+)
+```
+
+The agent reads `FIREFLY_AGENTIC_DEFAULT_MODEL` when `model=` is omitted. For
+reasoning and other model features, use options such as `ModelOptions(reasoning="low")`;
+Firefly translates them for the configured model and raises `ModelOptionsError`
+when an explicitly requested option is unsupported. For credentials managed by
+your application, use [`Credential` and `ModelSpec`](docs/models.md).
+
+Firefly keeps existing `openai:` and `azure:` strings on Chat Completions;
+`openai-chat:` / `azure-chat:` make that choice explicit. Responses uses
+`openai-responses:` / `azure-responses:`. This differs from the bare `openai:`
+default in Pydantic AI 2.x. For GPT-6 with reasoning and tools, select Responses
+and leave `FIREFLY_AGENTIC_DEFAULT_TEMPERATURE` unset. The framework's default
+model is unchanged. See [model/API compatibility](docs/models.md#openai-choose-the-api-explicitly),
+the [migration guide](docs/migration.md#pydantic-ai-2-and-openai-api-selection),
+and the complete [model-agnostic example](examples/model_agnostic_agent.py).
+The [Responses example](examples/openai_responses.py) also demonstrates typed
+reasoning and response-storage options.
 
 ### 2. Define an Agent
 
 ```python
 from fireflyframework_agentic.agents import firefly_agent
 
-@firefly_agent(name="assistant", model="openai:gpt-4o")
+@firefly_agent(name="assistant")
 def assistant_instructions(ctx):
     return "You are a helpful conversational assistant."
 ```
 
-### 3. Register a Tool
+### 3. Attach a Tool
+
+Registering a tool makes it discoverable; passing it to `tools=` makes it callable
+by this agent. Firefly adapts decorated tools and `ToolKit` instances automatically.
 
 ```python
+from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.tools import firefly_tool
 
-@firefly_tool(name="lookup", description="Look up a term")
+GLOSSARY = {
+    "bounded retries": "Retry a failed operation up to a configured attempt limit.",
+    "backoff": "Increase the delay between retry attempts to reduce load.",
+}
+
+@firefly_tool(name="lookup", description="Look up a term in the local engineering glossary")
 async def lookup(query: str) -> str:
-    return f"Result for {query}"
+    return GLOSSARY.get(query.strip().lower(), "No glossary entry exists for that term.")
+
+agent = FireflyAgent(name="glossary", tools=[lookup])
+result = await agent.run("Use the glossary to explain bounded retries.")
+print(result.output)
 ```
 
 > **Human-in-the-loop:** mark a tool `@firefly_tool(name=..., requires_approval=True)` and the
@@ -567,7 +611,7 @@ from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.memory import MemoryManager
 
 memory = MemoryManager(max_conversation_tokens=32_000)
-agent = FireflyAgent(name="bot", model="openai:gpt-4o", memory=memory)
+agent = FireflyAgent(name="bot", tools=[lookup], memory=memory)
 
 cid = memory.new_conversation()
 result = await agent.run("Hello!", conversation_id=cid)
@@ -580,7 +624,7 @@ result = await agent.run("What did I just say?", conversation_id=cid)
 from fireflyframework_agentic.reasoning import ReActPattern
 
 react = ReActPattern(max_steps=5)
-result = await react.execute(agent, "What is the weather in London?")
+result = await react.execute(agent, "Explain why bounded retries and backoff work together.")
 print(result.output)
 ```
 
@@ -594,26 +638,30 @@ class Answer(BaseModel):
     answer: str
     confidence: float
 
+answer_agent = FireflyAgent(name="answer", output_type=Answer)
 reviewer = OutputReviewer(output_type=Answer, max_retries=2)
-result = await reviewer.review(agent, "What is 2+2?")
+result = await reviewer.review(answer_agent, "What is 2+2?")
 print(result.output) # Answer(answer="4", confidence=0.99)
 ```
 
 ### 7. Wire a Pipeline
 
 ```python
+from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.pipeline.builder import PipelineBuilder
-from fireflyframework_agentic.pipeline.steps import AgentStep, CallableStep
+from fireflyframework_agentic.pipeline.steps import AgentStep
 
+summarizer = FireflyAgent(name="summarizer", instructions="Summarize the supplied text in one sentence.")
+editor = FireflyAgent(name="editor", instructions="Rewrite the summary in clear, concise English.")
 pipeline = (
-    PipelineBuilder("my-pipeline")
-    .add_node("classify", AgentStep(classifier_agent))
-    .add_node("extract", AgentStep(extractor_agent))
-    .add_node("validate", CallableStep(validate_fn))
-    .chain("classify", "extract", "validate")
+    PipelineBuilder("summarize-and-edit")
+    .add_node("summarize", AgentStep(summarizer))
+    .add_node("edit", AgentStep(editor))
+    .chain("summarize", "edit")
     .build()
 )
-result = await pipeline.run(inputs="Process this document")
+result = await pipeline.run(inputs="Retries must stop after three attempts and wait longer between attempts.")
+print(result.outputs["edit"].output)
 ```
 
 ### 8. Embed and Search (RAG)
@@ -660,15 +708,22 @@ Then select the **Firefly Agentic** kernel when creating a new notebook.
 ```python
 # Cell 1 — configure
 import os
-os.environ["OPENAI_API_KEY"] = "sk-..." # or set in .env
-os.environ["FIREFLY_AGENTIC_DEFAULT_MODEL"] = "openai:gpt-4o"
+from getpass import getpass
+from dotenv import load_dotenv
+
+load_dotenv()
+if not os.environ.get("OPENAI_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = getpass("OpenAI API key: ")
+os.environ["FIREFLY_AGENTIC_DEFAULT_MODEL"] = "openai-responses:gpt-6-luna"
 ```
 
 ```python
 # Cell 2 — create an agent
 from fireflyframework_agentic.agents import FireflyAgent
 
-agent = FireflyAgent(name="notebook-bot", model="openai:gpt-4o")
+from fireflyframework_agentic.models import ModelOptions
+
+agent = FireflyAgent(name="notebook-bot", model_options=ModelOptions(max_tokens=4096))
 result = await agent.run("Explain quantum entanglement in two sentences.")
 print(result.output)
 ```
@@ -678,7 +733,7 @@ print(result.output)
 from fireflyframework_agentic.memory import MemoryManager
 
 memory = MemoryManager(max_conversation_tokens=32_000)
-agent_with_mem = FireflyAgent(name="chat", model="openai:gpt-4o", memory=memory)
+agent_with_mem = FireflyAgent(name="chat", memory=memory)
 
 cid = memory.new_conversation()
 result = await agent_with_mem.run("My name is Alice.", conversation_id=cid)
@@ -707,8 +762,9 @@ class Summary(BaseModel):
     bullet_points: list[str]
     confidence: float
 
+summary_agent = FireflyAgent(name="summary", output_type=Summary)
 reviewer = OutputReviewer(output_type=Summary, max_retries=2)
-result = await reviewer.review(agent, "Summarize the benefits of async Python.")
+result = await reviewer.review(summary_agent, "Summarize the benefits of async Python.")
 result.output # displays the structured Summary object in the notebook
 ```
 
@@ -738,6 +794,8 @@ Detailed guides for each module:
 
 - [Architecture](docs/architecture.md) — Design principles and layer diagram
 - [Agents](docs/agents.md) — Lifecycle, registry, delegation, decorators, human-in-the-loop approval
+- [Models](docs/models.md) — Model factory, provider settings, Chat Completions/Responses selection, model capabilities
+- [Migration](docs/migration.md) — Pydantic AI 2.x, OpenAI API selection, tool and workflow changes
 - [Template Agents](docs/templates.md) — Summarizer, classifier, extractor, conversational, router
 - [Tools](docs/tools.md) — Protocol, builder, guards, composition, built-ins, native HITL approval (`requires_approval`, deferred resume)
 - [Prompts](docs/prompts.md) — Templates, versioning, composition, validation

@@ -146,7 +146,7 @@ def test_instrumentation_settings_reflect_config():
     inst = FireflyAgent._build_capabilities(cfg, None)[0]
     assert isinstance(inst, Instrumentation)
     assert inst.settings.include_content is True
-    assert inst.settings.version == 3
+    assert inst.settings.version == 5  # legacy telemetry formats migrate without upstream deprecations
 
 
 # -- End-to-end span behaviour (in-memory exporter) --------------------------

@@ -1,137 +1,137 @@
-# `software_factory/` — a state-based agentic SDLC pipeline
+# Software factory: build, verify, and archive a Python project
 
-A small, self-contained example that shows the headline features of
-`PipelineBuilder` in state mode:
+This offline example produces a usable `order_totals.py` module, compiles it,
+runs six behavioral unit tests in a child Python process, and creates a ZIP
+archive with a SHA-256 checksum. Build and QA statuses reflect actual results.
+It requires no API key, network access, package installation during a run, or
+external service by default.
 
-- **State + reducers** — one Pydantic model carries everything the agents read or write; `extend` accumulates QA feedback across loop iterations.
-- **Branching** — one `.branch("qa", qa_router)` call gives both the success terminus and the QA cycle.
-- **Cycle with `recursion_limit`** — the QA fail → codegen loop is something port-based DAGs cannot express.
-- **Checkpoint + resume** — `builder` raises a simulated transient error on its first call; `invoke(run_id=...)` resumes from the checkpoint.
-- **Observability handler** — a `StatePipelineEventHandler` prints per-node progress.
+The example demonstrates Firefly's state pipeline API. Its nodes are ordinary
+async functions, rather than LLM agents. The generator implements one documented
+recipe: integer-cent order totals with percentage discounts, half-cent rounding,
+and input validation. `--request` records a description in the architecture
+record; it does not turn the example into an arbitrary application generator.
+For model-backed application code, see [the model-agnostic agent](../model_agnostic_agent.py).
 
-No LLM calls. All agents are deterministic stubs so the example runs offline and the smoke test is stable.
+## Run
 
-## Run it
+From the repository root, after installing the project:
 
 ```bash
-source ~/.venvs/firefly/bin/activate
-python -m examples.software_factory
+uv run python -m examples.software_factory --workspace /tmp/firefly-order-project
 ```
 
-Expected output:
+Use a dedicated output directory. The generator writes its named project files
+there. Omitting `--workspace` creates and prints a retained temporary directory.
+The final JSON output and `run.json` contain the run ID, success status, artifact
+path, and artifact checksum. A failed pipeline exits with code 1.
 
-```
-▶ [software-factory] run abc123ef… starting
-  ▶ architect (visit #1)
-    ✔ architect (0ms)
-  ▶ codegen (visit #1)
-    ✔ codegen (0ms)
-  ▶ builder (visit #1)
-    ✗ builder: dep install timed out
-═ [software-factory] FAILED in 1ms
+The retained files include:
 
-first run:  success=False  failed_node=builder  run_id=abc123ef…
-
-▶ [software-factory] run abc123ef… starting
-  ▶ builder (visit #1)
-    ✔ builder (0ms)
-  ▶ qa (visit #1)
-    ✔ qa (0ms)
-  ▶ codegen (visit #2)
-    ✔ codegen (0ms)
-  ▶ builder (visit #2)
-    ✔ builder (0ms)
-  ▶ qa (visit #2)
-    ✔ qa (0ms)
-  ▶ stable_release (visit #1)
-    ✔ stable_release (0ms)
-═ [software-factory] OK in 2ms
-
-resumed:    success=True  release=v2026.05.28  iteration=2
-qa_feedback: ['missing PSD2 strong-auth flow']
-```
-
-## The DAG
-
-```
-              ┌─────────── qa_status == 'fail' → codegen (recursion_limit=3) ─────────┐
-              │                                                                       │
-              ▼                                                                       │
-architect → codegen → builder → qa ──(qa_router)──▶ stable_release                    │
-                                  │                                                   │
-                                  └───────────────────────────────────────────────────┘
-```
-
-| Node | What it does |
+| File | Contents |
 |---|---|
-| `architect` | Writes a stub ADR string into `state.adr`. |
-| `codegen` | Bumps `state.iteration`, writes `state.code = "v{iteration} (addresses: ...)"`. Iteration 2+ visibly incorporates `qa_feedback`. |
-| `builder` | **Transient failure** on the first call across the process (`raise RuntimeError("dep install timed out")`). Succeeds on every subsequent call. |
-| `qa` | **Substantive failure** on iteration 1 (`qa_status="fail"`, appends to `qa_feedback`). Passes on iteration 2. |
-| `stable_release` | Sets `release_tag`. Terminal. |
+| `order_totals.py` | Importable implementation of `total_price(price_cents, quantity, discount_percent=0)` |
+| `test_order_totals.py` | Six unittest cases covering ordinary orders, discounts, rounding, zero/full-discount orders, ranges, and input types |
+| `README.md` | The generated architecture record and usage instructions |
+| `build/order_totals.pyc` | Compiled source |
+| `qa-report.json` | Actual test process exit code, test output, and tested source digest |
+| `order-totals-sha256-*.zip` | Source, tests, usage instructions, and QA report |
+| `run.json` | Run summary and archive digest |
+| `.checkpoints/`, `.audit/` | Persistent recovery state and per-node execution records |
 
-### Why are `codegen` and `builder` separate nodes?
+The release step checks the source digest again and verifies the archive CRCs.
+It creates a local artifact; it does not publish a package or deploy a service.
+Unpack the ZIP and run `python -m unittest discover -v` to verify the delivered
+project independently. `total_price(1999, 3, 10)` returns `5397` cents.
 
-In stub form they look redundant. They're kept distinct because they model **two different failure-recovery patterns** the state-mode API supports:
+## Pipeline and recovery
 
-| Failure mode | Meaning | How the pipeline recovers |
-|---|---|---|
-| `builder` raises | Transient (network blip, dep flake) — same code, just retry | The engine catches the exception, checkpoints the failure, returns `success=False`. `invoke(run_id=...)` resumes by re-running `builder` in place. **No cycle.** |
-| `qa` returns `"fail"` | Substantive (tests don't pass) — the code itself needs to change | `qa_router` returns `"codegen"`; the cycle re-enters `codegen` which writes v2 informed by `qa_feedback`. |
+```text
+architect -> codegen -> builder -> qa -> stable_release
+                 ^                 |
+                 +-- failed QA ----+
+```
 
-One pipeline, two recovery patterns. Collapsing the nodes loses one of them.
+| Node | Work performed |
+|---|---|
+| `architect` | Records the recipe's contract and design decisions in shared state. |
+| `codegen` | Generates the implementation or accepts an initial implementation supplied with `--source`. After failed QA, regenerates the complete recipe. |
+| `builder` | Validates permitted syntax, writes the project and tests, and compiles the module. |
+| `qa` | Runs the generated tests, stores their output, and reports the actual process result. |
+| `stable_release` | Requires passing build/QA, checks the source digest, and writes and verifies the ZIP. |
 
-## Swapping the checkpointer
+The `extend` state reducer preserves QA feedback. The QA router loops back to
+`codegen` on a test failure, with a maximum of three visits per node. A valid
+fresh generation normally completes in one iteration.
 
-The example defaults to `FileCheckpointer`. To run against a real Redis or Postgres:
+To evaluate and repair an existing implementation of this same recipe:
 
 ```bash
-FIREFLY_CKPT=postgres PG_DSN="postgresql://localhost:5432/firefly" python -m examples.software_factory
-FIREFLY_CKPT=redis    REDIS_URL="redis://localhost:6379/0"       python -m examples.software_factory
+uv run python -m examples.software_factory \
+  --workspace /tmp/firefly-order-repair --source /path/to/order_totals.py
 ```
 
-The Postgres and Redis backends live in this folder as **plug-and-play templates**, not framework code:
+The source gate accepts a single `total_price` function with finite arithmetic,
+comparisons, and input-validation builtins. Imports, attribute access, loops,
+recursive calls, and other application logic are rejected before execution.
+QA runs only the generated test module with a ten-second process timeout. This
+is a bounded arithmetic recipe, not a sandbox for arbitrary Python applications.
 
-- `checkpointers/postgres.py` — implements the framework's `Checkpointer` Protocol against a caller-supplied `psycopg.Connection`.
-- `checkpointers/redis.py` — same idea against a caller-supplied `redis.Redis` client.
-- `audit/postgres.py` — implements `QueryableAuditLog` against a caller-supplied `psycopg.Connection`.
+An environmental error, such as a file blocking creation of the `build/`
+directory, produces a failed run and a checkpoint. Correct the underlying error,
+then use the run ID printed by that run:
 
-Each file is a flat ~50-LOC class. These ship as templates rather than framework code — copy whichever you need into your project, adapt the table name or key prefix, and pass your own connection. The framework's `Checkpointer` and `AuditLog` Protocols are the only contract you need to match.
-
-## When to use Redis vs Postgres
-
-Both implement the same `Checkpointer` Protocol. The choice is about durability, latency, and inspection:
-
-|  | Redis | Postgres |
-|---|---|---|
-| Durability | RDB + AOF; can lose the tail on crash unless `fsync=always` (slow). | WAL-fsynced; survives crashes cleanly. |
-| Latency | Sub-millisecond writes. | Single-digit ms. |
-| TTL | Native per-key (`EX` on `SET`). Old checkpoints disappear automatically. | Manual (cron, partition drop). |
-| Inspection | `KEYS` / `GET`; no SQL, no joins. | Full SQL — joinable with the app's domain tables. |
-| Footprint | Often already in the stack as a cache. | Often already in the stack as the app DB. |
-
-Rule of thumb:
-
-- **Redis** for short-lived workflows (minutes to a few hours), high throughput, where you're OK losing the last few checkpoints on a hard crash and want automatic TTL cleanup.
-- **Postgres** for long-running workflows (hours to days, anything that uses `Pause` for human approval), compliance/audit needs, or when you want to query checkpoint history with SQL.
-
-For most Signature client apps already running on PostgreSQL Flexible Server, Postgres is the default; Redis is the choice when latency matters more than durability.
-
-## File layout
-
-```
-software_factory/
-├── README.md
-├── __main__.py            # entry point — crash, then resume
-├── state.py               # BuildState pydantic model + extend reducer
-├── agents.py              # 5 stub agents (architect, codegen, builder, qa, stable_release)
-├── pipeline.py            # build_pipeline(); qa_router
-├── progress.py            # StatePipelineEventHandler implementation
-├── checkpointers/
-│   ├── postgres.py        # Checkpointer Protocol impl (psycopg)
-│   └── redis.py           # Checkpointer Protocol impl (redis-py)
-└── audit/
-    └── postgres.py        # QueryableAuditLog Protocol impl (psycopg)
+```bash
+uv run python -m examples.software_factory \
+  --workspace /tmp/firefly-order-project --resume RUN_ID
 ```
 
-The end-to-end smoke test lives at `tests/examples/software_factory/test_pipeline.py` — same shape as the other example tests in this repo.
+The builder is retried from the checkpoint. Completed architect/codegen nodes
+are retained. There is no forced failure counter or assumed successful retry.
+The regression tests exercise a real filesystem obstruction followed by an
+actual failing unit test, checkpoint resume, QA repair, and release.
+
+## External checkpoint adapters
+
+File checkpoints are the default. To opt into an external development service,
+install its driver and supply its connection configuration:
+
+```bash
+uv run --with 'psycopg[binary]' python -m examples.software_factory --workspace /tmp/firefly-pg-project
+uv run --with redis python -m examples.software_factory --workspace /tmp/firefly-redis-project
+```
+
+For the first command, set `FIREFLY_CKPT=postgres` and `PG_DSN` in the environment.
+For the second, set `FIREFLY_CKPT=redis` and `REDIS_URL`. The CLI closes the clients
+it creates. PostgreSQL creates `firefly_checkpoints` if absent; Redis writes
+under `firefly:ckpt`. These commands write to the explicitly configured service.
+
+- [PostgreSQL checkpointer](checkpointers/postgres.py) stores checkpoint history
+  with parameterized SQL, idempotent sequence updates, and latest-record lookup.
+- [Redis checkpointer](checkpointers/redis.py) stores expiring JSON checkpoints,
+  scans keys incrementally, compares sequence numbers numerically, and filters
+  expired runs. Its default retention is 30 days; set `ttl_seconds` when creating
+  an adapter directly. Both byte and decoded-string Redis clients are accepted.
+- [PostgreSQL audit log](audit/postgres.py) implements append-only visit recording
+  and ordered read-back through `QueryableAuditLog`. Pass it as
+  `build_pipeline(checkpointer, audit_log=PostgresAuditLog(connection))`.
+
+These adapters implement Firefly protocols and are complete example integrations.
+When instantiating the PostgreSQL adapters directly, use an autocommit connection
+or explicitly commit your own transactions; adapters do not own caller connections.
+The CLI uses autocommit. Server durability and retention remain properties of the
+configured database; the adapters do not configure replication, backups, or WAL/AOF.
+
+The adapter tests replace only the external client/connection boundary. They
+verify SQL parameters, JSON round trips, numeric ordering, byte decoding, and
+expiry behavior. They do not claim a live PostgreSQL or Redis deployment test.
+
+## Tests
+
+```bash
+uv run --extra dev pytest -q tests/examples/software_factory
+```
+
+The suite builds and independently tests an extracted release, verifies recovery
+and QA repair, checks CLI/audit outputs and source integrity, and covers the
+external adapter contracts.

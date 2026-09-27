@@ -47,10 +47,10 @@ from fireflyframework_agentic.agents.delegation import (
 
 load_dotenv()
 
-# Three distinct model tiers so CostAwareStrategy has real spread to rank.
-MODEL_CHEAP = os.environ["MODEL_CHEAP"]
-MODEL_MED = os.environ["MODEL_MED"]
-MODEL_EXPENSIVE = os.environ["MODEL_EXPENSIVE"]
+# Choose tiers through configuration. Unknown prices rank last and are reported.
+MODEL_CHEAP = os.getenv("MODEL_CHEAP", "openai-responses:gpt-6-luna")
+MODEL_MED = os.getenv("MODEL_MED", "openai-responses:gpt-6-sol")
+MODEL_EXPENSIVE = os.getenv("MODEL_EXPENSIVE", "openai-responses:gpt-6-astra")
 
 
 async def main() -> None:
@@ -102,11 +102,11 @@ async def main() -> None:
     # ── 3. Cost-Aware (show the full ranking, not just the winner) ──────
     # Ranks agents by the price of their underlying model and picks the
     # cheapest. Each agent uses a different tier (cheap/med/expensive),
-    # so the printed ranking shows real spread — score 1.00 is the
+    # when prices are available the ranking shows their spread — score 1.00 is the
     # cheapest, 0.00 the most expensive, with the reason explaining
     # the price relative to the pool min/max.
     print("=== Cost-Aware Strategy ===\n")
-    cost = DelegationRouter(agents, CostAwareStrategy())
+    cost = DelegationRouter(agents, CostAwareStrategy(on_unknown="lowest"))
     decision = await cost.decide("Simple classification: is this positive or negative?")
     for c in decision.candidates:
         print(f"  {c.agent.name:11} ({c.agent.model_identifier:25}) score={c.score:.2f}  {c.reason}")
@@ -125,6 +125,9 @@ async def main() -> None:
         "Write a haiku about autumn leaves.",
     ]:
         decision = await content.decide(prompt)
+        if not decision.candidates:
+            print(f"  No routing decision for {prompt!r}: {decision.metadata}")
+            continue
         result = await content.execute(decision, prompt)
         print(f"  Prompt   : {prompt}")
         print(f"  Routed to: {decision.chosen.name}")
@@ -139,7 +142,7 @@ async def main() -> None:
     # Use chains when one rule isn't enough — e.g. "must be able to do X,
     # and among those that can, pick the cheapest / fastest / least loaded".
     print("=== Chain Strategy (capability → cost-aware) ===\n")
-    chain = ChainStrategy(CapabilityStrategy(required_tag="translation"), CostAwareStrategy())
+    chain = ChainStrategy(CapabilityStrategy(required_tag="translation"), CostAwareStrategy(on_unknown="lowest"))
     router = DelegationRouter(agents, chain)
     decision = await router.decide("Translate 'Thank you' to Japanese.")
     print(f"  Survivors after capability filter: {[c.agent.name for c in decision.candidates]}")

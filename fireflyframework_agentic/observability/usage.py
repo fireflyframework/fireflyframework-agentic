@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 def resolve_run_usage(result: Any) -> Any | None:
     """Return the ``RunUsage`` for a pydantic-ai result, or ``None``.
 
-    pydantic-ai 1.x exposes ``result.usage`` as a *property* (calling it — the
+    PydanticAI exposes ``result.usage`` as a *property* (calling it — the
     legacy ``result.usage()`` form — emits a ``PydanticAIDeprecationWarning``),
     while pre-1.x SDKs and some test doubles expose it as a method. If the
     attribute is already a ``RunUsage`` (the property form, including 1.x's

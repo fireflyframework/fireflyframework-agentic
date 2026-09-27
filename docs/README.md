@@ -17,9 +17,9 @@ has a dedicated, protocol-driven module.
 
 ## Getting Started
 
-- **[Installation](../README.md#installation)** — Install via `uv add`, `pip install`,
+- **[Installation](getting-started/installation.md)** — Install via `uv add`, `pip install`,
   or the interactive installer scripts (`install.sh` / `install.ps1`).
-- **[Quick Start](../README.md#5-minute-quick-start)** — Configure a provider, define
+- **[Quick Start](getting-started/quickstart.md)** — Configure a provider, define
   an agent, register a tool, and run your first prompt in 5 minutes.
 - **[The Complete Tutorial](tutorial.md)** — An 18-chapter, hands-on guide covering
   every concept from zero to expert through a real-world IDP pipeline.
@@ -41,6 +41,7 @@ below it, keeping the dependency graph acyclic and each module independently tes
 
 | | |
 |---|---|
+| **[Models](models.md)** | `ModelOptions`, `ModelSpec`, `ModelFactory`, credentials, explicit Chat/Responses selection, provider capability validation |
 | **[Agents](agents.md)** | `FireflyAgent`, `AgentRegistry`, `AgentLifecycle`, `@firefly_agent` decorator, middleware stack (`AgentMiddleware`, `MiddlewareChain`, `Logging`/`PromptGuard`/`CostGuard`/`Observability`/`Explainability`/`Cache`/`OutputGuard`/`Validation`/`Retry`/`PromptCache` middleware), 7 delegation strategies (round-robin, capability, content-based, cost-aware, chain, fallback, weighted), `FallbackModelWrapper` / `run_with_fallback`, `ResultCache` |
 | **[Template Agents](templates.md)** | Five factory functions: summarizer, classifier, extractor, conversational, router |
 | **[Tools](tools.md)** | `ToolProtocol`, `BaseTool`, `ToolBuilder`, guards, composition, caching, 9 built-in tools; full-fidelity schemas via `ParameterSpec(python_type=…)`, `RunContext` opt-in (`takes_ctx`), `ToolKit.as_toolset()` + re-exported native combinators (`FilteredToolset`, `WrapperToolset`, `ApprovalRequiredToolset`, …); human-in-the-loop tool approval (`requires_approval` / `is_deferred` / `deferred_tool_results` / `approval_handler`) |
@@ -139,7 +140,7 @@ standards, testing, and the pull request process.
 
 ## Additional Resources
 
-- **[Migration Guide](migration.md)** — Breaking & behavioural changes (tool `python_type`, `RunContext`, `FireflyAgentRunner` default) and how to update.
+- **[Migration Guide](migration.md)** — Pydantic AI 2.x, typed model options, explicit OpenAI API selection, native capabilities and instrumentation, plus earlier tool and workflow changes and how to update.
 - **[Changelog](../CHANGELOG.md)** — Notable changes by version.
 - **[License](../LICENSE)** — Apache License 2.0.
 - **[Repository](https://github.com/fireflyframework/fireflyframework-agentic)** — Source code on GitHub.

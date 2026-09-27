@@ -16,10 +16,15 @@ import os
 from collections.abc import Awaitable, Callable
 
 from pydantic import BaseModel, ConfigDict
+from pydantic_ai.profiles.openai import openai_model_profile
 
 from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.config import get_config
 from fireflyframework_agentic.embeddings.base import BaseEmbedder
 from fireflyframework_agentic.embeddings.similarity import cosine_similarity
+from fireflyframework_agentic.model_utils import extract_model_info
+from fireflyframework_agentic.models.claude import claude_profile
+from fireflyframework_agentic.models.options import ModelOptions, ModelOptionsError, resolve_model_options
 
 # ── judge client ─────────────────────────────────────────────────────────────────
 
@@ -32,7 +37,7 @@ def parse_model(spec: str) -> tuple[str, str]:
     if ":" not in spec:
         return "unknown", spec
     provider, model = spec.split(":", 1)
-    return provider.strip().lower(), model.strip()
+    return extract_model_info(f"{provider.strip().lower()}:{model.strip()}")
 
 
 def same_provider(pipeline_model: str, judge_model: str) -> bool:
@@ -49,30 +54,48 @@ class JudgeClient:
 
     Each ``judge`` call returns a validated instance of the requested pydantic
     ``output_type`` — schema enforcement replaces hand-rolled JSON parsing.
-    ``temperature`` is pinned to 0.0 for deterministic verdicts. Agents are built
+    ``temperature`` defaults to 0.0 where supported; reasoning models use their
+    provider's sampling behavior. Explicit ``model_options`` are validated rather
+    than silently removed. Agents are built
     lazily and cached per ``(system, output_type, max_tokens)``; transient
     rate-limit / 5xx errors and output-validation failures are retried by
     FireflyAgent / pydantic-ai (``max_retries``). The provider reads its API key
     when the agent is first built, so constructing a client never needs a secret.
     """
 
-    def __init__(self, model: str, timeout: int = 120, max_retries: int = 3) -> None:
+    def __init__(
+        self, model: str, timeout: int = 120, max_retries: int = 3, *, model_options: ModelOptions | None = None
+    ) -> None:
         self.model_spec = model
         self.provider, self.model = parse_model(model)
         self.timeout = timeout
         self.max_retries = max_retries
+        self.model_options = model_options
         self._agents: dict[tuple[str, type, int], FireflyAgent] = {}
 
     def _agent[T: BaseModel](self, system: str, output_type: type[T], max_tokens: int) -> FireflyAgent:
         key = (system, output_type, max_tokens)
         agent = self._agents.get(key)
         if agent is None:
+            values = self.model_options.model_dump(exclude_unset=True) if self.model_options is not None else {}
+            values["max_tokens"] = max_tokens
+            if "temperature" not in values:
+                options = ModelOptions.model_validate({**values, "temperature": 0.0})
+                try:
+                    resolve_model_options(self.model_spec, options)
+                except ModelOptionsError:
+                    # Zero temperature is a judge default, not a caller request.
+                    # Leave it unset when it conflicts with the chosen model/options.
+                    options = ModelOptions.model_validate(values)
+            else:
+                options = ModelOptions.model_validate(values)
             agent = FireflyAgent(
                 name=_AGENT_NAME,
                 model=self.model_spec,
                 instructions=system,
                 output_type=output_type,
-                model_settings={"temperature": 0.0, "max_tokens": max_tokens},
+                model_options=options,
+                config=get_config().model_copy(update={"default_temperature": None}),
                 retries=self.max_retries,
                 auto_register=False,
             )
@@ -803,12 +826,18 @@ def _make_ragas_llm(ctx: EvalContext):
         from langchain_anthropic import ChatAnthropic  # type: ignore[import]  # noqa: PLC0415
 
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        return ChatAnthropic(model=model, api_key=api_key, temperature=0.0)  # type: ignore[call-arg,arg-type]
+        temperature = None if claude_profile(model).get("anthropic_disallows_sampling_settings", False) else 0.0
+        return ChatAnthropic(model=model, api_key=api_key, temperature=temperature)  # type: ignore[call-arg,arg-type]
     if provider == "openai":
         from langchain_openai import ChatOpenAI  # type: ignore[import]  # noqa: PLC0415
 
         api_key = os.environ.get("OPENAI_API_KEY", "")
-        return ChatOpenAI(model=model, api_key=api_key, temperature=0.0)  # type: ignore[call-arg,arg-type]
+        return ChatOpenAI(  # type: ignore[call-arg,arg-type]
+            model=model,
+            api_key=api_key,  # type: ignore[arg-type]
+            temperature=None if openai_model_profile(model).get("supports_thinking", False) else 0.0,
+            use_responses_api=ctx.client.model_spec.startswith("openai-responses:"),
+        )
     if provider == "azure":
         from langchain_openai import AzureChatOpenAI  # type: ignore[import]  # noqa: PLC0415
 
@@ -817,7 +846,9 @@ def _make_ragas_llm(ctx: EvalContext):
             azure_endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT", ""),
             api_key=os.environ.get("AZURE_OPENAI_API_KEY", ""),  # type: ignore[arg-type]
             api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-01"),
-            temperature=0.0,
+            # A deployment name does not reveal whether its model accepts sampling.
+            temperature=None,
+            use_responses_api=ctx.client.model_spec.startswith("azure-responses:"),
         )
     if provider == "ollama":
         from langchain_ollama import ChatOllama  # type: ignore[import]  # noqa: PLC0415
@@ -886,10 +917,10 @@ async def _ragas_score(metric_name: str, item: dict, ctx: EvalContext) -> float 
 
         llm = _make_ragas_llm(ctx)
         embeddings = _build_embeddings(ctx)
-        metric = metric_cls(llm=llm, embeddings=embeddings)
+        metric = metric_cls()
         sample = _make_ragas_sample(item)
         dataset = EvaluationDataset(samples=[sample])
-        result = evaluate(dataset=dataset, metrics=[metric])
+        result = evaluate(dataset=dataset, metrics=[metric], llm=llm, embeddings=embeddings)
         df = result.to_pandas()  # type: ignore[attr-defined]
         col = df.columns[df.columns.str.contains(metric_name.replace("ragas_", "").replace("_ragas", ""), case=False)]
         if col.empty:
