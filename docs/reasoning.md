@@ -5,9 +5,9 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 The Reasoning module provides pluggable reasoning strategies that structure how an
 agent thinks through a problem. Rather than sending a single prompt and hoping for
 a good answer, reasoning patterns decompose the task into structured, iterative
-steps — each validated, traced, and stored in memory.
+steps with structured outputs, traces, and optional working-memory integration.
 
-The framework ships with six production-ready patterns and makes it straightforward
+The framework ships with six built-in patterns and makes it straightforward
 to define custom ones.
 
 ---
@@ -187,8 +187,9 @@ pattern = ChainOfThoughtPattern(output_mode="prompted")
 ```
 
 Resolution order is **per-pattern argument → config default → pydantic-ai default**.
-The mode affects only the real-model paths; the model-less duck-typed fallback can
-make no LLM call, so it keeps parsing text through the fallback cascade regardless.
+The mode affects the two typed-model paths. Without a resolvable model, the fallback
+calls the supplied agent's `run()` method and parses its output through the fallback
+cascade; the supplied agent still controls whether that call uses an LLM.
 The `OutputMode` type alias (`Literal["tool", "native", "prompted"]`) is exported
 from `fireflyframework_agentic.reasoning`.
 
@@ -255,9 +256,9 @@ Each step carries a `kind` discriminator field (`"thought"`, `"action"`, `"obser
 
 ```mermaid
 flowchart LR
-    T[ThoughtStep] --> A[ActionStep] --> O[ObservationStep] --> R[ReflectionStep]
-    R -->|continue| T
-    R -->|done| F([ReasoningResult])
+    PATTERN["Pattern hooks"] --> STEPS["ThoughtStep, ActionStep,<br/>ObservationStep, ReflectionStep"]
+    STEPS --> TRACE["ReasoningTrace<br/>ordered emitted steps"]
+    TRACE --> RESULT["ReasoningResult<br/>output, trace, step count"]
 ```
 
 ```python
@@ -480,8 +481,8 @@ result = await pattern.execute(
 
 ### Tree of Thoughts
 
-Tree of Thoughts (ToT) explores multiple reasoning branches in parallel and
-evaluates each with a structured `BranchEvaluation`. The highest-scoring branch
+Tree of Thoughts (ToT) generates multiple reasoning branches and evaluates them
+sequentially with structured `BranchEvaluation` responses. The highest-scoring branch
 is selected. This pattern overrides `execute()` entirely with its own
 branch-evaluate-select flow.
 
@@ -494,27 +495,28 @@ branch-evaluate-select flow.
 ```mermaid
 flowchart TD
     PROBLEM([Problem]) --> BRANCH["Generate BranchList via _structured_run"]
-    BRANCH --> B1["Branch 0: Approach A"]
-    BRANCH --> B2["Branch 1: Approach B"]
-    BRANCH --> B3["Branch 2: Approach C"]
-    B1 --> E1["BranchEvaluation: score=0.6"]
-    B2 --> E2["BranchEvaluation: score=0.9"]
-    B3 --> E3["BranchEvaluation: score=0.4"]
-    E1 --> SELECT{Select max score}
-    E2 --> SELECT
-    E3 --> SELECT
-    SELECT --> BEST(["Return Branch 1: score=0.9"])
+    BRANCH --> EVALUATE["Evaluate the next branch sequentially"]
+    EVALUATE --> SCORE["Record BranchEvaluation score and reasoning"]
+    SCORE --> MORE{"Unevaluated branches?"}
+    MORE -->|yes| EVALUATE
+    MORE -->|no| SELECT["Select the highest-scoring branch"]
+    SELECT --> REVIEW["Optional reviewer"]
+    REVIEW --> BEST(["Return selected output and trace"])
 ```
 
 ```python
 from fireflyframework_agentic.reasoning import TreeOfThoughtsPattern
 
-pattern = TreeOfThoughtsPattern(branching_factor=3, max_depth=3)
+pattern = TreeOfThoughtsPattern(branching_factor=3)
 result = await pattern.execute(
     my_agent,
     "Design an API for a task management system.",
 )
 ```
+
+The implementation performs one branch-evaluate-select pass. Its `max_depth`
+constructor parameter maps to the inherited `max_steps` property; it does not
+currently drive recursive tree expansion.
 
 **Prompt slots:** `"branch"`, `"evaluate"`
 
@@ -581,22 +583,23 @@ pattern = GoalDecompositionPattern(
 
 Reasoning patterns integrate with the framework's `MemoryManager` to maintain
 working-memory context across iterations. When `memory` is passed to `execute()`,
-the pattern automatically manages an isolated working-memory scope.
+the pattern selects a named working-memory scope. This scope separates pattern
+names, not individual executions.
 
 ```mermaid
 flowchart TD
-    MEM([MemoryManager]) --> FORK["Fork: reasoning:pattern_name"]
-    FORK --> SCOPE[Isolated working-memory scope]
-    SCOPE --> ENRICH["_enrich_prompt: prepend context to prompts"]
-    SCOPE --> PERSIST["_persist_step: write each step to memory"]
-    SCOPE --> OUTPUT["Store reasoning:output on completion"]
+    MEMORY["MemoryManager"] --> FORK["Fork working scope<br/>reasoning:pattern_name"]
+    FORK --> SCOPE["Facts shared by this named scope"]
+    SCOPE --> ENRICH["Enrich model prompts with working context"]
+    SCOPE --> STEPS["Update reasoning:step:N<br/>and reasoning:last_step"]
+    SCOPE --> OUTPUT["Write reasoning:output on completion"]
 ```
 
 **Lifecycle within a pattern execution:**
 
-1. **Fork** — `_init_memory()` forks the `MemoryManager` into a scoped working-memory slot (e.g. `reasoning:react`). This isolates the pattern's state from other concurrent reasoning runs.
-2. **Enrich** — Before each LLM call, `_enrich_prompt()` prepends working memory context to the prompt. This gives the LLM access to all prior reasoning steps.
-3. **Persist** — After each reason/act/observe step, `_persist_step()` writes the step summary to working memory under namespaced keys (`reasoning:step:N`, `reasoning:last_step`).
+1. **Fork** — `_init_memory()` selects a pattern-named working scope (e.g. `reasoning:react`). Repeated or concurrent executions with the same pattern name and backend share that scope. Use separate backing stores when those runs must be isolated; forking the parent manager alone does not change the pattern's scope name.
+2. **Enrich** — Patterns that call `_enrich_prompt()` prepend their retained working facts to the prompt. This is not a replay of the complete trace; Tree of Thoughts uses its explicit branch and evaluation inputs instead.
+3. **Persist** — Each emitted reason/act/observe step updates `reasoning:step:N` and `reasoning:last_step`. Steps in one iteration share `N`, so later hooks replace that iteration's working-memory entry; the trace retains all emitted steps.
 4. **Store output** — On completion, the final output is stored under `reasoning:output`.
 
 ```python
@@ -622,8 +625,9 @@ pattern becomes the input to the next. A pipeline is itself a `ReasoningPattern`
 so pipelines can be nested.
 
 When `memory` is passed, it flows through to every pattern. Each pattern forks the
-memory into its own scope (`reasoning:<pattern_name>`), so subsequent patterns can
-read earlier patterns' outputs via the shared backing store.
+memory into its named scope (`reasoning:<pattern_name>`). The previous result is
+passed explicitly as the next pattern's input; working facts from other scopes are
+not automatically included in that pattern's prompt.
 
 ```mermaid
 flowchart LR
@@ -815,23 +819,15 @@ uv run python examples/reasoning_cot.py
 
 See [examples/README.md](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/examples/README.md) for the full list.
 
-## Note: tool-using ReAct is implemented outside `reasoning/`
+## Reasoning traces and function tools
 
-The patterns in this module (`ReActPattern`, `PlanAndExecutePattern`, etc.)
-drive **text-shaped** reason → act → observe loops via plain
-`agent.run(prompt)` calls. They do not dispatch real function tools — for
-example, `ReActPattern._act` runs the LLM with a text prompt and emits a
-placeholder `ActionStep(tool_name="react_action", tool_args={"thought": …})`
-whose payload is the LLM's free-text description of the action.
+Reasoning patterns orchestrate calls to the supplied agent. For example,
+`ReActPattern._act` invokes `agent.run(prompt)` and records an
+`ActionStep(tool_name="react_action", ...)` describing that reasoning stage.
+This trace entry is not itself a function-tool dispatch record.
 
-If you need a tool-using ReAct loop, drive pydantic-ai's native
-tool-calling directly — construct a `FireflyAgent(tools=[...])` (see the
-[Agents guide](agents.md)) and let it dispatch real function tools. You
-can then translate the resulting message history into a typed
-`ReasoningTrace` to keep the trace API in this module applicable. See
-[use-case-idp.md](use-case-idp.md) for an end-to-end reasoning example.
-
-**Open follow-up**: promote a generic `ToolCallingReActPattern` into this
-module once a concrete consumer needs it. The load-bearing piece to lift
-is a helper that translates a pydantic-ai message history into a
-`ReasoningTrace`.
+Configure real function tools on `FireflyAgent(tools=[...])`; Pydantic AI dispatches
+them during the agent's model calls, including calls made by a reasoning pattern.
+Inspect the agent's messages or tool lifecycle events for individual tool calls.
+See the [Tools guide](tools.md) for registration and lifecycle hooks, and the
+[IDP guide](use-case-idp.md) for an end-to-end reasoning example.

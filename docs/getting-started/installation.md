@@ -9,7 +9,7 @@ description: Install Firefly Agentic with the interactive installer, uv, or pip 
 
 - **Python 3.13** or later
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
-- At least one LLM provider key — `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+- For hosted models, the selected provider’s credentials — `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
   `GEMINI_API_KEY`, `GROQ_API_KEY`, or any
   [Pydantic AI-supported provider](https://ai.pydantic.dev/models/).
 
@@ -18,10 +18,33 @@ provider integrations explicitly; optional extras below add storage, embeddings,
 and document processing. Existing installations should review the
 [migration guide](../migration.md) before upgrading.
 
-## One-line installer (recommended)
+Local and test models may not need credentials.
+
+## Install a release
+
+Use a Python 3.13+ virtual environment and install the wheel from
+[v26.09.0](https://github.com/fireflyframework/fireflyframework-agentic/releases/tag/v26.09.0):
+
+```bash
+python -m pip install "https://github.com/fireflyframework/fireflyframework-agentic/releases/download/v26.09.0/fireflyframework_agentic-26.9.0-py3-none-any.whl"
+```
+
+Include an extra using a direct-reference requirement:
+
+```bash
+python -m pip install "fireflyframework-agentic[postgres] @ https://github.com/fireflyframework/fireflyframework-agentic/releases/download/v26.09.0/fireflyframework_agentic-26.9.0-py3-none-any.whl"
+```
+
+Releases use **YY.MM.Patch**, starting with patch `0` each month. Python normalizes
+`26.09.0` to `26.9.0` in package filenames. The release workflow publishes GitHub
+assets; it does not publish to PyPI. Pin the framework and lock application
+dependencies for reproducible deployments.
+
+## One-line installer
 
 The interactive installer detects your platform, checks Python and uv, lets you
-choose extras, and verifies the result.
+choose extras, and verifies the result. It installs the current `main` branch;
+use the release wheel above to pin a published version.
 
 === "macOS / Linux"
 
@@ -40,7 +63,7 @@ choose extras, and verifies the result.
 ```bash
 git clone https://github.com/fireflyframework/fireflyframework-agentic.git
 cd fireflyframework-agentic
-uv sync --all-extras                       # or: pip install -e ".[all]"
+uv sync --extra all                       # or: pip install -e ".[all]"
 ```
 
 ## Optional extras
@@ -54,12 +77,15 @@ deploy.
 | `script-execution` | pydantic-monty | The deny-by-default Monty sandbox for secure script execution |
 | `embeddings` | numpy | Fast in-memory vector math |
 | `openai-embeddings` | openai | OpenAI / Azure text embeddings |
-| `cohere-embeddings` · `google-embeddings` · `mistral-embeddings` · `voyage-embeddings` · `bedrock-embeddings` · `ollama-embeddings` | provider SDKs | The matching embedding provider |
+| `azure-embeddings` · `cohere-embeddings` · `google-embeddings` · `mistral-embeddings` · `voyage-embeddings` · `bedrock-embeddings` · `ollama-embeddings` | provider SDKs | The matching embedding provider |
 | `vectorstores-chroma` · `vectorstores-pinecone` · `vectorstores-qdrant` · `vectorstores-pgvector` · `vectorstores-sqlite-vec` | backend clients | The matching vector-store backend |
-| `postgres` · `mongodb` | asyncpg/SQLAlchemy · motor/pymongo | Database-backed memory / storage |
+| `postgres` · `mongodb` | asyncpg/SQLAlchemy · motor/pymongo | Persistent working memory / storage |
 | `binary` | pypdf, Pillow, pillow-heif, cairosvg, py7zr, extract-msg | `content.binary` file normalisation |
 | `watch` | watchfiles | File-watching for content sources |
-| `all` | Everything above | Full install with all integrations |
+| `reasoning-eval` | numpy, pandas | Reasoning quality comparisons |
+| `evaluation` | Ragas, LangChain adapters | LLM-as-judge evaluation; read the [compatibility constraints](../migration.md#optional-evaluation-dependencies) |
+| `dev` | pytest, Ruff, Pyright, pre-commit, Testcontainers | Framework development |
+| `all` | Runtime integrations above | Excludes `reasoning-eval`, `evaluation`, and `dev`; `uv sync --all-extras` includes these too |
 
 ## Verify
 

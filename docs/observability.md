@@ -641,27 +641,38 @@ handler.setFormatter(JsonFormatter())
 
 ## Integration with Agents
 
-Observability is designed to integrate transparently with the Agent layer. When an
-agent is invoked, the framework automatically creates a trace span, records metrics,
-emits events, and records usage for cost tracking. You do not need to instrument
-agent code manually unless you want additional detail.
+Agent telemetry is assembled from separately configured paths. Default
+`ObservabilityMiddleware` owns the agent span and start event; native Pydantic AI
+instrumentation adds model/tool spans when enabled. With cost tracking enabled,
+`UsageTracker` emits records to its sinks, which own token/cost/latency metrics and
+the completion event. The host configures OTel providers and exporters. On model
+failure, the middleware error hook records the exception and closes the span.
 
 ```mermaid
 sequenceDiagram
     participant App
-    participant Agent
-    participant Tracer
-    participant Metrics
-    participant Events
-    participant UsageTracker
+    participant Agent as FireflyAgent
+    participant MW as ObservabilityMiddleware
+    participant PAI as Pydantic AI
+    participant Usage as UsageTracker
+    participant Sinks as Cost sinks
+    participant Host as Host-configured OTel SDK
 
     App->>Agent: run(prompt)
-    Agent->>Tracer: start span
-    Agent->>Events: emit agent.started
-    Agent->>Agent: execute LLM call
-    Agent->>Metrics: record latency + tokens
-    Agent->>UsageTracker: record usage + cost
-    Agent->>Events: emit agent.completed
-    Agent->>Tracer: end span
+    opt Observability middleware enabled
+        Agent->>MW: before_run
+        MW->>Host: open agent span and emit agent.started
+    end
+    Agent->>PAI: model request and tool execution
+    opt Native instrumentation enabled
+        PAI->>Host: nested model and tool spans
+    end
+    PAI-->>Agent: result and usage
+    opt Cost tracking enabled
+        Agent->>Usage: record token usage and resolved cost
+        Usage->>Sinks: emit UsageRecord
+        Sinks->>Host: metrics and agent.completed event
+    end
+    Agent->>MW: after_run closes span when present
     Agent-->>App: result
 ```

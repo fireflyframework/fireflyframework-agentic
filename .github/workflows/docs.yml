@@ -12,6 +12,8 @@ on:
     branches: [main]
     paths:
       - "docs/**"
+      - "assets/**"
+      - "scripts/check_docs.py"
       - "overrides/**"
       - "mkdocs.yml"
       - "CHANGELOG.md"
@@ -45,8 +47,15 @@ jobs:
           restore-keys: ${{ runner.os }}-pip-
       - name: Install docs toolchain
         run: pip install -r docs/requirements.txt
+      - name: Check generated diagrams
+        run: python assets/tools/build_brand_assets.py --check
       - name: Build (strict)
         run: mkdocs build --strict
+      - name: Check links and render Mermaid diagrams
+        run: |
+          pip install playwright==1.63.0
+          python -m playwright install --with-deps chromium
+          python scripts/check_docs.py --browser
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

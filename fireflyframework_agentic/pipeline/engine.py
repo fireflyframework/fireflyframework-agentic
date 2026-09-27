@@ -226,8 +226,9 @@ def start_otel_span(name: str, **attributes: Any) -> Any:
 
 
 class PipelineEngine:
-    """Executes a :class:`DAG` by computing topological levels and running
-    nodes within each level concurrently.
+    """Executes ready nodes as their dependencies complete.
+
+    Cyclic and dynamic routes use bounded frontier-based execution.
 
     Parameters:
         dag: The DAG to execute.

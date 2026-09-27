@@ -369,35 +369,16 @@ The following diagram shows how `FireflyAgent` sits on top of Pydantic AI and co
 to the rest of the framework:
 
 ```mermaid
-graph TB
-    subgraph Application Code
-        DEC["@firefly_agent decorator"]
-        CLS["FireflyAgent class"]
-    end
-
-    subgraph Agent Layer
-        FA["FireflyAgent"]
-        PAI["pydantic_ai.Agent\n(model calls, tool dispatch, streaming)"]
-        REG["AgentRegistry\n(singleton name → agent map)"]
-        CTX["AgentContext\n(correlation_id, metadata, trace)"]
-        LC["AgentLifecycle\n(init → warmup → shutdown)"]
-    end
-
-    subgraph Consumers
-        PIPE["Pipelines"]
-        DELEG["Delegation Router"]
-        REASON["Reasoning Patterns"]
-    end
-
-    DEC -->|creates + registers| FA
-    CLS -->|creates| FA
-    FA -->|wraps| PAI
-    FA -->|registers in| REG
-    FA -->|carries| CTX
-    FA -->|hooks| LC
-    REG -->|lookup by name| PIPE
-    REG -->|lookup by name| DELEG
-    REG -->|lookup by name| REASON
+flowchart TD
+    HOST["Host application"] --> CREATE["FireflyAgent or firefly_agent decorator"]
+    CREATE --> AGENT["Configured FireflyAgent"]
+    AGENT -->|default registration| REGISTRY["AgentRegistry"]
+    HOST -->|explicit startup and shutdown| LIFECYCLE["AgentLifecycle hooks"]
+    HOST -->|per-run correlation| CONTEXT["AgentContext"]
+    CONTEXT --> AGENT
+    CONSUMERS["Pipelines, delegation, reasoning"] --> AGENT
+    AGENT --> OPTIONS["Model selection and ModelOptions"]
+    OPTIONS --> PAI["Pydantic AI<br/>requests, tools, streaming"]
 ```
 
 ### Creating an Agent with the Decorator
@@ -627,55 +608,18 @@ The following diagram shows the full tool stack — from how you create tools at
 through the guard chain, to how they reach an agent at the bottom:
 
 ```mermaid
-graph TB
-    subgraph "Tool Creation"
-        DEC["@firefly_tool decorator"]
-        BLD["ToolBuilder (fluent API)"]
-        BLT["Built-in Tools\n(Http, FileSystem, DateTime, JSON, ...)"]
-    end
-
-    subgraph "Tool Protocol Layer"
-        TP["ToolProtocol"]
-        BT["BaseTool\n(name, description, execute)"]
-    end
-
-    subgraph "Guard Chain"
-        CG["CompositeGuard"]
-        VG["ValidationGuard"]
-        RG["RateLimitGuard"]
-        SG["SandboxGuard"]
-    end
-
-    subgraph "Composition"
-        SEQ["SequentialComposer"]
-        FB["FallbackComposer"]
-        COND["ConditionalComposer"]
-    end
-
-    subgraph "Registration & Bridging"
-        TR["ToolRegistry\n(global catalog)"]
-        TK["ToolKit\n(group related tools)"]
-    end
-
-    subgraph "Agent Integration"
-        FA["FireflyAgent(tools=[...])"]
-        PAI["pydantic_ai.Agent\n(calls tools during LLM run)"]
-    end
-
-    DEC --> BT
-    BLD --> BT
-    BLT --> BT
-    BT --> TR
-    BT -.->|"guarded"| CG
-    CG --> VG
-    CG --> RG
-    CG --> SG
-    BT -.->|"compose"| SEQ
-    BT -.->|"compose"| FB
-    BT -.->|"compose"| COND
-    TR --> TK
-    TK -->|"tools=[kit]"| FA
-    FA -->|"tools list"| PAI
+flowchart TD
+    BUILD["firefly_tool, ToolBuilder, built-ins"] --> TOOL["Firefly tool"]
+    TOOL -->|optional registration| REGISTRY["ToolRegistry"]
+    TOOL --> KIT["ToolKit or direct tools list"]
+    KIT --> AGENT["FireflyAgent"]
+    AGENT --> SCHEMA["Typed schemas exposed to Pydantic AI"]
+    SCHEMA --> CALL["Model requests a function tool"]
+    CALL --> GUARDS["Guard chain before the handler"]
+    GUARDS --> LISTENERS["before_call listeners"]
+    LISTENERS --> HANDLER["Handler with optional timeout"]
+    HANDLER --> EVENTS["after_call, on_error or on_pause"]
+    EVENTS --> RESULT["Tool result or control signal"]
 ```
 
 ### Creating a Tool with the Decorator
@@ -1345,10 +1289,10 @@ repeatable, observable, debuggable process?
 
 ### The Architecture
 
-All patterns share the same core engine. `AbstractReasoningPattern` implements the
-**Template Method** design pattern: the base class runs the outer loop (step counting,
-trace recording, max-steps enforcement, optional output review), and each concrete
-pattern overrides five hooks that define its behaviour:
+`AbstractReasoningPattern` provides a shared **Template Method** loop: step counting,
+trace recording, max-steps enforcement, and optional output review. ReAct, Chain of
+Thought, Plan-and-Execute, and Reflexion customize its hooks. Tree of Thoughts and
+Goal Decomposition override execution while reusing structured-output and trace helpers:
 
 ```
 _reason(state) → Generate a thought ("what do I think?")
@@ -1361,37 +1305,20 @@ _extract_output() → Produce the final answer ("what's the result?")
 Here is how all the pieces fit together:
 
 ```mermaid
-graph TD
-    subgraph AbstractReasoningPattern
-        EX["execute(agent, input)"] --> R["_reason()"]
-        R --> STOP{"_should_stop?"}
-        STOP -->|no| A["_act()"]
-        A --> O["_observe()"]
-        O --> CONT{"_should_continue?"}
-        CONT -->|yes| R
-        CONT -->|no| OUT["_extract_output()"]
-        STOP -->|yes| OUT
-        OUT --> REV{"reviewer?"}
-        REV -->|yes| REVIEW["OutputReviewer.review()"]
-        REV -->|no| RESULT["ReasoningResult"]
-        REVIEW --> RESULT
-    end
-
-    subgraph Six Patterns
-        REACT["ReAct"]
-        COT["Chain of Thought"]
-        PAE["Plan-and-Execute"]
-        REF["Reflexion"]
-        TOT["Tree of Thoughts"]
-        GD["Goal Decomposition"]
-    end
-
-    REACT -->|extends| EX
-    COT -->|extends| EX
-    PAE -->|extends| EX
-    REF -->|extends| EX
-    TOT -->|extends| EX
-    GD -->|extends| EX
+flowchart TD
+    PATTERN["Reasoning pattern"] --> MODE{"Execution strategy"}
+    MODE -->|ReAct, CoT, Plan-and-Execute, Reflexion| LOOP["Base execute loop"]
+    LOOP --> REASON["reason, early-stop check, act, observe"]
+    REASON --> CONTINUE{"Continue below max_steps?"}
+    CONTINUE -->|yes| LOOP
+    CONTINUE -->|finished| OUTPUT["Extract output"]
+    CONTINUE -->|limit reached| ERROR["ReasoningStepLimitError"]
+    MODE -->|Tree of Thoughts| TREE["Generate, evaluate and select a branch"]
+    MODE -->|Goal Decomposition| GOALS["Plan phases and execute tasks"]
+    TREE --> OUTPUT
+    GOALS --> OUTPUT
+    OUTPUT --> REVIEW["Optional output reviewer"]
+    REVIEW --> RESULT["ReasoningResult with trace"]
 ```
 
 ### How Reasoning Patterns Use Agent Tools
@@ -1616,7 +1543,7 @@ Explores multiple reasoning branches and evaluates each with a `BranchEvaluation
 ```python
 from fireflyframework_agentic.reasoning import TreeOfThoughtsPattern
 
-tot = TreeOfThoughtsPattern(branching_factor=3, max_depth=3)
+tot = TreeOfThoughtsPattern(branching_factor=3)
 result = await tot.execute(my_agent, "Design an API for a task management system.")
 ```
 
@@ -2048,41 +1975,16 @@ There are two kinds of memory here:
 ### Architecture
 
 ```mermaid
-graph TD
-    subgraph MemoryManager
-        MM["MemoryManager<br/><small>new_conversation · fork<br/>set_fact · get_fact</small>"]
-    end
-
-    subgraph Conversation
-        CM["ConversationMemory<br/><small>add_turn · get_history<br/>token budget · FIFO eviction</small>"]
-    end
-
-    subgraph Working
-        WM["WorkingMemory<br/><small>set · get · delete<br/>scoped namespaces</small>"]
-    end
-
-    subgraph Backends
-        IMS["InMemoryStore<br/><small>dict-backed</small>"]
-        FS["FileStore<br/><small>JSON file per namespace</small>"]
-        CS["YourCustomStore<br/><small>implements MemoryStore protocol</small>"]
-    end
-
-    subgraph Consumers
-        AGT["FireflyAgent<br/><small>auto message_history</small>"]
-        DR["DelegationRouter<br/><small>auto fork on delegation</small>"]
-        PIPE["PipelineContext<br/><small>propagated to steps</small>"]
-        RP["ReasoningPattern<br/><small>state['memory']</small>"]
-    end
-
-    MM --> CM
-    MM --> WM
-    WM --> IMS
-    WM --> FS
-    WM --> CS
-    AGT --> MM
-    DR --> MM
-    PIPE --> MM
-    RP --> MM
+flowchart TD
+    CONSUMERS["Agents, delegation, reasoning, pipelines"] --> MANAGER["MemoryManager"]
+    MANAGER --> HISTORY["ConversationMemory<br/>typed messages held in process"]
+    HISTORY --> BUDGET["Token budget and optional summarization"]
+    HISTORY <-->|export and import| SNAPSHOT["Host-persisted conversation snapshot"]
+    MANAGER --> FACTS["WorkingMemory<br/>scope-specific facts"]
+    FACTS --> CONTRACT["MemoryStore protocol"]
+    CONTRACT --> LOCAL["InMemoryStore, FileStore, SQLiteStore"]
+    CONTRACT --> DB["PostgreSQLStore, MongoDBStore"]
+    CONTRACT --> CUSTOM["Custom backend"]
 ```
 
 The system has four layers:
@@ -2118,9 +2020,9 @@ conv_id = memory.new_conversation()
 result1 = await agent.run("What is Python?", conversation_id=conv_id)
 
 # Turn 2: under the hood, FireflyAgent loads the message_history from Turn 1
-# and passes it to Pydantic AI, so the model sees the full conversation.
+# and passes it to Pydantic AI, so the model sees the retained conversation within its configured token budget.
 result2 = await agent.run("What about its type system?", conversation_id=conv_id)
-# result2 knows we were talking about Python — no context lost.
+# result2 receives the retained messages from the first turn.
 ```
 
 ### Conversation Memory
@@ -2146,7 +2048,9 @@ conv_mem.add_turn(
 history = conv_mem.get_message_history(cid)
 ```
 
-When `FireflyAgent` has memory attached, this is all automatic.
+With memory attached and a `conversation_id`, Firefly loads history unless explicit
+`message_history` was supplied and records completed turns automatically. This is
+process-local history; persist snapshots with conversation export/import when needed.
 
 ### Working Memory
 
@@ -2185,6 +2089,9 @@ assert agent_a_mem.get("key") == "from A" # Isolated
 ```
 
 ### Storage Backends
+
+These backends persist working facts. They do not automatically persist
+`ConversationMemory`; see the [memory persistence diagram](memory.md#architecture).
 
 #### InMemoryStore
 
@@ -2716,53 +2623,43 @@ lookup), reasoning patterns (Plan-and-Execute, Reflexion), validation rules, and
 Each piece works in isolation — but a real IDP system needs to **wire them together**
 into a single, reliable flow: classify → digitise → extract → validate → assemble.
 
-The Pipeline module does exactly that. It models your processing flow as a **Directed
-Acyclic Graph (DAG)** where nodes are processing steps and edges define data flow.
-The engine schedules nodes by topological level — nodes at the same level run
-concurrently — and handles retries, timeouts, and conditional execution automatically.
+The Pipeline module models your processing flow as a graph where nodes are
+processing steps and edges define data flow. For acyclic graphs without runtime
+routers, the engine starts a node as soon as its dependencies resolve. Cycles and
+runtime routers use a frontier scheduler with a recursion limit. The engine also
+handles configured retries, timeouts, and conditional execution.
 
 ### Pipeline Execution Architecture
 
 The following diagram shows how the pipeline engine executes a DAG:
 
 ```mermaid
-graph LR
-    subgraph "Pipeline Engine"
-        B["PipelineBuilder"] --> DAG["DAG\n(topological sort)"]
-        DAG --> L0["Level 0\n(no dependencies)"]
-        DAG --> L1["Level 1\n(depends on L0)"]
-        DAG --> L2["Level 2\n(depends on L1)"]
-    end
-
-    subgraph "Step Executors"
-        AS["AgentStep\n(runs FireflyAgent)"]
-        RS["ReasoningStep\n(runs pattern + agent)"]
-        CS["CallableStep\n(runs async function)"]
-        FO["FanOutStep\n(splits input)"]
-        FI["FanInStep\n(merges outputs)"]
-    end
-
-    subgraph "Context & Results"
-        PC["PipelineContext\n(inputs, metadata, memory)"]
-        PR["PipelineResult\n(outputs, trace, duration)"]
-    end
-
-    L0 --> AS
-    L1 --> RS
-    L2 --> CS
-    L0 & L1 & L2 -.->|concurrent within level| PC
-    PC --> PR
+flowchart TD
+    BUILDER["PipelineBuilder"] --> DAG["Graph and dependencies"]
+    DAG --> ENGINE["PipelineEngine"]
+    ENGINE --> MODE{"Runtime routers or cycles?"}
+    MODE -->|no| READY["Schedule any dependency-ready nodes"]
+    READY --> EXECUTE["Run independent nodes concurrently"]
+    EXECUTE --> UPDATE["Update results and release dependents"]
+    UPDATE --> MORE{"Pending nodes?"}
+    MORE -->|yes| READY
+    MODE -->|yes| FRONTIER["Follow runtime targets<br/>bounded by recursion_limit"]
+    FRONTIER --> STEP["Execute nodes and apply state reducers"]
+    STEP --> NEXT{"More runtime targets?"}
+    NEXT -->|yes| FRONTIER
+    NEXT -->|no| RESULT["PipelineResult<br/>outputs, state, trace and duration"]
+    MORE -->|no| RESULT
 ```
 
 ### Core Concepts
 
-A pipeline is a **Directed Acyclic Graph (DAG)** where:
+A pipeline is a graph where:
 
 - **Nodes** are processing steps (call an agent, run a reasoning pattern, execute a
   function).
 - **Edges** define data flow and execution order.
-- The **engine** schedules nodes by topological level — nodes at the same level run
-  concurrently.
+- The **engine** schedules independent, dependency-ready nodes concurrently, or
+  follows runtime targets for graphs with routers and cycles.
 
 ### The Pipeline Builder
 
@@ -2791,9 +2688,10 @@ The built-in executors (all implementing `StepExecutor`) cover most scenarios:
 - **`AgentStep`** — Runs a `FireflyAgent` with the input as prompt.
 - **`ReasoningStep`** — Runs a reasoning pattern through an agent.
 - **`CallableStep`** — Wraps any `async` function `(context, inputs) -> output`.
-- **`FanOutStep`** — Splits input into a list for parallel downstream processing.
+- **`FanOutStep`** — Deprecated list-splitting helper. Use a state-based router
+  returning `list[Send]` for dynamic fan-out and reducers to collect results.
 - **`FanInStep`** — Merges outputs from multiple upstream nodes.
-- **`BranchStep`** — Routes to one of several downstream paths by a router function.
+- **`BranchStep`** — Deprecated; use a state-based builder's `.branch(...)` method.
 - **`BatchLLMStep`** — Runs an agent over a batch of inputs concurrently.
 - **`EmbeddingStep`** — Embeds text via a `BaseEmbedder` (see Embeddings & Vector Stores).
 - **`RetrievalStep`** — Retrieves nearest neighbours from a vector store:
@@ -2801,23 +2699,49 @@ The built-in executors (all implementing `StepExecutor`) cover most scenarios:
 
 ### Parallel Execution (Fan-Out / Fan-In)
 
-Process multiple items concurrently:
+Dispatch one page to each worker invocation with `Send`, then collect the outputs
+with a state reducer. This continues the configured `ocr_agent` from earlier chapters:
 
 ```python
-from fireflyframework_agentic.pipeline.steps import FanOutStep, FanInStep
+from typing import Annotated
+from pydantic import BaseModel, Field
+from fireflyframework_agentic.pipeline import PipelineBuilder, Send, extend
+
+
+class PageState(BaseModel):
+    pages: list[str] = Field(default_factory=list)
+    page: str = ""
+    results: Annotated[list[str], extend] = Field(default_factory=list)
+    document: str = ""
+
+
+async def prepare_pages(state: PageState) -> dict:
+    if not state.pages:
+        raise ValueError("At least one page is required")
+    return {"pages": state.pages}
+
+
+def dispatch_pages(state: PageState) -> list[Send]:
+    return [Send("read_page", {"page": page}) for page in state.pages]
+
+
+async def read_page(state: PageState) -> dict:
+    result = await ocr_agent.run(state.page)
+    return {"results": [str(result.output)]}
+
+
+async def assemble_pages(state: PageState) -> dict:
+    return {"document": "\n\n".join(state.results)}
 
 engine = (
-    PipelineBuilder("parallel-ocr")
-    .add_node("split", FanOutStep(lambda doc: doc.pages))
-    .add_node("ocr_1", AgentStep(ocr_agent))
-    .add_node("ocr_2", AgentStep(ocr_agent))
-    .add_node("merge", FanInStep())
-    .add_edge("split", "ocr_1")
-    .add_edge("split", "ocr_2")
-    .add_edge("ocr_1", "merge", input_key="page_1")
-    .add_edge("ocr_2", "merge", input_key="page_2")
+    PipelineBuilder("parallel-ocr", state=PageState)
+    .add_node(prepare_pages).add_node(read_page).add_node(assemble_pages)
+    .branch(prepare_pages, dispatch_pages)
+    .add_edge(read_page, assemble_pages)
     .build()
 )
+result = await engine.invoke(PageState(pages=["Page 1: Invoice INV-42", "Page 2: Total USD 120"]))
+print(result.state.document)
 ```
 
 ### Conditional Execution
@@ -2916,7 +2840,7 @@ result = await engine.run(inputs="hello")
 `EmbeddingStep` and `RetrievalStep` build on two reusable framework modules. The
 `embeddings` package ships `BaseEmbedder`/`EmbedderRegistry` with **8** provider backends
 (OpenAI, Azure, Cohere, Google, Mistral, Voyage, Bedrock, Ollama). The `vectorstores`
-package ships `BaseVectorStore` with **7** backends — `InMemoryVectorStore`,
+package ships `BaseVectorStore` with **6** backends — `InMemoryVectorStore`,
 `ChromaVectorStore`, `PineconeVectorStore`, `QdrantVectorStore`, `PgVectorVectorStore`,
 and `SqliteVecVectorStore` — plus a scoping layer (`ScopedVectorStore`,
 `TenantScopedVectorStore`, `scope_namespace`, `parse_scope_namespace`) for multi-tenant
@@ -3188,9 +3112,11 @@ if result.usage:
 
 ### Automatic Integration
 
-When an agent is invoked, the framework automatically creates trace spans, records
-metrics, emits events, and tracks usage/cost. You don't need to instrument agent
-code manually unless you want additional detail.
+With `observability_enabled`, agent middleware creates spans and emits start
+events. With `cost_tracking_enabled`, `UsageTracker` records completed model
+requests and its configured sinks emit metrics and completion events. The host
+configures the OpenTelemetry SDK and exporters. See the
+[Observability guide](observability.md) for these separate controls.
 
 ### IDP Tie-In: Instrumenting the Pipeline
 
@@ -3732,35 +3658,16 @@ optionally **forks memory** so the sub-agent gets its own working-memory scope.
 ### Delegation Architecture
 
 ```mermaid
-graph LR
-    REQ["Incoming Request"] --> ROUTER["DelegationRouter"]
-
-    subgraph Strategy
-        RR["RoundRobinStrategy\n(load balance)"]
-        CAP["CapabilityStrategy\n(match by tag)"]
-    end
-
-    ROUTER --> RR
-    ROUTER --> CAP
-
-    subgraph Agent Pool
-        A1["invoice_extractor"]
-        A2["receipt_extractor"]
-        A3["contract_extractor"]
-    end
-
-    RR --> A1 & A2 & A3
-    CAP -->|tag match| A1
-
-    subgraph Memory
-        MEM["MemoryManager"]
-        FORK["fork()"]
-        CHILD["Child Scope"]
-    end
-
-    ROUTER -.->|auto fork| FORK
-    FORK --> CHILD
-    CHILD --> A1
+flowchart TD
+    REQUEST["Prompt"] --> ROUTER["DelegationRouter"]
+    ROUTER --> STRATEGY["RoundRobin, Capability, ContentBased,<br/>CostAware, or composed strategy"]
+    STRATEGY --> DECISION["Ranked RoutingDecision"]
+    DECISION --> EXECUTE["execute selects the first candidate"]
+    MEMORY["Optional MemoryManager"] --> FORK["fork with delegation scope"]
+    EXECUTE -->|router has memory| FORK
+    FORK --> AGENT["Selected agent"]
+    EXECUTE -->|no router memory| AGENT
+    AGENT --> RUN["agent.run"]
 ```
 
 ### Delegation Router
@@ -3922,69 +3829,23 @@ below shows the full system architecture — every layer, every connection:
 ### Full System Architecture
 
 ```mermaid
-graph TB
-    subgraph "Caller"
-        APP["Host application\n(in-process)"]
-    end
-
-    subgraph "Orchestration Layer"
-        PIPE["Pipeline Engine\n(DAG scheduler)"]
-        DELEG["Delegation Router"]
-    end
-
-    subgraph "Intelligence Layer"
-        REASON["Reasoning Patterns\n(ReAct, CoT, P&E, ...)"]
-        VALID["Validation & QoS"]
-        REVIEW["OutputReviewer"]
-    end
-
-    subgraph "Agent Layer"
-        FA["FireflyAgent"]
-        REG["AgentRegistry"]
-        TPL["Template Agents"]
-    end
-
-    subgraph "Agent Support"
-        TOOLS["Tools + ToolKit\n(guards, builtins, registry)"]
-        PROMPTS["Prompts\n(Jinja2, versioned, composed)"]
-        MEM["Memory\n(conversation + working)"]
-        CONTENT["Content Processing\n(chunk, compress, batch)"]
-    end
-
-    subgraph "Ops Layer"
-        OBS["Observability\n(traces, metrics, events)"]
-        EXPL["Explainability\n(audit trail, reports)"]
-        EXP["Experiments\n(A/B testing)"]
-        LAB["Lab\n(benchmarks, eval)"]
-    end
-
-    subgraph "Foundation"
-        PAI["Pydantic AI\n(model calls, streaming)"]
-        CFG["FireflyAgenticConfig\n(env-driven settings)"]
-        PLUG["Plugin System\n(entry-point discovery)"]
-    end
-
-    APP --> PIPE & DELEG
-    PIPE --> FA
-    DELEG --> FA
-    FA --> REASON
-    REASON --> FA
-    FA --> VALID
-    VALID --> REVIEW
-    REVIEW --> FA
-    FA --> PAI
-    FA --> TOOLS
-    FA --> PROMPTS
-    FA --> MEM
-    FA --> CONTENT
-    FA --> REG
-    TPL --> FA
-    OBS -.-> FA & PIPE & REASON
-    EXPL -.-> FA
-    EXP -.-> FA
-    LAB -.-> FA
-    PLUG -.-> REG & TOOLS
-    CFG -.-> FA & PIPE & MEM & OBS
+flowchart TD
+    HOST["Host application<br/>credentials, serving and shutdown"] --> FLOWS["Pipelines, workflows and delegation"]
+    HOST --> AGENT["FireflyAgent"]
+    FLOWS --> REASON["Optional reasoning and review"]
+    FLOWS --> AGENT
+    REASON --> AGENT
+    TEMPLATES["Template factories"] --> AGENT
+    AGENT --> MODELS["ModelSpec and ModelOptions<br/>provider and API selection"]
+    MODELS --> PAI["Pydantic AI<br/>model requests and tool dispatch"]
+    PAI --> TOOLS["Firefly tools<br/>guards, listeners and approval"]
+    AGENT --> MEMORY["Conversation history and working facts"]
+    AGENT --> MW["Configured middleware"]
+    MW --> TELEMETRY["Host-configured observability"]
+    FLOWS --> CONTENT["Content, embeddings and retrieval"]
+    DEV["Lab and experiments"] --> AGENT
+    HOST --> AUDIT["Explicit audit and explainability recording"]
+    HOST --> CONFIG["Configuration, registries and plugin discovery"]
 ```
 
 Let's assemble the complete IDP pipeline using everything we've learned. This is the

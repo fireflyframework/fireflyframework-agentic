@@ -14,27 +14,25 @@ a global registry, multi-agent delegation, execution context, and a decorator AP
 ## Concepts
 
 An agent in fireflyframework-agentic is a named, configured wrapper around a Pydantic AI
-agent. The framework manages its lifecycle (creation, startup, invocation, shutdown)
-and makes it discoverable through a central registry.
+agent. Agents register by default and expose execution methods; the host explicitly
+invokes any `AgentLifecycle` startup and shutdown hooks it has configured.
 
 ```mermaid
 classDiagram
     class FireflyAgent {
-        +name: str
-        +model: str | Model
-        +instructions: str
-        +run(prompt, deps) Any
-        +run_sync(prompt, deps) Any
-        +run_stream(prompt, deps) Any
+        +name str
+        +model_identifier str
+        +run(prompt, **kwargs) Any
+        +run_sync(prompt, **kwargs) Any
+        +run_stream(prompt, **kwargs) Any
+        +instructions(function)
     }
-
     class AgentRegistry {
         +register(agent)
         +get(name) FireflyAgent
         +has(name) bool
         +list_agents() list
     }
-
     class AgentLifecycle {
         +on_init(hook)
         +on_warmup(hook)
@@ -43,9 +41,10 @@ classDiagram
         +run_warmup()
         +run_shutdown()
     }
-
-    AgentRegistry "1" --> "*" FireflyAgent
-    AgentLifecycle --> AgentRegistry
+    class HostApplication
+    AgentRegistry "1" --> "*" FireflyAgent : lookup
+    HostApplication --> AgentLifecycle : invokes lifecycle phases
+    HostApplication --> FireflyAgent : invokes runs
 ```
 
 ---
@@ -113,9 +112,9 @@ provider selection stays in `FIREFLY_AGENTIC_DEFAULT_MODEL` or the agent's `mode
 configuration. See the complete [model-agnostic example](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/examples/model_agnostic_agent.py).
 
 Per-run options override only fields explicitly set on that call; setting a field
-to `None` clears an inherited option. Native constructor `model_settings` has the
-lowest precedence, merged `ModelOptions` takes precedence over it, and native
-per-run `model_settings` takes final precedence. The `@firefly_agent` decorator
+to `None` clears an inherited option. Native model defaults are applied first, then constructor `model_settings`,
+merged `ModelOptions`, and finally native per-run `model_settings`. Clearing a
+portable option with `None` does not erase an independently supplied native setting. The `@firefly_agent` decorator
 accepts the same `model_options=` parameter.
 
 Options do not make model capabilities interchangeable. An explicitly unsupported
@@ -371,12 +370,13 @@ and forks memory if attached; `route()` is the one-call convenience.
 
 ```mermaid
 flowchart TD
-    REQ[Incoming Request] --> DR[DelegationRouter]
-    DR --> S{Strategy}
-    S -->|RoundRobin| A1[Agent A]
-    S -->|Capability| A2[Best Match Agent]
-    S -->|ContentBased| A3[LLM-Picked Agent]
-    S -->|CostAware| A4[Cheapest Agent]
+    PROMPT["Prompt and agent pool"] --> DECIDE["DelegationRouter.decide"]
+    DECIDE --> STRATEGY["Configured strategy or combinator"]
+    STRATEGY --> DECISION["RoutingDecision<br/>ranked Candidate entries"]
+    DECISION --> HOST["Caller inspects decision"]
+    HOST --> EXECUTE["DelegationRouter.execute"]
+    EXECUTE --> MEMORY["Fork memory if configured"]
+    MEMORY --> AGENT["Selected FireflyAgent.run"]
 ```
 
 ### Round Robin
@@ -479,6 +479,10 @@ result = await router.execute(decision, "Translate to French.")
 ---
 
 ## Memory
+
+Conversation history is held in process. The configured memory backend stores
+working facts; use [conversation export/import](memory.md#conversation-export-import)
+when chat history must survive a restart.
 
 Attach a `MemoryManager` to an agent to enable multi-turn conversation history and a working-memory scratchpad. When you pass `conversation_id` to `run()`/`run_sync()`/`run_stream()`, the agent automatically loads and persists `message_history`.
 
@@ -648,6 +652,11 @@ See the [Observability Guide](observability.md#usage-tracking) for full details.
 
 ## Middleware
 
+With `default_middleware=True`, the framework prepends logging and, when enabled,
+observability middleware unless the caller already supplied those types. User
+middleware follows in the given order. Guards, validation, cache, explainability,
+and retry-configuration middleware are opt-in.
+
 `FireflyAgent` supports a pluggable middleware system for cross-cutting concerns
 (validation, guardrails, cost tracking, retries) without modifying the agent
 itself. Middleware hooks run **before**, **after**, and — when a run raises —
@@ -655,9 +664,15 @@ itself. Middleware hooks run **before**, **after**, and — when a run raises �
 and `run_with_reasoning()`.
 
 ```mermaid
-flowchart LR
-    REQ[Prompt] --> MW1["Middleware 1<br/>before_run"] --> MW2["Middleware 2<br/>before_run"] --> AGENT[Agent Run]
-    AGENT --> MW2R["Middleware 2<br/>after_run"] --> MW1R["Middleware 1<br/>after_run"] --> RES[Result]
+flowchart TD
+    PROMPT["Prompt"] --> LOG["LoggingMiddleware before_run"]
+    LOG --> OBS["ObservabilityMiddleware before_run<br/>when enabled"]
+    OBS --> USER["User middleware before_run<br/>registration order"]
+    USER --> RUN["Model execution"]
+    RUN -->|success| AFTER["after_run in reverse order"]
+    RUN -->|exception| ERROR["on_error in reverse order"]
+    AFTER --> RESULT["Return result"]
+    ERROR --> RAISE["Re-raise original exception"]
 ```
 
 ### Defining Middleware
@@ -717,7 +732,7 @@ cleanup unwinds symmetrically with setup.
 
 ### Error Lifecycle
 
-When a run raises, the chain's error hooks fire (each middleware's `on_error`,
+When the wrapped execution raises an `Exception`, the chain's error hooks fire (each middleware's `on_error`,
 in reverse order) and then the original exception is **re-raised** — `on_error`
 is for cleanup, not for swallowing errors. A middleware that itself raises inside
 `on_error` is suppressed so cleanup can never mask the real failure. This lets a
@@ -726,6 +741,10 @@ span it opened (recording the exception and marking the span status `ERROR`, so
 failed runs don't leak spans), and `CircuitBreakerMiddleware` records the failure
 (see below). The error lifecycle fires on `run()`, `run_sync()`, `run_stream()`
 (including a stream that raises mid-iteration), and `run_with_reasoning()`.
+
+This does not guarantee cleanup when a `before_run` or `after_run` hook itself
+fails, or when execution is cancelled. Custom middleware that acquires resources
+must account for those paths.
 
 ### Built-in Middleware: RetryMiddleware
 

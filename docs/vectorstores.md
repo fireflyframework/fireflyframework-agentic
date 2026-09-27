@@ -3,7 +3,7 @@
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
 The Vector Stores module provides pluggable storage and retrieval backends for
-embedding vectors. It ships **seven** backends -- in-memory, ChromaDB, Pinecone,
+embedding vectors. It ships **six** backends -- in-memory, ChromaDB, Pinecone,
 Qdrant, PostgreSQL/pgvector, and sqlite-vec -- behind a unified API for upserting,
 searching, and deleting documents, plus a tenant/workspace-scoped wrapper that
 makes any backend multi-tenant.

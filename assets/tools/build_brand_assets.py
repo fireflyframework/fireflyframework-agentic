@@ -1,69 +1,281 @@
 #!/usr/bin/env python3
-"""Regenerate the Firefly Agentic README brand assets — assets/banner.svg and
-the seven diagram SVGs — from the shared visual kit.
+"""Generate the Firefly Agentic banner and nine diagrams, fully offline.
 
-Firefly Agentic is the **GenAI / "intelligence" member** of the Firefly Framework
-family (the Java/Spring-Boot, .NET, PyFly and Rust siblings share one firefly-in-
-the-dark language). This script ports the PyFly brand kit, recolored to a violet
-"intelligence" palette, and embeds the family master wordmark ("firefly", from
-assets/tools/wordmark.py) recolored — no web fonts, no raster, fully offline.
+Run with Python 3.13+: python assets/tools/build_brand_assets.py
+Verify committed outputs: python assets/tools/build_brand_assets.py --check
 
-Requirements: Python 3.13+, fontTools (Arial metrics → guaranteed text fit). The
-repo .venv has it (plus cairosvg to render/verify):
-    .venv/bin/python assets/tools/build_brand_assets.py
-    .venv/bin/python -c "import cairosvg; cairosvg.svg2png(url='assets/banner.svg', write_to='/tmp/b.png', output_width=1280)"
-
-Every diagram registers its card rectangles and runs check(); the build prints
-"WARNINGS: none" when nothing overlaps.
+No generation dependencies or installed fonts are required. Embedded font
+advances make layout deterministic across operating systems. The shared family
+wordmark and vendored icons remain vector paths, with no external resources.
+All outputs are written to assets/ and mirrored byte-for-byte to docs/assets/.
+Render with CairoSVG separately for visual inspection after content changes.
 """
+
 from __future__ import annotations
-import math, sys
+import argparse
+import sys
+from html import escape
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 ASSETS = REPO / "assets"
 sys.path.insert(0, str(HERE))
-from fontTools.ttLib import TTFont
 from wordmark import FIREFLY_PATH, DOT_CX, DOT_CY, DOT_R
-try:
-    from icons import ICONS
-except Exception:
-    ICONS = {}
+from icons import ICONS
 
 # --------------------------------------------------------------------------- palette
-WHITE="#ffffff"
-VIOLET="#8b5cf6"; VIOLET2="#7c3aed"; VIOLETD="#6d28d9"
-MID="#5b21b6"; DARK="#4c1d95"
-INK="#1e1633"; BODY="#322b45"; MUTED="#8b82a3"
-SUB="#f5f2fe"; STROKE="#e4def5"
-INDIGO="#6366f1"
-AMBER="#c2722a"; DOT_HOT="#F68000"; DOT_WARM="#FFF9C1"
-MONO="ui-monospace,'SF Mono',Menlo,Consolas,monospace"
-SANS="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif"
+WHITE = "#ffffff"
+VIOLET = "#8b5cf6"
+VIOLET2 = "#7c3aed"
+VIOLETD = "#6d28d9"
+MID = "#5b21b6"
+DARK = "#4c1d95"
+INK = "#1e1633"
+BODY = "#322b45"
+MUTED = "#756881"
+SUB = "#f5f2fe"
+STROKE = "#e4def5"
+INDIGO = "#6366f1"
+AMBER = "#c2722a"
+DOT_HOT = "#F68000"
+DOT_WARM = "#FFF9C1"
+MONO = "ui-monospace,'SF Mono',Menlo,Consolas,monospace"
+SANS = "-apple-system,'Segoe UI',Helvetica,Arial,sans-serif"
 
-# --------------------------------------------------------------------------- text metrics
-# Arial metrics ≈ system sans, for guaranteed-fit box sizing.
-_AR={}
-def _arial(bold):
-    k="b" if bold else "r"
-    if k not in _AR:
-        p=f"/System/Library/Fonts/Supplemental/Arial{' Bold' if bold else ''}.ttf"
-        try: _AR[k]=(lambda f:(f["head"].unitsPerEm,f.getBestCmap(),f.getGlyphSet()))(TTFont(p))
-        except Exception: _AR[k]=None
-    return _AR[k]
-def tw(s,size,bold=False):
-    m=_arial(bold)
-    if not m: return 0.56*size*len(str(s))
-    upm,cmap,gs=m; w=0
-    for ch in str(s):
-        g=cmap.get(ord(ch)); w+= gs[g].width if g else upm*0.5
-    return w/upm*size
-def mw(s,size): return 0.602*size*len(str(s))
-def esc(s): return str(s).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+# Fixed Arial advance widths, in em units, keep layout identical on every OS.
+# Font files are not bundled or read at generation time. Rendering uses a system
+# fallback stack, so generous card padding and visual checks remain necessary.
+_REGULAR_ADVANCES = {
+    " ": 0.2778,
+    "!": 0.2778,
+    '"': 0.355,
+    "#": 0.5562,
+    "$": 0.5562,
+    "%": 0.8892,
+    "&": 0.667,
+    "'": 0.1909,
+    "(": 0.333,
+    ")": 0.333,
+    "*": 0.3892,
+    "+": 0.584,
+    ",": 0.2778,
+    "-": 0.333,
+    ".": 0.2778,
+    "/": 0.2778,
+    "0": 0.5562,
+    "1": 0.5562,
+    "2": 0.5562,
+    "3": 0.5562,
+    "4": 0.5562,
+    "5": 0.5562,
+    "6": 0.5562,
+    "7": 0.5562,
+    "8": 0.5562,
+    "9": 0.5562,
+    ":": 0.2778,
+    ";": 0.2778,
+    "<": 0.584,
+    "=": 0.584,
+    ">": 0.584,
+    "?": 0.5562,
+    "@": 1.0151,
+    "A": 0.667,
+    "B": 0.667,
+    "C": 0.7222,
+    "D": 0.7222,
+    "E": 0.667,
+    "F": 0.6108,
+    "G": 0.7778,
+    "H": 0.7222,
+    "I": 0.2778,
+    "J": 0.5,
+    "K": 0.667,
+    "L": 0.5562,
+    "M": 0.833,
+    "N": 0.7222,
+    "O": 0.7778,
+    "P": 0.667,
+    "Q": 0.7778,
+    "R": 0.7222,
+    "S": 0.667,
+    "T": 0.6108,
+    "U": 0.7222,
+    "V": 0.667,
+    "W": 0.9438,
+    "X": 0.667,
+    "Y": 0.667,
+    "Z": 0.6108,
+    "[": 0.2778,
+    "\\": 0.2778,
+    "]": 0.2778,
+    "^": 0.4692,
+    "_": 0.5562,
+    "`": 0.333,
+    "a": 0.5562,
+    "b": 0.5562,
+    "c": 0.5,
+    "d": 0.5562,
+    "e": 0.5562,
+    "f": 0.2778,
+    "g": 0.5562,
+    "h": 0.5562,
+    "i": 0.2222,
+    "j": 0.2222,
+    "k": 0.5,
+    "l": 0.2222,
+    "m": 0.833,
+    "n": 0.5562,
+    "o": 0.5562,
+    "p": 0.5562,
+    "q": 0.5562,
+    "r": 0.333,
+    "s": 0.5,
+    "t": 0.2778,
+    "u": 0.5562,
+    "v": 0.5,
+    "w": 0.7222,
+    "x": 0.5,
+    "y": 0.5,
+    "z": 0.5,
+    "{": 0.334,
+    "|": 0.2598,
+    "}": 0.334,
+    "~": 0.584,
+    "·": 0.333,
+    "×": 0.584,
+    "→": 1.0,
+    "–": 0.5562,
+    "—": 1.0,
+    "…": 1.0,
+}
+_BOLD_ADVANCES = {
+    " ": 0.2778,
+    "!": 0.333,
+    '"': 0.4741,
+    "#": 0.5562,
+    "$": 0.5562,
+    "%": 0.8892,
+    "&": 0.7222,
+    "'": 0.2378,
+    "(": 0.333,
+    ")": 0.333,
+    "*": 0.3892,
+    "+": 0.584,
+    ",": 0.2778,
+    "-": 0.333,
+    ".": 0.2778,
+    "/": 0.2778,
+    "0": 0.5562,
+    "1": 0.5562,
+    "2": 0.5562,
+    "3": 0.5562,
+    "4": 0.5562,
+    "5": 0.5562,
+    "6": 0.5562,
+    "7": 0.5562,
+    "8": 0.5562,
+    "9": 0.5562,
+    ":": 0.333,
+    ";": 0.333,
+    "<": 0.584,
+    "=": 0.584,
+    ">": 0.584,
+    "?": 0.6108,
+    "@": 0.9751,
+    "A": 0.7222,
+    "B": 0.7222,
+    "C": 0.7222,
+    "D": 0.7222,
+    "E": 0.667,
+    "F": 0.6108,
+    "G": 0.7778,
+    "H": 0.7222,
+    "I": 0.2778,
+    "J": 0.5562,
+    "K": 0.7222,
+    "L": 0.6108,
+    "M": 0.833,
+    "N": 0.7222,
+    "O": 0.7778,
+    "P": 0.667,
+    "Q": 0.7778,
+    "R": 0.7222,
+    "S": 0.667,
+    "T": 0.6108,
+    "U": 0.7222,
+    "V": 0.667,
+    "W": 0.9438,
+    "X": 0.667,
+    "Y": 0.667,
+    "Z": 0.6108,
+    "[": 0.333,
+    "\\": 0.2778,
+    "]": 0.333,
+    "^": 0.584,
+    "_": 0.5562,
+    "`": 0.333,
+    "a": 0.5562,
+    "b": 0.6108,
+    "c": 0.5562,
+    "d": 0.6108,
+    "e": 0.5562,
+    "f": 0.333,
+    "g": 0.6108,
+    "h": 0.6108,
+    "i": 0.2778,
+    "j": 0.2778,
+    "k": 0.5562,
+    "l": 0.2778,
+    "m": 0.8892,
+    "n": 0.6108,
+    "o": 0.6108,
+    "p": 0.6108,
+    "q": 0.6108,
+    "r": 0.3892,
+    "s": 0.5562,
+    "t": 0.333,
+    "u": 0.6108,
+    "v": 0.5562,
+    "w": 0.7778,
+    "x": 0.5562,
+    "y": 0.5562,
+    "z": 0.5,
+    "{": 0.3892,
+    "|": 0.2798,
+    "}": 0.3892,
+    "~": 0.584,
+    "·": 0.333,
+    "×": 0.584,
+    "→": 1.0,
+    "–": 0.5562,
+    "—": 1.0,
+    "…": 1.0,
+}
+
+
+def tw(s, size, bold=False):
+    advances = _BOLD_ADVANCES if bold else _REGULAR_ADVANCES
+    return size * sum(advances.get(ch, 0.75) for ch in str(s))
+
+
+def mw(s, size):
+    return 0.64 * size * len(str(s))
+
+
+def esc(s):
+    return escape(str(s), quote=True)
+
+
+OUTPUTS = {}
+
+
+def write_svg(name, svg):
+    OUTPUTS[name] = svg
+
 
 # --------------------------------------------------------------------------- kit
-def defs(cx,cy,r=520):
+def defs(cx, cy, r=520):
     return f'''<defs>
     <linearGradient id="hdr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9269f1"/><stop offset="1" stop-color="{VIOLETD}"/></linearGradient>
     <linearGradient id="door" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
@@ -78,103 +290,153 @@ def defs(cx,cy,r=520):
     <g id="fly"><circle r="8.5" fill="#a78bfa" opacity="0.10"/><circle r="4.6" fill="#c4b5fd" opacity="0.22"/><circle r="2.4" fill="#ddd6fe" opacity="0.75"/><circle r="1.2" fill="#f5f3ff"/></g>
     <g id="ffly"><circle r="8.5" fill="#f6a821" opacity="0.10"/><circle r="4.6" fill="#ffc24a" opacity="0.22"/><circle r="2.4" fill="#ffd980" opacity="0.78"/><circle r="1.2" fill="#fff6e0"/></g>
   </defs>'''
-def frame(w,h):
-    return (f'<rect width="{w}" height="{h}" fill="{WHITE}"/>'
-            f'<rect x="3" y="3" width="{w-6}" height="{h-6}" rx="18" fill="{WHITE}" stroke="{STROKE}" stroke-width="1.5"/>'
-            f'<rect x="3" y="3" width="{w-6}" height="{h-6}" rx="18" fill="url(#grid)"/>'
-            f'<rect x="3" y="3" width="{w-6}" height="{h-6}" rx="18" fill="url(#amb)"/>')
-def mote(x,y,s=1.0,k="fly"): return f'<use href="#{k}" transform="translate({x},{y}) scale({s})"/>'
-def logo_w(h): return 469.0*h/138.0
+
+
+def frame(w, h):
+    return (
+        f'<rect width="{w}" height="{h}" fill="{WHITE}"/>'
+        f'<rect x="3" y="3" width="{w - 6}" height="{h - 6}" rx="18" fill="{WHITE}" stroke="{STROKE}" stroke-width="1.5"/>'
+        f'<rect x="3" y="3" width="{w - 6}" height="{h - 6}" rx="18" fill="url(#grid)"/>'
+        f'<rect x="3" y="3" width="{w - 6}" height="{h - 6}" rx="18" fill="url(#amb)"/>'
+    )
+
+
+def logo_w(h):
+    return 469.0 * h / 138.0
+
+
 def firefly_logo(x, cy, h=24, fill=VIOLET2, anchor="left"):
     """The real Firefly wordmark logo — the embedded 'firefly' word + the amber
     glow-dot, recolored. Vertical centre at cy; x is the left edge (anchor='left')
     or the horizontal centre (anchor='mid'). Used as the brand mark in diagrams."""
-    s=h/138.0; w=469.0*s
-    left=x-w/2 if anchor=="mid" else x
-    tx=left-4.0*s; ty=cy-105.45*s             # bbox y mid = (36.5+174.4)/2
-    dcx=tx+DOT_CX*s; dcy=ty+DOT_CY*s
-    return (f'<circle cx="{dcx:.2f}" cy="{dcy:.2f}" r="{27*s:.2f}" fill="#f6a821" opacity="0.18"/>'
-            f'<g transform="translate({tx:.2f},{ty:.2f}) scale({s:.4f})"><path d="{FIREFLY_PATH}" fill="{fill}"/></g>'
-            f'<circle cx="{dcx:.2f}" cy="{dcy:.2f}" r="{15*s:.2f}" fill="url(#dot)"/>')
-def badge(x,y,n,r=10.5):
-    return (f'<circle cx="{x}" cy="{y}" r="{r}" fill="{DARK}"/>'
-            f'<text x="{x}" y="{y+3.6}" text-anchor="middle" fill="#fff" font-size="{r}" font-weight="700" font-family="{SANS}">{n}</text>')
-def icon(name,cx,cy,size,color=None):
-    ic=ICONS.get(name)
-    if not ic: return ""
-    vb=[float(v) for v in ic["vb"].split()]; vw,vh=vb[2],vb[3]; s=size/max(vw,vh)
-    return (f'<g transform="translate({cx:.1f},{cy:.1f}) scale({s:.4f}) translate({-vw/2:.1f},{-vh/2:.1f})">'
-            f'<path d="{ic["d"]}" fill="{color or ic["color"]}"/></g>')
-def title(w,t,sub=None,repo="fireflyframework-agentic"):
-    s=[firefly_logo(26,31,25),
-       f'<text x="{26+logo_w(25)+13:.0f}" y="44" font-size="20" font-weight="800" fill="{INK}" font-family="{SANS}" letter-spacing="0.2">{esc(t)}</text>',
-       f'<text x="{w-26}" y="42" text-anchor="end" font-size="12" font-weight="600" fill="#b29ddb" font-family="{MONO}">{repo}</text>',
-       f'<line x1="26" y1="62" x2="{w-26}" y2="62" stroke="{VIOLET2}" stroke-width="1.4" opacity="0.42"/>']
-    if sub: s.append(f'<text x="26" y="84" font-size="12.5" font-style="italic" fill="{MUTED}" font-family="{SANS}">{esc(sub)}</text>')
-    return "\n  ".join(s)
-def svgdoc(w,h,label,body,amb=None):
-    cx,cy=amb or (w-60,40)
-    dot=('<radialGradient id="dot" cx="42%" cy="34%" r="72%"><stop offset="0" stop-color="'+DOT_WARM+'"/>'
-         '<stop offset="1" stop-color="'+DOT_HOT+'"/></radialGradient>')
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" '
-            f'role="img" aria-label="{esc(label)}" font-family="{SANS}">\n  '
-            +defs(cx,cy).replace("</defs>", dot+"</defs>")+"\n  "+frame(w,h)+"\n  "+body+"\n</svg>\n")
+    s = h / 138.0
+    w = 469.0 * s
+    left = x - w / 2 if anchor == "mid" else x
+    tx = left - 4.0 * s
+    ty = cy - 105.45 * s  # bbox y mid = (36.5+174.4)/2
+    dcx = tx + DOT_CX * s
+    dcy = ty + DOT_CY * s
+    return (
+        f'<circle cx="{dcx:.2f}" cy="{dcy:.2f}" r="{27 * s:.2f}" fill="#f6a821" opacity="0.18"/>'
+        f'<g transform="translate({tx:.2f},{ty:.2f}) scale({s:.4f})"><path d="{FIREFLY_PATH}" fill="{fill}"/></g>'
+        f'<circle cx="{dcx:.2f}" cy="{dcy:.2f}" r="{15 * s:.2f}" fill="url(#dot)"/>'
+    )
 
-WARN=[]
-def need(header,lines,mono=True,icon=False,pad=30):
-    hw=tw(header,11,True)+(22 if icon else 0)
-    lw=max([(mw(l,10) if mono else tw(l,10)) for l in lines]+[0]); return max(hw,lw)+pad
-def fbox(x,y,w,h,header,lines,mono=True,hdrfill="url(#hdr)",stroke=VIOLET2,hc="#fff",icon_name=None,rects=None):
-    fam=MONO if mono else SANS
-    s=[f'<g filter="url(#sh)"><rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h}" rx="11" fill="url(#card)" stroke="{stroke}" stroke-width="1.6"/>'
-       f'<path d="M{x:.1f} {y+11}a11 11 0 0 1 11 -11h{w-22:.1f}a11 11 0 0 1 11 11v13H{x:.1f}Z" fill="{hdrfill}"/>'
-       f'<path d="M{x+11:.1f} {y+1.5}h{w-22:.1f}" stroke="#ffffff" stroke-opacity="0.22" stroke-width="1"/></g>',
-       f'<text x="{x+12:.1f}" y="{y+15}" font-size="11" font-weight="700" fill="{hc}" font-family="{SANS}">{esc(header)}</text>']
-    if icon_name: s.append(icon(icon_name,x+w-16,y+11,15,"#ffffff"))
-    for i,ln in enumerate(lines):
-        s.append(f'<text x="{x+12:.1f}" y="{y+39+i*15}" font-size="10" fill="{BODY}" font-family="{fam}">{esc(ln)}</text>')
-    if rects is not None: rects.append((x,y,x+w,y+h))
-    return "".join(s)
-def edge(cx,cy,w,h,fx,fy):
-    dx,dy=fx-cx,fy-cy
-    if dx==0 and dy==0: return cx,cy
-    s=min((w/2)/abs(dx) if dx else 9e9,(h/2)/abs(dy) if dy else 9e9); return cx+dx*s,cy+dy*s
-def arrow(x1,y1,x2,y2,color=VIOLETD,dash=None,mk="arr",sw=1.8):
-    d=f' stroke-dasharray="{dash}"' if dash else ""
+
+def icon(name, cx, cy, size, color=None):
+    ic = ICONS.get(name)
+    if not ic:
+        return ""
+    vb = [float(v) for v in ic["vb"].split()]
+    vw, vh = vb[2], vb[3]
+    s = size / max(vw, vh)
+    return (
+        f'<g transform="translate({cx:.1f},{cy:.1f}) scale({s:.4f}) translate({-vw / 2:.1f},{-vh / 2:.1f})">'
+        f'<path d="{ic["d"]}" fill="{color or ic["color"]}"/></g>'
+    )
+
+
+def title(w, t, sub=None, repo="fireflyframework-agentic"):
+    s = [
+        firefly_logo(26, 31, 25),
+        f'<text x="{26 + logo_w(25) + 13:.0f}" y="44" font-size="20" font-weight="800" fill="{INK}" font-family="{SANS}" letter-spacing="0.2">{esc(t)}</text>',
+        f'<text x="{w - 26}" y="22" text-anchor="end" font-size="10" font-weight="600" fill="#b29ddb" font-family="{MONO}">{repo}</text>',
+        f'<line x1="26" y1="62" x2="{w - 26}" y2="62" stroke="{VIOLET2}" stroke-width="1.4" opacity="0.42"/>',
+    ]
+    if sub:
+        s.append(f'<text x="26" y="84" font-size="14" fill="{MUTED}" font-family="{SANS}">{esc(sub)}</text>')
+    return "\n  ".join(s)
+
+
+def svgdoc(w, h, label, body, amb=None):
+    cx, cy = amb or (w - 60, 40)
+    dot = (
+        '<radialGradient id="dot" cx="42%" cy="34%" r="72%"><stop offset="0" stop-color="' + DOT_WARM + '"/>'
+        '<stop offset="1" stop-color="' + DOT_HOT + '"/></radialGradient>'
+    )
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" '
+        f'role="img" aria-labelledby="diagram-title diagram-description" font-family="{SANS}">\n  '
+        + f'<title id="diagram-title">{esc(label.split(". ", 1)[0])}</title><desc id="diagram-description">{esc(label)}</desc>\n  '
+        + defs(cx, cy).replace("</defs>", dot + "</defs>")
+        + "\n  "
+        + frame(w, h)
+        + "\n  "
+        + body
+        + "\n</svg>\n"
+    )
+
+
+WARN = []
+
+
+def arrow(x1, y1, x2, y2, color=VIOLETD, dash=None, mk="arr", sw=1.8):
+    d = f' stroke-dasharray="{dash}"' if dash else ""
     return f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{color}" stroke-width="{sw}"{d} marker-end="url(#{mk})"/>'
-def spark(cx,cy,r,color):
-    return (f'<path d="M{cx} {cy-r}L{cx+r*0.28} {cy-r*0.28}L{cx+r} {cy}L{cx+r*0.28} {cy+r*0.28}'
-            f'L{cx} {cy+r}L{cx-r*0.28} {cy+r*0.28}L{cx-r} {cy}L{cx-r*0.28} {cy-r*0.28}Z" fill="{color}"/>')
-def check(name,rects,pad=2):
+
+
+def spark(cx, cy, r, color):
+    return (
+        f'<path d="M{cx} {cy - r}L{cx + r * 0.28} {cy - r * 0.28}L{cx + r} {cy}L{cx + r * 0.28} {cy + r * 0.28}'
+        f'L{cx} {cy + r}L{cx - r * 0.28} {cy + r * 0.28}L{cx - r} {cy}L{cx - r * 0.28} {cy - r * 0.28}Z" fill="{color}"/>'
+    )
+
+
+def check(name, rects, pad=2):
     for i in range(len(rects)):
-        for j in range(i+1,len(rects)):
-            a,b=rects[i],rects[j]
-            if a[0]<b[2]-pad and b[0]<a[2]-pad and a[1]<b[3]-pad and b[1]<a[3]-pad:
+        for j in range(i + 1, len(rects)):
+            a, b = rects[i], rects[j]
+            if a[0] < b[2] - pad and b[0] < a[2] - pad and a[1] < b[3] - pad and b[1] < a[3] - pad:
                 WARN.append(f"{name}: overlap {i}&{j}")
+
 
 # --------------------------------------------------------------------------- banner
 def build_banner():
-    W,H=1280,320
-    wx,wy,ws=80,116,0.74
-    dot_x,dot_y=wx+ws*DOT_CX, wy+ws*DOT_CY
-    wm_right=wx+ws*469
+    W, H = 1280, 320
+    wx, wy, ws = 80, 116, 0.74
+    dot_x, dot_y = wx + ws * DOT_CX, wy + ws * DOT_CY
+    wm_right = wx + ws * 469
     # a deliberate agent graph: input -> three agents -> two merge hubs -> output (+ 2 satellites)
-    GN=[(726,162,2.0,"a"),(892,98,1.5,"v"),(892,162,1.7,"v"),(892,226,1.5,"v"),
-        (1052,126,1.5,"a"),(1052,200,1.5,"a"),(1212,162,1.95,"v"),(986,62,0.85,"a"),(1150,258,0.85,"v")]
-    GE=[(0,1),(0,2),(0,3),(1,4),(2,4),(2,5),(3,5),(4,6),(5,6),(7,1),(8,5)]
-    gx=lambda i:GN[i][0]; gy=lambda i:GN[i][1]; hero=lambda a,b:a in (0,6) or b in (0,6)
-    node="".join(f'<use href="#fb{k}" transform="translate({x},{y}) scale({s})"/>' for x,y,s,k in GN)
-    edges="".join(f'<line x1="{gx(a)}" y1="{gy(a)}" x2="{gx(b)}" y2="{gy(b)}" stroke="url(#edge)" stroke-width="{1.4 if hero(a,b) else 1.0}" opacity="{0.55 if hero(a,b) else 0.34}"/>' for a,b in GE)
-    bg=[(700,56,1.1,.4),(840,298,0.9,.3),(1244,84,1.0,.32),(1176,300,0.9,.3),(958,300,0.8,.26),(1108,40,1.0,.3),(660,150,0.8,.3)]
-    motes="".join(f'<circle cx="{x}" cy="{y}" r="{r}" opacity="{o}"/>' for x,y,r,o in bg)
-    svg=f'''<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" aria-label="Firefly Agentic - production-grade agents, reasoning and pipelines, built on Pydantic AI">
+    GN = [
+        (726, 162, 2.0, "a"),
+        (892, 98, 1.5, "v"),
+        (892, 162, 1.7, "v"),
+        (892, 226, 1.5, "v"),
+        (1052, 126, 1.5, "a"),
+        (1052, 200, 1.5, "a"),
+        (1212, 162, 1.95, "v"),
+        (986, 62, 0.85, "a"),
+        (1150, 258, 0.85, "v"),
+    ]
+    GE = [(0, 1), (0, 2), (0, 3), (1, 4), (2, 4), (2, 5), (3, 5), (4, 6), (5, 6), (7, 1), (8, 5)]
+    gx = lambda i: GN[i][0]
+    gy = lambda i: GN[i][1]
+    hero = lambda a, b: a in (0, 6) or b in (0, 6)
+    node = "".join(f'<use href="#fb{k}" transform="translate({x},{y}) scale({s})"/>' for x, y, s, k in GN)
+    edges = "".join(
+        f'<line x1="{gx(a)}" y1="{gy(a)}" x2="{gx(b)}" y2="{gy(b)}" stroke="url(#edge)" stroke-width="{1.4 if hero(a, b) else 1.0}" opacity="{0.55 if hero(a, b) else 0.34}"/>'
+        for a, b in GE
+    )
+    bg = [
+        (700, 56, 1.1, 0.4),
+        (840, 298, 0.9, 0.3),
+        (1244, 84, 1.0, 0.32),
+        (1176, 300, 0.9, 0.3),
+        (958, 300, 0.8, 0.26),
+        (1108, 40, 1.0, 0.3),
+        (660, 150, 0.8, 0.3),
+    ]
+    motes = "".join(f'<circle cx="{x}" cy="{y}" r="{r}" opacity="{o}"/>' for x, y, r, o in bg)
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" aria-labelledby="banner-title banner-description">
+  <title id="banner-title">Firefly Agentic</title>
+  <desc id="banner-description">Production-grade agents, reasoning and pipelines built on Pydantic AI. The violet Firefly wordmark and amber glow-dot sit beside a constellation of connected agent nodes.</desc>
   <defs>
     <linearGradient id="sky" x1="0" y1="0" x2="{W}" y2="{H}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0a0912"/><stop offset="0.5" stop-color="#130d1f"/><stop offset="1" stop-color="#0d0a18"/></linearGradient>
     <radialGradient id="amb1" cx="320" cy="150" r="520" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7c3aed" stop-opacity="0.30"/><stop offset="0.55" stop-color="#7c3aed" stop-opacity="0.06"/><stop offset="1" stop-color="#7c3aed" stop-opacity="0"/></radialGradient>
     <radialGradient id="amb2" cx="1040" cy="120" r="560" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#6366f1" stop-opacity="0.24"/><stop offset="0.55" stop-color="#8b5cf6" stop-opacity="0.06"/><stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/></radialGradient>
     <pattern id="bgrid" width="27" height="27" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1" fill="#9d8bff" opacity="0.05"/></pattern>
     <linearGradient id="edge" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#a78bfa" stop-opacity="0.15"/><stop offset="0.5" stop-color="#c4b5fd" stop-opacity="0.8"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0.15"/></linearGradient>
-    <linearGradient id="wm" x1="0" y1="{wy+ws*36}" x2="0" y2="{wy+ws*174}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#e3d8ff"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
+    <linearGradient id="wm" x1="0" y1="{wy + ws * 36}" x2="0" y2="{wy + ws * 174}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#e3d8ff"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
     <radialGradient id="dotg" cx="42%" cy="34%" r="72%"><stop offset="0" stop-color="{DOT_WARM}"/><stop offset="1" stop-color="{DOT_HOT}"/></radialGradient>
     <linearGradient id="agw" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#cbbcff"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient>
     <g id="fbv"><circle r="14" fill="#7c5cff" opacity="0.10"/><circle r="8" fill="#a78bfa" opacity="0.20"/><circle r="3.8" fill="#cbb8ff" opacity="0.65"/><circle r="1.9" fill="#f3efff"/></g>
@@ -192,277 +454,872 @@ def build_banner():
   </g>
   {node}
   <g transform="translate({wx},{wy}) scale({ws})" fill="url(#wm)" stroke="#2a0f57" stroke-width="5" stroke-linejoin="round" paint-order="stroke"><path d="{FIREFLY_PATH}"/></g>
-  <circle cx="{dot_x:.1f}" cy="{dot_y:.1f}" r="{ws*30:.1f}" fill="#f6a821" opacity="0.20"/>
-  <circle cx="{dot_x:.1f}" cy="{dot_y:.1f}" r="{ws*DOT_R:.1f}" fill="url(#dotg)"/>
-  <g transform="translate({wm_right+30:.0f},0)">
+  <circle cx="{dot_x:.1f}" cy="{dot_y:.1f}" r="{ws * 30:.1f}" fill="#f6a821" opacity="0.20"/>
+  <circle cx="{dot_x:.1f}" cy="{dot_y:.1f}" r="{ws * DOT_R:.1f}" fill="url(#dotg)"/>
+  <g transform="translate({wm_right + 30:.0f},0)">
     <line x1="0" y1="146" x2="0" y2="236" stroke="url(#agw)" stroke-width="2.4" opacity="0.7"/>
     <text x="28" y="206" font-size="56" font-weight="800" fill="url(#agw)" font-family="{SANS}" letter-spacing="-1.8">agentic</text>
   </g>
   <rect x="84" y="250" width="336" height="2.6" rx="1.3" fill="url(#agw)" opacity="0.8"/>
   <text x="84" y="281" fill="#efe6ff" font-size="22.5" font-weight="600" font-family="{SANS}">Production-grade agents, reasoning &amp; pipelines</text>
   <text x="84" y="306" fill="#a193cc" font-size="16" font-weight="500" font-family="{SANS}" letter-spacing="0.3">type-safe · model-agnostic · built on Pydantic AI · async-native</text>
-  <text x="{W-26}" y="34" text-anchor="end" font-family="{MONO}" font-size="12" fill="#8574b0" opacity="0.9" letter-spacing="0.4">fireflyframework-agentic</text>
+  <text x="{W - 26}" y="34" text-anchor="end" font-family="{MONO}" font-size="12" fill="#8574b0" opacity="0.9" letter-spacing="0.4">fireflyframework-agentic</text>
 </svg>
 '''
-    (ASSETS/"banner.svg").write_text(svg)
+    write_svg("banner.svg", svg)
+
+
+# --------------------------------------------------------------------------- diagram kit
+
+
+def text_line(x, y, value, size=14, *, bold=False, color=BODY, mono=False, anchor="start"):
+    return (
+        f'<text x="{x}" y="{y}" font-size="{size}" font-weight="{700 if bold else 400}" '
+        f'fill="{color}" font-family="{MONO if mono else SANS}" text-anchor="{anchor}">{esc(value)}</text>'
+    )
+
+
+def panel(x, y, w, h, header, lines=(), *, rects, dark=False, accent=False, size=14):
+    """A measured card with a generous title band and 23 px body line spacing."""
+    rects.append((x, y, x + w, y + h))
+    if tw(header, 16, True) > w - 36:
+        WARN.append(f"text does not fit panel header: {header}")
+    if lines and 57 + (len(lines) - 1) * 23 + 14 > h:
+        WARN.append(f"text does not fit panel height: {header}")
+    fill = "url(#bed)" if dark else "url(#card)"
+    band = "url(#door)" if accent else "url(#hdr)"
+    out = [
+        f'<g filter="url(#sh)"><rect x="{x}" y="{y}" width="{w}" height="{h}" rx="12" fill="{fill}" stroke="{VIOLET2}" stroke-width="1.5"/></g>'
+    ]
+    if not dark:
+        out.append(f'<path d="M{x} {y + 12}a12 12 0 0 1 12 -12h{w - 24}a12 12 0 0 1 12 12v23H{x}Z" fill="{band}"/>')
+    out.append(text_line(x + 18, y + 24, header, 16, bold=True, color="#fff"))
+    for i, line in enumerate(lines):
+        if tw(line, size) > w - 36:
+            WARN.append(f"text does not fit panel {header}: {line}")
+        out.append(text_line(x + 18, y + 57 + i * 23, line, size, color="#e1d8f3" if dark else BODY))
+    return "\n".join(out)
+
+
+def save_diagram(name, width, height, description, body, rects):
+    check(name, rects)
+    write_svg(name + ".svg", svgdoc(width, height, description, "\n".join(body)))
+
 
 # --------------------------------------------------------------------------- architecture
+
+
 def architecture():
-    W,H=864,628; X,WD=66,726
-    layers=[("1","Orchestration","2","pipeline (DAG · 9 steps · checkpointer) · workflows (dynamic DSL · journal · routing)"),
-            ("2","Experimentation","2","experiments · lab   —   optional leaf modules"),
-            ("3","Intelligence","4","reasoning · validation/QoS · observability · explainability"),
-            ("4","Agent","6","agents · tools · prompts · memory · content · embeddings/vectorstores"),
-            ("5","Core","7","config · protocols · exceptions · plugins · resilience · storage · security")]
-    b=[title(W,"Architecture at a glance","One install, one decorator — five cohesive layers on the Pydantic AI engine.")]
-    fy=100
-    b.append(f'<rect x="{X}" y="{fy}" width="{WD}" height="50" rx="12" fill="url(#door)" stroke="#6d28d9" stroke-width="1.2" filter="url(#sh)"/>')
-    b.append(f'<rect x="{X+14}" y="{fy+6}" width="{WD-28}" height="2" rx="1" fill="#fbf8ff" opacity="0.3"/>')
-    b.append(f'<text x="{X+22}" y="{fy+20}" font-size="10.5" font-weight="800" fill="#1c0e3a" letter-spacing="1.4">THE FRONT DOOR</text>')
-    b.append(f'<text x="{X+22}" y="{fy+39}" font-size="15" font-weight="800" fill="#190a35" font-family="{MONO}">import fireflyframework_agentic · @firefly_agent</text>')
-    b.append(f'<text x="{X+WD-16}" y="{fy+20}" text-anchor="end" font-size="11" fill="#1c0e3a" font-weight="700">one install</text>')
-    b.append(f'<text x="{X+WD-16}" y="{fy+39}" text-anchor="end" font-size="11" fill="#1c0e3a" font-weight="700">one decorator</text>')
-    b.append(f'<g stroke="{VIOLET2}" stroke-width="1.4" stroke-dasharray="2 3" opacity="0.7">'+"".join(f'<line x1="{X+WD*f:.0f}" y1="{fy+50}" x2="{X+WD*f:.0f}" y2="170"/>' for f in (.18,.45,.72))+'</g>')
-    b.append(f'<line x1="46" y1="174" x2="46" y2="520" stroke="{VIOLETD}" stroke-width="2.2" marker-end="url(#arr)"/>')
-    b.append(f'<text x="28" y="350" text-anchor="middle" font-size="10.5" font-weight="700" fill="{MID}" letter-spacing="0.08em" transform="rotate(-90,28,350)">DEPENDS ON</text>')
-    by=170; BH=66; GAP=5.5
-    for i,(n,name,cnt,mods) in enumerate(layers):
-        y=by+i*(BH+GAP)
-        b.append(f'<g filter="url(#sh)"><rect x="{X}" y="{y:.1f}" width="{WD}" height="{BH}" rx="11" fill="{WHITE}" stroke="{VIOLET2}" stroke-width="2"/>'
-                 f'<path d="M{X} {y+11:.1f}a11 11 0 0 1 11 -11h{WD-22}a11 11 0 0 1 11 11v15H{X}Z" fill="url(#hdr)"/></g>')
-        b.append(badge(X+20,y+13,n))
-        b.append(f'<text x="{X+38}" y="{y+18:.1f}" fill="#fff" font-size="13" font-weight="700">{name}</text>')
-        b.append(f'<text x="{X+44+tw(name,13,True):.0f}" y="{y+18:.1f}" fill="#ede7fb" font-size="10" font-weight="600">({cnt} modules)</text>')
-        if i==4: b.append(f'<text x="{X+WD-14}" y="{y+18:.1f}" text-anchor="end" fill="#e7ddff" font-size="9.5" font-weight="700" letter-spacing="0.06em">BASE LAYER</text>')
-        b.append(f'<text x="{X+22}" y="{y+49:.1f}" fill="{BODY}" font-size="11" font-family="{MONO}">{esc(mods)}</text>')
-    yb=by+5*(BH+GAP)+4
-    b.append(f'<rect x="{X}" y="{yb:.1f}" width="{WD}" height="46" rx="12" fill="url(#bed)"/>')
-    b.append(firefly_logo(X+20,yb+23,20,fill="#efe8ff")); etx=X+20+logo_w(20)+12
-    b.append(f'<text x="{etx:.0f}" y="{yb+20:.1f}" font-size="13" font-weight="800" fill="#efe8ff" font-family="{MONO}">Pydantic AI engine</text>')
-    b.append(f'<text x="{etx:.0f}" y="{yb+36:.1f}" font-size="10.5" fill="#c3b6e6">pydantic-ai · pydantic — the type-safe agent core every layer builds on</text>')
-    b.append(f'<text x="{X+WD-14}" y="{yb+27:.1f}" text-anchor="end" font-size="10.5" fill="#a896d6" font-weight="600">Agent · Tool · RunContext</text>')
-    b.append(f'<text x="{X+26}" y="{H-20}" font-size="9.5" font-style="italic" fill="{MUTED}">Embeddings (8 providers) · Vector Stores (6 backends) — a cross-cutting RAG capability wired into the Agent &amp; Orchestration layers.</text>')
-    (ASSETS/"architecture.svg").write_text(svgdoc(W,H,"Firefly Agentic architecture: one front door over five layers on the Pydantic AI engine.","\n  ".join(b),amb=(720,72)))
+    w, h = 1100, 710
+    r = []
+    b = [
+        title(
+            w,
+            "Architecture at a glance",
+            "The application API and the capabilities you compose around it; this is not an import-dependency graph.",
+        )
+    ]
+    b.append(
+        panel(
+            42,
+            110,
+            1016,
+            94,
+            "Your application: FireflyAgent or @firefly_agent",
+            ["Typed inputs and outputs · run / run_sync / run_stream · configure a model once, override per run"],
+            rects=r,
+        )
+    )
+    for x in (206, 550, 894):
+        b.append(arrow(x, 205, x, 234))
+    cards = [
+        (
+            42,
+            "Firefly tools",
+            ["@tool · BaseTool · ToolKit", "Guards and tool-call hooks", "Adapted to the agent engine"],
+        ),
+        (
+            386,
+            "Firefly memory",
+            ["MemoryManager", "Conversation + working memory", "In-memory · file · SQLite", "PostgreSQL · MongoDB"],
+        ),
+        (
+            730,
+            "Firefly model configuration",
+            [
+                "ModelOptions: typed run controls",
+                "ModelSpec / ModelFactory",
+                "Provider setup and credentials",
+                "Explicit Chat / Responses routes",
+            ],
+        ),
+    ]
+    for x, header, lines in cards:
+        b.append(panel(x, 236, 328, 154, header, lines, rects=r))
+    b.append(
+        panel(
+            42,
+            419,
+            1016,
+            106,
+            "Compose what the application needs",
+            [
+                "Reasoning patterns · pipelines and workflows · retrieval with embeddings and vector stores",
+                "Middleware · validation · observability · explainability · experiments and lab",
+            ],
+            rects=r,
+            accent=True,
+        )
+    )
+    b.append(arrow(550, 526, 550, 554))
+    b.append(
+        panel(
+            42,
+            556,
+            1016,
+            94,
+            "Pydantic AI 2 engine",
+            [
+                "Provider clients · model/tool exchange · structured output · streaming (subject to model and API support)"
+            ],
+            rects=r,
+            dark=True,
+        )
+    )
+    b.append(
+        text_line(
+            550,
+            682,
+            "Configuration, storage, resilience and security support these capabilities across the framework.",
+            14,
+            anchor="middle",
+            color=MID,
+        )
+    )
+    save_diagram(
+        "architecture",
+        w,
+        h,
+        "Firefly Agentic architecture. Applications use FireflyAgent or the firefly_agent decorator with Firefly tools, memory, and typed ModelOptions. Optional reasoning, orchestration, retrieval, and operational modules compose around that API. Pydantic AI 2 supplies the model engine. This view groups capabilities rather than claiming a strict dependency hierarchy.",
+        b,
+        r,
+    )
+
 
 # --------------------------------------------------------------------------- protocols
+
+
 def protocols():
-    W,H=1000,402; R=[]
-    b=[title(W,"Protocol-driven contracts — 28 ports, swap any part","Every extension point is a @runtime_checkable Protocol or ABC — implement it and the framework discovers you by duck typing.")]
-    groups=[("Agent · Tools",["AgentLike","ToolProtocol","GuardProtocol","DelegationStrategy","AgentMiddleware"]),
-            ("Intelligence",["ReasoningPattern","ValidationRule"]),
-            ("Orchestration",["StepExecutor","Checkpointer","AuditLog","QueryableAuditLog","EventHandler","PipelineEventHandler"]),
-            ("Workflows  (new)",["AgentRunner","StreamingAgentRunner","JournalBackend","ModelSelectionStrategy"]),
-            ("Content · Memory",["Chunker","CompressionStrategy","ContentSource","OfficeConverter","MemoryStore"]),
-            ("Embeddings · Security · Exec",["EmbeddingProtocol","VectorStoreProtocol","ScopedVectorStore","EncryptionProvider","CostSink","ExecutionEnvironment"])]
-    cols=3; cw=300; ch=134; gx=14; gy=14; x0=(W-(cols*cw+(cols-1)*gx))/2; y0=100
-    for i,(hdr,lines) in enumerate(groups):
-        cx=x0+(i%cols)*(cw+gx); cy=y0+(i//cols)*(ch+gy)
-        b.append(fbox(cx,cy,cw,ch,hdr,lines,rects=R))
-    check("protocols",R)
-    (ASSETS/"protocols.svg").write_text(svgdoc(W,H,"Firefly Agentic protocols: 28 runtime-checkable ports grouped by layer, each implementable to extend the framework.","\n  ".join(b),amb=(840,64)))
+    w, h = 1100, 680
+    r = []
+    b = [
+        title(
+            w,
+            "Extension contracts",
+            "Selected public protocols, grouped by responsibility; use the matching constructor, adapter or registry.",
+        )
+    ]
+    groups = [
+        ("Agents and tools", ["AgentLike · ToolProtocol", "AgentMiddleware", "GuardProtocol · ToolCallListener"]),
+        ("Models and reasoning", ["CredentialResolver", "ReasoningPattern", "ValidationRule"]),
+        ("Memory and content", ["MemoryStore · ContentSource", "Chunker · CompressionStrategy", "OfficeConverter"]),
+        ("Retrieval", ["EmbeddingProtocol", "VectorStoreProtocol", "ScopedVectorStore"]),
+        (
+            "Pipelines",
+            ["StepExecutor · Checkpointer", "AuditLog · QueryableAuditLog", "EventHandler", "PipelineEventHandler"],
+        ),
+        ("Workflows", ["AgentRunner", "StreamingAgentRunner", "JournalBackend", "ModelSelectionStrategy"]),
+    ]
+    for i, (header, lines) in enumerate(groups):
+        x, y = 42 + (i % 3) * 344, 110 + (i // 3) * 192
+        b.append(panel(x, y, 328, 164, header, lines, rects=r))
+    b.append(
+        panel(
+            42,
+            501,
+            1016,
+            103,
+            "Protocols and base classes have different roles",
+            [
+                "Protocols describe structural contracts. ABCs such as BaseTool, BaseEmbedder, BaseVectorStore",
+                "and StorageBackend provide explicit subclass extension points; matching a protocol does not register it.",
+            ],
+            rects=r,
+            accent=True,
+        )
+    )
+    b.append(
+        text_line(
+            550,
+            644,
+            "ModelOptions is a typed configuration model, not an extension protocol.",
+            14,
+            anchor="middle",
+            color=MID,
+        )
+    )
+    save_diagram(
+        "protocols",
+        w,
+        h,
+        "Selected Firefly extension contracts for agents, tools, models, reasoning, memory, content, retrieval, pipelines, and workflows. Protocol conformance describes a structural contract, not automatic registration. Abstract base classes provide subclass extension points. ModelOptions is typed configuration rather than a protocol.",
+        b,
+        r,
+    )
 
-# --------------------------------------------------------------------------- reasoning
-def reasoning():
-    W,H=980,486; R=[]
-    b=[title(W,"Six reasoning patterns on one pluggable loop","Every pattern fills the same template-method loop; ReasoningPipeline chains them and OutputReviewer validates.")]
-    # the loop
-    ly=128; steps=["_reason","_act","_observe","_should_continue"]; sw=150; gap=22
-    total=len(steps)*sw+(len(steps)-1)*gap; x=(W-total)/2-20
-    first_x=x
-    for i,st in enumerate(steps):
-        b.append(f'<g filter="url(#sh)"><rect x="{x:.1f}" y="{ly}" width="{sw}" height="44" rx="10" fill="{SUB}" stroke="{VIOLET2}" stroke-width="1.8"/></g>'
-                 f'<text x="{x+sw/2:.1f}" y="{ly+27}" text-anchor="middle" font-size="13" font-weight="700" fill="{MID}" font-family="{MONO}">{st}</text>')
-        R.append((x,ly,x+sw,ly+44))
-        if i<len(steps)-1: b.append(arrow(x+sw,ly+22,x+sw+gap,ly+22))
-        x+=sw+gap
-    # dashed loop-back arrow from the last box to the first
-    rx=first_x+(len(steps)-1)*(sw+gap)+sw/2; lx=first_x+sw/2
-    b.append(f'<path d="M{rx:.1f} {ly+44} C {rx:.1f} {ly+84}, {lx:.1f} {ly+84}, {lx:.1f} {ly+46}" fill="none" stroke="{AMBER}" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#arra)"/>')
-    cap="loops until done  ->  ReasoningResult + ReasoningTrace"; capw=tw(cap,10.5)+18
-    b.append(f'<rect x="{W/2-capw/2:.1f}" y="{ly+92}" width="{capw:.1f}" height="19" rx="9.5" fill="{WHITE}"/>')
-    b.append(f'<text x="{W/2:.0f}" y="{ly+105}" text-anchor="middle" font-size="10.5" fill="#a85d22" font-weight="600">{esc(cap)}</text>')
-    # six pattern cards
-    py=ly+118; pw=300; ph=92; gpx=14; gpy=14; px0=(W-(3*pw+2*gpx))/2
-    pats=[("ReAct","observe -> think -> act","interleaved tool use"),
-          ("Chain of Thought","step-by-step reasoning","explicit intermediate steps"),
-          ("Plan-and-Execute","goal -> plan -> steps","optional replanning"),
-          ("Reflexion","execute -> critique -> retry","self-correcting loop"),
-          ("Tree of Thoughts","branch -> evaluate -> select","search over thoughts"),
-          ("Goal Decomposition","goal -> phases -> tasks","hierarchical breakdown")]
-    for i,(hdr,a,c) in enumerate(pats):
-        cx=px0+(i%3)*(pw+gpx); cy=py+(i//3)*(ph+gpy)
-        b.append(fbox(cx,cy,pw,ph,hdr,[a,c],mono=False,rects=R))
-    check("reasoning",R)
-    (ASSETS/"reasoning.svg").write_text(svgdoc(W,H,"Firefly Agentic reasoning: a reason/act/observe loop feeding six pluggable patterns.","\n  ".join(b),amb=(150,64)))
 
-# --------------------------------------------------------------------------- pipeline
-def pipeline():
-    W,H=1000,470; R=[]
-    b=[title(W,"Pipelines — a typed DAG your agents run on","PipelineEngine runs nodes level-by-level via asyncio.gather; per-node conditions, retries and timeouts.")]
-    phases=[("ingest","BinaryNormalizer"),("split","DocumentSplitter"),("classify","AgentStep"),
-            ("extract","AgentStep × N"),("validate","OutputReviewer"),("assemble","FanInStep"),("explain","ReportBuilder")]
-    widths=[max(need(h,[l],mono=True),118) for h,l in phases]
-    gap=10; total=sum(widths)+gap*(len(phases)-1); x=(W-total)/2; y=156; bh=70; centers=[]
-    for (h,l),w in zip(phases,widths):
-        hf="url(#hdr)"
-        b.append(fbox(x,y,w,bh,h,[l],hdrfill=hf,rects=R)); centers.append(x+w/2); x+=w
-        if (h,l)!=phases[-1]: b.append(arrow(x,y+bh/2,x+gap,y+bh/2)); x+=gap
-    # fan-out / fan-in annotation over extract (index 3)
-    ex=centers[3]
-    b.append(f'<text x="{ex:.0f}" y="{y-14}" text-anchor="middle" font-size="10" fill="{INDIGO}" font-weight="600">FanOutStep  -&gt;  parallel  -&gt;  FanInStep</text>')
-    b.append(arrow(ex,y-8,ex,y-2,INDIGO,mk="arrb",sw=1.3))
-    # human-in-the-loop pause under validate (index 4)
-    vx=centers[4]
-    b.append(arrow(vx,y+bh,vx,y+bh+24,AMBER,dash="4 3",mk="arra",sw=1.4))
-    plabel="human-in-the-loop · Pause / Send"; iw=11; pw=iw+8+tw(plabel,10)+24; bx=vx-pw/2; byy=y+bh+24
-    b.append(f'<rect x="{bx:.1f}" y="{byy}" width="{pw:.1f}" height="26" rx="8" fill="{SUB}" stroke="{AMBER}" stroke-dasharray="4 3"/>')
-    b.append(f'<rect x="{bx+13:.1f}" y="{byy+7}" width="3" height="12" rx="1" fill="#a85d22"/><rect x="{bx+18:.1f}" y="{byy+7}" width="3" height="12" rx="1" fill="#a85d22"/>')
-    b.append(f'<text x="{bx+13+iw+6:.1f}" y="{byy+17}" font-size="10" fill="#a85d22" font-family="{MONO}">{plabel}</text>')
-    # checkpointer + audit sidecars
-    cy2=y+bh+86
-    b.append(fbox(120,cy2,360,52,"Checkpointer · FileCheckpointer",["persist & resume long runs · CheckpointRecord"],mono=False,hdrfill="url(#door)",rects=R))
-    b.append(fbox(520,cy2,360,52,"AuditLog family",["File · Logging · Otel · Queryable (AuditEntry)"],mono=False,hdrfill="url(#door)",rects=R))
-    b.append(f'<text x="{W/2:.0f}" y="{H-22}" text-anchor="middle" font-size="10.5" font-style="italic" fill="{MUTED}">PipelineBuilder.chain(...) wires the DAG · AgentStep · ReasoningStep · CallableStep · BranchStep · BatchLLMStep · EmbeddingStep · RetrievalStep</text>')
-    check("pipeline",R)
-    (ASSETS/"pipeline.svg").write_text(svgdoc(W,H,"Firefly Agentic pipeline: a seven-phase IDP DAG with fan-out/fan-in, a human-in-the-loop pause, checkpointing and an audit log.","\n  ".join(b),amb=(860,64)))
+# --------------------------------------------------------------------------- model routing
 
-# --------------------------------------------------------------------------- rag
-def rag():
-    W,H=1000,452; R=[]
-    b=[title(W,"Retrieval-augmented — eight embedders × six vector stores, one API","EmbeddingProtocol and VectorStoreProtocol make providers and backends fully swappable.")]
-    embs=["OpenAI","Azure OpenAI","Cohere","Google","Mistral","Voyage AI","AWS Bedrock","Ollama"]
-    stores=["InMemory","ChromaDB","Pinecone","Qdrant","pgvector","sqlite-vec"]
-    rh=24; rg=6; ey=112; lw=212; cardh=8*(rh+rg)+38
-    def column(x,header,items,proto):
-        b.append(fbox(x,ey,lw,cardh,header,[],rects=R))
-        for i,it in enumerate(items):
-            yy=ey+40+i*(rh+rg)
-            b.append(f'<rect x="{x+12}" y="{yy-15}" width="{lw-24}" height="{rh}" rx="6" fill="{SUB}" stroke="{STROKE}"/>')
-            b.append(f'<text x="{x+22}" y="{yy+1}" font-size="10.5" fill="{BODY}" font-family="{MONO}">{it}</text>')
-        b.append(f'<text x="{x+lw/2:.0f}" y="{ey+cardh+16}" text-anchor="middle" font-size="9.5" fill="{MUTED}" font-family="{MONO}">{proto}</text>')
-    lx=44; sx=W-44-lw
-    column(lx,"EMBEDDERS",embs,"EmbeddingProtocol · BaseEmbedder")
-    column(sx,"VECTOR STORES",stores,"VectorStoreProtocol · BaseVectorStore")
-    # centre flow
-    flow=[("text","raw documents"),("embed","BaseEmbedder"),("upsert","auto-embed"),("search_text","query · top_k"),("SearchResult","scored hits")]
-    fw=156; fbh=40; fgap=12; fx=(W-fw)/2; cen=[]
-    for i,(hdr,sub) in enumerate(flow):
-        yy=ey+i*(fbh+fgap)
-        b.append(fbox(fx,yy,fw,fbh,hdr,[sub],mono=False,rects=R)); cen.append(yy+fbh/2)
-        if i<len(flow)-1: b.append(arrow(fx+fw/2,yy+fbh,fx+fw/2,yy+fbh+fgap,VIOLETD))
-    b.append(arrow(lx+lw,ey+cardh/2,fx-3,cen[1],VIOLETD,dash="4 3"))         # embedders -> embed
-    b.append(arrow(sx,ey+cardh/2,fx+fw+3,cen[3],INDIGO,dash="4 3",mk="arrb")) # stores -> search_text
-    b.append(f'<text x="{W/2:.0f}" y="{H-18}" text-anchor="middle" font-size="10" font-style="italic" fill="{MUTED}">ScopedVectorStore / TenantScopedVectorStore isolate per tenant · EmbeddingStep / RetrievalStep drop straight into pipelines</text>')
-    check("rag",R)
-    (ASSETS/"rag.svg").write_text(svgdoc(W,H,"Firefly Agentic retrieval: eight embedding providers and six vector-store backends behind one API.","\n  ".join(b),amb=(500,64)))
+
+def model_routing():
+    w, h = 1100, 690
+    r = []
+    b = [
+        title(
+            w,
+            "One application API, explicit model routes",
+            "Keep agent behavior in Firefly; select the provider and API deliberately.",
+        )
+    ]
+    b.append(
+        panel(
+            170,
+            110,
+            760,
+            84,
+            "FireflyAgent / @firefly_agent",
+            ["Firefly tools + MemoryManager + ModelOptions"],
+            rects=r,
+        )
+    )
+    b.append(arrow(550, 194, 550, 220))
+    b.append(
+        panel(
+            100,
+            222,
+            900,
+            106,
+            "Resolve the effective model and validate typed options",
+            [
+                "Configured model or per-run override; preserve an existing model object's class and client.",
+                "Merge ModelOptions, validate against the model/profile, then translate to native request settings.",
+            ],
+            rects=r,
+        )
+    )
+    b.append(arrow(550, 328, 550, 353))
+    b.append(f'<path d="M206 378V354H894V378 M550 354V378" fill="none" stroke="{VIOLETD}" stroke-width="1.8"/>')
+    for x in (206, 550, 894):
+        b.append(arrow(x, 373, x, 385))
+    routes = [
+        (
+            42,
+            "Chat Completions",
+            ["openai: · openai-chat:", "azure: · azure-chat:", "Legacy aliases keep Chat", "OpenAI / Azure Chat API"],
+        ),
+        (
+            386,
+            "Responses",
+            ["openai-responses:", "azure-responses:", "Explicit Responses selection", "OpenAI / Azure Responses API"],
+        ),
+        (
+            730,
+            "Other model providers",
+            [
+                "For example: Anthropic, Google",
+                "Provider-specific adapters",
+                "ModelSpec / ModelFactory",
+                "support configured clients",
+            ],
+        ),
+    ]
+    for x, header, lines in routes:
+        b.append(panel(x, 387, 328, 158, header, lines, rects=r, accent=True))
+    b.append(
+        text_line(
+            550,
+            585,
+            "Per-run fields override agent options; explicit None clears an inherited field.",
+            14,
+            anchor="middle",
+            color=MID,
+        )
+    )
+    b.append(
+        text_line(
+            550,
+            614,
+            "Unsupported explicit controls fail early with ModelOptionsError. Feature support varies by model and API.",
+            14,
+            anchor="middle",
+        )
+    )
+    b.append(
+        text_line(
+            550,
+            650,
+            "Advanced escape hatch: native model_settings; they do not change the selected API route.",
+            14,
+            anchor="middle",
+            color=MID,
+        )
+    )
+    save_diagram(
+        "model-routing",
+        w,
+        h,
+        "Model routing through FireflyAgent. Resolve the effective model, merge typed ModelOptions, validate against the model profile, and translate to native settings. Firefly preserves legacy openai and azure aliases as Chat Completions; openai-responses and azure-responses explicitly select Responses. Other providers use their own adapters. Existing model objects retain their class and client. Support depends on the selected model and API, and unsupported explicit controls raise ModelOptionsError.",
+        b,
+        r,
+    )
+
 
 # --------------------------------------------------------------------------- agent anatomy
-def agent_anatomy():
-    W,H=1000,500; R=[]
-    b=[title(W,"Anatomy of an agent run — middleware all the way down","FireflyAgent wraps pydantic_ai.Agent; a composable MiddlewareChain wraps every run.")]
-    # middleware chain wrapping the model call
-    mids=["Logging","Observability","PromptGuard","OutputGuard","CostGuard","Cache","PromptCache","Explainability","Validation","Retry","CircuitBreaker"]
-    cols=6; cw=145; cg=10; rgy=12; x0=(W-(cols*cw+(cols-1)*cg))/2; y0=170
-    b.append(f'<text x="{W/2:.0f}" y="152" text-anchor="middle" font-size="11" font-weight="700" fill="{MID}" letter-spacing="0.06em">MiddlewareChain — wraps every agent.run()</text>')
-    for i,m in enumerate(mids):
-        cx=x0+(i%cols)*(cw+cg); cy=y0+(i//cols)*(46+rgy)
-        b.append(f'<g filter="url(#sh)"><rect x="{cx:.1f}" y="{cy}" width="{cw}" height="46" rx="9" fill="{WHITE}" stroke="{VIOLET2}" stroke-width="1.6"/>'
-                 f'<rect x="{cx:.1f}" y="{cy}" width="6" height="46" rx="3" fill="url(#hdr)"/></g>')
-        b.append(f'<text x="{cx+18:.1f}" y="{cy+28}" font-size="11" font-weight="600" fill="{BODY}" font-family="{SANS}">{m}</text>')
-        R.append((cx,cy,cx+cw,cy+46))
-    # the wrapped core
-    coy=y0+2*(46+rgy)+8; cwd=420; cox=(W-cwd)/2
-    b.append(f'<g filter="url(#sh)"><rect x="{cox}" y="{coy}" width="{cwd}" height="58" rx="11" fill="url(#bed)"/></g>')
-    b.append(firefly_logo(cox+18,coy+29,22,fill="#efe8ff")); atx=cox+18+logo_w(22)+12
-    b.append(f'<text x="{atx:.0f}" y="{coy+25}" font-size="13" font-weight="800" fill="#efe8ff" font-family="{MONO}">FireflyAgent  -&gt;  pydantic_ai.Agent</text>')
-    b.append(f'<text x="{atx:.0f}" y="{coy+43}" font-size="10.5" fill="#c3b6e6">the model call — tools, structured output, streaming</text>')
-    b.append(arrow(W/2,y0+2*(46+rgy)-4,W/2,coy-2,VIOLETD))
-    # side modules
-    sy=coy+86; sw=300; sg=20; sx0=(W-(3*sw+2*sg))/2
-    side=[("DelegationRouter","7 strategies route across an agent pool"),
-          ("FallbackModelWrapper · ResultCache","automatic failover + response caching"),
-          ("MemoryManager · AgentLifecycle","conversation + working memory · hooks")]
-    for i,(hdr,sub) in enumerate(side):
-        b.append(fbox(sx0+i*(sw+sg),sy,sw,52,hdr,[sub],mono=False,hdrfill="url(#door)",rects=R))
-    check("agent-anatomy",R)
-    (ASSETS/"agent-anatomy.svg").write_text(svgdoc(W,H,"Firefly Agentic agent anatomy: a FireflyAgent wrapping pydantic_ai.Agent inside an eleven-stage middleware chain.","\n  ".join(b),amb=(840,64)))
 
-# --------------------------------------------------------------------------- ecosystem
-def ecosystem():
-    W,H=1000,672; cx,cy=500,382; R=[]
-    b=[title(W,"One framework, every runtime — the Firefly family","Firefly Agentic is the agentic member of a polyglot platform that shares one programming model.")]
-    members=[("Java / Spring Boot","40+ modules · Production","springboot",False),(".NET","CalVer · Beta","dotnet",False),
-             ("PyFly","Python · 39 modules","python",False),("Rust","tokio + axum · Active","rust",False),
-             ("Go","CLI · Active","go",False),("Frontend","Angular · flyfront","angular",False),
-             ("Agentic","agents · reasoning · RAG","__spark__",True)]
-    n=len(members); rx,ry=372,240; angles=[-90+i*360/n for i in range(n)]; nodes=[]
-    for (name,meta,ic,me),a in zip(members,angles):
-        ar=math.radians(a); x=cx+rx*math.cos(ar); y=cy+ry*math.sin(ar)
-        w=max(tw(name,12.5,True)+(34 if ic else 14),tw(meta,9)+(34 if ic else 14))+22; h=58 if not me else 62
-        nodes.append([name,meta,ic,me,x,y,w,h])
-    for name,meta,ic,me,x,y,w,h in nodes:
-        b.append(f'<path d="M{cx+(x-cx)*0.16:.0f} {cy+(y-cy)*0.16:.0f} Q {(cx+x)/2:.0f} {(cy+y)/2-18:.0f} {x:.0f} {y:.0f}" fill="none" stroke="{VIOLET2}" stroke-width="1.2" stroke-dasharray="3 4" opacity="0.45"/>')
-    b.append(f'<circle cx="{cx}" cy="{cy}" r="96" fill="url(#amb)"/>')
-    b.append(f'<circle cx="{cx}" cy="{cy}" r="62" fill="{SUB}" stroke="{VIOLET2}" stroke-width="2"/>')
-    b.append(firefly_logo(cx,cy-18,28,fill=MID,anchor="mid"))
-    b.append(f'<text x="{cx}" y="{cy+18}" text-anchor="middle" font-size="11" font-weight="800" fill="{MID}" letter-spacing="2.5">FRAMEWORK</text>')
-    b.append(f'<text x="{cx}" y="{cy+35}" text-anchor="middle" font-size="9" font-style="italic" fill="{MUTED}">one model · many runtimes</text>')
-    for name,meta,ic,me,x,y,w,h in nodes:
-        fill="url(#hdr)" if me else WHITE; tcol="#fff" if me else INK; scol="#ede7fb" if me else MUTED
-        b.append(f'<g filter="url(#sh)"><rect x="{x-w/2:.1f}" y="{y-h/2:.1f}" width="{w:.1f}" height="{h}" rx="13" fill="{fill}" stroke="{VIOLET2}" stroke-width="{2.6 if me else 1.6}"/></g>')
-        ix=x-w/2+22
-        if ic=="__spark__": b.append(spark(ix,y,11,"#e0a528"))
-        elif ic: b.append(icon(ic,ix,y,22))
-        txt=x-w/2+(40 if ic else 16)
-        b.append(f'<text x="{txt:.1f}" y="{y-3:.1f}" font-size="12.5" font-weight="800" fill="{tcol}">{name}</text>')
-        b.append(f'<text x="{txt:.1f}" y="{y+13:.1f}" font-size="9" fill="{scol}" font-family="{MONO}">{meta}</text>')
-        if me:
-            lbl="you are here"; lw=tw(lbl,9.5,True); ytxt=y+h/2+15
-            b.append(spark(x-lw/2-7,ytxt-3,5,"#e0a528"))
-            b.append(f'<text x="{x:.1f}" y="{ytxt:.1f}" text-anchor="middle" font-size="9.5" font-weight="700" fill="{MID}">{lbl}</text>')
-        R.append((x-w/2,y-h/2,x+w/2,y+h/2))
-    check("ecosystem",R)
-    (ASSETS/"ecosystem.svg").write_text(svgdoc(W,H,"The Firefly family: Java/Spring Boot, .NET, PyFly, Rust, Go, Angular frontend, and GenAI/Agentic (highlighted) around a shared core.","\n  ".join(b),amb=(cx,cy)))
+
+def agent_anatomy():
+    w, h = 1100, 760
+    r = []
+    b = [
+        title(
+            w,
+            "Anatomy of an agent run",
+            "A normal successful run through FireflyAgent; middleware can also short-circuit a request.",
+        )
+    ]
+    stages = [
+        (110, "1. Before-run middleware", ["Run configured hooks in order; a cache hit may return early."]),
+        (222, "2. Load attached memory", ["MemoryManager + conversation_id inject conversation history."]),
+        (334, "3. Resolve model and ModelOptions", ["Validate and translate options for the effective model and API."]),
+        (446, "4. Execute with Pydantic AI 2", ["Model/tool exchange, structured output or streaming."]),
+        (
+            558,
+            "5. Complete the run",
+            [
+                "Persist completed history and record enabled usage tracking.",
+                "Run after-hooks in reverse order; error-hooks handle failures.",
+            ],
+        ),
+    ]
+    for i, (y, header, lines) in enumerate(stages):
+        b.append(panel(42, y, 650, 88 if i < 4 else 105, header, lines, rects=r, dark=i == 3))
+        if i < 4:
+            b.append(arrow(367, y + 89, 367, y + 110))
+    b.append(
+        panel(
+            730,
+            110,
+            328,
+            155,
+            "Default middleware",
+            [
+                "LoggingMiddleware",
+                "ObservabilityMiddleware",
+                "only when observability is on",
+                "default_middleware=False opts out",
+            ],
+            rects=r,
+            accent=True,
+            size=13.5,
+        )
+    )
+    b.append(
+        panel(
+            730,
+            289,
+            328,
+            178,
+            "Optional middleware",
+            [
+                "Prompt and output guards",
+                "Cost, cache and prompt cache",
+                "Explainability and validation",
+                "Retry and circuit breaker",
+                "Supply a middleware list",
+            ],
+            rects=r,
+            size=14,
+        )
+    )
+    b.append(
+        panel(
+            730,
+            491,
+            328,
+            172,
+            "Optional agent behavior",
+            [
+                "BaseTool / ToolKit / @tool",
+                "MemoryManager",
+                "Delegation and model fallback",
+                "Approval / deferred tool results",
+                "Enable and configure as needed",
+            ],
+            rects=r,
+        )
+    )
+    b.append(
+        text_line(
+            550,
+            707,
+            "Middleware hooks wrap the run; tool guards wrap tool execution. These are separate extension points.",
+            14,
+            anchor="middle",
+            color=MID,
+        )
+    )
+    b.append(
+        text_line(
+            550,
+            733,
+            "Provider and API capabilities still govern tools, reasoning, sampling and streaming.",
+            14,
+            anchor="middle",
+        )
+    )
+    save_diagram(
+        "agent-anatomy",
+        w,
+        h,
+        "A normal successful FireflyAgent run executes before middleware, loads attached conversation memory, resolves and validates model options, calls Pydantic AI 2, persists completed history, tracks configured usage, and executes after hooks in reverse order. Default middleware is logging plus observability when enabled; guards, caching, validation, retry, and circuit breaker middleware are optional. Error hooks run on failures. Cache middleware can return early.",
+        b,
+        r,
+    )
+
+
+# --------------------------------------------------------------------------- reasoning
+
+
+def reasoning():
+    w, h = 1100, 590
+    r = []
+    b = [
+        title(
+            w,
+            "Six reasoning patterns, shared contracts",
+            "Four patterns use the base template below; Tree of Thoughts and Goal Decomposition override execute().",
+        )
+    ]
+    steps = ["_reason", "_act", "_observe", "_should_continue"]
+    for i, step in enumerate(steps):
+        x = 64 + i * 248
+        b.append(panel(x, 113, 228, 61, step, rects=r))
+        if i < 3:
+            b.append(arrow(x + 228, 144, x + 246, 144))
+    b.append(
+        f'<path d="M922 175V207H178V179" fill="none" stroke="{AMBER}" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#arra)"/>'
+    )
+    b.append(
+        text_line(
+            550,
+            242,
+            "Base template: ReAct · Chain of Thought · Plan-and-Execute · Reflexion",
+            15,
+            anchor="middle",
+            color=MID,
+        )
+    )
+    pats = [
+        ("ReAct", ["Think, call a tool, observe", "Interleaved reasoning and action"]),
+        ("Chain of Thought", ["Structured intermediate steps", "A final answer from those steps"]),
+        ("Plan-and-Execute", ["Create a plan, execute its steps", "Replan when configured"]),
+        ("Reflexion", ["Execute, critique, retry", "Use feedback on another attempt"]),
+        ("Tree of Thoughts", ["Generate and evaluate branches", "Select the highest-scored branch"]),
+        ("Goal Decomposition", ["Split a goal into sub-goals", "Coordinate their execution"]),
+    ]
+    for i, (header, lines) in enumerate(pats):
+        b.append(panel(42 + (i % 3) * 344, 278 + (i // 3) * 127, 328, 103, header, lines, rects=r))
+    b.append(
+        text_line(
+            550,
+            552,
+            "All return ReasoningResult with a trace; ReasoningPipeline composes patterns.",
+            14,
+            anchor="middle",
+            color=MID,
+        )
+    )
+    save_diagram(
+        "reasoning",
+        w,
+        h,
+        "Six reasoning patterns share result and trace contracts. ReAct, Chain of Thought, Plan-and-Execute, and Reflexion use the AbstractReasoningPattern template: reason, act, observe, and should_continue, with early stopping and iteration limits. Tree of Thoughts overrides execute to generate and score branches; Goal Decomposition overrides execute to coordinate phases and tasks. ReasoningPipeline composes patterns.",
+        b,
+        r,
+    )
+
+
+# --------------------------------------------------------------------------- pipeline
+
+
+def pipeline():
+    w, h = 1100, 690
+    r = []
+    b = [
+        title(
+            w,
+            "Pipelines: declarative graphs and explicit state",
+            "Build a DAG for parallel stages, or enable cyclic routing for iterative work.",
+        )
+    ]
+    b.append(text_line(42, 124, "EXAMPLE: DOCUMENT PROCESSING DAG", 14, bold=True, color=MID))
+    # A two-row flow keeps real API labels readable at documentation widths.
+    stages = [
+        (42, 151, "Ingest and split", ["BinaryNormalizer", "DocumentSplitter"]),
+        (386, 151, "Classify", ["AgentStep", "Typed document category"]),
+        (730, 151, "Extract in parallel", ["Send dispatches worker nodes", "Reducers merge worker results"]),
+        (730, 303, "Validate", ["OutputReviewer", "Application validation rules"]),
+        (386, 303, "Assemble", ["Typed application output", "Merge validated fields"]),
+        (42, 303, "Explain", ["ReportBuilder", "Build the processing report"]),
+    ]
+    for x, y, header, lines in stages:
+        b.append(panel(x, y, 328, 108, header, lines, rects=r))
+    b.extend(
+        [
+            arrow(371, 205, 384, 205),
+            arrow(715, 205, 728, 205),
+            arrow(894, 260, 894, 301),
+            arrow(728, 357, 715, 357),
+            arrow(384, 357, 371, 357),
+        ]
+    )
+    controls = [
+        (
+            42,
+            "Control flow",
+            ["Pause: wait for external input", "Send: dispatch worker payloads", "Cycles: opt in + visit limits"],
+        ),
+        (
+            386,
+            "Checkpointing",
+            ["Checkpointer / FileCheckpointer", "Persist resumable run state", "Resume from saved checkpoints"],
+        ),
+        (
+            730,
+            "Audit and events",
+            ["AuditLog records node results", "Event handlers observe progress", "Wire the sinks your app needs"],
+        ),
+    ]
+    for x, header, lines in controls:
+        b.append(panel(x, 451, 328, 132, header, lines, rects=r, accent=True))
+    b.append(
+        text_line(
+            550,
+            624,
+            "PipelineBuilder + PipelineEngine · per-node conditions, retries and timeouts",
+            15,
+            anchor="middle",
+            color=MID,
+        )
+    )
+    b.append(
+        text_line(
+            550,
+            655,
+            "The flow above is one application design; these stages are not a required pipeline sequence.",
+            14,
+            anchor="middle",
+        )
+    )
+    save_diagram(
+        "pipeline",
+        w,
+        h,
+        "An example document-processing DAG ingests and splits, classifies, extracts in parallel, validates, assembles, and explains. It illustrates an application composition rather than mandatory stages. PipelineBuilder and PipelineEngine also support explicitly enabled cycles with visit limits. Pause requests external input; Send dispatches worker payloads. Checkpointing and audit/event sinks are configurable.",
+        b,
+        r,
+    )
+
+
+# --------------------------------------------------------------------------- workflows
+
 
 def workflows():
-    W,H=1000,506; R=[]
-    b=[title(W,"Dynamic Workflows — a code-defined DSL over your agents","@workflow async functions orchestrate agents deterministically — a complement to the declarative pipeline DAG.")]
-    dw=400; dx=(W-dw)/2; dy=100
-    b.append(fbox(dx,dy,dw,48,"@workflow · @subworkflow · run_workflow",["async def flow(args) -> OutputT:   …"],mono=False,rects=R))
-    b.append(arrow(W/2,dy+48,W/2,dy+64,VIOLETD))
-    prims=["agent()","parallel()","pipeline()","stream()","phase()","human()","map_agents()","log()"]
-    b.append(f'<text x="{W/2:.0f}" y="{dy+78}" text-anchor="middle" font-size="9.5" font-weight="700" fill="{MID}" letter-spacing="1.5">DSL PRIMITIVES</text>')
-    chh=28; gap=8; widths=[mw(p,11)+22 for p in prims]
-    total=sum(widths)+gap*(len(prims)-1); x=(W-total)/2; cyc=dy+86
-    for p,wd in zip(prims,widths):
-        b.append(f'<rect x="{x:.1f}" y="{cyc}" width="{wd:.1f}" height="{chh}" rx="8" fill="url(#card)" stroke="{VIOLET2}" stroke-width="1.4"/>')
-        b.append(f'<text x="{x+wd/2:.1f}" y="{cyc+18}" text-anchor="middle" font-size="11" font-weight="700" fill="{MID}" font-family="{MONO}">{p}</text>')
-        R.append((x,cyc,x+wd,cyc+chh)); x+=wd+gap
-    cty=cyc+chh+22; cw2=600; cx2=(W-cw2)/2
-    b.append(arrow(W/2,cyc+chh,W/2,cty-2,VIOLETD))
-    b.append(f'<g filter="url(#sh)"><rect x="{cx2}" y="{cty}" width="{cw2}" height="44" rx="11" fill="url(#hdr)"/><path d="M{cx2+11} {cty+1.5}h{cw2-22}" stroke="#ffffff" stroke-opacity="0.22" stroke-width="1"/></g>')
-    b.append(f'<text x="{W/2:.0f}" y="{cty+19}" text-anchor="middle" font-size="13" font-weight="800" fill="#fff">WorkflowContext</text>')
-    b.append(f'<text x="{W/2:.0f}" y="{cty+35}" text-anchor="middle" font-size="10" fill="#ede7fb" font-family="{MONO}">current_workflow() — carries budget · journal · runner · event handler</text>')
-    cardy=cty+44+28; cw3=232; cg=12; cx0=(W-(4*cw3+3*cg))/2; chc=94
-    cards=[("Runner · AgentRunner",["FireflyAgentRunner — default","DefaultAgentRunner — light","middleware · guards · budget"]),
-           ("Journal · JournalBackend",["FileJournalBackend","deterministic resume","replays completed calls"]),
-           ("WorkflowBudget",["concurrency cap","agent-count ceiling","token / cost ceiling"]),
-           ("Routing · ModelSelection",["SmartRoutingRunner","ComplexityHeuristicStrategy","CostFloorStrategy"])]
-    for i,(hdr,ls) in enumerate(cards):
-        cxx=cx0+i*(cw3+cg)
-        b.append(arrow(cxx+cw3/2,cty+44,cxx+cw3/2,cardy-2,VIOLETD))
-        b.append(fbox(cxx,cardy,cw3,chc,hdr,ls,mono=False,rects=R))
-    vy=cardy+chc+22; vx=80; vw=W-160
-    b.append(fbox(vx,vy,vw,46,"Verification helpers (refute-by-default)",["cascade · adversarial_verify · judge_panel · loop_until_dry"],mono=False,hdrfill="url(#door)",rects=R))
-    b.append(f'<text x="{W/2:.0f}" y="{H-16}" text-anchor="middle" font-size="10" font-style="italic" fill="{MUTED}">Code-defined &amp; deterministic (native Python control flow) — coexists with the declarative pipeline DAG in the Orchestration layer.</text>')
-    check("workflows",R)
-    (ASSETS/"workflows.svg").write_text(svgdoc(W,H,"Firefly Agentic Dynamic Workflows: the @workflow DSL primitives over a WorkflowContext carrying runner, journal, budget and routing.","\n  ".join(b),amb=(180,72)))
+    w, h = 1100, 710
+    r = []
+    b = [
+        title(
+            w,
+            "Workflows: Python control flow around your agents",
+            "Use @workflow for code-defined orchestration; call run_workflow() or await the decorated workflow.",
+        )
+    ]
+    b.append(
+        panel(
+            170,
+            110,
+            760,
+            84,
+            "Your async workflow function",
+            ["Native conditionals and loops; subworkflow() invokes another workflow."],
+            rects=r,
+        )
+    )
+    b.append(arrow(550, 195, 550, 220))
+    b.append(
+        panel(
+            42,
+            222,
+            1016,
+            104,
+            "Workflow primitives",
+            ["agent() · parallel() · pipeline() · stream()", "phase() · human() · map_agents() · log()"],
+            rects=r,
+        )
+    )
+    b.append(arrow(550, 327, 550, 352))
+    b.append(
+        panel(
+            42,
+            354,
+            1016,
+            85,
+            "WorkflowContext",
+            ["current_workflow() carries the runner, journal, budget, arguments and events."],
+            rects=r,
+            dark=True,
+        )
+    )
+    cards = [
+        (
+            42,
+            "Runner",
+            [
+                "FireflyAgentRunner is the default",
+                "DefaultAgentRunner is optional",
+                "SmartRoutingRunner can select",
+                "models through routing strategies",
+            ],
+        ),
+        (
+            386,
+            "Journal",
+            [
+                "Completed calls can be replayed",
+                "FileJournalBackend persists runs",
+                "Resume uses recorded call results",
+                "External side effects need care",
+            ],
+        ),
+        (
+            730,
+            "WorkflowBudget",
+            [
+                "Concurrent and total agents",
+                "Token and cost ceilings",
+                "Wall-clock timeout",
+                "Configure ceilings for your run",
+            ],
+        ),
+    ]
+    for x, header, lines in cards:
+        b.append(arrow(x + 164, 440, x + 164, 465))
+        b.append(panel(x, 467, 328, 158, header, lines, rects=r, accent=True))
+    b.append(
+        text_line(
+            550,
+            662,
+            "Verification helpers: cascade · adversarial_verify · judge_panel · loop_until_dry",
+            14,
+            anchor="middle",
+            color=MID,
+        )
+    )
+    b.append(
+        text_line(
+            550,
+            689,
+            "Journal replay does not make fresh model calls or arbitrary Python side effects deterministic.",
+            14,
+            anchor="middle",
+        )
+    )
+    save_diagram(
+        "workflows",
+        w,
+        h,
+        "Code-defined workflows use the workflow decorator and native Python control flow. subworkflow is a callable primitive, not a decorator. WorkflowContext carries a runner, journal, budget, arguments, and events. FireflyAgentRunner is the default. Journal replay can reuse completed call results but does not make new model responses or arbitrary side effects deterministic. Verification helpers can evaluate outputs.",
+        b,
+        r,
+    )
+
+
+# --------------------------------------------------------------------------- retrieval
+
+
+def rag():
+    w, h = 1100, 660
+    r = []
+    b = [
+        title(
+            w,
+            "Retrieval: a shared API for embeddings and vector stores",
+            "Select compatible embedding dimensions, provider configuration and backend behavior.",
+        )
+    ]
+    b.append(
+        panel(
+            42,
+            110,
+            328,
+            266,
+            "Embedding providers",
+            [
+                "OpenAI · Azure OpenAI",
+                "Cohere · Google",
+                "Mistral · Voyage AI",
+                "AWS Bedrock · Ollama",
+                "",
+                "EmbeddingProtocol",
+                "BaseEmbedder",
+            ],
+            rects=r,
+        )
+    )
+    b.append(
+        panel(
+            730,
+            110,
+            328,
+            266,
+            "Vector store backends",
+            [
+                "InMemoryVectorStore",
+                "ChromaDB · Pinecone",
+                "Qdrant · pgvector",
+                "sqlite-vec",
+                "",
+                "VectorStoreProtocol",
+                "BaseVectorStore",
+            ],
+            rects=r,
+        )
+    )
+    b.append(panel(402, 110, 296, 88, "Index documents", ["VectorDocument -> upsert()"], rects=r))
+    b.append(arrow(550, 199, 550, 226))
+    b.append(panel(402, 228, 296, 88, "Search", ["search_text(query, top_k=5)"], rects=r))
+    b.append(arrow(550, 317, 550, 344))
+    b.append(panel(402, 346, 296, 88, "Use retrieved context", ["SearchResult -> FireflyAgent"], rects=r))
+    b.append(arrow(371, 164, 400, 164, dash="4 3"))
+    b.append(arrow(729, 272, 700, 272, INDIGO, dash="4 3", mk="arrb"))
+    b.append(
+        panel(
+            42,
+            473,
+            1016,
+            104,
+            "Compose retrieval with the rest of Firefly",
+            [
+                "An attached embedder enables automatic document embedding and search_text().",
+                "TenantScopedVectorStore scopes namespaces; EmbeddingStep and RetrievalStep integrate with pipelines.",
+            ],
+            rects=r,
+            accent=True,
+        )
+    )
+    b.append(
+        text_line(
+            550,
+            618,
+            "Indexing and querying must use the same embedding space. Backend filtering and persistence can differ.",
+            14,
+            anchor="middle",
+            color=MID,
+        )
+    )
+    save_diagram(
+        "rag",
+        w,
+        h,
+        "Firefly retrieval supports eight embedding providers and six vector-store backends behind EmbeddingProtocol and VectorStoreProtocol. Documents are upserted, text queries return SearchResult objects, and applications pass retrieved context to FireflyAgent. Automatic embedding and search_text require an attached embedder. Indexing and queries must use compatible embedding dimensions and the same embedding space; filtering and persistence vary by backend.",
+        b,
+        r,
+    )
+
+
+# --------------------------------------------------------------------------- ecosystem
+
+
+def ecosystem():
+    w, h = 1100, 672
+    cx, cy = 550, 370
+    r = []
+    b = [title(w, "The Firefly family", "Related projects for application services, frontends and agentic systems.")]
+    members = [
+        ("Java / Spring Boot", "Application services", "springboot", 550, 140),
+        (".NET", "Application services", "dotnet", 880, 217),
+        ("PyFly", "Python application services", "python", 920, 408),
+        ("Rust", "Async application services", "rust", 710, 568),
+        ("Go", "Developer tooling", "go", 390, 568),
+        ("Frontend", "Angular · flyfront", "angular", 180, 408),
+        ("Agentic", "Agents · reasoning · retrieval", "__spark__", 220, 217),
+    ]
+    for name, meta, ic, x, y in members:
+        b.append(
+            f'<path d="M{cx} {cy}L{x} {y}" fill="none" stroke="{VIOLET2}" stroke-width="1.5" stroke-dasharray="4 5" opacity="0.45"/>'
+        )
+    b.append(f'<circle cx="{cx}" cy="{cy}" r="86" fill="{SUB}" stroke="{VIOLET2}" stroke-width="2"/>')
+    b.append(firefly_logo(cx, cy - 17, 32, fill=MID, anchor="mid"))
+    b.append(text_line(cx, cy + 27, "FRAMEWORK", 15, bold=True, anchor="middle", color=MID))
+    for name, meta, ic, x, y in members:
+        width, height = 288, 85
+        left, top = x - width / 2, y - height / 2
+        r.append((left, top, left + width, top + height))
+        selected = name == "Agentic"
+        b.append(
+            f'<g filter="url(#sh)"><rect x="{left}" y="{top}" width="{width}" height="{height}" rx="13" fill="{"url(#hdr)" if selected else WHITE}" stroke="{VIOLET2}" stroke-width="{2.5 if selected else 1.5}"/></g>'
+        )
+        if selected:
+            b.append(spark(left + 29, y - 9, 11, "#ffd07a"))
+        else:
+            b.append(icon(ic, left + 29, y - 9, 24))
+        b.append(text_line(left + 52, y - 3, name, 17, bold=True, color="#fff" if selected else INK))
+        b.append(text_line(left + 18, y + 24, meta, 14, color="#eee7ff" if selected else BODY))
+    b.append(
+        text_line(
+            550,
+            639,
+            "A shared family identity; each project documents its own APIs, features and lifecycle.",
+            14,
+            anchor="middle",
+            color=MID,
+        )
+    )
+    save_diagram(
+        "ecosystem",
+        w,
+        h,
+        "The Firefly family includes Java and Spring Boot, .NET, Python PyFly, Rust, Go, Angular frontend, and Agentic for agents, reasoning, and retrieval. Each project has its own APIs and lifecycle; the diagram does not imply universal feature parity.",
+        b,
+        r,
+    )
+
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--check", action="store_true", help="Verify generated SVGs and their docs mirrors without writing files."
+    )
+    args = parser.parse_args()
     build_banner()
-    for fn in (architecture,protocols,reasoning,pipeline,workflows,rag,agent_anatomy,ecosystem): fn()
-    print("banner + 8 diagrams written to", ASSETS)
-    print("WARNINGS:", *(WARN or ["none"]))
+    for fn in (architecture, protocols, model_routing, reasoning, pipeline, workflows, rag, agent_anatomy, ecosystem):
+        fn()
+    if WARN:
+        raise SystemExit("Diagram validation failed:\n" + "\n".join(WARN))
+    drift = []
+    for name, svg in OUTPUTS.items():
+        for directory in (ASSETS, REPO / "docs" / "assets"):
+            path = directory / name
+            if args.check:
+                if not path.exists() or path.read_bytes() != svg.encode("utf-8"):
+                    drift.append(str(path.relative_to(REPO)))
+            else:
+                path.write_bytes(svg.encode("utf-8"))
+    if drift:
+        raise SystemExit("Generated assets differ; rerun assets/tools/build_brand_assets.py:\n" + "\n".join(drift))
+    print(f"{'Verified' if args.check else 'Wrote'} {len(OUTPUTS)} SVGs and byte-identical documentation mirrors.")
+    print("Geometry and measured card-text checks: passed.")
+
 
 if __name__ == "__main__":
     main()

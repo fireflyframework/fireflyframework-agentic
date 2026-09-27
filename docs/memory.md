@@ -15,27 +15,26 @@ across turns, sessions, and pipeline steps.
 
 ## Architecture
 
-The memory subsystem has four layers:
+Conversation history and working facts have different persistence paths:
 
 ```mermaid
-graph TD
-    MM[MemoryManager] --> CM[ConversationMemory]
-    MM --> WM[WorkingMemory]
-    WM --> STORE[MemoryStore]
-    CM --> TOKENS[TokenEstimator]
-    STORE --> IM[InMemoryStore]
-    STORE --> FS[FileStore]
-    STORE --> SQ[SQLiteStore]
-    STORE --> PG[PostgreSQLStore]
-    STORE --> MG[MongoDBStore]
-    STORE --> CUSTOM[Custom Backend]
+flowchart TD
+    MANAGER["MemoryManager"] --> HISTORY["ConversationMemory<br/>process-local typed messages"]
+    MANAGER --> FACTS["WorkingMemory<br/>namespace per scope"]
+    HISTORY --> BUDGET["Token budget and summarizer"]
+    HISTORY <-->|export and import| SNAPSHOT["Serializable conversation snapshot"]
+    SNAPSHOT <-->|host reads and writes| ARCHIVE["Host persistence"]
+    FACTS --> STORE["MemoryStore protocol"]
+    STORE --> LOCAL["InMemoryStore, FileStore, SQLiteStore"]
+    STORE --> DATABASE["PostgreSQLStore, MongoDBStore"]
+    STORE --> CUSTOM["Custom backend"]
 ```
 
 - **ConversationMemory** -- Token-aware, per-conversation chat history that
   wraps pydantic-ai's `message_history` mechanism.
 - **WorkingMemory** -- Scoped key-value scratchpad for session facts, entities,
   and intermediate state.
-- **MemoryStore** -- Pluggable persistence backends. Three are stdlib-only
+- **MemoryStore** -- Pluggable persistence for working facts, not conversation history. Three are stdlib-only
   (`InMemoryStore`, `FileStore`, `SQLiteStore`); `PostgreSQLStore` and
   `MongoDBStore` live behind optional dependency groups. Implement the
   `MemoryStore` protocol for any custom backend.
@@ -94,7 +93,43 @@ history = conv_mem.get_message_history(cid)
 # Pass to agent: agent.run("Next question", message_history=history)
 ```
 
-When `FireflyAgent` has a `memory` attached, all of this happens automatically.
+When `FireflyAgent` has memory attached and a `conversation_id` is supplied, it
+loads history unless the caller provided `message_history`, then records the
+completed turn. Explicit [export/import](#conversation-export-import) is needed
+for history to survive a process restart.
+
+### Completed turns and streaming
+
+Both streaming modes retain typed messages, including tool results and provider
+metadata, when the stream completes successfully. A cancelled, incomplete, or
+approval-deferred turn is not added to conversation history. Supplying explicit
+`message_history` takes precedence over automatic history loading.
+
+```mermaid
+sequenceDiagram
+    participant App
+    participant Agent as FireflyAgent
+    participant History as ConversationMemory
+    participant Model as Pydantic AI model
+    participant Archive as Host snapshot storage
+
+    App->>Agent: run_stream(prompt, conversation_id=cid)
+    Agent->>History: get_message_history(cid)
+    History-->>Agent: typed messages within token budget
+    Agent->>Model: prompt and history
+    Model-->>App: streamed output through agent context
+    alt Completed, non-deferred output
+        Agent->>History: add_turn with new_messages()
+    else Cancelled, incomplete or deferred
+        Note over Agent,History: No completed turn is recorded
+    end
+    App->>History: export_conversation(cid)
+    History-->>App: serializable snapshot
+    App->>Archive: persist snapshot
+    Note over App,Archive: After a restart
+    Archive-->>App: stored snapshot
+    App->>History: import_conversation(snapshot)
+```
 
 ### Token Budget
 
@@ -578,9 +613,28 @@ mgr.clear_all()              # clear both
 
 ### Shutdown
 
+The database backends keep asyncpg and Motor clients on a shared database worker
+loop. Sync methods block until that loop finishes the operation; async methods
+await it. The synchronous agent runner uses a separate loop, so synchronous memory
+hooks do not block the database loop that must serve them.
+
+```mermaid
+flowchart LR
+    ASYNC["Application event loop<br/>await agent.run"] -->|await DB method| DB["Database worker loop<br/>asyncpg or Motor client"]
+    SYNC["Synchronous caller"] --> AGENT["Agent worker loop<br/>agent.run_sync"]
+    AGENT -->|blocking memory method| DB
+    HOST["Application shutdown"] --> CLOSE["Close managers after all forks finish"]
+    CLOSE -->|await aclose or call close| DB
+```
+
+Provider clients used by `await agent.run()` remain on the application loop;
+clients used by `run_sync()` stay on the agent worker loop. Keep each agent and its
+loop-bound clients in one execution mode. These lifetimes are separate from the
+database store's owning loop.
+
 Call `mgr.close()` during synchronous shutdown or `await mgr.aclose()` during async
-shutdown. These release supported database clients and their owning event loops;
-they do not delete stored memory. For example, a synchronous application's lifetime
+shutdown. These release supported database clients without deleting stored memory.
+The shared database worker loop remains available until process exit. A synchronous application's lifetime
 can use `try/finally`:
 
 ```python

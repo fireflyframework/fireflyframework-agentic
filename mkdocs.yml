@@ -64,6 +64,7 @@ extra_css:
 
 extra_javascript:
   - javascripts/constellation.js
+  - javascripts/diagrams.js
 
 extra:
   homepage: https://fireflyframework.org/
@@ -123,6 +124,7 @@ nav:
   - Getting Started:
       - Installation: getting-started/installation.md
       - Quick Start: getting-started/quickstart.md
+      - Visual Guide: diagrams.md
       - The Tutorial: tutorial.md
       - Jupyter Notebooks: getting-started/jupyter.md
   - Architecture: architecture.md

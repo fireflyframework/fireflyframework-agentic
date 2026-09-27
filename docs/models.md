@@ -16,6 +16,16 @@ provider will actually accept. A host that keeps its model choice in a catalogue
 or a worker profile hands the framework the row; the framework knows the SDK classes, the provider
 arguments, and the rules that otherwise surface as a 400 on the first real turn.
 
+## From application options to a provider request
+
+![Firefly model selection, portable options, and Chat Completions or Responses routing](assets/model-routing.svg)
+
+Tools, memory, and output schemas belong to the agent. The selected model and its
+API determine which options can be translated. Firefly performs that translation
+at invocation time, so a per-call model change or fallback is checked against the
+model actually selected for the request. An existing native model object retains
+its provider client and API class.
+
 ## Typed model options
 
 ```python
@@ -35,9 +45,25 @@ immutable and rejects unknown fields. It can be supplied on an agent, a single
 `run()` / `run_sync()` / `run_stream()` call, or as `ModelSpec(options=...)`.
 These APIs accept the typed `ModelOptions` object. Per-run options override
 explicitly set fields and inherit the rest; explicit `None` clears an inherited
-field. Native constructor settings are applied first, merged model options next,
-and native per-run settings last. `ModelSpec.options` overrides equivalent keys
+field. Native model defaults are applied first, constructor settings second,
+merged model options next, and native per-run settings last. Clearing a portable
+field does not remove a native setting supplied independently. `ModelSpec.options` overrides equivalent keys
 in `ModelSpec.settings`.
+
+```mermaid
+flowchart TD
+    DEFAULTS["Native model defaults"] --> BASE["Constructor model_settings"]
+    BASE --> PORTABLE["Agent ModelOptions plus explicit per-run fields"]
+    PORTABLE --> TRANSLATE["Translate for the effective model, API and profile"]
+    TRANSLATE --> OVERRIDE["Apply per-run native model_settings"]
+    OVERRIDE --> VALIDATE{"Effective combination supported?"}
+    VALIDATE -->|yes| REQUEST["Pydantic AI request"]
+    VALIDATE -->|no| ERROR["ModelOptionsError before provider request"]
+```
+
+This validation path applies when portable options are set. Native-only settings
+remain an advanced Pydantic AI integration surface and are not converted into a
+cross-provider contract.
 
 | Option | Type / values | Purpose |
 |---|---|---|
@@ -217,7 +243,7 @@ For legacy dictionary profiles in `ModelSpec.settings`, `model_settings_for`
 applies the following normalization. Typed `ModelOptions` instead raises on an
 explicitly unsupported option:
 
-```python
+```pycon
 >>> model_settings_for(ModelSpec("anthropic", "claude-sonnet-5", settings={"temperature": 0.2, "thinkingBudgetTokens": 8192}))
 {'anthropic_thinking': {'type': 'adaptive'}, 'anthropic_effort': 'medium'}
 >>> model_settings_for(ModelSpec("anthropic", "claude-haiku-4-5", settings={"temperature": 0.2, "thinkingBudgetTokens": 64000}))
@@ -246,7 +272,7 @@ Bedrock names the same Claude three ways — `anthropic.claude-opus-5` (single r
 from `anthropic_thinking` / `anthropic_effort`, so for `provider="bedrock"` the translation
 writes the Anthropic wire shape into that key:
 
-```python
+```pycon
 >>> model_settings_for(ModelSpec("bedrock", "us.anthropic.claude-opus-5", settings={"temperature": 0.2, "effort": "xhigh"}))
 {'bedrock_additional_model_requests_fields': {'thinking': {'type': 'adaptive'}, 'output_config': {'effort': 'xhigh'}}}
 >>> model_settings_for(ModelSpec("bedrock", "us.anthropic.claude-haiku-4-5-20251001-v1:0", settings={"thinkingBudgetTokens": 2048}))

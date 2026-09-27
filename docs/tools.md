@@ -24,12 +24,12 @@ The core contract lives in `fireflyframework_agentic.tools.base`:
   for guard evaluation, timeout, and error handling out of the box.
 - **`GuardProtocol`** -- `async check(tool_name, kwargs) -> GuardResult`.
 - **`GuardResult`** -- `GuardResult(passed: bool, reason: str | None = None)`; guards return it.
-- **`ParameterSpec`** -- `ParameterSpec(name, type_annotation, description="", required=True,
+- **`ParameterSpec`** -- `ParameterSpec(name="value", python_type=str, description="", required=True,
   default=None)`; declared specs drive the Pydantic AI JSON schema the LLM sees.
 - **`ToolInfo`** -- serialisable summary (`name`, `description`, `tags`, `parameter_count`)
   returned by `BaseTool.info()` and `ToolRegistry.list_tools()`.
 
-All six are exported from `fireflyframework_agentic.tools`.
+These contracts are exported from `fireflyframework_agentic.tools`.
 
 ```mermaid
 classDiagram
@@ -52,7 +52,7 @@ classDiagram
         +description(d) ToolBuilder
         +tag(t) ToolBuilder
         +tags(ts) ToolBuilder
-        +parameter(name, type, ...) ToolBuilder
+        +parameter(name, python_type, ...) ToolBuilder
         +guard(g) ToolBuilder
         +handler(fn) ToolBuilder
         +build() BaseTool
@@ -180,23 +180,26 @@ single tool.
 
 ## Guards
 
-Guards wrap tool execution to enforce policies. They run before and/or after the
-tool's handler.
+All guards run before the handler through `GuardChainListener`, including
+`SandboxGuard`. Use call listeners for observing results, errors, or pauses.
 
 ```mermaid
-flowchart LR
-    REQ[Tool Call] --> G1[Validation Guard]
-    G1 --> G2[Rate Limit Guard]
-    G2 --> H[Tool Handler]
-    H --> G3[Sandbox Guard]
-    G3 --> RES[Result]
+flowchart TD
+    CALL["Tool call arguments"] --> GUARDS["GuardChainListener<br/>all guards in order"]
+    GUARDS -->|rejected| ERROR["ToolGuardError<br/>notify on_error listeners"]
+    GUARDS -->|accepted| BEFORE["Other before_call listeners"]
+    BEFORE --> HANDLER["Tool handler<br/>optional execution timeout"]
+    HANDLER -->|success| AFTER["after_call listeners"]
+    AFTER --> RESULT["Return tool result"]
+    HANDLER -->|failure| FAILURE["on_error listeners"]
+    HANDLER -->|approval or deferral| PAUSE["on_pause listeners<br/>propagate control signal"]
 ```
 
 Each guard implements `GuardProtocol.check(tool_name, kwargs) -> GuardResult`. When a
 guard returns `GuardResult(passed=False, reason=...)`, `BaseTool.execute()` raises a
 `ToolGuardError` (a `ToolError` subclass) before the handler runs.
 
-> Guards are for **hard, synchronous policy** (validation, rate-limiting, sandboxing).
+> Guards are for **immediate policy checks** (validation, rate-limiting, sandboxing).
 > For **human-in-the-loop approval** — pausing a run until a person signs off — use the
 > native deferred-tools path described in
 > [Human-in-the-Loop Tool Approval](#human-in-the-loop-tool-approval), not a guard.

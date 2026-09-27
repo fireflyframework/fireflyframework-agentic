@@ -14,7 +14,7 @@ processing pipelines.
 `PipelineBuilder` has two modes:
 
 * **Port-based** (legacy, parallel) — nodes communicate via `output_key` /
-  `input_key` edge ports and run concurrently within each topological level.
+  `input_key` edge ports; independent nodes run as soon as their dependencies resolve.
   Best for ETL-shaped DAGs. Documented in the bulk of this guide.
 * **State-based** — opt-in via `PipelineBuilder("name", state=SomeModel)`.
   Nodes become `async (state) -> dict` over a typed shared state. One
@@ -26,10 +26,12 @@ processing pipelines.
 
 ## Concepts
 
-A pipeline is defined as a Directed Acyclic Graph (DAG) of **nodes** connected by
-**edges**. Each node wraps a **step executor** that does the actual work (call an
-agent, run a reasoning pattern, execute a function). The **engine** schedules nodes
-by topological level so that independent nodes run concurrently.
+A pipeline contains **nodes** connected by **edges**. Port-based nodes wrap a
+**step executor** that does the work (call an agent, run a reasoning pattern, or
+execute a function). For acyclic graphs without runtime routers, the **engine**
+schedules each node as soon as its dependencies resolve, so independent nodes run
+concurrently without a level-wide barrier. Graphs with cycles or runtime routers
+use a frontier scheduler bounded by `recursion_limit`.
 
 ```mermaid
 graph LR
@@ -199,15 +201,17 @@ Anything that satisfies the Protocol is swappable without engine changes.
 | Backend | Use when | Trade-off | Source |
 |---|---|---|---|
 | `FileCheckpointer` | Dev, single-host, ephemeral | No cross-process / cross-host sharing | shipped (`fireflyframework_agentic.pipeline`) |
-| Redis-backed | Multi-worker, sub-day-scale runs | TTL eviction; not durable forever | example template (`examples/software_factory/checkpointers/redis.py`) |
-| Postgres-backed | Long-lived runs, compliance, audit-friendly | Operational overhead of a DB | example template (`examples/software_factory/checkpointers/postgres.py`) |
+| Redis-backed | Shared checkpoint storage | Retention and durability depend on Redis configuration | example adapter (`examples/software_factory/checkpointers/redis.py`) |
+| Postgres-backed | Shared, transactional checkpoint storage | Host owns transactions and database operation | example adapter (`examples/software_factory/checkpointers/postgres.py`) |
 
 `FileCheckpointer` writes one JSON file per node at
 `<root>/<pipeline_name>/<run_id>/<sequence>_<node_id>.json`. The Redis and
-Postgres variants are **not** importable framework classes — they are ~50–80 LOC
-plug-and-play templates under `examples/software_factory/` that implement the
-same `Checkpointer` Protocol against a caller-supplied connection. Copy whichever
-you need into your project and adapt it.
+Postgres variants are example implementations under `examples/software_factory/`,
+not exported framework classes. They implement the same `Checkpointer` Protocol
+against a caller-supplied client or connection. The host owns connection lifecycle
+and, for Postgres, transaction commits. See the
+[software factory example](https://github.com/fireflyframework/fireflyframework-agentic/tree/main/examples/software_factory)
+for setup and validation details.
 
 ```python
 from fireflyframework_agentic.pipeline import FileCheckpointer
@@ -483,30 +487,18 @@ map-reduce fan-out.
 
 ```mermaid
 graph TD
-    SPLIT[Fan-Out] --> W1[Worker 1]
+    SPLIT["Router returns list of Send"] --> W1[Worker 1]
     SPLIT --> W2[Worker 2]
     SPLIT --> W3[Worker 3]
-    W1 --> MERGE[Fan-In]
+    W1 --> MERGE["State reducer collects results"]
     W2 --> MERGE
     W3 --> MERGE
 ```
 
-```python
-from fireflyframework_agentic.pipeline.steps import FanOutStep, FanInStep
-
-engine = (
-    PipelineBuilder("parallel")
-    .add_node("split", FanOutStep(lambda doc: doc.pages))
-    .add_node("ocr_1", AgentStep(ocr_agent))
-    .add_node("ocr_2", AgentStep(ocr_agent))
-    .add_node("merge", FanInStep())
-    .add_edge("split", "ocr_1")
-    .add_edge("split", "ocr_2")
-    .add_edge("ocr_1", "merge", input_key="page_1")
-    .add_edge("ocr_2", "merge", input_key="page_2")
-    .build()
-)
-```
+The [map/reduce example above](#runtime-fan-out-via-send) dispatches one payload per
+item and uses an `extend` reducer to collect worker outputs before aggregation.
+Static edges broadcast a node's output to each downstream node; they do not
+automatically select a different list element for each worker.
 
 ---
 

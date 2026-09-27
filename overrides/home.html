@@ -29,8 +29,8 @@
       <p class="ff-hero__lead">
         Firefly Agentic is the production-grade metaframework built on Pydantic AI.
         Use Firefly agents, tools, memory and typed model options — gain
-        lifecycle hooks, delegation, memory, reasoning patterns, validation loops, RAG
-        and DAG pipelines. Protocol-driven, swappable, no lock-in.
+        lifecycle hooks, delegation, reasoning patterns, validation loops, RAG
+        and DAG pipelines. Keep provider choices in configuration and compose the features you need.
       </p>
 
       <div class="ff-install">
@@ -40,6 +40,8 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         </button>
       </div>
+
+      <p class="ff-install-note">This installer follows <code>main</code>. For a pinned version, <a href="{{ base_url }}/getting-started/installation/#install-a-release">install the v26.09.0 release</a>.</p>
 
       <div class="ff-cta-row">
         <a class="ff-btn ff-btn--primary" href="{{ base_url }}/getting-started/installation/">
@@ -61,8 +63,8 @@
   <!-- ============================ TRUST ============================ -->
   <div class="ff-wrap">
     <div class="ff-trust">
-      <span class="ff-chip">Built on <b>Pydantic AI</b></span>
-      <span class="ff-chip"><b>28</b> protocols</span>
+      <span class="ff-chip">Built on <b>Pydantic AI 2</b></span>
+      <span class="ff-chip"><b>Typed</b> extension contracts</span>
       <span class="ff-chip"><b>6</b> reasoning patterns</span>
       <span class="ff-chip"><b>8</b> embedding providers</span>
       <span class="ff-chip"><b>6</b> vector stores</span>
@@ -93,7 +95,8 @@
           </ul>
         </div>
         <figure class="ff-figure">
-          <img src="{{ base_url }}/assets/agent-anatomy.svg" alt="Anatomy of an agent run: a FireflyAgent wrapping pydantic_ai.Agent inside a ten-stage middleware chain, with delegation, fallback, caching and memory.">
+          <a href="{{ base_url }}/assets/agent-anatomy.svg" aria-label="Open diagram at full size"><img src="{{ base_url }}/assets/agent-anatomy.svg" alt="FireflyAgent applies before-run middleware, loads memory, resolves options, calls Pydantic AI and records the result."></a>
+          <figcaption class="ff-figcap"><a href="{{ base_url }}/assets/agent-anatomy.svg">Open diagram at full size</a></figcaption>
         </figure>
       </div>
     </div>
@@ -105,16 +108,17 @@
       <div class="ff-section__head ff-reveal">
         <span class="ff-section__kicker">One framework, every concern</span>
         <h2 class="ff-section__title">Everything a production agent needs</h2>
-        <p class="ff-section__sub">Twelve composable layers. Adopt one, or all of them.</p>
+        <p class="ff-section__sub">Composable modules, explicit contracts. Adopt the capabilities your application needs.</p>
       </div>
       <div class="ff-grid ff-reveal">
-        <a class="ff-feat" href="{{ base_url }}/agents/"><h3 class="ff-feat__name">Agents</h3><p class="ff-feat__desc">FireflyAgent, registry, a 10-stage middleware chain, and seven delegation strategies.</p></a>
+        <a class="ff-feat" href="{{ base_url }}/models/"><h3 class="ff-feat__name">Models &amp; options</h3><p class="ff-feat__desc">Typed controls, capability validation, explicit Chat Completions and Responses routing.</p></a>
+        <a class="ff-feat" href="{{ base_url }}/agents/"><h3 class="ff-feat__name">Agents</h3><p class="ff-feat__desc">FireflyAgent, lifecycle hooks, configurable middleware and delegation strategies.</p></a>
         <a class="ff-feat" href="{{ base_url }}/tools/"><h3 class="ff-feat__name">Tools</h3><p class="ff-feat__desc">Protocol or base-class tools, guards, composition, and human-in-the-loop approval.</p></a>
         <a class="ff-feat" href="{{ base_url }}/reasoning/"><h3 class="ff-feat__name">Reasoning</h3><p class="ff-feat__desc">ReAct, CoT, Plan-and-Execute, Reflexion, Tree of Thoughts, Goal Decomposition.</p></a>
-        <a class="ff-feat" href="{{ base_url }}/memory/"><h3 class="ff-feat__name">Memory</h3><p class="ff-feat__desc">Conversation history and working memory with token budgets and pluggable stores.</p></a>
+        <a class="ff-feat" href="{{ base_url }}/memory/"><h3 class="ff-feat__name">Memory</h3><p class="ff-feat__desc">Conversation history with export/import, plus working memory backed by pluggable stores.</p></a>
         <a class="ff-feat" href="{{ base_url }}/validation/"><h3 class="ff-feat__name">Validation &amp; QoS</h3><p class="ff-feat__desc">Parse-then-validate retries, LLM-as-judge rubrics, hallucination guards.</p></a>
         <a class="ff-feat" href="{{ base_url }}/pipeline/"><h3 class="ff-feat__name">Pipelines</h3><p class="ff-feat__desc">Typed DAGs with parallel execution, retries, checkpointing and audit logs.</p></a>
-        <a class="ff-feat" href="{{ base_url }}/workflows/"><h3 class="ff-feat__name">Workflows</h3><p class="ff-feat__desc">A code-defined orchestration DSL over agents with budgets and deterministic resume.</p></a>
+        <a class="ff-feat" href="{{ base_url }}/workflows/"><h3 class="ff-feat__name">Workflows</h3><p class="ff-feat__desc">A code-defined orchestration DSL over agents with budgets and journal-based replay.</p></a>
         <a class="ff-feat" href="{{ base_url }}/vectorstores/"><h3 class="ff-feat__name">RAG</h3><p class="ff-feat__desc">Eight embedding providers, six vector stores, auto-embedding and tenant scoping.</p></a>
         <a class="ff-feat" href="{{ base_url }}/observability/"><h3 class="ff-feat__name">Observability</h3><p class="ff-feat__desc">Native OpenTelemetry spans &amp; metrics, cost resolution, and budget gates.</p></a>
         <a class="ff-feat" href="{{ base_url }}/security/"><h3 class="ff-feat__name">Security</h3><p class="ff-feat__desc">Prompt-injection guards, PII/secret redaction, and at-rest encryption.</p></a>
@@ -129,16 +133,33 @@
     <div class="ff-wrap">
       <div class="ff-section__head ff-reveal">
         <span class="ff-section__kicker">Architecture</span>
-        <h2 class="ff-section__title">Five layers, strict top-down flow</h2>
-        <p class="ff-section__sub">Core → Agent → Intelligence → Experimentation → Orchestration. Higher layers depend on lower ones, never the reverse.</p>
+        <h2 class="ff-section__title">One application API, composable capabilities</h2>
+        <p class="ff-section__sub">Firefly agents, tools, memory and model options form the application boundary. Add reasoning, validation, experiments and orchestration as needed.</p>
       </div>
       <figure class="ff-figure ff-reveal">
-        <img src="{{ base_url }}/assets/architecture.svg" alt="Firefly Agentic architecture: one front door over five layers — Orchestration, Experimentation, Intelligence, Agent, Core — on the Pydantic AI engine.">
+        <a href="{{ base_url }}/assets/architecture.svg" aria-label="Open diagram at full size"><img src="{{ base_url }}/assets/architecture.svg" alt="Firefly application APIs, optional capabilities and the Pydantic AI provider engine."></a>
+          <figcaption class="ff-figcap"><a href="{{ base_url }}/assets/architecture.svg">Open diagram at full size</a></figcaption>
       </figure>
-      <p class="ff-figcap">Every extension point is a <code>@runtime_checkable</code> protocol — implement it and the framework discovers your component by duck typing.</p>
+      <p class="ff-figcap">Extend components through structural protocols or abstract base classes. Runtime-checkable protocols support instance checks; register or attach your implementation explicitly.</p>
       <figure class="ff-figure ff-reveal" style="margin-top:1.4rem">
-        <img src="{{ base_url }}/assets/protocols.svg" alt="The runtime-checkable protocols — AgentLike, ToolProtocol, GuardProtocol, ReasoningPattern, StepExecutor, DelegationStrategy, CompressionStrategy, MemoryStore, ValidationRule, Chunker, EmbeddingProtocol, VectorStoreProtocol — each with its swappable implementations.">
+        <a href="{{ base_url }}/assets/protocols.svg" aria-label="Open diagram at full size"><img src="{{ base_url }}/assets/protocols.svg" alt="Selected structural protocols and abstract base classes for extending Firefly components."></a>
+          <figcaption class="ff-figcap"><a href="{{ base_url }}/assets/protocols.svg">Open diagram at full size</a></figcaption>
       </figure>
+    </div>
+  </section>
+
+  <section class="ff-section">
+    <div class="ff-wrap">
+      <div class="ff-section__head ff-reveal">
+        <span class="ff-section__kicker">Models and APIs</span>
+        <h2 class="ff-section__title">Keep your agent. Choose your API.</h2>
+        <p class="ff-section__sub">Existing <code>openai:</code> and <code>azure:</code> selectors retain Chat Completions. Choose <code>openai-responses:</code> or <code>azure-responses:</code> explicitly for Responses. Firefly validates typed options against the selected model.</p>
+      </div>
+      <figure class="ff-figure ff-reveal">
+        <a href="{{ base_url }}/assets/model-routing.svg" aria-label="Open diagram at full size"><img src="{{ base_url }}/assets/model-routing.svg" alt="Model selection and ModelOptions resolve through Firefly to Chat Completions, Responses or another provider."></a>
+          <figcaption class="ff-figcap"><a href="{{ base_url }}/assets/model-routing.svg">Open diagram at full size</a></figcaption>
+      </figure>
+      <p class="ff-figcap"><a href="{{ base_url }}/models/">Models and options</a> · <a href="{{ base_url }}/migration/">Migration guide</a> · <a href="{{ base_url }}/diagrams/">Visual guide</a></p>
     </div>
   </section>
 
@@ -214,11 +235,12 @@
     <div class="ff-wrap">
       <div class="ff-section__head ff-reveal">
         <span class="ff-section__kicker">Intelligence layer</span>
-        <h2 class="ff-section__title">Six reasoning patterns, one loop</h2>
-        <p class="ff-section__sub">Every pattern shares a reason → act → observe → continue template, produces a structured trace, and swaps its output mode per model.</p>
+        <h2 class="ff-section__title">Six reasoning patterns, one interface</h2>
+        <p class="ff-section__sub">Choose a strategy for your task. Patterns produce structured results and traces; branching and decomposition use their own execution paths.</p>
       </div>
       <figure class="ff-figure ff-reveal">
-        <img src="{{ base_url }}/assets/reasoning.svg" alt="Six reasoning patterns — ReAct, Chain of Thought, Plan-and-Execute, Reflexion, Tree of Thoughts, Goal Decomposition — on one reason/act/observe loop.">
+        <a href="{{ base_url }}/assets/reasoning.svg" aria-label="Open diagram at full size"><img src="{{ base_url }}/assets/reasoning.svg" alt="Six reasoning patterns — ReAct, Chain of Thought, Plan-and-Execute, Reflexion, Tree of Thoughts, Goal Decomposition — with shared result types and distinct execution strategies."></a>
+          <figcaption class="ff-figcap"><a href="{{ base_url }}/assets/reasoning.svg">Open diagram at full size</a></figcaption>
       </figure>
       <div class="ff-patterns ff-reveal">
         <span class="ff-pattern"><span>›</span> ReAct</span>
@@ -237,16 +259,16 @@
       <div class="ff-section__head ff-reveal">
         <span class="ff-section__kicker">Orchestration layer</span>
         <h2 class="ff-section__title">Declarative DAGs &amp; code-defined workflows</h2>
-        <p class="ff-section__sub">A typed pipeline graph for structure; a Python DSL for deterministic, resumable orchestration. Use either, or both.</p>
+        <p class="ff-section__sub">A typed pipeline graph for structure; a Python DSL with journal-based replay. Use either, or both.</p>
       </div>
       <div class="ff-figure--pair ff-reveal">
         <figure class="ff-figure">
-          <img src="{{ base_url }}/assets/pipeline.svg" alt="A typed DAG pipeline: a seven-phase IDP flow with fan-out/fan-in, a human-in-the-loop pause, checkpointing and an audit log.">
-          <figcaption class="ff-figcap">Pipeline — declarative DAG</figcaption>
+          <a href="{{ base_url }}/assets/pipeline.svg" aria-label="Open diagram at full size"><img src="{{ base_url }}/assets/pipeline.svg" alt="Pipeline scheduling, conditional Send routing, Pause and explicit checkpoint-based resume."></a>
+          <figcaption class="ff-figcap">Pipeline — declarative DAG · <a href="{{ base_url }}/assets/pipeline.svg">Open diagram at full size</a></figcaption>
         </figure>
         <figure class="ff-figure">
-          <img src="{{ base_url }}/assets/workflows.svg" alt="Dynamic Workflows: the @workflow DSL primitives over a WorkflowContext carrying runner, journal, budget and routing, with verification helpers.">
-          <figcaption class="ff-figcap">Workflows — code-defined DSL</figcaption>
+          <a href="{{ base_url }}/assets/workflows.svg" aria-label="Open diagram at full size"><img src="{{ base_url }}/assets/workflows.svg" alt="Dynamic Workflows: the @workflow DSL primitives over a WorkflowContext carrying runner, journal, budget and routing, with verification helpers."></a>
+          <figcaption class="ff-figcap">Workflows — code-defined DSL · <a href="{{ base_url }}/assets/workflows.svg">Open diagram at full size</a></figcaption>
         </figure>
       </div>
     </div>
@@ -258,10 +280,11 @@
       <div class="ff-section__head ff-reveal">
         <span class="ff-section__kicker">Retrieval-augmented generation</span>
         <h2 class="ff-section__title">Bring your own embeddings &amp; vector store</h2>
-        <p class="ff-section__sub">Eight embedding providers and six vector-store backends behind one protocol — drop straight into a pipeline with EmbeddingStep and RetrievalStep.</p>
+        <p class="ff-section__sub">Eight embedding providers and six vector-store backends behind separate embedding and vector-store contracts — drop straight into a pipeline with EmbeddingStep and RetrievalStep.</p>
       </div>
       <figure class="ff-figure ff-reveal">
-        <img src="{{ base_url }}/assets/rag.svg" alt="Retrieval-augmented generation: eight embedding providers and six vector-store backends behind the EmbeddingProtocol and VectorStoreProtocol.">
+        <a href="{{ base_url }}/assets/rag.svg" aria-label="Open diagram at full size"><img src="{{ base_url }}/assets/rag.svg" alt="Retrieval-augmented generation: eight embedding providers and six vector-store backends behind the EmbeddingProtocol and VectorStoreProtocol."></a>
+          <figcaption class="ff-figcap"><a href="{{ base_url }}/assets/rag.svg">Open diagram at full size</a></figcaption>
       </figure>
     </div>
   </section>
@@ -312,6 +335,9 @@
           <ul>
             <li><a href="{{ base_url }}/getting-started/quickstart/">Quick Start</a></li>
             <li><a href="{{ base_url }}/tutorial/">Tutorial</a></li>
+            <li><a href="{{ base_url }}/diagrams/">Visual guide</a></li>
+            <li><a href="{{ base_url }}/models/">Models and options</a></li>
+            <li><a href="{{ base_url }}/migration/">Migration guide</a></li>
             <li><a href="{{ base_url }}/reasoning/">Reasoning</a></li>
             <li><a href="{{ base_url }}/pipeline/">Pipelines</a></li>
             <li><a href="{{ base_url }}/observability/">Observability</a></li>

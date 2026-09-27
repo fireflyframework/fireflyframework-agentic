@@ -11,17 +11,18 @@ relationships between its modules, and the design principles that guided its con
 
 The framework follows five guiding principles:
 
-1. **Protocol-driven contracts** -- Public APIs are defined as Python `Protocol` classes
-   or abstract base classes. This allows any module to be replaced or extended without
-   modifying framework internals.
+1. **Explicit extension contracts** -- Tools, memory stores, reasoning patterns and other
+   extension points use Python protocols or abstract base classes. Configuration models,
+   builders and concrete facades expose their own public APIs; implement the documented
+   contract for the component you want to replace.
 
 2. **Convention over configuration** -- Sensible defaults are provided for every setting.
    A single `FireflyAgenticConfig` object (backed by Pydantic Settings) centralises
    configuration and supports environment-variable overrides.
 
 3. **Layered composition** -- Modules are organised into layers (Core, Security, Agent,
-   Intelligence, Orchestration, plus optional Experimentation dev-tooling). Higher layers
-   depend on lower layers but never the reverse.
+   Intelligence, Orchestration, plus optional Experimentation dev-tooling). These categories describe responsibilities and composition, not an enforced
+   import hierarchy. Components can collaborate across them through public contracts.
 
 4. **Optional dependencies** -- Heavy third-party libraries (embedding providers, vector
    store clients, storage backends, document-conversion tooling) are declared as extras. The
@@ -51,81 +52,53 @@ Existing `openai:` / `azure:` configurations retain Chat Completions. Select
 
 ## Layer Diagram
 
+Arrows below show which components invoke or use others. This is a conceptual map,
+not a complete Python import graph. Optional behaviors are enabled by the host.
+
 ```mermaid
-graph TD
-    subgraph Orchestration Layer
-        PIPE["Pipeline / DAG Engine<br/><small>DAG · DAGNode · DAGEdge<br/>PipelineEngine · PipelineBuilder · PipelineEventHandler<br/>AgentStep · ReasoningStep · CallableStep · BranchStep<br/>FanOutStep · FanInStep · BatchLLMStep · EmbeddingStep · RetrievalStep<br/>Checkpointer · AuditLog · state reducers · exponential backoff + jitter</small>"]
-    end
+flowchart TB
+    HOST["Host application<br/>configuration, credentials, serving"]
+    FLOW["Pipelines and workflows<br/>routing, state, checkpoints"]
+    REASON["Reasoning and review<br/>explicit multi-step execution"]
+    AGENT["FireflyAgent<br/>run, run_sync, run_stream"]
+    MODELS["Models<br/>ModelSpec, ModelFactory, ModelOptions"]
+    PAI["Pydantic AI<br/>provider requests and tool dispatch"]
+    PROVIDER["Selected provider and API"]
+    TOOLS["Firefly tools<br/>schemas, guards, listeners"]
+    MEMORY["MemoryManager<br/>history and scoped facts"]
+    RETRIEVAL["Content, embeddings, vector stores"]
+    POLICY["Configured middleware<br/>logging, guards, telemetry, caching"]
+    SUPPORT["Shared services<br/>configuration, storage, registries, plugins"]
+    DEV["Lab and experiments<br/>optional evaluation workflows"]
 
-    subgraph Experimentation Layer
-        EXP["Experiments<br/><small>Experiment · Variant<br/>ExperimentRunner · VariantComparator<br/>ExperimentTracker</small>"]
-        LAB["Lab<br/><small>LabSession · Benchmark<br/>EvalOrchestrator · EvalDataset<br/>ModelComparison</small>"]
-    end
-
-    subgraph Intelligence Layer
-        REASON["Reasoning Patterns<br/><small>ReAct · CoT · PlanAndExecute<br/>Reflexion · ToT · GoalDecomposition<br/>ReasoningPipeline</small>"]
-        VAL["Validation & QoS<br/><small>OutputReviewer · OutputValidator<br/>ConfidenceScorer · ConsistencyChecker<br/>GroundingChecker · 5 rule types</small>"]
-        OBS["Observability<br/><small>FireflyTracer · FireflyMetrics<br/>FireflyEvents · UsageTracker<br/>BudgetGate · cost resolver chain<br/>@traced · @metered</small>"]
-        EXPL["Explainability<br/><small>TraceRecorder · ExplanationGenerator<br/>AuditTrail · ReportBuilder</small>"]
-    end
-
-    subgraph Security Layer
-        SEC["Security<br/><small>PromptGuard (25 patterns) · OutputGuard<br/>PromptGuardResult · OutputGuardResult<br/>AESEncryptionProvider · EncryptedMemoryStore<br/>injection detection · sanitisation · output scanning</small>"]
-    end
-
-    subgraph Agent Layer
-        AGT["Agents<br/><small>FireflyAgent · AgentRegistry<br/>DelegationRouter · AgentLifecycle<br/>@firefly_agent · 5 templates · 11 middleware<br/>7 delegation strategies · FallbackModelWrapper<br/>ResultCache · run timeout</small>"]
-        TOOLS["Tools<br/><small>BaseTool · ToolBuilder · ToolKit · CachedTool<br/>4 guards · 3 composers · tool timeout · HITL approval<br/>ToolRegistry · 9 built-ins</small>"]
-        PROMPTS["Prompts<br/><small>PromptTemplate · PromptRegistry<br/>3 composers · PromptValidator<br/>PromptLoader</small>"]
-        CONTENT["Content<br/><small>TextChunker · DocumentSplitter · MarkdownChunker<br/>ImageTiler · BatchProcessor<br/>ContextCompressor · SlidingWindowManager<br/>content.binary (BinaryNormalizer · office converters)</small>"]
-        MEM["Memory<br/><small>MemoryManager · ConversationMemory<br/>WorkingMemory · TokenEstimator<br/>InMemoryStore · FileStore · SQLiteStore<br/>summarization · create_llm_summarizer<br/>export/import · async wrappers</small>"]
-        EMB["Embeddings & Vector Stores<br/><small>BaseEmbedder · EmbedderRegistry · 8 providers<br/>BaseVectorStore · 7 backends<br/>ScopedVectorStore · TenantScopedVectorStore</small>"]
-    end
-
-    subgraph Core Layer
-        CFG["Config<br/><small>FireflyAgenticConfig<br/>get_config · reset_config</small>"]
-        TYPES["Types & Protocols<br/><small>AgentLike protocol<br/>TypeVars · type aliases</small>"]
-        EXC["Exceptions<br/><small>FireflyAgenticError hierarchy<br/>34 exception classes</small>"]
-        PLUG["Plugin System<br/><small>PluginDiscovery<br/>3 entry-point groups</small>"]
-        RES["Resilience<br/><small>CircuitBreaker<br/>CircuitBreakerMiddleware<br/>CircuitState</small>"]
-        STORE["Storage<br/><small>DatabaseStore · LocalBackend<br/>WriteSession · LockToken · RetryPolicy</small>"]
-    end
-
-    PIPE --> AGT
-    PIPE --> REASON
-    PIPE --> VAL
-    PIPE --> EMB
-    SEC --> AGT
-    REASON --> AGT
-    OBS --> AGT
-    EXPL --> OBS
-    VAL --> AGT
-    AGT --> TOOLS
-    AGT --> PROMPTS
-    AGT --> CONTENT
-    AGT --> MEM
-    AGT --> EMB
-    AGT --> RES
-    AGT --> CFG
-    TOOLS --> CFG
-    PROMPTS --> CFG
-    CONTENT --> CFG
-    MEM --> CFG
-    MEM --> STORE
-    EMB --> CFG
-    REASON --> CFG
-    VAL --> CFG
-
-    %% Experiments/Lab are optional leaf dev-tooling modules. They depend on
-    %% the agent layer, but the core framework never imports them.
-    EXP -.optional.-> AGT
-    LAB -.optional.-> EXP
+    HOST --> AGENT
+    HOST --> FLOW
+    FLOW --> AGENT
+    FLOW --> REASON
+    REASON --> AGENT
+    AGENT --> MODELS
+    AGENT --> PAI
+    PAI --> PROVIDER
+    PAI --> TOOLS
+    AGENT --> MEMORY
+    AGENT --> POLICY
+    FLOW --> RETRIEVAL
+    AGENT -. uses .-> SUPPORT
+    MEMORY -. uses .-> SUPPORT
+    RETRIEVAL -. uses .-> SUPPORT
+    DEV --> AGENT
 ```
 
 ### Protocol & Class Hierarchy
 
-Every extension point is a `@runtime_checkable` protocol. Implement the protocol to
-provide your own components; the framework discovers them via duck typing.
+The representative contracts below use structural typing: a component implements
+the required members rather than inheriting a concrete framework class. Abstract
+base classes provide reusable behavior where shown. Runtime protocol checks verify
+member presence, not argument types or application correctness.
+
+Other contracts are documented alongside their implementations: [guards and tool
+listeners](tools.md), [pipeline steps](pipeline.md), [delegation](agents.md#multi-agent-delegation),
+[compression](content.md), [storage](storage.md), and [validation](validation.md).
 
 ```mermaid
 classDiagram
@@ -135,79 +108,37 @@ classDiagram
     }
     class ToolProtocol {
         <<Protocol>>
-        +name: str
-        +description: str
+        +name str
+        +description str
         +execute(**kwargs) Any
-    }
-    class GuardProtocol {
-        <<Protocol>>
-        +check(tool_name, kwargs) GuardResult
-    }
-    class ReasoningPattern {
-        <<Protocol>>
-        +execute(agent, input, **kwargs) ReasoningResult
-    }
-    class StepExecutor {
-        <<Protocol>>
-        +execute(context, inputs) Any
-    }
-    class DelegationStrategy {
-        <<Protocol>>
-        +decide(agents, prompt, **kwargs) RoutingDecision
-    }
-    class CompressionStrategy {
-        <<Protocol>>
-        +compress(text, max_tokens) str
     }
     class MemoryStore {
         <<Protocol>>
         +save(namespace, entry)
         +load(namespace) list
+        +load_by_key(namespace, key) MemoryEntry
         +delete(namespace, entry_id)
         +clear(namespace)
     }
-    class ValidationRule {
+    class ReasoningPattern {
         <<Protocol>>
-        +name: str
-        +validate(value) ValidationRuleResult
+        +execute(agent, input, **kwargs) ReasoningResult
     }
-
+    class BaseTool {
+        <<abstract>>
+    }
+    class AbstractReasoningPattern {
+        <<abstract>>
+    }
     AgentLike <|.. FireflyAgent
-    AgentLike <|.. pydantic_ai.Agent
     ToolProtocol <|.. BaseTool
-    ToolProtocol <|.. SequentialComposer
-    ToolProtocol <|.. FallbackComposer
-    ToolProtocol <|.. ConditionalComposer
-    GuardProtocol <|.. ValidationGuard
-    GuardProtocol <|.. RateLimitGuard
-    GuardProtocol <|.. SandboxGuard
-    GuardProtocol <|.. CompositeGuard
-    ReasoningPattern <|.. AbstractReasoningPattern
-    ReasoningPattern <|.. ReasoningPipeline
-    StepExecutor <|.. AgentStep
-    StepExecutor <|.. ReasoningStep
-    StepExecutor <|.. CallableStep
-    StepExecutor <|.. BranchStep
-    StepExecutor <|.. FanOutStep
-    StepExecutor <|.. FanInStep
-    DelegationStrategy <|.. RoundRobinStrategy
-    DelegationStrategy <|.. CapabilityStrategy
-    DelegationStrategy <|.. ContentBasedStrategy
-    DelegationStrategy <|.. CostAwareStrategy
-    DelegationStrategy <|.. ChainStrategy
-    DelegationStrategy <|.. FallbackStrategy
-    DelegationStrategy <|.. WeightedStrategy
-    CompressionStrategy <|.. TruncationStrategy
-    CompressionStrategy <|.. SummarizationStrategy
-    CompressionStrategy <|.. MapReduceStrategy
+    BaseTool <|-- HttpTool
     MemoryStore <|.. InMemoryStore
-    MemoryStore <|.. FileStore
-    MemoryStore <|.. SQLiteStore
-    ValidationRule <|.. RegexRule
-    ValidationRule <|.. FormatRule
-    ValidationRule <|.. RangeRule
-    ValidationRule <|.. EnumRule
-    ValidationRule <|.. CustomRule
+    MemoryStore <|.. PostgreSQLStore
+    MemoryStore <|.. MongoDBStore
+    ReasoningPattern <|.. AbstractReasoningPattern
+    AbstractReasoningPattern <|-- ReActPattern
+    ReasoningPattern <|.. ReasoningPipeline
 ```
 
 ---
@@ -219,8 +150,8 @@ classDiagram
 The Core layer provides foundational types, configuration, exceptions, and the plugin
 system. Every other module depends on at least one Core component.
 
-- **types.py** -- Enumerations for model providers, agent states, and log levels, the
-  `AgentLike` protocol, TypeVars, and shared type aliases. (The other extension-point
+- **types.py** -- The `AgentLike` protocol, generic TypeVars, shared type aliases,
+  and re-exported multimodal content types. (The other extension-point
   protocols -- `ToolProtocol`, `GuardProtocol`, `ReasoningPattern`, `StepExecutor`,
   `DelegationStrategy`, `CompressionStrategy`, `MemoryStore`, `ValidationRule` -- live in
   their respective modules, not in `types.py`.)
@@ -325,8 +256,10 @@ a global registry, delegation strategies, and declarative decorators.
 - **memory/working.py** -- `WorkingMemory`: scoped key-value scratchpad for session
   facts, entities, and intermediate state.
 - **memory/store.py** -- `MemoryStore` protocol with `InMemoryStore`, `FileStore`, and
-  `SQLiteStore` backends (`MemoryScope` namespacing). `create_llm_summarizer` builds an
-  LLM-backed history summarizer.
+  `SQLiteStore` backends for working facts. `memory/database_store.py` adds
+  `PostgreSQLStore` and `MongoDBStore` with an owning driver loop and explicit close.
+  Conversation history remains in process; use export/import to persist snapshots.
+  `memory/summarization.py` provides `create_llm_summarizer`.
 - **memory/manager.py** -- `MemoryManager` facade composing conversation and working
   memory, with `fork()` for multi-agent scope isolation.
 
@@ -341,7 +274,7 @@ let you assemble retrieval pipelines.
   under `embeddings/providers/`: OpenAI, Azure, Cohere, Google, Mistral, Voyage, Bedrock,
   and Ollama.
 - **vectorstores/** -- `BaseVectorStore` (the `VectorStoreProtocol`), `VectorStoreRegistry`,
-  `VectorDocument`, `SearchFilter`/`SearchResult`, and 7 backends: `InMemoryVectorStore`,
+  `VectorDocument`, `SearchFilter`/`SearchResult`, and 6 backends: `InMemoryVectorStore`,
   `ChromaVectorStore`, `PineconeVectorStore`, `QdrantVectorStore`, `PgVectorVectorStore`,
   and `SqliteVecVectorStore`. The scoped layer (`ScopedVectorStore`,
   `TenantScopedVectorStore`, `scope_namespace`, `parse_scope_namespace`) partitions a
@@ -408,172 +341,114 @@ These are optional, leaf dev-tooling modules; the core framework never imports t
 
 ## Request Flow
 
-The following diagram shows the typical lifecycle of an in-process agent run: a caller
-resolves an agent from the registry and invokes it, the agent reasons with tools, and
-observability and explainability artefacts are produced.
+This is the successful `run()` path. Tools execute only when requested by the model.
+Reasoning patterns, output review, and explainability recording are explicit choices;
+an ordinary run does not automatically invoke those components. Model failures call
+configured error hooks before propagating the exception.
 
 ```mermaid
 sequenceDiagram
     participant Caller
-    participant Reg as AgentRegistry
     participant Agent as FireflyAgent
-    participant Mem as MemoryManager
-    participant Reason as ReasoningPattern
-    participant Tool as BaseTool / Guard
-    participant Val as OutputReviewer
-    participant OBS as FireflyTracer<br/>FireflyMetrics
-    participant EXPL as TraceRecorder<br/>AuditTrail
+    participant MW as Middleware chain
+    participant Memory as ConversationMemory
+    participant Options as ModelOptions resolver
+    participant PAI as Pydantic AI agent
+    participant Tools as Firefly tools
 
-    Caller->>Reg: agent_registry.get(name)
-    Reg-->>Caller: FireflyAgent instance
-    Caller->>Agent: agent.run(prompt, conversation_id)
-    Agent->>OBS: tracer.agent_span(agent_name, model=...)
-    Agent->>Mem: load conversation history
-    Mem-->>Agent: message_history
-    Agent->>Reason: pattern.execute(agent, prompt)
-    loop Reasoning iterations (_reason → _act → _observe)
-        Reason->>Agent: LLM call via pydantic_ai.Agent
-        Reason->>Tool: guard.check() → tool.execute()
-        Tool-->>Reason: tool result
-        Reason->>OBS: metrics.record_tokens() · tracer.event(...)
-        Reason->>EXPL: recorder.record(category, ...)
+    Caller->>Agent: await run(prompt, conversation_id=cid)
+    Agent->>MW: before_run in registration order
+    alt Cache middleware supplies a result
+        Agent->>MW: after_run in reverse order
+    else Model invocation
+        opt Memory attached and no explicit message_history
+            Agent->>Memory: get_message_history(cid)
+            Memory-->>Agent: typed provider messages
+        end
+        Agent->>Options: merge and validate settings for effective model
+        Agent->>PAI: run(prompt, history, settings)
+        opt Model requests function tools
+            PAI->>Tools: execute arguments through guards and listeners
+            Tools-->>PAI: tool result
+        end
+        PAI-->>Agent: run result
+        opt Completed output and conversation_id supplied
+            Agent->>Memory: add_turn with new_messages()
+        end
+        Agent->>Agent: record usage when cost tracking is enabled
+        Agent->>MW: after_run in reverse order
     end
-    Reason-->>Agent: ReasoningResult(output, trace)
-    Agent->>Val: reviewer.review(output)
-    Val-->>Agent: validated output (retry on failure)
-    Agent->>Mem: save conversation turn
-    Agent->>OBS: metrics.record_latency() (span closes)
-    Agent->>EXPL: audit_trail.append(actor, action, ...)
-    Agent-->>Caller: AgentResponse
+    Agent-->>Caller: result with output and messages
 ```
 
 ### Pipeline Execution Flow
 
-When agents are orchestrated through a `DAG` pipeline, `PipelineEngine` executes
-nodes level-by-level. Each node wraps a `StepExecutor` implementation.
+For an acyclic graph without runtime routers, `PipelineEngine` schedules each node
+as soon as its dependencies are resolved; it does not wait for a whole level. Cycles
+and runtime routers use a frontier scheduler with a recursion limit. Port-based
+steps implement `StepExecutor`; state-based nodes return updates merged by reducers.
 
 ```mermaid
-sequenceDiagram
-    participant Caller
-    participant Builder as PipelineBuilder
-    participant DAG as DAG<br/>(topological sort)
-    participant Engine as PipelineEngine
-    participant Ctx as PipelineContext
-    participant S1 as AgentStep
-    participant S2 as ReasoningStep
-    participant S3 as FanOutStep
-    participant S4 as FanInStep
-    participant S5 as CallableStep
-
-    Caller->>Builder: .add_node() · .add_edge() · .chain()
-    Builder->>DAG: build DAG with nodes and edges
-    Caller->>Engine: engine.run(dag, inputs)
-    Engine->>DAG: topological_sort() → execution levels
-    Engine->>Ctx: create PipelineContext(inputs)
-    loop For each execution level
-        Engine->>Engine: asyncio.gather(nodes in level)
-        Note over Engine: condition gate check per node
-        alt AgentStep node
-            Engine->>S1: execute(context, inputs)
-            S1-->>Engine: agent output
-        else ReasoningStep node
-            Engine->>S2: execute(context, inputs)
-            S2-->>Engine: reasoning result
-        else FanOut → FanIn
-            Engine->>S3: fan-out to parallel branches
-            S3-->>Engine: branch outputs
-            Engine->>S4: fan-in / aggregate
-            S4-->>Engine: merged result
-        else CallableStep node
-            Engine->>S5: execute(context, inputs)
-            S5-->>Engine: function output
-        end
-        Engine->>Ctx: store node results
-    end
-    Engine-->>Caller: PipelineResult(node_results, trace)
+flowchart TD
+    BUILD["PipelineBuilder or PipelineEngine builder"] --> DAG["Nodes, edges and optional state schema"]
+    DAG --> START["engine.run: new run or checkpoint resume"]
+    START --> MODE{"Cycle or runtime router?"}
+    MODE -->|no| READY["Schedule nodes whose dependencies are resolved"]
+    READY --> RUN["Execute ready nodes concurrently"]
+    RUN --> SAVE["Record results, state updates and checkpoints"]
+    SAVE --> MORE{"Pending nodes?"}
+    MORE -->|yes| READY
+    MODE -->|yes| FRONTIER["Follow runtime frontier with recursion_limit"]
+    FRONTIER --> STEP["Execute node or Send fan-out"]
+    STEP --> ROUTE["Apply reducers and choose next targets"]
+    ROUTE --> CONTINUE{"Continue?"}
+    CONTINUE -->|yes| FRONTIER
+    CONTINUE -->|no| RESULT["PipelineResult"]
+    MORE -->|no| RESULT
+    STEP -->|Pause returned| PAUSED["Checkpoint and return paused result"]
 ```
 
 ### Memory Architecture
 
-`MemoryManager` composes `ConversationMemory` and `WorkingMemory`, delegating
-persistence to a pluggable `MemoryStore` backend.
+`MemoryManager` composes process-local `ConversationMemory` and `WorkingMemory`.
+Only working facts use the configured `MemoryStore`; selecting a database backend
+does not persist chat history. The host stores and restores conversation snapshots.
 
 ```mermaid
-graph TD
-    subgraph MemoryManager
-        MM["MemoryManager<br/><small>new_conversation · fork<br/>get_working · get_conversation</small>"]
-    end
-
-    subgraph Conversation
-        CM["ConversationMemory<br/><small>add_turn · get_history<br/>token budget · FIFO eviction</small>"]
-        TE["TokenEstimator<br/><small>estimate_tokens</small>"]
-    end
-
-    subgraph Working
-        WM["WorkingMemory<br/><small>set · get · delete<br/>scoped namespaces</small>"]
-    end
-
-    subgraph Backends
-        IMS["InMemoryStore<br/><small>dict-backed</small>"]
-        FS["FileStore<br/><small>JSON file per namespace</small>"]
-        SQL["SQLiteStore<br/><small>SQLite-backed</small>"]
-    end
-
-    MM --> CM
-    MM --> WM
-    CM --> TE
-    WM -->|MemoryStore protocol| IMS
-    WM -->|MemoryStore protocol| FS
-    WM -->|MemoryStore protocol| SQL
-
-    style MM fill:#4a90d9,color:#fff
-    style CM fill:#7eb8da,color:#000
-    style WM fill:#7eb8da,color:#000
+flowchart TD
+    MM["MemoryManager"] --> CM["ConversationMemory<br/>process-local typed messages"]
+    MM --> WM["WorkingMemory<br/>scoped facts"]
+    CM --> BUDGET["Token budget and optional summarization"]
+    CM <-->|export and import| SNAPSHOT["Conversation snapshot<br/>host persists it"]
+    WM --> STORE["MemoryStore contract"]
+    STORE --> LOCAL["InMemoryStore, FileStore, SQLiteStore"]
+    STORE --> DB["PostgreSQLStore, MongoDBStore"]
+    DB --> LOOP["Shared database worker loop<br/>driver connections and cleanup"]
 ```
 
 ### Reasoning Pattern Architecture
 
 All six reasoning patterns extend `AbstractReasoningPattern`, which provides a
-template-method loop: `_reason` → `_act` → `_observe` → `_should_continue`.
+template-method loop with an early-stop check after `_reason`, an iteration limit,
+and optional final review. The diagram shows that base loop; Tree of Thoughts and
+Goal Decomposition override `execute()` with their own flows while reusing helper
+methods. See [Reasoning](reasoning.md) for each pattern's behavior.
 
 ```mermaid
-graph TD
-    subgraph AbstractReasoningPattern
-        EX["execute(agent, input)"]
-        R["_reason()"]
-        A["_act()"]
-        O["_observe()"]
-        SC["_should_continue()"]
-        EX --> R --> A --> O --> SC
-        SC -->|yes| R
-        SC -->|no| OUT["ReasoningResult"]
-    end
-
-    subgraph Concrete Patterns
-        REACT["ReActPattern<br/><small>observe → think → act</small>"]
-        COT["ChainOfThoughtPattern<br/><small>step-by-step reasoning</small>"]
-        PAE["PlanAndExecutePattern<br/><small>plan → execute → replan</small>"]
-        REF["ReflexionPattern<br/><small>execute → critique → retry</small>"]
-        TOT["TreeOfThoughtsPattern<br/><small>branch → evaluate → select</small>"]
-        GD["GoalDecompositionPattern<br/><small>goal → phases → tasks</small>"]
-    end
-
-    subgraph Pipeline
-        RP["ReasoningPipeline<br/><small>chains patterns sequentially</small>"]
-    end
-
-    REACT --> EX
-    COT --> EX
-    PAE --> EX
-    REF --> EX
-    TOT --> EX
-    GD --> EX
-    RP --> REACT
-    RP --> COT
-    RP --> PAE
-
-    style EX fill:#e67e22,color:#fff
-    style OUT fill:#27ae60,color:#fff
+flowchart TD
+    CALL["Explicit pattern.execute or agent.run_with_reasoning"] --> INIT["Initialize trace and optional memory scope"]
+    INIT --> THINK["_reason"]
+    THINK --> STOP{"_should_stop?"}
+    STOP -->|yes| OUTPUT["_extract_output"]
+    STOP -->|no| ACT["_act"]
+    ACT --> OBSERVE["_observe"]
+    OBSERVE --> AGAIN{"_should_continue?"}
+    AGAIN -->|no| OUTPUT
+    AGAIN -->|yes| LIMIT{"Below max_steps?"}
+    LIMIT -->|yes| THINK
+    LIMIT -->|no| ERROR["ReasoningStepLimitError"]
+    OUTPUT --> REVIEW["Optional reviewer"]
+    REVIEW --> RESULT["Persist final working-memory fact<br/>return ReasoningResult"]
 ```
 
 ---
@@ -581,9 +456,9 @@ graph TD
 ## Multi-Provider Support
 
 The framework is **provider-agnostic**: it never re-implements a provider client.
-Model construction is delegated entirely to pydantic-ai, so any provider pydantic-ai
-supports — OpenAI, Anthropic, Google/Gemini, Groq, Bedrock, Mistral, Cohere,
-DeepSeek, xAI, OpenRouter, Azure, Ollama, … — works by passing either a
+Firefly normalizes model aliases and resolves factory configuration, then delegates
+provider requests to Pydantic AI. Providers Pydantic AI supports — OpenAI, Anthropic, Google/Gemini, Groq, Bedrock, Mistral, Cohere,
+DeepSeek, xAI, OpenRouter, Azure, Ollama, … — are selected with either a
 `"provider:model"` string or a pydantic-ai `Model` object to any agent. Everything
 the framework adds on top is built to be provider-uniform:
 
@@ -609,8 +484,10 @@ the framework adds on top is built to be provider-uniform:
   across providers, and rate-limit backoff prefers a provider's structured retry hint
   (e.g. Gemini `retry_delay`) before falling back to exponential backoff.
 
-This is validated end-to-end against a real provider by
-`tests/integration/test_real_anthropic_e2e.py` (nightly; see [tests/README](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/tests/README.md)).
+The test suite includes controlled SDK-boundary tests for Chat Completions and
+Responses, plus credential-gated live OpenAI and Anthropic tests. A passing offline
+contract test does not establish availability in a provider account; see
+[tests/README](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/tests/README.md).
 
 ---
 
@@ -619,31 +496,18 @@ This is validated end-to-end against a real provider by
 Plugins are discovered via Python entry points under three well-known groups:
 `fireflyframework_agentic.agents`, `fireflyframework_agentic.tools`, and
 `fireflyframework_agentic.reasoning_patterns`. The `PluginDiscovery` class scans
-these groups and loads the referenced objects so they can self-register with
-their respective registries.
+these groups and loads the referenced objects into a `DiscoveryResult`. Discovery
+does not automatically register returned objects; the host registers them, or an
+imported plugin module may do so as an explicit side effect.
 
 ```mermaid
 flowchart LR
-    subgraph Package pyproject.toml
-        EP1["fireflyframework_agentic.agents<br/><small>my_agent = my_pkg:MyAgent</small>"]
-        EP2["fireflyframework_agentic.tools<br/><small>my_tool = my_pkg:MyTool</small>"]
-        EP3["fireflyframework_agentic.reasoning_patterns<br/><small>my_pattern = my_pkg:MyPattern</small>"]
-    end
-
-    PD["PluginDiscovery<br/><small>discover_all() · discover_group()</small>"]
-
-    subgraph Registries
-        AR["AgentRegistry<br/><small>register · get · list_agents</small>"]
-        TR["ToolRegistry<br/><small>register · get · list_tools</small>"]
-        RR["Reasoning Registry<br/><small>(pattern catalog)</small>"]
-    end
-
-    EP1 --> PD
-    EP2 --> PD
-    EP3 --> PD
-    PD --> AR
-    PD --> TR
-    PD --> RR
+    PACKAGE["Installed package entry points<br/>agents, tools, reasoning_patterns"] --> DISCOVERY["PluginDiscovery<br/>loads referenced objects"]
+    DISCOVERY --> RESULT["DiscoveryResult<br/>successful objects and load errors"]
+    RESULT --> HOST["Host selects and registers components"]
+    HOST --> AGENTS["AgentRegistry"]
+    HOST --> TOOLS["ToolRegistry"]
+    HOST --> REASON["Reasoning registry"]
 ```
 
 To create a plugin, add entry points in your package's `pyproject.toml`:
