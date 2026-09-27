@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="assets/banner.svg"><img src="assets/banner.svg" alt="Firefly Agentic — production-grade agents, reasoning and pipelines, built on Pydantic AI" width="100%"></a>
+  <a href="https://fireflyframework.github.io/fireflyframework-agentic/"><img src="assets/banner.svg" alt="Firefly Agentic — production-grade agents, reasoning and pipelines, built on Pydantic AI" width="100%"></a>
 </p>
 
 <h1 align="center">Firefly Agentic</h1>

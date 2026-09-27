@@ -18,12 +18,15 @@ class Page(HTMLParser):
         super().__init__()
         self.ids: set[str] = set()
         self.links: list[str] = []
+        self.home_links: list[str] = []
         self.diagrams = 0
         self.canonical = ""
         self.feed(path.read_text(encoding="utf-8"))
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         values = dict(attrs)
+        if tag == "a" and values.get("data-md-component") == "logo":
+            self.home_links.append(values.get("href") or "")
         if tag == "link" and values.get("rel") == "canonical":
             self.canonical = values.get("href") or ""
         if anchor := values.get("id"):
@@ -44,6 +47,8 @@ def check_links(site: Path, pages: dict[Path, Page]) -> list[str]:
         for link in page.links:
             url = urlsplit(link)
             if url.scheme or url.netloc:
+                if link in page.home_links:
+                    errors.append(f"Logo must link to the documentation home: {path.relative_to(site)}: {link}")
                 continue
             local_path = unquote(url.path)
             if prefix and (local_path == prefix or local_path.startswith(prefix + "/")):
@@ -56,6 +61,8 @@ def check_links(site: Path, pages: dict[Path, Page]) -> list[str]:
             if target.is_dir():
                 target /= "index.html"
             label = f"{path.relative_to(site)}: {link}"
+            if link in page.home_links and target != site / "index.html":
+                errors.append(f"Logo must link to the documentation home: {label}")
             if not target.is_relative_to(site) or not target.is_file():
                 errors.append(f"Missing local target: {label}")
             elif url.fragment and target in pages and unquote(url.fragment) not in pages[target].ids:

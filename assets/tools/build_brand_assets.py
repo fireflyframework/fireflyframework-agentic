@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the Firefly Agentic banner and nine diagrams, fully offline.
+"""Generate the Firefly Agentic logo, banner and nine diagrams, fully offline.
 
 Run with Python 3.13+: python assets/tools/build_brand_assets.py
 Verify committed outputs: python assets/tools/build_brand_assets.py --check
@@ -1295,6 +1295,20 @@ def ecosystem():
     )
 
 
+def brand_logo():
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 64" role="img" aria-labelledby="brand-title brand-desc">
+  <title id="brand-title">Firefly Agentic</title>
+  <desc id="brand-desc">Firefly wordmark with the amber glow and Agentic name on a dark violet background.</desc>
+  <defs><radialGradient id="dot"><stop stop-color="#FFF9C1"/><stop offset="1" stop-color="#F68000"/></radialGradient></defs>
+  <rect width="300" height="64" rx="10" fill="#140f1e"/>
+  {firefly_logo(14, 32, 36, fill="#eee7ff")}
+  <path d="M153 16V48" stroke="#a78bfa" stroke-opacity="0.65"/>
+  <text x="169" y="43" font-family="{SANS}" font-size="32" font-weight="700" fill="#d6c6ff" letter-spacing="-0.8">agentic</text>
+</svg>
+'''
+    write_svg("brand-logo.svg", svg)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -1302,6 +1316,7 @@ def main():
     )
     args = parser.parse_args()
     build_banner()
+    brand_logo()
     for fn in (architecture, protocols, model_routing, reasoning, pipeline, workflows, rag, agent_anatomy, ecosystem):
         fn()
     if WARN:
