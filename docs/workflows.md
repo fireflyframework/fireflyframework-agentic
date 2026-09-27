@@ -4,15 +4,14 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 
 `fireflyframework_agentic.workflows` is a **code-defined orchestration DSL** for
 fanning out isolated sub-agents and reducing their results in plain Python. The
-plan lives in your script's control flow — not in a model's context — so an
-orchestration is deterministic, inspectable, and resumable. It mirrors the
-mechanism Claude Code uses for multi-agent workflows, adapted to Python and
-[Pydantic AI](https://ai.pydantic.dev/).
+plan lives in ordinary Python control flow, making orchestration inspectable.
+A journal can replay completed agent calls when the call sequence remains stable.
+Model outputs and external side effects retain their own execution semantics.
 
 It is a peer of, not a replacement for, two existing layers:
 
 - **[Reasoning patterns](reasoning.md)** drive a single agent's *reason → act →
-  observe* loop. A workflow is the opposite concern: deterministic orchestration
+  observe* loop. A workflow provides code-defined orchestration
   *across* many agents.
 - **[Pipelines](pipeline.md)** are declarative DAGs with checkpointing and HITL.
   A workflow is an *imperative* code-first façade for fan-out/gather/verify
@@ -154,7 +153,7 @@ stack the rest of the framework uses; read live spend with
 
 ---
 
-## Deterministic resume (the journal)
+## Resume with a call journal
 
 Every `agent()` call is keyed by its sequence number and recorded in a `Journal`.
 Re-running the workflow with a *populated* journal serves completed calls from
@@ -165,14 +164,14 @@ from fireflyframework_agentic.workflows import Journal
 
 journal = Journal()
 await run_workflow("deep_research", args, journal=journal)   # full run, populates journal
-# ... process crashes / you tweak a later stage ...
+# Run again with the same arguments and call sequence:
 await run_workflow("deep_research", args, journal=journal)   # cached calls replay instantly
 ```
 
 Persist `journal.to_dict()` (and rebuild with `Journal.from_dict(...)`) to resume
-manually. For **durable, crash-resilient** resume, attach a `JournalBackend` — the
-journal then flushes after every completed call, so an out-of-process crash
-resumes from the last one:
+manually. To persist completed calls, attach a `JournalBackend`; the journal
+attempts a flush after every completed call. Backend errors are logged and
+suppressed, so durability depends on successful storage:
 
 ```python
 from fireflyframework_agentic.workflows import Journal, FileJournalBackend
@@ -189,11 +188,14 @@ await run_workflow("deep_research", args,
 round-trip exactly; structured outputs round-trip as their serialized form).
 Implement the `JournalBackend` protocol (`load`/`save`) for Postgres/Redis/S3.
 
-> **Determinism contract.** Replay is correct only when the orchestration code is
-> deterministic. The call sequence number is assigned synchronously at the top of
-> `agent()` (before any `await`), so it is stable in task-launch order even inside
-> `parallel`/`pipeline`. Keep wall-clock and `random` out of control flow (or seed
-> them); only the agent *calls* are treated as non-deterministic.
+> **Replay contract.** Journal keys are call sequence numbers, not hashes of the
+> prompt, model, or arguments. Resume with the same inputs and call sequence; code
+> changes or timing-dependent branches can assign a cached output to a different
+> call. Sequence numbers are assigned before the first `await` inside `agent()`,
+> but calls launched after earlier asynchronous work can still depend on completion
+> order. Keep replay-sensitive control flow stable and use a new journal when the
+> inputs or sequence change. External side effects outside journaled calls may run
+> again, and a crash before a successful journal write may repeat a model call.
 
 ---
 
@@ -224,12 +226,11 @@ await deep_research(args, runner=MyFakeRunner())
 ### `FireflyAgentRunner` — sub-agents with the full FireflyAgent stack
 
 This is the **default** runner: every workflow sub-agent runs through a
-`FireflyAgent`, inheriting its **middleware chain** (logging, prompt/output
-guards, cost guard, caching, observability, explainability, validation, retry),
-the **429 rate-limit retry** loop, the **global usage tracker / budget gate**, and
-**model fallback** — the same enrichment your top-level agents get. You only
-construct it explicitly to configure it (a default model, or a specific agent
-source):
+`FireflyAgent`. Ephemeral agents get default logging and conditional observability;
+configured agents retain their middleware, tools, and model. Guards, caching,
+explainability, and validation remain opt-in. Rate-limit retry and usage tracking
+follow the same configuration as top-level agents. Construct the runner explicitly
+to select a default model or a specific agent source:
 
 ```python
 from fireflyframework_agentic import get_config
@@ -273,14 +274,13 @@ clear error (it has no agent registry to resolve against); `SmartRoutingRunner`
 
 Notes:
 
-- **Two disjoint ledgers, each billed once.** Per-call tokens/cost feed the
-  per-run `WorkflowBudget`; `FireflyAgent` records the same call once to the
-  *global* usage tracker. No double counting; a journal-resumed call bills neither.
-- **Isolation.** Ephemeral/factory agents are built `auto_register=False`,
-  `memory=None`, and never receive a `conversation_id` — no shared history, no
-  registry churn. A *reused* agent that carries a `ResultCache` or memory
-  intentionally opts into shared state; use the ephemeral/factory form for strict
-  per-call isolation.
+- **Separate usage ledgers.** Per-call tokens/cost feed the per-run `WorkflowBudget`;
+  `FireflyAgent` also records completed calls in the global tracker when cost
+  tracking is enabled. A journal replay makes no new model request.
+- **Isolation.** The ephemeral path sets `auto_register=False` and `memory=None`.
+  A factory controls those settings itself; return a fresh agent with those options
+  for the same isolation. The runner supplies no `conversation_id`. A reused agent
+  may still share state through its cache, tools, middleware, or working memory.
 - **`tools=` vs `toolsets=`.** Per-call `tools=` only applies on the ephemeral
   path (pydantic-ai has no per-call `tools` parameter); for a reused agent,
   configure tools on the agent or pass `toolsets=`.
@@ -417,7 +417,7 @@ model repeatedly, and its `Verdict` doubles as a confidence oracle for `cascade(
 Compose workflows by running one inline as a step of another with `subworkflow`.
 The child inherits the parent's **budget, concurrency gate, journal and runner** —
 its `agent()` calls count against the same budget and resume from the same journal
-(one deterministic sequence stream across the whole nested run):
+(one sequence stream across the whole nested run):
 
 ```python
 from fireflyframework_agentic.workflows import workflow, agent, subworkflow
@@ -441,7 +441,8 @@ directly instead.
 
 `human(prompt)` pauses a run for external input. It raises `WorkflowInterrupt`;
 you collect the answer, `provide()` it, and re-run with the **same journal** to
-resume past the pause — the answer is journaled, so resume is deterministic:
+resume past the pause. The answer is journaled under its sequence number, so the
+same replay requirements apply:
 
 ```python
 from fireflyframework_agentic.workflows import workflow, agent, human, Journal, WorkflowInterrupt
@@ -494,9 +495,9 @@ counters.
 | `human(prompt)` | Pause for external input (raises `WorkflowInterrupt`; resume via the same journal). |
 | `map_agents(items, fn, *, strict=False)` | Run `fn(item)` per item concurrently — sugar over `parallel` (no late-binding lambda). |
 | `WorkflowBudget` | Concurrency / agent-count / token / **USD cost** / **wall-clock** ceilings. |
-| `Journal` / `JournalBackend` / `FileJournalBackend` | Sequence-keyed resume cache; attach a backend for durable, crash-resilient resume. |
+| `Journal` / `JournalBackend` / `FileJournalBackend` | Sequence-keyed resume cache with optional best-effort persistence. |
 | `AgentRunner` / `AgentCall` | The runner seam (`AgentCall` carries `output`, `tokens`, `cost_usd`). |
-| `FireflyAgentRunner` | **Default** runner: each call runs through a `FireflyAgent` (full middleware/observability/guards/retry/global-cost/fallback). Pair with `agent(..., using=)` for multi-model sub-agents. |
+| `FireflyAgentRunner` | **Default** runner: each call runs through a `FireflyAgent` with its configured middleware, tools, and model. Pair with `agent(..., using=)` for multi-model sub-agents. |
 | `DefaultAgentRunner` | Lightweight alternative: each call is a bare `pydantic_ai.Agent`. Pass it explicitly for the zero-coupling path. |
 | `SmartRoutingRunner` / `ComplexityHeuristicStrategy` / `CostFloorStrategy` / `ModelSelectionStrategy` | Cheapest-capable model per call (with fallback). |
 | `cascade` / `CascadeResult` | Cheap-first, escalate on low confidence. |

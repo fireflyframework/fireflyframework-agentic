@@ -26,6 +26,11 @@ from fireflyframework_agentic.explainability import (
 
 ## Architecture
 
+Application code records decision and audit events explicitly; an attached
+`ExplainabilityMiddleware` can record agent-run events. These components are not
+automatically invoked by every agent. `ReportBuilder` uses its explanation generator
+when building a report from the collected records.
+
 ```mermaid
 flowchart LR
     AGENT[Agent Execution] --> TR[TraceRecorder]

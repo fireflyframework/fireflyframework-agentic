@@ -320,7 +320,7 @@ body:has(.ff-home) .md-header--shadow {
 /* ---- "Why" split ------------------------------------------------------- */
 .ff-why {
   display: grid;
-  grid-template-columns: 1.05fr 0.95fr;
+  grid-template-columns: 1fr;
   gap: 2.5rem;
   align-items: center;
 }
@@ -396,8 +396,13 @@ body:has(.ff-home) .md-header--shadow {
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
   overflow: hidden;
 }
+.ff-install-note { color: var(--ff-muted); font-size: 0.85rem; }
+.ff-install-note a { color: var(--ff-violet-bright); text-decoration: underline; }
+.ff-figure .ff-figcap { color: #52416d; }
+.ff-figure .ff-figcap a { color: #6033ac; text-decoration: underline; }
+.ff-figure a:focus-visible { outline: 3px solid #7c3aed; outline-offset: 4px; }
 .ff-figure img { display: block; width: 100%; height: auto; }
-.ff-figure--pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; background: none; border: 0; box-shadow: none; padding: 0; }
+.ff-figure--pair { display: grid; grid-template-columns: 1fr; gap: 1.4rem; background: none; border: 0; box-shadow: none; padding: 0; }
 .ff-figure--pair > .ff-figure { margin: 0; }
 .ff-figcap { text-align: center; color: var(--ff-faint); font-size: 0.86rem; margin-top: 1rem; }
 
@@ -549,3 +554,20 @@ body:has(.ff-home) .md-header--shadow {
   .ff-reveal { transition: none !important; animation: none !important; }
   .ff-reveal { opacity: 1; transform: none; }
 }
+
+/* Dense Mermaid graphs remain scrollable when expanded, including on mobile. */
+.md-typeset .ff-diagram { margin: 1.5em 0; min-width: 0; max-width: 100%; }
+.md-typeset .ff-diagram-scroll { overflow-x: auto; max-width: 100%; padding: 0.4rem 0; }
+.md-typeset .ff-diagram--expanded .ff-diagram-scroll { max-height: 70vh; overflow: auto; }
+.md-typeset .ff-diagram--expanded .mermaid { width: max(100%, 1800px); display: flex; justify-content: center; }
+.md-typeset .ff-diagram-toggle {
+  border: 1px solid var(--md-default-fg-color--lighter);
+  border-radius: 0.3rem;
+  padding: 0.3rem 0.6rem;
+  color: var(--md-typeset-a-color);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.7rem;
+}
+.md-typeset .ff-diagram-toggle:focus-visible,
+.md-typeset .ff-diagram-scroll:focus-visible { outline: 2px solid var(--md-accent-fg-color); outline-offset: 3px; }

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="Firefly Agentic — production-grade agents, reasoning and pipelines, built on Pydantic AI" width="100%">
+  <a href="assets/banner.svg"><img src="assets/banner.svg" alt="Firefly Agentic — production-grade agents, reasoning and pipelines, built on Pydantic AI" width="100%"></a>
 </p>
 
 <h1 align="center">Firefly Agentic</h1>
@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <em>Build with Firefly agents, tools, memory and typed model options — gain lifecycle hooks, delegation, memory, reasoning patterns, validation loops, RAG, and DAG pipelines, all protocol-driven and swappable.</em>
+  <em>Build with Firefly agents, tools, memory and typed model options — gain lifecycle hooks, delegation, reasoning patterns, validation loops, RAG, and DAG pipelines, all protocol-driven and swappable.</em>
 </p>
 
 <p align="center">
@@ -106,6 +106,10 @@ Set `FIREFLY_AGENTIC_DEFAULT_MODEL`, or pass `model=` to an agent. Firefly prese
 the legacy meaning of `openai:` even though Pydantic AI 2.x changed its default
 routing. Without an override, Firefly still uses `openai:gpt-4o`.
 
+<p align="center">
+  <a href="assets/model-routing.svg"><img src="assets/model-routing.svg" alt="Firefly resolves the model selector and typed options, validates capabilities, then routes to Chat Completions, Responses or another provider." width="100%"></a>
+</p>
+
 Model controls are abstracted too:
 
 | Firefly option | Purpose |
@@ -135,8 +139,8 @@ constraints.
 
 ## Key Principles
 
-1. **Protocol-driven contracts** — Every extension point is defined as a
-   `@runtime_checkable` `Protocol` or abstract base class. Contracts span every
+1. **Explicit extension contracts** — Components expose Python protocols or
+   abstract base classes; protocols marked `@runtime_checkable` also support runtime checks. Contracts span every
    layer — `AgentLike`, `ToolProtocol`, `GuardProtocol`,
    `AgentMiddleware`, `DelegationStrategy`, `ReasoningPattern`, `ValidationRule`,
    `StepExecutor`, `Checkpointer`, `Chunker`, `MemoryStore`, `EmbeddingProtocol`,
@@ -151,10 +155,10 @@ constraints.
    (`observability_enabled`), strict-cost mode (`cost_strict`), memory backends, and
    validation thresholds — override only what you need.
 
-3. **Layered composition** — Layers with strict top-down dependency flow:
-   **Core → Agent → Intelligence → Experimentation → Orchestration**.
-   Higher layers depend on lower layers but never the reverse, keeping the
-   dependency graph acyclic and each module independently testable.
+3. **Layered composition** — Core, agent, intelligence, experimentation, and
+   orchestration group related responsibilities. Applications compose these modules
+   through explicit contracts; the architecture diagram is a conceptual map,
+   not an enforced Python import hierarchy.
 
 4. **Optional dependencies** — Storage and numerical libraries (`chromadb`,
    `pinecone`, `asyncpg`, `numpy`) are declared as pip extras
@@ -166,17 +170,20 @@ constraints.
 
 ## Architecture at a Glance
 
+Follow the [visual guide](docs/diagrams.md) for a reading path through the diagrams
+and their implementation guides. Open any diagram at full size to inspect its labels.
+
 <p align="center">
-  <img src="assets/architecture.svg" alt="Firefly Agentic architecture: one front door (import fireflyframework_agentic, @firefly_agent) over five layers — Orchestration, Experimentation, Intelligence, Agent, Core — on the Pydantic AI engine." width="100%">
+  <a href="assets/architecture.svg"><img src="assets/architecture.svg" alt="Firefly application APIs connect agents, tools, memory and model options to Pydantic AI, with optional reasoning, validation and orchestration." width="100%"></a>
 </p>
 
 ### Protocol Hierarchy
 
 Implement a module's protocol or abstract base class to create your own components.
-The diagram shows a selection of the framework's runtime-checkable protocols.
+The diagram distinguishes structural protocols from inheritance-based extension points.
 
 <p align="center">
-  <img src="assets/protocols.svg" alt="Selected runtime-checkable protocols — AgentLike, ToolProtocol, GuardProtocol, ReasoningPattern, StepExecutor, DelegationStrategy, CompressionStrategy, MemoryStore, ValidationRule, Chunker, EmbeddingProtocol, VectorStoreProtocol — with their swappable implementations." width="100%">
+  <a href="assets/protocols.svg"><img src="assets/protocols.svg" alt="Selected Firefly extension contracts for agents, tools, memory, reasoning, pipelines, embeddings and vector stores." width="100%"></a>
 </p>
 
 ---
@@ -195,8 +202,8 @@ The diagram shows a selection of the framework's runtime-checkable protocols.
   (`RoundRobinStrategy`, `CapabilityStrategy`, `ContentBasedStrategy`,
   `CostAwareStrategy`, `ChainStrategy`, `FallbackStrategy`, `WeightedStrategy`).
   A composable middleware stack (`MiddlewareChain` over `AgentMiddleware`) wraps every
-  run — `LoggingMiddleware` is always wired and `ObservabilityMiddleware` is added when
-  `observability_enabled`, with `PromptGuardMiddleware`, `OutputGuardMiddleware`,
+  run — with `default_middleware=True`, `LoggingMiddleware` is installed and
+  `ObservabilityMiddleware` is added when `observability_enabled`, with `PromptGuardMiddleware`, `OutputGuardMiddleware`,
   `CostGuardMiddleware`, `CacheMiddleware`, `PromptCacheMiddleware`,
   `ExplainabilityMiddleware`, `ValidationMiddleware`, `RetryMiddleware`, and `CircuitBreakerMiddleware` available to
   add. `FallbackModelWrapper` / `run_with_fallback` provide automatic model failover, and
@@ -207,7 +214,7 @@ The diagram shows a selection of the framework's runtime-checkable protocols.
   the box.
 
 <p align="center">
-  <img src="assets/agent-anatomy.svg" alt="Anatomy of an agent run: a FireflyAgent wrapping pydantic_ai.Agent inside a ten-stage middleware chain, with delegation, fallback, caching and memory." width="100%">
+  <a href="assets/agent-anatomy.svg"><img src="assets/agent-anatomy.svg" alt="FireflyAgent run lifecycle: apply before-run middleware, load memory, resolve options, call Pydantic AI and record the result." width="100%"></a>
 </p>
 
 - **Tools** — `ToolProtocol` (duck-typed) and `BaseTool` (inheritance) let you choose
@@ -231,8 +238,9 @@ The diagram shows a selection of the framework's runtime-checkable protocols.
   required sections. `PromptLoader` loads templates from strings, files, or
   entire directories.
 
-- **Reasoning** — Six pluggable patterns implement `AbstractReasoningPattern`'s
-  template-method loop (`_reason` → `_act` → `_observe` → `_should_continue`):
+- **Reasoning** — Six pluggable patterns share the `ReasoningPattern` interface and
+  structured results. The base loop is `_reason` → `_act` → `_observe` →
+  `_should_continue`; Tree of Thoughts and Goal Decomposition override execution:
   **ReAct** (observe-think-act), **Chain of Thought** (step-by-step),
   **Plan-and-Execute** (goal → plan → steps with optional replanning),
   **Reflexion** (execute → critique → retry), **Tree of Thoughts** (branch →
@@ -246,7 +254,7 @@ The diagram shows a selection of the framework's runtime-checkable protocols.
   chains patterns sequentially.
 
 <p align="center">
-  <img src="assets/reasoning.svg" alt="Six reasoning patterns — ReAct, Chain of Thought, Plan-and-Execute, Reflexion, Tree of Thoughts, Goal Decomposition — on one reason/act/observe loop." width="100%">
+  <a href="assets/reasoning.svg"><img src="assets/reasoning.svg" alt="Six reasoning patterns — ReAct, Chain of Thought, Plan-and-Execute, Reflexion, Tree of Thoughts, Goal Decomposition — on one reason/act/observe loop." width="100%"></a>
 </p>
 
 - **Content** — `TextChunker` splits by tokens, sentences, or paragraphs with
@@ -265,7 +273,7 @@ The diagram shows a selection of the framework's runtime-checkable protocols.
   `EmailUnpacker` handle PDFs, images, archives, and emails.
 
 - **Memory** — `ConversationMemory` stores per-conversation turn history with
-  token-budget enforcement (newest-first FIFO eviction). `WorkingMemory` provides
+  token-budget enforcement (selecting the newest turns that fit). `WorkingMemory` provides
   a scoped key-value scratchpad backed by `MemoryStore` (`InMemoryStore`, `FileStore`,
   `SQLiteStore`, `PostgreSQLStore`, or `MongoDBStore`). `MemoryManager` composes both
   behind a unified API and supports
@@ -285,12 +293,12 @@ The diagram shows a selection of the framework's runtime-checkable protocols.
   low-quality extractions before they propagate downstream.
 
 - **Pipeline** — `DAG` holds `DAGNode` and `DAGEdge` objects with cycle detection
-  and topological sort. `PipelineEngine` executes nodes level-by-level via
-  `asyncio.gather` for maximum concurrency, with per-node condition gates, retries,
-  and timeouts. `PipelineBuilder` offers a fluent API (`add_node` / `add_edge` /
+  and topological sort. `PipelineEngine` schedules nodes as their dependencies
+  complete, with per-node condition gates, retries, and timeouts. `PipelineBuilder` offers a fluent API (`add_node` / `add_edge` /
   `chain`). Step types adapt agents, patterns, and functions to DAG nodes:
-  `AgentStep`, `ReasoningStep`, `CallableStep`, `FanOutStep`, `FanInStep`,
-  `BranchStep`, `BatchLLMStep`, `EmbeddingStep`, and `RetrievalStep`. State reducers
+  `AgentStep`, `ReasoningStep`, `CallableStep`, `FanInStep`, `BatchLLMStep`,
+  `EmbeddingStep`, and `RetrievalStep`. State-based routing uses `.branch()` and
+  `Send`; legacy `BranchStep` and `FanOutStep` are deprecated. State reducers
   (`append`, `extend`, `merge_dict`, `replace`) merge fan-out results, and control
   signals (`Pause`, `Send`) drive branching and human-in-the-loop pauses.
   `Checkpointer` / `FileCheckpointer` (with `CheckpointRecord`) persist and resume
@@ -299,25 +307,26 @@ The diagram shows a selection of the framework's runtime-checkable protocols.
   execution traces.
 
 <p align="center">
-  <img src="assets/pipeline.svg" alt="A typed DAG pipeline: a seven-phase IDP flow with fan-out/fan-in, a human-in-the-loop pause, checkpointing and an audit log." width="100%">
+  <a href="assets/pipeline.svg"><img src="assets/pipeline.svg" alt="Pipeline dependency scheduling with separate Pause and Send controls, checkpoint resume and audit sinks." width="100%"></a>
 </p>
 
-- **Workflows** — `@workflow` / `@subworkflow` define a **code-defined, deterministic
-  orchestration DSL** over your agents — a complement to the declarative `pipeline` DAG,
+- **Workflows** — `@workflow` defines a **code-defined orchestration DSL**;
+  `await subworkflow(...)` composes child workflows over your agents — a complement to the declarative `pipeline` DAG,
   both living in the Orchestration layer. Compose async primitives — `agent()`,
   `parallel()`, `pipeline()`, `stream()`, `phase()`, `human()` (human-in-the-loop),
   `map_agents()` and `log()` — inside a `WorkflowContext` that carries a `WorkflowBudget`
   (concurrency, agent-count and token/cost ceilings), a `Journal` (`JournalBackend` /
-  `FileJournalBackend`) for **deterministic resume**, and a pluggable `AgentRunner`.
+  `FileJournalBackend`) for **replaying completed operations**, and a pluggable `AgentRunner`.
   `FireflyAgentRunner` (the default) runs every sub-agent call through a full
   `FireflyAgent` (middleware, guards, budget, model fallback); `DefaultAgentRunner` is the
-  lightweight path. `SmartRoutingRunner` selects the cheapest capable model via a
+  lightweight path. `SmartRoutingRunner` selects a model through its configured
   `ModelSelectionStrategy` (`ComplexityHeuristicStrategy`, `CostFloorStrategy`), and
   verification helpers (`cascade`, `adversarial_verify`, `judge_panel`, `loop_until_dry`)
-  add refute-by-default quality gates. See [docs/workflows.md](docs/workflows.md).
+  add quality checks. Replay requires stable control flow and call order; application
+  side effects need idempotency. See [docs/workflows.md](docs/workflows.md).
 
 <p align="center">
-  <img src="assets/workflows.svg" alt="Dynamic Workflows: the @workflow DSL primitives (agent, parallel, pipeline, stream, phase, human, map_agents, log) over a WorkflowContext carrying runner, journal, budget and routing, with verification helpers." width="100%">
+  <a href="assets/workflows.svg"><img src="assets/workflows.svg" alt="Dynamic Workflows: the @workflow DSL primitives (agent, parallel, pipeline, stream, phase, human, map_agents, log) over a WorkflowContext carrying runner, journal, budget and routing, with verification helpers." width="100%"></a>
 </p>
 
 - **Observability** — `FireflyTracer` creates OpenTelemetry spans scoped to agents,
@@ -412,7 +421,7 @@ The diagram shows a selection of the framework's runtime-checkable protocols.
   into DAG pipelines for retrieval-augmented workflows.
 
 <p align="center">
-  <img src="assets/rag.svg" alt="Retrieval-augmented generation: eight embedding providers and six vector-store backends behind the EmbeddingProtocol and VectorStoreProtocol." width="100%">
+  <a href="assets/rag.svg"><img src="assets/rag.svg" alt="Retrieval-augmented generation: eight embedding providers and six vector-store backends behind the EmbeddingProtocol and VectorStoreProtocol." width="100%"></a>
 </p>
 
 - **Studio** — moved to its own repository:
@@ -429,7 +438,7 @@ The diagram shows a selection of the framework's runtime-checkable protocols.
 Firefly Agentic is the **agentic member** of the [Firefly Framework](https://github.com/fireflyframework) — a polyglot platform that brings one cohesive programming model to many runtimes. Each member shares the same firefly-in-the-dark identity, recolored per language.
 
 <p align="center">
-  <img src="assets/ecosystem.svg" alt="The Firefly Framework family: Java/Spring Boot, .NET, PyFly (Python), Rust, Go, the Angular frontend, and Firefly Agentic — around a shared core." width="100%">
+  <a href="assets/ecosystem.svg"><img src="assets/ecosystem.svg" alt="The Firefly Framework family: Java/Spring Boot, .NET, PyFly (Python), Rust, Go, the Angular frontend, and Firefly Agentic — around a shared core." width="100%"></a>
 </p>
 
 - **[PyFly](https://github.com/fireflyframework/fireflyframework-pyfly)** — the Python implementation (Spring-Boot DX, async-native).
@@ -621,12 +630,12 @@ import asyncio
 
 from dotenv import load_dotenv
 
+load_dotenv()
+
 from fireflyframework_agentic.agents import FireflyAgent
 from fireflyframework_agentic.memory import MemoryManager
 from fireflyframework_agentic.models import ModelOptions
 from fireflyframework_agentic.tools import firefly_tool
-
-load_dotenv()
 
 GLOSSARY = {
     "bounded retries": "Retry a failed operation up to a configured attempt limit.",
@@ -678,7 +687,9 @@ This makes real provider requests. `tools=[lookup]` attaches the tool to the age
 reusing `conversation_id` preserves the conversation. Changing the configured model
 or supported API does not require rewriting the tool or memory code.
 
-For models that support reasoning, add `reasoning="low"` to `ModelOptions`.
+For the configured GPT-6 Luna Responses model, add `reasoning="low"` to
+`ModelOptions` when reasoning is useful. Other models and APIs have their own
+reasoning/tool constraints; consult the model compatibility guide.
 Responses-specific storage is controlled with `store_responses=False`; these
 options are validated against the selected model and API. See the
 [Responses example](examples/openai_responses.py) for reasoning, structured output,
@@ -691,7 +702,7 @@ and streaming with those controls.
 | Plain Pydantic output schemas and streaming | [Model-agnostic agent](examples/model_agnostic_agent.py) |
 | Decorator-defined agents | [Agent decorators](docs/agents.md#using-the-decorator) |
 | Tool approval and deferred runs | [Human-in-the-loop tools](docs/tools.md#human-in-the-loop-tool-approval) |
-| Persistent conversation and working memory | [Memory](docs/memory.md) |
+| Persistent working memory and conversation export/import | [Memory](docs/memory.md) |
 | Reasoning patterns | [Reasoning](docs/reasoning.md) |
 | Output validation and review | [Validation](docs/validation.md) |
 | Multi-agent pipelines | [Pipeline](docs/pipeline.md) |

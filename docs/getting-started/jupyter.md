@@ -14,7 +14,7 @@ loop automatically.
 ```bash
 cd fireflyframework-agentic
 source .venv/bin/activate            # the venv created by the installer
-pip install ipykernel
+python -m pip install ipykernel jupyterlab
 python -m ipykernel install --user --name fireflyagentic --display-name "Firefly Agentic"
 jupyter lab                          # or: jupyter notebook
 ```

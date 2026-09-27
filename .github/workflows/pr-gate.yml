@@ -87,7 +87,12 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
+      - run: python assets/tools/build_brand_assets.py --check
       - run: uv tool run --with-requirements docs/requirements.txt mkdocs build --strict
+      - name: Check links and render Mermaid diagrams
+        run: |
+          uv run --no-project --with playwright==1.63.0 python -m playwright install --with-deps chromium
+          uv run --no-project --with playwright==1.63.0 python scripts/check_docs.py --browser
 
   build:
     name: Build Package

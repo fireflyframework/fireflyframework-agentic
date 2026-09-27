@@ -7,12 +7,17 @@ Unless an example explicitly compares models, it uses
 [model configuration guide](models.md) before running agent examples.
 
 The Security module provides prompt injection detection, input sanitisation,
-and output scanning to protect agents from adversarial user input **and**
-prevent sensitive data leakage in LLM responses.
+and output scanning to detect configured adversarial-input and sensitive-output
+patterns. Blocking or sanitization policy is selected by the application.
 
 ---
 
 ## Architecture
+
+This shows an explicitly configured input/output scanning path. Add
+`PromptGuardMiddleware` and `OutputGuardMiddleware` to an agent, or call the guards
+in host code; neither guard is installed by default. Scans detect configured
+patterns and cannot guarantee that all malicious or sensitive text is found.
 
 ```mermaid
 flowchart LR

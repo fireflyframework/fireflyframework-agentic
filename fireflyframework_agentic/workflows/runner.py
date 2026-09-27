@@ -264,14 +264,11 @@ class DefaultAgentRunner:
 class FireflyAgentRunner:
     """Runs each workflow call through a :class:`FireflyAgent`.
 
-    This is the runner that aligns Dynamic Workflows with the rest of the
-    framework, and is **the default**: every sub-agent inherits the full
-    :class:`FireflyAgent` stack — the middleware chain (logging, prompt/output
-    guards, cost guard, caching, observability, explainability, validation,
-    retry), the 429 rate-limit retry loop, the global usage tracker / budget
-    gate, and model fallback — instead of a bare ``pydantic_ai.Agent``. For the
-    lightweight, zero-coupling path, pass ``runner=DefaultAgentRunner()``
-    explicitly.
+    This default runner uses the configured :class:`FireflyAgent` lifecycle,
+    middleware, usage tracking, budget gate, and rate-limit retry behavior.
+    Guards, caching, explainability, validation, and fallback apply when configured
+    on that agent. Pass ``runner=DefaultAgentRunner()`` to use a bare
+    ``pydantic_ai.Agent`` instead.
 
     The ``agent`` source decides how the per-call agent is obtained:
 
@@ -289,9 +286,10 @@ class FireflyAgentRunner:
     per-task cost optimisation) — ``using`` overrides this runner's source for
     that call only.
 
-    Isolation & cost: ephemeral/factory agents are built with
-    ``auto_register=False`` and ``memory=None`` and never receive a
-    ``conversation_id``, so they share no history and never touch the registry.
+    Isolation & cost: ephemeral agents are built with ``auto_register=False``
+    and ``memory=None``. A factory controls its returned agent's registration,
+    memory, cache, and other shared state; it must ensure isolation if required.
+    The runner does not supply a ``conversation_id``.
     Cost/tokens are read from the call's own ``RunUsage`` (per-run
     :class:`WorkflowBudget` ledger); ``FireflyAgent`` records the same call once
     to the *global* usage tracker — two disjoint ledgers, each written once.
@@ -302,7 +300,8 @@ class FireflyAgentRunner:
        on the ephemeral (``None``) path. Configure tools on the agent or pass
        ``toolsets=`` instead. A reused agent that carries a stateful
        ``ResultCache`` / memory intentionally opts into shared state across
-       calls; use the ephemeral or factory form for strict per-call isolation.
+       calls; use the ephemeral form or a factory that returns an isolated agent
+       for strict per-call isolation.
     """
 
     def __init__(

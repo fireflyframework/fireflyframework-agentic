@@ -1,61 +1,43 @@
 ---
 title: Quick Start
-description: Configure a provider, define an agent, add memory, reason, validate and wire a pipeline — in five minutes.
+description: Run a complete Firefly agent with a tool, conversation memory and typed model options.
 ---
 
 # 5-Minute Quick Start
 
-These Python blocks build on the preceding blocks and use notebook-style `await`.
-In a script, place the calls in `async def main()` and finish with
-`asyncio.run(main())`. For a complete executable script, see the
-[model-agnostic example](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/examples/model_agnostic_agent.py).
+[Install Firefly](installation.md) in a Python 3.13+ environment first. This guide
+runs a complete application; the [visual guide](../diagrams.md) explains the path
+from your agent to the selected provider.
 
-This is the shape of the framework end to end. For the full, hands-on path, see
-**[The Complete Tutorial](../tutorial.md)**.
+## 1. Configure the Model
 
-## 1. Configure
+Create a `.env` file beside your script:
 
-Create a `.env` file (or set environment variables):
-
-```bash
-# Provider API key (read from the environment)
-OPENAI_API_KEY=sk-...
-# ANTHROPIC_API_KEY=sk-ant-...
-# GEMINI_API_KEY=...
-
-# Framework settings
+```dotenv
+OPENAI_API_KEY=your-api-key
 FIREFLY_AGENTIC_DEFAULT_MODEL=openai-responses:gpt-6-luna
 ```
 
-The model string selects the provider and API. Keep it in configuration; agent,
-tool, memory, and output-schema code can remain the same. Use `ModelOptions` for
-portable controls and [`ModelSpec` / `ModelFactory`](../models.md) for application-managed
-credentials, Azure deployments, and custom endpoints.
+Keep `.env` out of version control. To use another provider, change the model
+selector and supply that provider's credentials. Choose a model that supports tool
+calling. The script below loads `.env`; existing environment variables take
+precedence.
 
-Existing `openai:` / `azure:` prefixes retain Chat Completions. Select
-`openai-responses:` / `azure-responses:` explicitly for Responses. GPT-6 Astra
-requires Responses for tools; Sol and Luna require `reasoning="none"` for Chat
-tools. With Responses, reasoning and tools can be combined. Leave the global
-temperature unset for reasoning models; see [model compatibility](../models.md#openai-choose-the-api-explicitly).
+## 2. Run an Agent with a Tool and Memory
 
-## 2. Define an agent
+Save this complete script as `app.py`. It uses only Firefly's agent, tool, memory,
+and model-options APIs:
 
 ```python
-from fireflyframework_agentic.agents import firefly_agent
-from fireflyframework_agentic.models import ModelOptions
+import asyncio
 
-@firefly_agent(name="assistant", model_options=ModelOptions(max_tokens=4096))
-def assistant_instructions(ctx):
-    return "You are a helpful conversational assistant."
-```
+from dotenv import load_dotenv
 
-## 3. Attach a tool
+load_dotenv()
 
-Registering a tool makes it discoverable; passing it to `tools=` makes it callable
-by this agent. Firefly adapts decorated tools and `ToolKit` instances automatically.
-
-```python
 from fireflyframework_agentic.agents import FireflyAgent
+from fireflyframework_agentic.memory import MemoryManager
+from fireflyframework_agentic.models import ModelOptions
 from fireflyframework_agentic.tools import firefly_tool
 
 GLOSSARY = {
@@ -63,101 +45,75 @@ GLOSSARY = {
     "backoff": "Increase the delay between retry attempts to reduce load.",
 }
 
-@firefly_tool(name="lookup", description="Look up a term in the local engineering glossary")
-async def lookup(query: str) -> str:
-    return GLOSSARY.get(query.strip().lower(), "No glossary entry exists for that term.")
 
-agent = FireflyAgent(name="glossary", tools=[lookup])
-result = await agent.run("Use the glossary to explain bounded retries.")
-print(result.output)
+@firefly_tool("lookup", auto_register=False)
+async def lookup(term: str) -> str:
+    """Look up an engineering term in the local glossary."""
+    return GLOSSARY.get(term.strip().lower(), "No glossary entry exists for that term.")
+
+
+async def main() -> None:
+    memory = MemoryManager()
+    agent = FireflyAgent(
+        name="glossary",
+        instructions="Use the lookup tool for glossary definitions. Keep answers brief.",
+        tools=[lookup],
+        memory=memory,
+        model_options=ModelOptions(max_tokens=4096),
+        auto_register=False,
+    )
+    conversation_id = memory.new_conversation()
+
+    first = await agent.run(
+        "Use the glossary to explain bounded retries.",
+        conversation_id=conversation_id,
+    )
+    print(first.output)
+
+    follow_up = await agent.run(
+        "Which term did I ask you to explain?",
+        conversation_id=conversation_id,
+        model_options=ModelOptions(max_tokens=2048),
+    )
+    print(follow_up.output)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-!!! tip "Human-in-the-loop"
-    Mark a tool `@firefly_tool(name=..., requires_approval=True)` and the agent run
-    **pauses** before executing it — `run()` returns a `DeferredToolRequests`
-    (detect with `is_deferred(result)`). Resume with
-    `agent.run(message_history=paused.all_messages(), deferred_tool_results=...)`.
-    Full detail in [Tools → Human-in-the-loop](../tools.md#human-in-the-loop-tool-approval).
-
-## 4. Add memory for multi-turn conversations
-
-```python
-from fireflyframework_agentic.agents import FireflyAgent
-from fireflyframework_agentic.memory import MemoryManager
-
-memory = MemoryManager(max_conversation_tokens=32_000)
-agent = FireflyAgent(name="bot", tools=[lookup], memory=memory)
-
-cid = memory.new_conversation()
-result = await agent.run("Hello!", conversation_id=cid)
-result = await agent.run("What did I just say?", conversation_id=cid)
+```bash
+python app.py
 ```
 
-## 5. Apply a reasoning pattern
+This makes real provider requests. `tools=[lookup]` attaches the tool to the agent;
+reusing `conversation_id` preserves the conversation. Changing the configured model
+or supported API does not require rewriting the tool or memory code.
 
-```python
-from fireflyframework_agentic.reasoning import ReActPattern
+For the configured GPT-6 Luna Responses model, add `reasoning="low"` to
+`ModelOptions` when reasoning is useful. Other models and APIs have their own
+reasoning/tool constraints; consult the model compatibility guide.
+Responses-specific storage is controlled with `store_responses=False`; these
+options are validated against the selected model and API. See the
+[Responses example](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/examples/openai_responses.py) for reasoning, structured output,
+and streaming with those controls.
 
-react = ReActPattern(max_steps=5)
-result = await react.execute(agent, "Explain why bounded retries and backoff work together.")
-print(result.output)
-```
+## 3. Extend the Same Application
 
-## 6. Validate output
+| Add | Guide or runnable example |
+|---|---|
+| Plain Pydantic output schemas and streaming | [Model-agnostic agent](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/examples/model_agnostic_agent.py) |
+| Decorator-defined agents | [Agent decorators](../agents.md#using-the-decorator) |
+| Tool approval and deferred runs | [Human-in-the-loop tools](../tools.md#human-in-the-loop-tool-approval) |
+| Persistent working memory and conversation export/import | [Memory](../memory.md) |
+| Reasoning patterns | [Reasoning](../reasoning.md) |
+| Output validation and review | [Validation](../validation.md) |
+| Multi-agent pipelines | [Pipeline](../pipeline.md) |
+| Embeddings and retrieval | [Vector stores](../vectorstores.md) |
 
-```python
-from pydantic import BaseModel
-from fireflyframework_agentic.validation import OutputReviewer
+Browse the [example catalogue](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/examples/README.md) for setup requirements,
+credentials, and offline or live execution modes.
 
-class Answer(BaseModel):
-    answer: str
-    confidence: float
 
-answer_agent = FireflyAgent(name="answer", output_type=Answer)
-reviewer = OutputReviewer(output_type=Answer, max_retries=2)
-result = await reviewer.review(answer_agent, "What is 2+2?")
-print(result.output)  # Answer(answer="4", confidence=0.99)
-```
-
-## 7. Wire a pipeline
-
-```python
-from fireflyframework_agentic.agents import FireflyAgent
-from fireflyframework_agentic.pipeline.builder import PipelineBuilder
-from fireflyframework_agentic.pipeline.steps import AgentStep
-
-summarizer = FireflyAgent(name="summarizer", instructions="Summarize the supplied text in one sentence.")
-editor = FireflyAgent(name="editor", instructions="Rewrite the summary in clear, concise English.")
-pipeline = (
-    PipelineBuilder("summarize-and-edit")
-    .add_node("summarize", AgentStep(summarizer))
-    .add_node("edit", AgentStep(editor))
-    .chain("summarize", "edit")
-    .build()
-)
-result = await pipeline.run(inputs="Retries must stop after three attempts and wait longer between attempts.")
-print(result.outputs["edit"].output)
-```
-
-## 8. Embed and search (RAG)
-
-```python
-from fireflyframework_agentic.embeddings.providers import OpenAIEmbedder
-from fireflyframework_agentic.vectorstores import InMemoryVectorStore, VectorDocument
-
-embedder = OpenAIEmbedder(model="text-embedding-3-small")
-store = InMemoryVectorStore(embedder=embedder)
-
-await store.upsert([
-    VectorDocument(id="1", text="Python is great for AI"),
-    VectorDocument(id="2", text="Rust is fast and safe"),
-])
-
-results = await store.search_text("machine learning languages", top_k=1)
-print(results[0].document.text)  # Python is great for AI
-```
-
----
-
-Next: **[The Complete Tutorial](../tutorial.md)** builds a full IDP pipeline from
-scratch · or jump to the [Architecture](../architecture.md) overview.
+Next: follow the [complete tutorial](../tutorial.md), or compare
+[Chat Completions and Responses](../models.md#openai-choose-the-api-explicitly).
