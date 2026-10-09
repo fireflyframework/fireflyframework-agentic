@@ -1,7 +1,7 @@
 /*
  * Firefly constellation — the landing-page signature.
  * Amber fireflies drift through the dark; when they pass near one another a
- * faint violet edge is drawn between them. Read it two ways at once: fireflies
+ * faint stone edge is drawn between them. Read it two ways at once: fireflies
  * in the night, and a network of agents delegating. One ambient animation,
  * nothing else moves.
  *
@@ -57,7 +57,7 @@
           var dx = a.x - b.x, dy = a.y - b.y;
           var d = Math.sqrt(dx * dx + dy * dy);
           if (d < LINK) {
-            ctx.strokeStyle = "rgba(167,139,250," + (1 - d / LINK) * 0.22 + ")";
+            ctx.strokeStyle = "rgba(191,184,171," + (1 - d / LINK) * 0.22 + ")";
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(a.x, a.y);
@@ -77,14 +77,14 @@
         }
         var tw = reduce ? 0.85 : 0.55 + 0.45 * Math.sin(t * 0.001 + n.p);
         var halo = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r * 6);
-        halo.addColorStop(0, "rgba(255,249,193," + 0.9 * tw + ")");
-        halo.addColorStop(0.4, "rgba(246,168,33," + 0.5 * tw + ")");
-        halo.addColorStop(1, "rgba(246,128,0,0)");
+        halo.addColorStop(0, "rgba(255,206,130," + 0.9 * tw + ")");
+        halo.addColorStop(0.4, "rgba(255,179,74," + 0.5 * tw + ")");
+        halo.addColorStop(1, "rgba(255,179,74,0)");
         ctx.fillStyle = halo;
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r * 6, 0, 6.2832);
         ctx.fill();
-        ctx.fillStyle = "rgba(255,253,240," + 0.95 * tw + ")";
+        ctx.fillStyle = "rgba(243,241,235," + 0.95 * tw + ")";
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r * 0.9, 0, 6.2832);
         ctx.fill();

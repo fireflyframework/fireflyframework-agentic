@@ -5,7 +5,7 @@ Run with Python 3.13+: python assets/tools/build_brand_assets.py
 Verify committed outputs: python assets/tools/build_brand_assets.py --check
 
 No generation dependencies or installed fonts are required. Embedded font
-advances make layout deterministic across operating systems. The shared family
+advances make layout deterministic across operating systems. The canonical Agentic
 wordmark and vendored icons remain vector paths, with no external resources.
 All outputs are written to assets/ and mirrored byte-for-byte to docs/assets/.
 Render with CairoSVG separately for visual inspection after content changes.
@@ -13,7 +13,10 @@ Render with CairoSVG separately for visual inspection after content changes.
 
 from __future__ import annotations
 import argparse
+import hashlib
+import json
 import sys
+import xml.etree.ElementTree as ET
 from html import escape
 from pathlib import Path
 
@@ -21,25 +24,24 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 ASSETS = REPO / "assets"
 sys.path.insert(0, str(HERE))
-from wordmark import FIREFLY_PATH, DOT_CX, DOT_CY, DOT_R
 from icons import ICONS
 
 # --------------------------------------------------------------------------- palette
-WHITE = "#ffffff"
-VIOLET = "#8b5cf6"
-VIOLET2 = "#7c3aed"
-VIOLETD = "#6d28d9"
-MID = "#5b21b6"
-DARK = "#4c1d95"
-INK = "#1e1633"
-BODY = "#322b45"
-MUTED = "#756881"
-SUB = "#f5f2fe"
-STROKE = "#e4def5"
-INDIGO = "#6366f1"
-AMBER = "#c2722a"
-DOT_HOT = "#F68000"
-DOT_WARM = "#FFF9C1"
+WHITE = "#f3f1eb"
+ACCENT = "#ffb34a"
+EDGE = "#62645b"
+EDGE_DARK = "#474a42"
+MID = "#62645b"
+DARK = "#272820"
+INK = "#10110f"
+BODY = "#272820"
+MUTED = "#62645b"
+SUB = "#e9e7df"
+STROKE = "#d8d4ca"
+SECONDARY = "#62645b"
+AMBER = "#8a5719"
+DOT_HOT = "#ffb34a"
+DOT_WARM = "#ffce82"
 MONO = "ui-monospace,'SF Mono',Menlo,Consolas,monospace"
 SANS = "-apple-system,'Segoe UI',Helvetica,Arial,sans-serif"
 
@@ -271,24 +273,24 @@ OUTPUTS = {}
 
 
 def write_svg(name, svg):
-    OUTPUTS[name] = svg
+    OUTPUTS[name] = svg.rstrip("\n") + "\n"
 
 
 # --------------------------------------------------------------------------- kit
 def defs(cx, cy, r=520):
     return f'''<defs>
-    <linearGradient id="hdr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9269f1"/><stop offset="1" stop-color="{VIOLETD}"/></linearGradient>
-    <linearGradient id="door" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
-    <linearGradient id="bed" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#271c41"/><stop offset="1" stop-color="#140e25"/></linearGradient>
-    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#f4eeff"/></linearGradient>
-    <radialGradient id="amb" cx="{cx}" cy="{cy}" r="{r}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="{VIOLET}" stop-opacity="0.14"/><stop offset="0.6" stop-color="{INDIGO}" stop-opacity="0.05"/><stop offset="1" stop-color="{VIOLET}" stop-opacity="0"/></radialGradient>
-    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" fill="#8b5cf6" opacity="0.05"/></pattern>
-    <filter id="sh" x="-25%" y="-25%" width="150%" height="180%"><feDropShadow dx="0" dy="2.5" stdDeviation="4" flood-color="#3b1d6e" flood-opacity="0.14"/></filter>
-    <marker id="arr" markerWidth="9" markerHeight="9" refX="6.2" refY="3.2" orient="auto"><path d="M0 0L7 3.2L0 6.4Z" fill="{VIOLETD}"/></marker>
-    <marker id="arrb" markerWidth="9" markerHeight="9" refX="6.2" refY="3.2" orient="auto"><path d="M0 0L7 3.2L0 6.4Z" fill="{INDIGO}"/></marker>
+    <linearGradient id="hdr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#474a42"/><stop offset="1" stop-color="{EDGE_DARK}"/></linearGradient>
+    <linearGradient id="door" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffce82"/><stop offset="1" stop-color="#ffb34a"/></linearGradient>
+    <linearGradient id="bed" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#272820"/><stop offset="1" stop-color="#10110f"/></linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f9f8f4"/><stop offset="1" stop-color="#f3f1eb"/></linearGradient>
+    <radialGradient id="amb" cx="{cx}" cy="{cy}" r="{r}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="{ACCENT}" stop-opacity="0.14"/><stop offset="0.6" stop-color="{SECONDARY}" stop-opacity="0.05"/><stop offset="1" stop-color="{ACCENT}" stop-opacity="0"/></radialGradient>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" fill="#62645b" opacity="0.05"/></pattern>
+    <filter id="sh" x="-25%" y="-25%" width="150%" height="180%"><feDropShadow dx="0" dy="2.5" stdDeviation="4" flood-color="#10110f" flood-opacity="0.14"/></filter>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="6.2" refY="3.2" orient="auto"><path d="M0 0L7 3.2L0 6.4Z" fill="{EDGE_DARK}"/></marker>
+    <marker id="arrb" markerWidth="9" markerHeight="9" refX="6.2" refY="3.2" orient="auto"><path d="M0 0L7 3.2L0 6.4Z" fill="{SECONDARY}"/></marker>
     <marker id="arra" markerWidth="9" markerHeight="9" refX="6.2" refY="3.2" orient="auto"><path d="M0 0L7 3.2L0 6.4Z" fill="{AMBER}"/></marker>
-    <g id="fly"><circle r="8.5" fill="#a78bfa" opacity="0.10"/><circle r="4.6" fill="#c4b5fd" opacity="0.22"/><circle r="2.4" fill="#ddd6fe" opacity="0.75"/><circle r="1.2" fill="#f5f3ff"/></g>
-    <g id="ffly"><circle r="8.5" fill="#f6a821" opacity="0.10"/><circle r="4.6" fill="#ffc24a" opacity="0.22"/><circle r="2.4" fill="#ffd980" opacity="0.78"/><circle r="1.2" fill="#fff6e0"/></g>
+    <g id="fly"><circle r="8.5" fill="#ffce82" opacity="0.10"/><circle r="4.6" fill="#bfb8ab" opacity="0.22"/><circle r="2.4" fill="#f3f1eb" opacity="0.75"/><circle r="1.2" fill="#f3f1eb"/></g>
+    <g id="ffly"><circle r="8.5" fill="#ffb34a" opacity="0.10"/><circle r="4.6" fill="#ffb34a" opacity="0.22"/><circle r="2.4" fill="#ffce82" opacity="0.78"/><circle r="1.2" fill="#f3f1eb"/></g>
   </defs>'''
 
 
@@ -301,26 +303,46 @@ def frame(w, h):
     )
 
 
-def logo_w(h):
-    return 469.0 * h / 138.0
+MASTER_DIR = HERE / "brand-source"
+MASTER_ORIGIN = json.loads((MASTER_DIR / "ORIGIN.json").read_text())
+MASTER_HASHES = {item["path"]: item["sha256"] for item in MASTER_ORIGIN["masters"]}
+ET.register_namespace("", "http://www.w3.org/2000/svg")
 
 
-def firefly_logo(x, cy, h=24, fill=VIOLET2, anchor="left"):
-    """The real Firefly wordmark logo — the embedded 'firefly' word + the amber
-    glow-dot, recolored. Vertical centre at cy; x is the left edge (anchor='left')
-    or the horizontal centre (anchor='mid'). Used as the brand mark in diagrams."""
-    s = h / 138.0
-    w = 469.0 * s
-    left = x - w / 2 if anchor == "mid" else x
-    tx = left - 4.0 * s
-    ty = cy - 105.45 * s  # bbox y mid = (36.5+174.4)/2
-    dcx = tx + DOT_CX * s
-    dcy = ty + DOT_CY * s
-    return (
-        f'<circle cx="{dcx:.2f}" cy="{dcy:.2f}" r="{27 * s:.2f}" fill="#f6a821" opacity="0.18"/>'
-        f'<g transform="translate({tx:.2f},{ty:.2f}) scale({s:.4f})"><path d="{FIREFLY_PATH}" fill="{fill}"/></g>'
-        f'<circle cx="{dcx:.2f}" cy="{dcy:.2f}" r="{15 * s:.2f}" fill="url(#dot)"/>'
-    )
+def master(name):
+    data = (MASTER_DIR / name).read_bytes()
+    if hashlib.sha256(data).hexdigest() != MASTER_HASHES[name]:
+        raise ValueError(f"Brand master differs from its recorded origin: {name}")
+    return data.decode("utf-8")
+
+
+def placed_master(name, x, y, width):
+    root = ET.fromstring(master(name))
+    prefix = f"brand-{name.removesuffix('.svg')}-{x}-{y}".replace(".", "_")
+    ids = {node.attrib["id"]: f"{prefix}-{node.attrib['id']}" for node in root.iter() if "id" in node.attrib}
+    for node in root.iter():
+        for key, value in list(node.attrib.items()):
+            if key == "id":
+                node.set(key, ids[value])
+            else:
+                for previous, replacement in ids.items():
+                    value = value.replace(f"url(#{previous})", f"url(#{replacement})")
+                    if value == f"#{previous}":
+                        value = f"#{replacement}"
+                node.set(key, value)
+    _, _, w, h = map(float, root.attrib["viewBox"].split())
+    root.set("x", str(x))
+    root.set("y", str(y))
+    root.set("width", str(width))
+    root.set("height", str(width * h / w))
+    return ET.tostring(root, encoding="unicode")
+
+
+def firefly_logo(x, cy, h=24, anchor="left"):
+    root = ET.fromstring(master("firefly-light.svg"))
+    _, _, w, height = map(float, root.attrib["viewBox"].split())
+    width = w * h / height
+    return placed_master("firefly-light.svg", x - width / 2 if anchor == "mid" else x, cy - h / 2, width)
 
 
 def icon(name, cx, cy, size, color=None):
@@ -338,10 +360,10 @@ def icon(name, cx, cy, size, color=None):
 
 def title(w, t, sub=None, repo="fireflyframework-agentic"):
     s = [
-        firefly_logo(26, 31, 25),
-        f'<text x="{26 + logo_w(25) + 13:.0f}" y="44" font-size="20" font-weight="800" fill="{INK}" font-family="{SANS}" letter-spacing="0.2">{esc(t)}</text>',
-        f'<text x="{w - 26}" y="22" text-anchor="end" font-size="10" font-weight="600" fill="#b29ddb" font-family="{MONO}">{repo}</text>',
-        f'<line x1="26" y1="62" x2="{w - 26}" y2="62" stroke="{VIOLET2}" stroke-width="1.4" opacity="0.42"/>',
+        placed_master("logo-light.svg", 26, 4, 98),
+        f'<text x="{140}" y="44" font-size="20" font-weight="800" fill="{INK}" font-family="{SANS}" letter-spacing="0.2">{esc(t)}</text>',
+        f'<text x="{w - 26}" y="22" text-anchor="end" font-size="10" font-weight="600" fill="#62645b" font-family="{MONO}">{repo}</text>',
+        f'<line x1="26" y1="62" x2="{w - 26}" y2="62" stroke="{EDGE}" stroke-width="1.4" opacity="0.42"/>',
     ]
     if sub:
         s.append(f'<text x="26" y="84" font-size="14" fill="{MUTED}" font-family="{SANS}">{esc(sub)}</text>')
@@ -370,7 +392,7 @@ def svgdoc(w, h, label, body, amb=None):
 WARN = []
 
 
-def arrow(x1, y1, x2, y2, color=VIOLETD, dash=None, mk="arr", sw=1.8):
+def arrow(x1, y1, x2, y2, color=EDGE_DARK, dash=None, mk="arr", sw=1.8):
     d = f' stroke-dasharray="{dash}"' if dash else ""
     return f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{color}" stroke-width="{sw}"{d} marker-end="url(#{mk})"/>'
 
@@ -392,81 +414,8 @@ def check(name, rects, pad=2):
 
 # --------------------------------------------------------------------------- banner
 def build_banner():
-    W, H = 1280, 320
-    wx, wy, ws = 80, 116, 0.74
-    dot_x, dot_y = wx + ws * DOT_CX, wy + ws * DOT_CY
-    wm_right = wx + ws * 469
-    # a deliberate agent graph: input -> three agents -> two merge hubs -> output (+ 2 satellites)
-    GN = [
-        (726, 162, 2.0, "a"),
-        (892, 98, 1.5, "v"),
-        (892, 162, 1.7, "v"),
-        (892, 226, 1.5, "v"),
-        (1052, 126, 1.5, "a"),
-        (1052, 200, 1.5, "a"),
-        (1212, 162, 1.95, "v"),
-        (986, 62, 0.85, "a"),
-        (1150, 258, 0.85, "v"),
-    ]
-    GE = [(0, 1), (0, 2), (0, 3), (1, 4), (2, 4), (2, 5), (3, 5), (4, 6), (5, 6), (7, 1), (8, 5)]
-    gx = lambda i: GN[i][0]
-    gy = lambda i: GN[i][1]
-    hero = lambda a, b: a in (0, 6) or b in (0, 6)
-    node = "".join(f'<use href="#fb{k}" transform="translate({x},{y}) scale({s})"/>' for x, y, s, k in GN)
-    edges = "".join(
-        f'<line x1="{gx(a)}" y1="{gy(a)}" x2="{gx(b)}" y2="{gy(b)}" stroke="url(#edge)" stroke-width="{1.4 if hero(a, b) else 1.0}" opacity="{0.55 if hero(a, b) else 0.34}"/>'
-        for a, b in GE
-    )
-    bg = [
-        (700, 56, 1.1, 0.4),
-        (840, 298, 0.9, 0.3),
-        (1244, 84, 1.0, 0.32),
-        (1176, 300, 0.9, 0.3),
-        (958, 300, 0.8, 0.26),
-        (1108, 40, 1.0, 0.3),
-        (660, 150, 0.8, 0.3),
-    ]
-    motes = "".join(f'<circle cx="{x}" cy="{y}" r="{r}" opacity="{o}"/>' for x, y, r, o in bg)
-    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" aria-labelledby="banner-title banner-description">
-  <title id="banner-title">Firefly Agentic</title>
-  <desc id="banner-description">Production-grade agents, reasoning and pipelines built on Pydantic AI. The violet Firefly wordmark and amber glow-dot sit beside a constellation of connected agent nodes.</desc>
-  <defs>
-    <linearGradient id="sky" x1="0" y1="0" x2="{W}" y2="{H}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0a0912"/><stop offset="0.5" stop-color="#130d1f"/><stop offset="1" stop-color="#0d0a18"/></linearGradient>
-    <radialGradient id="amb1" cx="320" cy="150" r="520" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7c3aed" stop-opacity="0.30"/><stop offset="0.55" stop-color="#7c3aed" stop-opacity="0.06"/><stop offset="1" stop-color="#7c3aed" stop-opacity="0"/></radialGradient>
-    <radialGradient id="amb2" cx="1040" cy="120" r="560" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#6366f1" stop-opacity="0.24"/><stop offset="0.55" stop-color="#8b5cf6" stop-opacity="0.06"/><stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/></radialGradient>
-    <pattern id="bgrid" width="27" height="27" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1" fill="#9d8bff" opacity="0.05"/></pattern>
-    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#a78bfa" stop-opacity="0.15"/><stop offset="0.5" stop-color="#c4b5fd" stop-opacity="0.8"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0.15"/></linearGradient>
-    <linearGradient id="wm" x1="0" y1="{wy + ws * 36}" x2="0" y2="{wy + ws * 174}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#e3d8ff"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
-    <radialGradient id="dotg" cx="42%" cy="34%" r="72%"><stop offset="0" stop-color="{DOT_WARM}"/><stop offset="1" stop-color="{DOT_HOT}"/></radialGradient>
-    <linearGradient id="agw" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#cbbcff"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient>
-    <g id="fbv"><circle r="14" fill="#7c5cff" opacity="0.10"/><circle r="8" fill="#a78bfa" opacity="0.20"/><circle r="3.8" fill="#cbb8ff" opacity="0.65"/><circle r="1.9" fill="#f3efff"/></g>
-    <g id="fba"><circle r="14" fill="#f6a821" opacity="0.10"/><circle r="8" fill="#ffc24a" opacity="0.18"/><circle r="3.8" fill="#ffd980" opacity="0.66"/><circle r="1.9" fill="#fff6e0"/></g>
-  </defs>
-  <rect width="{W}" height="{H}" fill="url(#sky)"/>
-  <rect width="{W}" height="{H}" fill="url(#bgrid)"/>
-  <rect width="{W}" height="{H}" fill="url(#amb1)"/>
-  <rect width="{W}" height="{H}" fill="url(#amb2)"/>
-  <g fill="#b9a6f0">{motes}</g>
-  <g>{edges}</g>
-  <g fill="none" stroke-linecap="round">
-    <path d="M726,162 C800,150 852,120 892,98" stroke="#b9a6ff" stroke-width="1.6" opacity="0.16"/>
-    <path d="M1052,200 C1120,186 1172,172 1212,162" stroke="#ffd07a" stroke-width="1.5" opacity="0.15"/>
-  </g>
-  {node}
-  <g transform="translate({wx},{wy}) scale({ws})" fill="url(#wm)" stroke="#2a0f57" stroke-width="5" stroke-linejoin="round" paint-order="stroke"><path d="{FIREFLY_PATH}"/></g>
-  <circle cx="{dot_x:.1f}" cy="{dot_y:.1f}" r="{ws * 30:.1f}" fill="#f6a821" opacity="0.20"/>
-  <circle cx="{dot_x:.1f}" cy="{dot_y:.1f}" r="{ws * DOT_R:.1f}" fill="url(#dotg)"/>
-  <g transform="translate({wm_right + 30:.0f},0)">
-    <line x1="0" y1="146" x2="0" y2="236" stroke="url(#agw)" stroke-width="2.4" opacity="0.7"/>
-    <text x="28" y="206" font-size="56" font-weight="800" fill="url(#agw)" font-family="{SANS}" letter-spacing="-1.8">agentic</text>
-  </g>
-  <rect x="84" y="250" width="336" height="2.6" rx="1.3" fill="url(#agw)" opacity="0.8"/>
-  <text x="84" y="281" fill="#efe6ff" font-size="22.5" font-weight="600" font-family="{SANS}">Production-grade agents, reasoning &amp; pipelines</text>
-  <text x="84" y="306" fill="#a193cc" font-size="16" font-weight="500" font-family="{SANS}" letter-spacing="0.3">type-safe · model-agnostic · built on Pydantic AI · async-native</text>
-  <text x="{W - 26}" y="34" text-anchor="end" font-family="{MONO}" font-size="12" fill="#8574b0" opacity="0.9" letter-spacing="0.4">fireflyframework-agentic</text>
-</svg>
-'''
-    write_svg("banner.svg", svg)
+    write_svg("banner.svg", master("banner-dark.svg"))
+    write_svg("banner-light.svg", master("banner-light.svg"))
 
 
 # --------------------------------------------------------------------------- diagram kit
@@ -489,15 +438,15 @@ def panel(x, y, w, h, header, lines=(), *, rects, dark=False, accent=False, size
     fill = "url(#bed)" if dark else "url(#card)"
     band = "url(#door)" if accent else "url(#hdr)"
     out = [
-        f'<g filter="url(#sh)"><rect x="{x}" y="{y}" width="{w}" height="{h}" rx="12" fill="{fill}" stroke="{VIOLET2}" stroke-width="1.5"/></g>'
+        f'<g filter="url(#sh)"><rect x="{x}" y="{y}" width="{w}" height="{h}" rx="12" fill="{fill}" stroke="{EDGE}" stroke-width="1.5"/></g>'
     ]
     if not dark:
         out.append(f'<path d="M{x} {y + 12}a12 12 0 0 1 12 -12h{w - 24}a12 12 0 0 1 12 12v23H{x}Z" fill="{band}"/>')
-    out.append(text_line(x + 18, y + 24, header, 16, bold=True, color="#fff"))
+    out.append(text_line(x + 18, y + 24, header, 16, bold=True, color=INK if accent and not dark else WHITE))
     for i, line in enumerate(lines):
         if tw(line, size) > w - 36:
             WARN.append(f"text does not fit panel {header}: {line}")
-        out.append(text_line(x + 18, y + 57 + i * 23, line, size, color="#e1d8f3" if dark else BODY))
+        out.append(text_line(x + 18, y + 57 + i * 23, line, size, color="#f3f1eb" if dark else BODY))
     return "\n".join(out)
 
 
@@ -708,7 +657,7 @@ def model_routing():
         )
     )
     b.append(arrow(550, 328, 550, 353))
-    b.append(f'<path d="M206 378V354H894V378 M550 354V378" fill="none" stroke="{VIOLETD}" stroke-width="1.8"/>')
+    b.append(f'<path d="M206 378V354H894V378 M550 354V378" fill="none" stroke="{EDGE_DARK}" stroke-width="1.8"/>')
     for x in (206, 550, 894):
         b.append(arrow(x, 373, x, 385))
     routes = [
@@ -1201,7 +1150,7 @@ def rag():
     b.append(arrow(550, 317, 550, 344))
     b.append(panel(402, 346, 296, 88, "Use retrieved context", ["SearchResult -> FireflyAgent"], rects=r))
     b.append(arrow(371, 164, 400, 164, dash="4 3"))
-    b.append(arrow(729, 272, 700, 272, INDIGO, dash="4 3", mk="arrb"))
+    b.append(arrow(729, 272, 700, 272, SECONDARY, dash="4 3", mk="arrb"))
     b.append(
         panel(
             42,
@@ -1256,10 +1205,10 @@ def ecosystem():
     ]
     for name, meta, ic, x, y in members:
         b.append(
-            f'<path d="M{cx} {cy}L{x} {y}" fill="none" stroke="{VIOLET2}" stroke-width="1.5" stroke-dasharray="4 5" opacity="0.45"/>'
+            f'<path d="M{cx} {cy}L{x} {y}" fill="none" stroke="{EDGE}" stroke-width="1.5" stroke-dasharray="4 5" opacity="0.45"/>'
         )
-    b.append(f'<circle cx="{cx}" cy="{cy}" r="86" fill="{SUB}" stroke="{VIOLET2}" stroke-width="2"/>')
-    b.append(firefly_logo(cx, cy - 17, 32, fill=MID, anchor="mid"))
+    b.append(f'<circle cx="{cx}" cy="{cy}" r="86" fill="{SUB}" stroke="{EDGE}" stroke-width="2"/>')
+    b.append(firefly_logo(cx, cy - 17, 32, anchor="mid"))
     b.append(text_line(cx, cy + 27, "FRAMEWORK", 15, bold=True, anchor="middle", color=MID))
     for name, meta, ic, x, y in members:
         width, height = 288, 85
@@ -1267,14 +1216,14 @@ def ecosystem():
         r.append((left, top, left + width, top + height))
         selected = name == "Agentic"
         b.append(
-            f'<g filter="url(#sh)"><rect x="{left}" y="{top}" width="{width}" height="{height}" rx="13" fill="{"url(#hdr)" if selected else WHITE}" stroke="{VIOLET2}" stroke-width="{2.5 if selected else 1.5}"/></g>'
+            f'<g filter="url(#sh)"><rect x="{left}" y="{top}" width="{width}" height="{height}" rx="13" fill="{"url(#hdr)" if selected else WHITE}" stroke="{EDGE}" stroke-width="{2.5 if selected else 1.5}"/></g>'
         )
         if selected:
-            b.append(spark(left + 29, y - 9, 11, "#ffd07a"))
+            b.append(spark(left + 29, y - 9, 11, "#ffb34a"))
         else:
             b.append(icon(ic, left + 29, y - 9, 24))
         b.append(text_line(left + 52, y - 3, name, 17, bold=True, color="#fff" if selected else INK))
-        b.append(text_line(left + 18, y + 24, meta, 14, color="#eee7ff" if selected else BODY))
+        b.append(text_line(left + 18, y + 24, meta, 14, color="#f3f1eb" if selected else BODY))
     b.append(
         text_line(
             550,
@@ -1296,17 +1245,46 @@ def ecosystem():
 
 
 def brand_logo():
-    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 64" role="img" aria-labelledby="brand-title brand-desc">
-  <title id="brand-title">Firefly Agentic</title>
-  <desc id="brand-desc">Firefly wordmark with the amber glow and Agentic name on a dark violet background.</desc>
-  <defs><radialGradient id="dot"><stop stop-color="#FFF9C1"/><stop offset="1" stop-color="#F68000"/></radialGradient></defs>
-  <rect width="300" height="64" rx="10" fill="#140f1e"/>
-  {firefly_logo(14, 32, 36, fill="#eee7ff")}
-  <path d="M153 16V48" stroke="#a78bfa" stroke-opacity="0.65"/>
-  <text x="169" y="43" font-family="{SANS}" font-size="32" font-weight="700" fill="#d6c6ff" letter-spacing="-0.8">agentic</text>
-</svg>
-'''
-    write_svg("brand-logo.svg", svg)
+    write_svg("brand-logo.svg", master("logo-dark.svg"))
+    write_svg("brand-logo-light.svg", master("logo-light.svg"))
+    write_svg("logo.svg", master("logo-dark.svg"))
+    source = ET.fromstring(master("logo-dark.svg"))
+    ns = {"s": "http://www.w3.org/2000/svg"}
+    gradient = source.find("s:defs", ns)
+    terminal = source.find('.//*[@data-agentic-terminal="trail-c"]')
+    write_svg("favicon.svg", '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><title>agentic</title>'
+              + ET.tostring(gradient, encoding="unicode")
+              + '<rect width="128" height="128" rx="27" fill="#10110f"/>'
+              + '<g transform="translate(11 115) scale(.09 -.09)">'
+              + ET.tostring(terminal, encoding="unicode") + '</g></svg>\n')
+
+
+def contrast(foreground, background):
+    def luminance(color):
+        values = [int(color[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+        linear = [value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4 for value in values]
+        return sum(value * weight for value, weight in zip(linear, (0.2126, 0.7152, 0.0722)))
+    light, dark = sorted((luminance(foreground), luminance(background)), reverse=True)
+    return (light + 0.05) / (dark + 0.05)
+
+
+def check_palette():
+    pairs = [(BODY, WHITE), (MUTED, WHITE), (WHITE, "#474a42"), (INK, ACCENT), (WHITE, DARK)]
+    ratios = [contrast(foreground, background) for foreground, background in pairs]
+    if min(ratios) < 4.5:
+        raise ValueError(f"Diagram text contrast falls below 4.5:1: {ratios}")
+    print(f"Text contrast: {min(ratios):.2f}:1 minimum across the diagram palette.")
+
+
+def check_svg(name, drawing):
+    root = ET.fromstring(drawing)
+    ids = [node.attrib["id"] for node in root.iter() if "id" in node.attrib]
+    if len(ids) != len(set(ids)):
+        raise ValueError(f"Duplicate SVG IDs in {name}")
+    for node in root.iter():
+        for key, value in node.attrib.items():
+            if key.endswith("href") and value.startswith(("http:", "https:")):
+                raise ValueError(f"External resource in {name}: {value}")
 
 
 def main():
@@ -1315,6 +1293,7 @@ def main():
         "--check", action="store_true", help="Verify generated SVGs and their docs mirrors without writing files."
     )
     args = parser.parse_args()
+    check_palette()
     build_banner()
     brand_logo()
     for fn in (architecture, protocols, model_routing, reasoning, pipeline, workflows, rag, agent_anatomy, ecosystem):
@@ -1323,6 +1302,7 @@ def main():
         raise SystemExit("Diagram validation failed:\n" + "\n".join(WARN))
     drift = []
     for name, svg in OUTPUTS.items():
+        check_svg(name, svg)
         for directory in (ASSETS, REPO / "docs" / "assets"):
             path = directory / name
             if args.check:

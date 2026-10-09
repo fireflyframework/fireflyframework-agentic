@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "canonicalRepository": "https://github.com/fireflyframework/fireflyframework.org",
+  "canonicalSource": "scripts/brand/agentic-identity.mjs",
+  "canonicalSourceSha256": "1f822f78516e8e56ec9ea6b97f87ef1d825575a4c72a7df07775cf4b36bd5118",
+  "brandKit": "https://github.com/fireflyframework/brand-kit",
+  "masters": [
+    {
+      "path": "logo-dark.svg",
+      "sha256": "2365a52533de0ce733baf634b235dd45e8e51306c09e442a6fb7025e438ca44e",
+      "sourceSha256": "203a6c124abb229cc1609ba4423dc5560f7e02c54c1941133464fcf2053e8b3d"
+    },
+    {
+      "path": "logo-light.svg",
+      "sha256": "b1b19a58589d032c250502c0cce02960eb0226baea3a4c0709ed75b2ffd06ee4",
+      "sourceSha256": "8805cc50196df356692cb974120e74a9cd1f96e69f73053cf457881401c8e597"
+    },
+    {
+      "path": "logo-dark-mono.svg",
+      "sha256": "2f67943df5de3ee61b98691f27945cc40c80c56a1d254c2304785e3d05d190f7",
+      "sourceSha256": "94cd3e13ad0043eef734c459464942181219a7bd3ba9618f2bb953a90fd84708"
+    },
+    {
+      "path": "logo-light-mono.svg",
+      "sha256": "82063a5dad97333cb2f474be8d49f2f495bbce64b96f54046040ee51bf7dda9b",
+      "sourceSha256": "d678859b104adfaada14d9b648037a866ca937ec1b7bf0c029f4b68ee097a945"
+    },
+    {
+      "path": "banner-dark.svg",
+      "sha256": "b7e8184d9857cf7c36033de718d47907cf103dcdfbadd5794ec3fe324ccf9f95",
+      "sourceSha256": "d7938754500f58f12e7f3f81dc4cafaa2ee85423730638c315916f15f1ade6ae"
+    },
+    {
+      "path": "banner-light.svg",
+      "sha256": "7ed5f58369ff2f4d870045caeec9cf4dcb398956af324bf86c5925ce578bba16",
+      "sourceSha256": "c9b7e970f00e84a0a488201d5ffee4678f36046eff500b11a5b25a2a4ec6589f"
+    },
+    {
+      "path": "firefly-light.svg",
+      "sha256": "2789f482d8a456f744e3dd0034ed9613b3606fe4badabcd09e70d7e916b6844e",
+      "sourceSha256": "e365eff656bca5807f5bf722db0f3c7de5b72120ac158d043013df7f0c96fca2"
+    }
+  ],
+  "transportNormalization": "Replace trailing LF bytes with exactly one LF; preserve all other bytes."
+}

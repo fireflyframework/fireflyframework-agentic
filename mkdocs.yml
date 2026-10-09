@@ -23,22 +23,22 @@ theme:
   icon:
     repo: fontawesome/brands/github
   font:
-    text: Inter
+    text: Manrope
     code: JetBrains Mono
   palette:
     # Light scheme
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: deep purple
-      accent: deep purple
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     # Dark scheme — the firefly-in-the-dark default
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: deep purple
-      accent: deep purple
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
