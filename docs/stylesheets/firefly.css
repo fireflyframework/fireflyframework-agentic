@@ -1,44 +1,44 @@
 /* =============================================================================
    Firefly Agentic — brand stylesheet
    Loaded site-wide. Two responsibilities, kept separate:
-     1. Docs theme: recolor Material to the exact violet brand (both schemes).
+     1. Docs theme: recolor Material to the Framework palette (both schemes).
      2. Landing page: the immersive "firefly-in-the-dark" home, scoped under
         .ff-home so nothing leaks into the docs.
    Brand tokens are lifted verbatim from assets/README.md.
    ========================================================================== */
 
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+@font-face { font-family: "Manrope"; font-style: normal; font-weight: 200 800; font-display: swap; src: url("../assets/fonts/Manrope-variable.woff2") format("woff2"); }
 
 :root {
-  /* Night sky */
-  --ff-sky-0: #0b0a14;
-  --ff-sky-1: #120d1c;
-  --ff-sky-2: #140f1e;
-  --ff-ink:   #1e1633;
-  /* Violet system */
-  --ff-violet:        #8b5cf6;
-  --ff-violet-bright: #a78bfa;
-  --ff-violet-2:      #7c3aed;
-  --ff-violet-deep:   #4c1d95;
-  --ff-violet-pale:   #d6c6ff;
-  /* The one warm spark — the shared firefly */
-  --ff-amber:      #f6a821;
-  --ff-amber-hot:  #f68000;
-  --ff-amber-pale: #fff9c1;
+  /* Framework charcoal */
+  --ff-sky-0: #10110f;
+  --ff-sky-1: #191b16;
+  --ff-sky-2: #20221c;
+  --ff-ink:   #10110f;
+  /* Amber and graphite */
+  --ff-accent:        #ffb34a;
+  --ff-accent-bright: #ffce82;
+  --ff-accent-2:      #ffb34a;
+  --ff-accent-deep:   #272820;
+  --ff-accent-pale:   #f3f1eb;
+  /* Original Firefly amber */
+  --ff-amber:      #ffb34a;
+  --ff-amber-hot:  #ffb34a;
+  --ff-amber-pale: #ffce82;
   /* Text on dark */
-  --ff-fg:    #ece8f5;
-  --ff-muted: #b3a9cd;
-  --ff-faint: #8b82a3;
+  --ff-fg:    #f3f1eb;
+  --ff-muted: #bfb8ab;
+  --ff-faint: #a5a697;
   /* Surfaces */
-  --ff-card:    rgba(139, 92, 246, 0.05);
-  --ff-card-2:  rgba(167, 139, 250, 0.08);
-  --ff-card-bd: rgba(167, 139, 250, 0.16);
-  --ff-card-bd-hot: rgba(167, 139, 250, 0.42);
+  --ff-card:    rgba(191, 184, 171, 0.05);
+  --ff-card-2:  rgba(191, 184, 171, 0.08);
+  --ff-card-bd: rgba(191, 184, 171, 0.16);
+  --ff-card-bd-hot: rgba(191, 184, 171, 0.42);
   /* Gradients */
-  --ff-wm:  linear-gradient(92deg, #d6c6ff 0%, #a78bfa 48%, #7c3aed 100%);
-  --ff-amber-grad: radial-gradient(circle at 50% 42%, #fffdf0, #fff6b0 45%, #f68000 100%);
+  --ff-wm:  linear-gradient(92deg, #f3f1eb 0%, #ffce82 48%, #ffb34a 100%);
+  --ff-amber-grad: radial-gradient(circle at 50% 42%, #f3f1eb, #ffce82 45%, #ffb34a 100%);
   --ff-header-h: 2.9rem;
-  --ff-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --ff-display: "Manrope", system-ui, sans-serif;
 }
 
 /* =============================================================================
@@ -46,22 +46,23 @@
    ========================================================================== */
 
 [data-md-color-scheme="default"] {
-  --md-primary-fg-color:        #6d28d9;
-  --md-primary-fg-color--light: #8b5cf6;
-  --md-primary-fg-color--dark:  #5b21b6;
-  --md-accent-fg-color:         #7c3aed;
-  --md-typeset-a-color:         #7c3aed;
+  --md-primary-fg-color: #10110f;
+  --md-primary-fg-color--light: #272820;
+  --md-primary-fg-color--dark: #10110f;
+  --md-accent-fg-color: #855414;
+  --md-typeset-a-color: #855414;
+  --md-default-bg-color: #f3f1eb;
 }
 
-/* Slate, tinted toward violet so the dark docs feel like the same night sky. */
+/* Slate, tinted toward neutral so the dark docs feel like the same night sky. */
 [data-md-color-scheme="slate"] {
-  --md-hue: 264;
-  --md-primary-fg-color:        #1c142e;
-  --md-primary-fg-color--light: #2a1f45;
-  --md-primary-fg-color--dark:  #140e22;
-  --md-accent-fg-color:         #a78bfa;
-  --md-typeset-a-color:         #b89cff;
-  --md-default-bg-color:        hsla(264, 24%, 9%, 1);
+  --md-hue: 80;
+  --md-primary-fg-color:        #10110f;
+  --md-primary-fg-color--light: #272820;
+  --md-primary-fg-color--dark:  #10110f;
+  --md-accent-fg-color:         #ffce82;
+  --md-typeset-a-color:         #ffb34a;
+  --md-default-bg-color:        #10110f;
 }
 
 /* Display face for all headings, in docs and on the landing. */
@@ -99,14 +100,14 @@ body:has(.ff-home) .md-header {
   transition: background-color 0.3s ease, box-shadow 0.3s ease;
 }
 body:has(.ff-home) .md-header--shadow {
-  background-color: rgba(11, 10, 20, 0.82);
+  background-color: rgba(16, 17, 15, 0.82);
   backdrop-filter: blur(10px);
-  box-shadow: 0 1px 0 rgba(167, 139, 250, 0.14);
+  box-shadow: 0 1px 0 rgba(191, 184, 171, 0.14);
 }
 
 .ff-home {
   color: var(--ff-fg);
-  font-family: "Inter", system-ui, sans-serif;
+  font-family: "Manrope", system-ui, sans-serif;
   font-size: 16px;
   line-height: 1.6;
   overflow: hidden; /* contain the hero glows */
@@ -129,7 +130,7 @@ body:has(.ff-home) .md-header--shadow {
   font-weight: 600;
   letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: var(--ff-violet-bright);
+  color: var(--ff-accent-bright);
   margin: 0 0 1.1rem;
 }
 
@@ -156,15 +157,15 @@ body:has(.ff-home) .md-header--shadow {
   z-index: -2;
   display: block;
 }
-.ff-hero::before { /* layered violet ambient, echoing the banner */
+.ff-hero::before { /* layered neutral ambient, echoing the banner */
   content: "";
   position: absolute;
   inset: -20% -10% 0;
   z-index: -1;
   background:
-    radial-gradient(60% 55% at 22% 18%, rgba(124, 58, 237, 0.28), transparent 60%),
-    radial-gradient(60% 55% at 82% 10%, rgba(99, 102, 241, 0.22), transparent 60%),
-    radial-gradient(45% 40% at 50% 90%, rgba(76, 29, 149, 0.30), transparent 70%);
+    radial-gradient(60% 55% at 22% 18%, rgba(255, 179, 74, 0.28), transparent 60%),
+    radial-gradient(60% 55% at 82% 10%, rgba(191, 184, 171, 0.22), transparent 60%),
+    radial-gradient(45% 40% at 50% 90%, rgba(98, 100, 91, 0.30), transparent 70%);
   pointer-events: none;
 }
 
@@ -186,8 +187,8 @@ body:has(.ff-home) .md-header--shadow {
 .ff-hero__lead code {
   font-family: "JetBrains Mono", monospace;
   font-size: 0.92em;
-  color: var(--ff-violet-pale);
-  background: rgba(167, 139, 250, 0.12);
+  color: var(--ff-accent-pale);
+  background: rgba(191, 184, 171, 0.12);
   padding: 0.08em 0.4em;
   border-radius: 0.3rem;
 }
@@ -201,7 +202,7 @@ body:has(.ff-home) .md-header--shadow {
   font-family: "JetBrains Mono", monospace;
   font-size: 0.84rem;
   color: var(--ff-fg);
-  background: rgba(20, 15, 30, 0.72);
+  background: rgba(32, 34, 28, 0.72);
   border: 1px solid var(--ff-card-bd);
   border-radius: 0.6rem;
   padding: 0.65rem 0.65rem 0.65rem 1rem;
@@ -225,12 +226,12 @@ body:has(.ff-home) .md-header--shadow {
   width: 2rem; height: 2rem;
   border: 0;
   border-radius: 0.4rem;
-  background: rgba(167, 139, 250, 0.14);
-  color: var(--ff-violet-bright);
+  background: rgba(191, 184, 171, 0.14);
+  color: var(--ff-accent-bright);
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
 }
-.ff-install__copy:hover { background: rgba(167, 139, 250, 0.28); color: #fff; }
+.ff-install__copy:hover { background: rgba(191, 184, 171, 0.28); color: #fff; }
 .ff-install__copy svg { width: 1rem; height: 1rem; }
 .ff-install__copy.is-copied { background: rgba(111, 207, 114, 0.22); color: #6fcf72; }
 .ff-install__copy.is-copied svg { display: none; }
@@ -257,17 +258,17 @@ body:has(.ff-home) .md-header--shadow {
 }
 .ff-btn svg { width: 1.05rem; height: 1.05rem; }
 .ff-btn--primary {
-  color: #fff;
-  background: linear-gradient(180deg, #8b5cf6, #7c3aed);
-  box-shadow: 0 10px 28px rgba(124, 58, 237, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  color: #10110f;
+  background: #ffb34a;
+  box-shadow: 0 10px 28px rgba(255, 179, 74, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
-.ff-btn--primary:hover { transform: translateY(-2px); box-shadow: 0 16px 40px rgba(124, 58, 237, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.25); }
+.ff-btn--primary:hover { transform: translateY(-2px); box-shadow: 0 16px 40px rgba(255, 179, 74, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.25); }
 .ff-btn--ghost {
   color: var(--ff-fg);
-  background: rgba(167, 139, 250, 0.06);
+  background: rgba(191, 184, 171, 0.06);
   border-color: var(--ff-card-bd);
 }
-.ff-btn--ghost:hover { background: rgba(167, 139, 250, 0.16); border-color: var(--ff-card-bd-hot); transform: translateY(-2px); }
+.ff-btn--ghost:hover { background: rgba(191, 184, 171, 0.16); border-color: var(--ff-card-bd-hot); transform: translateY(-2px); }
 
 /* ---- Trust bar --------------------------------------------------------- */
 .ff-trust {
@@ -287,14 +288,14 @@ body:has(.ff-home) .md-header--shadow {
   border-radius: 999px;
   padding: 0.38rem 0.9rem;
 }
-.ff-chip b { color: var(--ff-violet-bright); font-weight: 700; }
-.ff-chip--amber { color: #ffce7a; }
+.ff-chip b { color: var(--ff-accent-bright); font-weight: 700; }
+.ff-chip--amber { color: #ffce82; }
 .ff-chip--amber b { color: var(--ff-amber); }
 
 /* ---- Section scaffold -------------------------------------------------- */
 .ff-section { padding-block: 4.5rem; position: relative; }
 .ff-section--tint {
-  background: linear-gradient(180deg, transparent, rgba(124, 58, 237, 0.05) 40%, transparent);
+  background: linear-gradient(180deg, transparent, rgba(255, 179, 74, 0.05) 40%, transparent);
 }
 .ff-section__head { max-width: 62ch; margin: 0 auto 2.6rem; text-align: center; }
 .ff-section__kicker {
@@ -342,9 +343,9 @@ body:has(.ff-home) .md-header--shadow {
   width: 0.55rem; height: 0.55rem;
   border-radius: 50%;
   background: var(--ff-amber-grad);
-  box-shadow: 0 0 10px 1px rgba(246, 168, 33, 0.6);
+  box-shadow: 0 0 10px 1px rgba(255, 179, 74, 0.6);
 }
-.ff-why__list b { color: var(--ff-violet-bright); font-weight: 600; }
+.ff-why__list b { color: var(--ff-accent-bright); font-weight: 600; }
 
 /* ---- Feature grid ------------------------------------------------------ */
 .ff-grid {
@@ -369,7 +370,7 @@ body:has(.ff-home) .md-header--shadow {
   border-radius: 50%;
   background: var(--ff-amber-grad);
   opacity: 0.5;
-  box-shadow: 0 0 8px 1px rgba(246, 168, 33, 0.5);
+  box-shadow: 0 0 8px 1px rgba(255, 179, 74, 0.5);
   transition: opacity 0.2s ease, box-shadow 0.2s ease;
 }
 .ff-feat:hover {
@@ -377,7 +378,7 @@ body:has(.ff-home) .md-header--shadow {
   border-color: var(--ff-card-bd-hot);
   background: var(--ff-card-2);
 }
-.ff-feat:hover::after { opacity: 1; box-shadow: 0 0 14px 2px rgba(246, 168, 33, 0.8); }
+.ff-feat:hover::after { opacity: 1; box-shadow: 0 0 14px 2px rgba(255, 179, 74, 0.8); }
 .ff-feat__name {
   font-family: var(--ff-display);
   font-weight: 600;
@@ -389,7 +390,7 @@ body:has(.ff-home) .md-header--shadow {
 
 /* ---- Diagram frame ----------------------------------------------------- */
 .ff-figure {
-  background: rgba(245, 242, 254, 0.96);
+  background: rgba(243, 241, 235, 0.96);
   border: 1px solid var(--ff-card-bd);
   border-radius: 1rem;
   padding: 1.4rem;
@@ -397,10 +398,10 @@ body:has(.ff-home) .md-header--shadow {
   overflow: hidden;
 }
 .ff-install-note { color: var(--ff-muted); font-size: 0.85rem; }
-.ff-install-note a { color: var(--ff-violet-bright); text-decoration: underline; }
-.ff-figure .ff-figcap { color: #52416d; }
-.ff-figure .ff-figcap a { color: #6033ac; text-decoration: underline; }
-.ff-figure a:focus-visible { outline: 3px solid #7c3aed; outline-offset: 4px; }
+.ff-install-note a { color: var(--ff-accent-bright); text-decoration: underline; }
+.ff-figure .ff-figcap { color: #62645b; }
+.ff-figure .ff-figcap a { color: #855414; text-decoration: underline; }
+.ff-figure a:focus-visible { outline: 3px solid #ffb34a; outline-offset: 4px; }
 .ff-figure img { display: block; width: 100%; height: auto; }
 .ff-figure--pair { display: grid; grid-template-columns: 1fr; gap: 1.4rem; background: none; border: 0; box-shadow: none; padding: 0; }
 .ff-figure--pair > .ff-figure { margin: 0; }
@@ -444,7 +445,7 @@ body:has(.ff-home) .md-header--shadow {
 }
 .ff-tabs__labels label:hover { color: var(--ff-fg); }
 .ff-window {
-  background: #0e0b18;
+  background: #151611;
   border: 1px solid var(--ff-card-bd);
   border-radius: 0.8rem;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
@@ -455,11 +456,11 @@ body:has(.ff-home) .md-header--shadow {
   align-items: center;
   gap: 0.45rem;
   padding: 0.7rem 1rem;
-  border-bottom: 1px solid rgba(167, 139, 250, 0.12);
+  border-bottom: 1px solid rgba(191, 184, 171, 0.12);
 }
 .ff-window__bar i { width: 0.62rem; height: 0.62rem; border-radius: 50%; display: inline-block; }
 .ff-window__bar i:nth-child(1) { background: #f6705a; }
-.ff-window__bar i:nth-child(2) { background: #f6a821; }
+.ff-window__bar i:nth-child(2) { background: #ffb34a; }
 .ff-window__bar i:nth-child(3) { background: #6fcf72; }
 .ff-window__file { margin-left: 0.6rem; font-family: "JetBrains Mono", monospace; font-size: 0.78rem; color: var(--ff-faint); }
 .ff-panel { display: none; margin: 0; }
@@ -469,16 +470,16 @@ body:has(.ff-home) .md-header--shadow {
   font-family: "JetBrains Mono", monospace;
   font-size: 0.86rem;
   line-height: 1.7;
-  color: #d8d2ea;
+  color: #f3f1eb;
   overflow-x: auto;
   tab-size: 4;
 }
-.ff-code .k { color: #c4a8ff; }      /* keyword */
-.ff-code .d { color: #f6a821; }      /* decorator */
-.ff-code .s { color: #ffce7a; }      /* string */
+.ff-code .k { color: #ffce82; }      /* keyword */
+.ff-code .d { color: #ffb34a; }      /* decorator */
+.ff-code .s { color: #ffce82; }      /* string */
 .ff-code .c { color: var(--ff-faint); font-style: italic; } /* comment */
 .ff-code .f { color: #8be9fd; }      /* call / attribute */
-.ff-code .o { color: var(--ff-violet-bright); } /* operator-ish */
+.ff-code .o { color: var(--ff-accent-bright); } /* operator-ish */
 /* show the panel whose radio is checked + light its label */
 #ff-c1:checked ~ .ff-window .ff-panel.p1,
 #ff-c2:checked ~ .ff-window .ff-panel.p2,
@@ -489,10 +490,10 @@ body:has(.ff-home) .md-header--shadow {
 #ff-c3:checked ~ .ff-tabs__labels label[for="ff-c3"],
 #ff-c4:checked ~ .ff-tabs__labels label[for="ff-c4"] {
   color: #fff;
-  background: rgba(124, 58, 237, 0.28);
+  background: rgba(255, 179, 74, 0.28);
   border-color: var(--ff-card-bd-hot);
 }
-.ff-tabs > input:focus-visible ~ .ff-tabs__labels label { outline: 2px solid var(--ff-violet-bright); outline-offset: 2px; }
+.ff-tabs > input:focus-visible ~ .ff-tabs__labels label { outline: 2px solid var(--ff-accent-bright); outline-offset: 2px; }
 
 /* ---- Learn cards ------------------------------------------------------- */
 .ff-learn { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
@@ -508,25 +509,25 @@ body:has(.ff-home) .md-header--shadow {
 .ff-learn__eyebrow { font-family: var(--ff-display); font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ff-amber); }
 .ff-learn__title { font-family: var(--ff-display); font-weight: 700; font-size: 1.25rem; color: var(--ff-fg); margin: 0.6rem 0 0.5rem; }
 .ff-learn__desc { color: var(--ff-muted); font-size: 0.92rem; margin: 0 0 0.9rem; }
-.ff-learn__more { font-family: var(--ff-display); font-weight: 600; font-size: 0.88rem; color: var(--ff-violet-bright); }
+.ff-learn__more { font-family: var(--ff-display); font-weight: 600; font-size: 0.88rem; color: var(--ff-accent-bright); }
 .ff-learn__card:hover .ff-learn__more { color: #fff; }
 
 /* ---- Footer ------------------------------------------------------------ */
 .ff-foot {
-  border-top: 1px solid rgba(167, 139, 250, 0.14);
+  border-top: 1px solid rgba(191, 184, 171, 0.14);
   padding-block: 3rem 2.4rem;
   margin-top: 2rem;
-  background: linear-gradient(180deg, transparent, rgba(76, 29, 149, 0.12));
+  background: linear-gradient(180deg, transparent, rgba(98, 100, 91, 0.12));
 }
 .ff-foot__grid { display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr; gap: 2rem; }
 .ff-foot__brand { display: flex; align-items: center; gap: 0.6rem; font-family: var(--ff-display); font-weight: 700; font-size: 1.15rem; color: #fff; }
-.ff-foot__brand img { width: 1.7rem; height: 1.7rem; }
+.ff-foot__brand img { width: 10rem; height: auto; }
 .ff-foot__tag { color: var(--ff-faint); font-size: 0.9rem; margin: 0.9rem 0 0; max-width: 34ch; }
-.ff-foot h4 { font-family: var(--ff-display); font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ff-violet-bright); margin: 0 0 0.9rem; }
+.ff-foot h4 { font-family: var(--ff-display); font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ff-accent-bright); margin: 0 0 0.9rem; }
 .ff-foot ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
 .ff-foot a { color: var(--ff-muted); font-size: 0.92rem; }
 .ff-foot a:hover { color: #fff; }
-.ff-foot__base { border-top: 1px solid rgba(167, 139, 250, 0.1); margin-top: 2.4rem; padding-top: 1.6rem; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem; color: var(--ff-faint); font-size: 0.84rem; }
+.ff-foot__base { border-top: 1px solid rgba(191, 184, 171, 0.1); margin-top: 2.4rem; padding-top: 1.6rem; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem; color: var(--ff-faint); font-size: 0.84rem; }
 
 /* ---- Scroll reveal --------------------------------------------------- */
 /* Intentionally none: landing content is always visible regardless of JS.
@@ -575,10 +576,10 @@ body:has(.ff-home) .md-header--shadow {
 
 /* The complete Agentic lockup is the home link at every viewport size. */
 .md-header__button.md-logo { display: block; }
-.md-header__button.md-logo img { width: 7.5rem; height: 1.6rem; }
+.md-header__button.md-logo img { width: auto; height: 2.25rem; }
 .md-header__topic:first-child { visibility: hidden; }
 .md-nav__button.md-logo img { width: 9rem; height: auto; }
-.md-header__button.md-logo:focus-visible { outline: 2px solid #d6c6ff; outline-offset: 3px; }
+.md-header__button.md-logo:focus-visible { outline: 2px solid #f3f1eb; outline-offset: 3px; }
 @media screen and (max-width: 44.984375em) {
   .md-header__title { display: none; }
   .md-header__button.md-logo { margin-right: auto; }

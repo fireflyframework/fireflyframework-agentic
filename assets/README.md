@@ -1,8 +1,10 @@
 # Firefly Agentic brand assets
 
-Firefly Agentic shares the [Firefly Framework](https://github.com/fireflyframework)
-wordmark and amber firefly glow-dot, with a violet palette for the agentic project.
-These SVGs appear in the README and documentation site.
+Firefly Agentic uses the lowercase `agentic` wordmark in Manrope 500, with the
+original Firefly trail on its terminal `c` and the unchanged `by firefly`
+endorsement. Charcoal, ivory, and amber connect the documentation to the
+[Framework family](https://github.com/fireflyframework). The product and API
+name remains Firefly Agentic.
 
 ## Diagrams
 
@@ -13,8 +15,9 @@ supports the same features.
 
 | Asset | Dimensions | Purpose |
 |-------|------------|---------|
-| [`brand-logo.svg`](brand-logo.svg) | 300 × 64 | Compact Firefly Agentic wordmark for the documentation header and mobile navigation. |
-| [`banner.svg`](banner.svg) | 1280 × 320 | Firefly wordmark, Agentic lockup and a constellation of connected agents. |
+| [`brand-logo.svg`](brand-logo.svg), [`brand-logo-light.svg`](brand-logo-light.svg) | Original master viewBox | Outlined Agentic lockup for dark and light surfaces. The dark-surface variant is also generated as `logo.svg`. |
+| [`banner.svg`](banner.svg), [`banner-light.svg`](banner-light.svg) | 1600 × 480 | Canonical Agentic lockup and “Intelligence, composed.” in both themes. |
+| [`favicon.svg`](favicon.svg) | 128 × 128 | The exact terminal `c` path and original trail gradient on charcoal. |
 | [`architecture.svg`](architecture.svg) | 1100 × 710 | FireflyAgent, tools, memory and model configuration, with optional composition around the Pydantic AI 2 engine. |
 | [`agent-anatomy.svg`](agent-anatomy.svg) | 1100 × 760 | A normal successful agent run, with default and optional middleware shown separately. |
 | [`model-routing.svg`](model-routing.svg) | 1100 × 690 | Effective model selection and ModelOptions validation; explicit Chat, Responses and other provider routes. |
@@ -25,24 +28,30 @@ supports the same features.
 | [`rag.svg`](rag.svg) | 1100 × 660 | Eight embedding providers, six vector backends and the indexing/query flow; compatibility remains a configuration concern. |
 | [`ecosystem.svg`](ecosystem.svg) | 1100 × 672 | Related Firefly projects, without implying API or feature parity across runtimes. |
 
-`docs/assets/` contains byte-identical generated copies for the documentation
-site. Its `logo.svg` and `favicon.svg` are separate site identity assets and are
-not produced by this generator.
+`docs/assets/` contains byte-identical generated copies of all 15 assets,
+including the header logo and favicon.
 
 ## Design system
 
-- **Wordmark:** the shared Firefly logo is embedded as vector paths, including
-  the amber glow-dot. No image or font download is required.
-- **Palette:** violet `#8b5cf6`, `#7c3aed` and `#6d28d9`; deep violet `#4c1d95`;
-  ink `#1e1633`; body text `#322b45`; light panel `#f5f2fe`; stroke `#e4def5`.
-  The shared glow-dot uses `#FFF9C1` to `#F68000`.
+- **Wordmark:** canonical outlined masters are recorded in
+  [`tools/brand-source/ORIGIN.json`](tools/brand-source/ORIGIN.json), including
+  their SHA-256 hashes and the canonical website generator hash. Generation
+  verifies these hashes before using the artwork. Nested endorsement dimensions
+  are retained when placing a master.
+- **Palette:** charcoal `#10110f`, ivory `#f3f1eb`, amber `#ffb34a`, graphite
+  `#272820`, muted text `#62645b`, and border `#d8d4ca`. Amber title bands use
+  charcoal text; graphite title bands use ivory text. The generator checks
+  text contrast of at least 4.5:1; the current minimum is 5.32:1.
 - **Typography:** system sans text, with 16 px card headings and generally
   14 px body text. Each view uses separate cards and generous spacing instead
   of dense inventories. Display diagrams at their natural aspect ratio and
   provide a link to the full-size SVG when embedding them at reduced widths.
-- **Accessibility:** every SVG has a title, a descriptive text alternative and
-  `role="img"`. Titles and descriptions explain the relationships, not only the
-  file name. Embedding pages should still provide useful image alt text.
+  The documentation uses bundled Manrope with its
+  [SIL Open Font License](../docs/assets/fonts/OFL.txt); logos remain outlined.
+- **Accessibility:** every technical diagram has a title, a descriptive text
+  alternative and `role="img"`. Titles and descriptions explain the
+  relationships, not only the file name. Brand masters retain their canonical
+  titles; embedding pages provide useful image alt text.
 - **Self-contained output:** no scripts, external images, external fonts or
   remote resource references. Wordmark and brand icons are vendored vector paths.
 
@@ -55,18 +64,20 @@ python assets/tools/build_brand_assets.py
 python assets/tools/build_brand_assets.py --check
 ```
 
-The build writes the compact logo, banner and nine diagrams to both `assets/` and
-`docs/assets/`. `--check` regenerates them in memory and exits unsuccessfully if
+The build writes the logo variants, banner variants, favicon, and nine diagrams
+to both `assets/` and `docs/assets/`. `--check` regenerates them in memory and exits unsuccessfully if
 any file is missing or differs; it does not change files. Both modes check card
 geometry and measured text fit. Fixed embedded character advances make layout
 identical across operating systems; the generator does not inspect local fonts.
 Rendering can use a different system fallback font, so visual inspection remains
 necessary after changes.
 
-The generator imports the wordmark from [`tools/wordmark.py`](tools/wordmark.py)
-and brand icons from [`tools/icons.py`](tools/icons.py). Those local sources and
-[`tools/build_brand_assets.py`](tools/build_brand_assets.py) are authoritative;
-edit them and regenerate instead of editing the resulting SVGs independently.
+The generator reads the verified masters from `tools/brand-source/` and brand
+icons from [`tools/icons.py`](tools/icons.py). To refresh the identity, export
+the canonical masters, update their provenance, and regenerate. Edit diagram
+layout in [`tools/build_brand_assets.py`](tools/build_brand_assets.py), rather
+than editing output SVGs independently. Brand ownership terms are recorded in
+[`tools/brand-source/NOTICE.md`](tools/brand-source/NOTICE.md).
 
 ## Previewing and checking
 
