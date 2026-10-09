@@ -273,7 +273,7 @@ OUTPUTS = {}
 
 
 def write_svg(name, svg):
-    OUTPUTS[name] = svg
+    OUTPUTS[name] = svg.rstrip("\n") + "\n"
 
 
 # --------------------------------------------------------------------------- kit

@@ -35,8 +35,9 @@ including the header logo and favicon.
 
 - **Wordmark:** canonical outlined masters are recorded in
   [`tools/brand-source/ORIGIN.json`](tools/brand-source/ORIGIN.json), including
-  their SHA-256 hashes and the canonical website generator hash. Generation
-  verifies these hashes before using the artwork. Nested endorsement dimensions
+  their original export and normalized vendored SHA-256 hashes, plus the
+  canonical website generator hash. Generation
+  verifies the vendored hashes before using the artwork. Nested endorsement dimensions
   are retained when placing a master.
 - **Palette:** charcoal `#10110f`, ivory `#f3f1eb`, amber `#ffb34a`, graphite
   `#272820`, muted text `#62645b`, and border `#d8d4ca`. Amber title bands use
@@ -74,7 +75,11 @@ necessary after changes.
 
 The generator reads the verified masters from `tools/brand-source/` and brand
 icons from [`tools/icons.py`](tools/icons.py). To refresh the identity, export
-the canonical masters, update their provenance, and regenerate. Edit diagram
+the canonical masters and record their original bytes as `sourceSha256`.
+Normalize only trailing LF bytes to exactly one LF (`data.rstrip(b"\n") + b"\n"`),
+record the vendored bytes as `sha256`, and regenerate. The generator applies
+the same EOF normalization to every output and its documentation mirror.
+Edit diagram
 layout in [`tools/build_brand_assets.py`](tools/build_brand_assets.py), rather
 than editing output SVGs independently. Brand ownership terms are recorded in
 [`tools/brand-source/NOTICE.md`](tools/brand-source/NOTICE.md).
