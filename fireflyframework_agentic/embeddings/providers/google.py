@@ -14,6 +14,7 @@ try:
     import google.generativeai.client as genai_client  # pyright: ignore[reportMissingImports]
 except ImportError:
     genai = None  # type: ignore[assignment]
+    genai_client = None  # type: ignore[assignment]
 
 from fireflyframework_agentic.embeddings.base import BaseEmbedder
 from fireflyframework_agentic.exceptions import EmbeddingProviderError
@@ -38,7 +39,7 @@ class GoogleEmbedder(BaseEmbedder):
         **kwargs: Any,
     ) -> None:
         super().__init__(model=model, dimensions=dimensions, **kwargs)
-        if genai is None:
+        if genai is None or genai_client is None:
             raise ImportError(
                 "The 'google-generativeai' package is required for GoogleEmbedder. "
                 "Install it with: pip install google-generativeai"
