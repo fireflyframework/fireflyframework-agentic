@@ -1,8 +1,42 @@
 # Migration Guide
 
-This guide covers the Pydantic AI 2.x upgrade and the earlier tool and Dynamic
-Workflow changes. It distinguishes dependency changes from changes to Firefly's
-public API and model routing.
+Copyright 2026 Firefly Software Foundation. SPDX-License-Identifier: Apache-2.0.
+
+This guide covers PostgreSQL vector-store safety in 26.10.0, the Pydantic AI 2.x
+upgrade, and earlier tool and Dynamic Workflow changes.
+
+## PostgreSQL vector-store safety in 26.10.0
+
+Previously, upserting an existing document ID into another namespace could
+overwrite and move the original PostgreSQL row. Version 26.10.0 raises
+`VectorStoreError` for that conflict and rolls back the whole batch, including
+earlier inserts or updates. The check also applies to concurrent writes and
+`TenantScopedVectorStore`.
+
+The table still uses a global `PRIMARY KEY (id)`. Same-namespace updates and
+repeated IDs within one same-namespace batch keep their existing behavior. No
+database migration, index rebuild, or re-embedding is required for this fix.
+
+Before upgrading a shared-table deployment, check how the application assigns
+document IDs. IDs must be unique across namespaces. New documents in different
+scopes need distinct IDs; do not bulk-rename existing IDs without accounting for
+their references. If the application used cross-namespace upsert to move a
+document, replace that behavior with an explicitly authorized transfer workflow.
+Retrying the same conflicting batch will not succeed.
+
+Install the [26.10.0 release](getting-started/installation.md#install-a-release),
+then verify same-namespace updates, rejection of a foreign-namespace ID, and
+whole-batch rollback in an isolated application test database. This fix does not
+restore content overwritten by earlier versions; any suspected historical loss
+requires review of application audit records or backups.
+
+The wrapper requires scope arguments but does not authenticate them or install
+RLS policies. Keep authorization and transaction-local database scope setup in
+the application. See [vector-store scoping](vectorstores.md#tenantworkspace-scoping)
+and [database authorization](security.md#vector-store-authorization).
+
+Pgvector/HNSW remains unchanged. PostgreSQL 18 and pg_vectorsearch are not
+requirements of this release; [PRISM remains outside the supported backend](pg-vectorsearch-evaluation.md).
 
 ## Pydantic AI 2 and OpenAI API selection
 

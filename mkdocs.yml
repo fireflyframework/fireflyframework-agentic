@@ -139,6 +139,7 @@ nav:
   - Embeddings & Vector Stores:
       - Embeddings: embeddings.md
       - Vector Stores: vectorstores.md
+      - pg_vectorsearch Evaluation: pg-vectorsearch-evaluation.md
   - Intelligence:
       - Reasoning Patterns: reasoning.md
       - Validation & QoS: validation.md
