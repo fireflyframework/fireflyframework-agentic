@@ -154,6 +154,14 @@ overridable per-transaction hook (default no-op) for callers that need
 `SET LOCAL` session setup -- e.g. Postgres Row-Level Security GUCs. Connection
 and pool failures raise `VectorStoreConnectionError`.
 
+Document IDs are unique across the table. Upserting an existing ID updates it
+only within its original namespace. A conflicting namespace raises
+`VectorStoreError` and rolls back the entire batch, including earlier inserts
+and updates. This also applies when `TenantScopedVectorStore` supplies the
+namespace. Use globally unique document IDs when multiple scopes share a table.
+The store does not install PostgreSQL row-level security policies; applications
+must bind scopes to authenticated callers and manage database permissions.
+
 Install: `pip install fireflyframework-agentic[vectorstores-pgvector]`
 
 ### sqlite-vec

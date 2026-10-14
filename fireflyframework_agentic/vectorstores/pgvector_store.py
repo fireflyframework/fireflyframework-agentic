@@ -1,3 +1,18 @@
+# Copyright 2026 Firefly Software Foundation
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """pgvector vector store backend.
 
 A PostgreSQL-backed vector store using the ``pgvector`` extension, peer to the
@@ -228,18 +243,21 @@ class PgVectorVectorStore(BaseVectorStore):
         pool = await self._ensure_pool()
         async with pool.acquire() as conn, conn.transaction():
             await self._prepare_session(conn, namespace=namespace)
-            await conn.executemany(
+            written = await conn.fetchmany(
                 f"""
-                INSERT INTO {self._table} (id, namespace, embedding, text, metadata)
+                INSERT INTO {self._table} AS stored (id, namespace, embedding, text, metadata)
                 VALUES ($1, $2, $3::vector, $4, $5::jsonb)
                 ON CONFLICT (id) DO UPDATE
-                SET namespace = EXCLUDED.namespace,
-                    embedding = EXCLUDED.embedding,
+                SET embedding = EXCLUDED.embedding,
                     text      = EXCLUDED.text,
                     metadata  = EXCLUDED.metadata
+                WHERE stored.namespace = EXCLUDED.namespace
+                RETURNING 1
                 """,
                 rows,
             )
+            if len(written) != len(rows):
+                raise VectorStoreError("Upsert rejected: one or more document IDs are unavailable in this namespace.")
 
     async def _search(
         self,

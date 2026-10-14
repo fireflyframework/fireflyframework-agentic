@@ -499,17 +499,17 @@ Local models and test models may not require a provider API key.
 
 ### Install a Release
 
-Install the wheel published with [v26.09.0](https://github.com/fireflyframework/fireflyframework-agentic/releases/tag/v26.09.0)
+Install the wheel published with [v26.10.0](https://github.com/fireflyframework/fireflyframework-agentic/releases/tag/v26.10.0)
 in a Python 3.13+ virtual environment:
 
 ```bash
-python -m pip install "https://github.com/fireflyframework/fireflyframework-agentic/releases/download/v26.09.0/fireflyframework_agentic-26.9.0-py3-none-any.whl"
+python -m pip install "https://github.com/fireflyframework/fireflyframework-agentic/releases/download/v26.10.0/fireflyframework_agentic-26.10.0-py3-none-any.whl"
 ```
 
 To include an optional integration, use a direct-reference requirement:
 
 ```bash
-python -m pip install "fireflyframework-agentic[postgres] @ https://github.com/fireflyframework/fireflyframework-agentic/releases/download/v26.09.0/fireflyframework_agentic-26.9.0-py3-none-any.whl"
+python -m pip install "fireflyframework-agentic[postgres] @ https://github.com/fireflyframework/fireflyframework-agentic/releases/download/v26.10.0/fireflyframework_agentic-26.10.0-py3-none-any.whl"
 ```
 
 Releases use **`YY.MM.Patch`**, starting at patch `0` for each new month. Python
