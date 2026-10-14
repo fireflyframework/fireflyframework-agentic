@@ -10,7 +10,9 @@
 
 <p align="center">
   <a href="https://github.com/fireflyframework/fireflyframework-agentic/releases/latest"><img src="https://img.shields.io/github/v/release/fireflyframework/fireflyframework-agentic" alt="Latest release"></a>
-  <a href="https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/pr-gate.yml"><img src="https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/pr-gate.yml/badge.svg?branch=main" alt="PR gate"></a>
+  <a href="https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/pr-gate.yml"><img src="https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/pr-gate.yml/badge.svg?event=pull_request" alt="Latest PR checks"></a>
+  <a href="https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/release.yml"><img src="https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/release.yml/badge.svg" alt="Release publication"></a>
+  <a href="https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/docs.yml"><img src="https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/docs.yml/badge.svg?branch=main" alt="Documentation deployment"></a>
   <a href="https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/nightly.yml"><img src="https://github.com/fireflyframework/fireflyframework-agentic/actions/workflows/nightly.yml/badge.svg?branch=main" alt="Nightly"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.13%2B-blue.svg" alt="Python 3.13+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green.svg" alt="License: Apache 2.0"></a>
@@ -18,6 +20,12 @@
   <a href="https://docs.astral.sh/ruff/"><img src="https://img.shields.io/badge/linting-ruff-orange.svg" alt="Ruff"></a>
   <a href="https://microsoft.github.io/pyright/"><img src="https://img.shields.io/badge/type--checked-pyright-2c8a1c.svg" alt="Type checked: pyright"></a>
 </p>
+
+Current release: [26.10.0](https://github.com/fireflyframework/fireflyframework-agentic/releases/tag/v26.10.0).
+PostgreSQL vector writes now reject cross-namespace ID conflicts and roll back the
+whole batch. Read the [upgrade notes](docs/migration.md#postgresql-vector-store-safety-in-26100).
+Pgvector/HNSW remains the supported PostgreSQL backend; the
+[pg_vectorsearch evaluation](docs/pg-vectorsearch-evaluation.md) did not qualify PRISM for adoption.
 
 <p align="center">
   <em>Build with Firefly agents, tools, memory and typed model options — gain lifecycle hooks, delegation, reasoning patterns, validation loops, RAG, and DAG pipelines, all protocol-driven and swappable.</em>
@@ -416,7 +424,9 @@ The diagram distinguishes structural protocols from inheritance-based extension 
   `parse_scope_namespace` helpers) namespaces documents per tenant or scope.
   Auto-embedding upserts documents without pre-computed vectors. `search_text`
   embeds a query string and searches in one call, and `SearchFilter` narrows results
-  by metadata. Namespace scoping isolates document collections. `VectorStoreRegistry`
+  by metadata. PostgreSQL document IDs remain unique across the table; a conflicting
+  namespace rejects the whole upsert batch. Applications bind scopes to authenticated
+  callers and manage database authorization. `VectorStoreRegistry`
   manages named instances. `EmbeddingStep` and `RetrievalStep` integrate directly
   into DAG pipelines for retrieval-augmented workflows.
 

@@ -164,6 +164,17 @@ must bind scopes to authenticated callers and manage database permissions.
 
 Install: `pip install fireflyframework-agentic[vectorstores-pgvector]`
 
+For an existing application, follow the [26.10.0 upgrade notes](migration.md#postgresql-vector-store-safety-in-26100)
+and [pinned release installation](getting-started/installation.md#install-a-release).
+`create_schema=False` leaves schema creation to migrations and checks that the
+`vector` extension and table exist. Operators must separately verify the table's
+dimensions, indexes, permissions, and any RLS policies.
+
+There is no supported PRISM selector or `prism.nprobe` setting in this adapter.
+The [pg_vectorsearch evaluation](pg-vectorsearch-evaluation.md) records the
+compatibility and filtered-recall reasons for retaining pgvector/HNSW. Adding a
+second index manually does not guarantee which index PostgreSQL will choose.
+
 ### sqlite-vec
 
 A sqlite-vec (`vec0` virtual table) backend that co-resides inside an existing
@@ -243,17 +254,22 @@ Note: Filter operator support varies by backend. `eq` is universally supported.
 
 ## Namespaces
 
-All operations accept a `namespace` parameter to isolate documents:
+All operations accept a `namespace` parameter to scope documents. Use distinct
+IDs when writing to different namespaces in a shared PostgreSQL table:
 
 ```python
-await store.upsert(docs, namespace="project-a")
-await store.upsert(docs, namespace="project-b")
+from fireflyframework_agentic.vectorstores import VectorDocument
+
+project_a_docs = [VectorDocument(id="project-a:1", text="Project A notes")]
+project_b_docs = [VectorDocument(id="project-b:1", text="Project B notes")]
+await store.upsert(project_a_docs, namespace="project-a")
+await store.upsert(project_b_docs, namespace="project-b")
 
 # Search only within a namespace
 results = await store.search_text("query", namespace="project-a")
 
 # Delete only within a namespace
-await store.delete(["id-1"], namespace="project-a")
+await store.delete(["project-a:1"], namespace="project-a")
 ```
 
 ---
@@ -305,8 +321,9 @@ every read and write must be confined to a `(tenant_id, workspace_id)` scope, an
 forgetting the scope must fail loudly rather than silently leak across tenants.
 
 `TenantScopedVectorStore` wraps **any** `VectorStoreProtocol` backend and folds the
-scope into the canonical `"t/<tenant_id>/w/<workspace_id>"` namespace, so a single
-wrapper makes every backend multi-tenant.
+scope into the canonical `"t/<tenant_id>/w/<workspace_id>"` namespace. The wrapper
+requires explicit scope on each operation; the application must authorize that
+scope and choose a backend whose storage behavior meets its isolation needs.
 
 ```python
 from fireflyframework_agentic.vectorstores import (
@@ -328,9 +345,10 @@ await store.close()
 
 On `upsert`, each document is copied (never mutating the caller's objects), its
 namespace is set to the scope, and -- when `stamp_metadata=True` (default) -- the
-scope is also stamped onto `metadata["tenant_id"]` / `metadata["workspace_id"]` as
-defense-in-depth. A caller that forgets `tenant_id`/`workspace_id` fails with
-`TypeError`, so isolation can never be lost silently.
+scope is also stamped onto `metadata["tenant_id"]` / `metadata["workspace_id"]`.
+These stamps describe the scope; they are not an authorization boundary. A caller
+that forgets `tenant_id`/`workspace_id` fails with `TypeError`. Document IDs are
+preserved, so PostgreSQL's table-wide uniqueness rule still applies.
 
 The namespace codec is exported directly:
 

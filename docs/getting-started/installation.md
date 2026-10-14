@@ -40,6 +40,12 @@ Releases use **YY.MM.Patch**, starting with patch `0` each month. Python normali
 assets; it does not publish to PyPI. Pin the framework and lock application
 dependencies for reproducible deployments.
 
+The release also provides [SHA256SUMS](https://github.com/fireflyframework/fireflyframework-agentic/releases/download/v26.10.0/SHA256SUMS)
+for the wheel and source archive. Verify downloaded files against those hashes
+before installation. Existing PostgreSQL vector-store users should read the
+[26.10.0 namespace conflict changes](../migration.md#postgresql-vector-store-safety-in-26100).
+The fix requires no database migration or PostgreSQL version upgrade.
+
 ## One-line installer
 
 The interactive installer detects your platform, checks Python and uv, lets you

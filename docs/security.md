@@ -12,6 +12,25 @@ patterns. Blocking or sanitization policy is selected by the application.
 
 ---
 
+## Vector-store authorization
+
+`TenantScopedVectorStore` requires tenant and workspace arguments and maps them
+to a namespace. Applications must derive or validate those arguments against the
+authenticated caller. Metadata stamps and namespace strings do not grant access.
+
+Since 26.10.0, `PgVectorVectorStore` rejects an ID conflict with another namespace
+and rolls back the entire upsert batch. IDs remain globally unique in its table.
+This closes the cross-namespace overwrite path; it does not install PostgreSQL
+roles or RLS policies, protect access through other database clients, or recover
+previously overwritten records.
+
+For shared databases, manage privileges and RLS through deployment migrations.
+The `_prepare_session` hook runs inside each operation's transaction and can
+apply transaction-local scope settings. Test using the actual application role,
+including pooled connection reuse and missing or foreign scope. See the
+[upgrade notes](migration.md#postgresql-vector-store-safety-in-26100) and
+[vector-store guide](vectorstores.md#tenantworkspace-scoping).
+
 ## Architecture
 
 This shows an explicitly configured input/output scanning path. Add
