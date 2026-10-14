@@ -21,9 +21,11 @@
   <a href="https://microsoft.github.io/pyright/"><img src="https://img.shields.io/badge/type--checked-pyright-2c8a1c.svg" alt="Type checked: pyright"></a>
 </p>
 
-Current release: [26.10.0](https://github.com/fireflyframework/fireflyframework-agentic/releases/tag/v26.10.0).
-PostgreSQL vector writes now reject cross-namespace ID conflicts and roll back the
-whole batch. Read the [upgrade notes](docs/migration.md#postgresql-vector-store-safety-in-26100).
+Current release: [26.10.1](https://github.com/fireflyframework/fireflyframework-agentic/releases/tag/v26.10.1).
+This release refreshes dependencies and preserves PostgreSQL's whole-batch
+rejection of cross-namespace ID conflicts. Read the
+[upgrade notes](docs/migration.md#dependency-refresh-in-26101) and
+[dependency resolutions and remaining advisories](docs/dependency-upgrade-26101.md).
 Pgvector/HNSW remains the supported PostgreSQL backend; the
 [pg_vectorsearch evaluation](docs/pg-vectorsearch-evaluation.md) did not qualify PRISM for adoption.
 
@@ -509,17 +511,17 @@ Local models and test models may not require a provider API key.
 
 ### Install a Release
 
-Install the wheel published with [v26.10.0](https://github.com/fireflyframework/fireflyframework-agentic/releases/tag/v26.10.0)
+Install the wheel published with [v26.10.1](https://github.com/fireflyframework/fireflyframework-agentic/releases/tag/v26.10.1)
 in a Python 3.13+ virtual environment:
 
 ```bash
-python -m pip install "https://github.com/fireflyframework/fireflyframework-agentic/releases/download/v26.10.0/fireflyframework_agentic-26.10.0-py3-none-any.whl"
+python -m pip install "https://github.com/fireflyframework/fireflyframework-agentic/releases/download/v26.10.1/fireflyframework_agentic-26.10.1-py3-none-any.whl"
 ```
 
 To include an optional integration, use a direct-reference requirement:
 
 ```bash
-python -m pip install "fireflyframework-agentic[postgres] @ https://github.com/fireflyframework/fireflyframework-agentic/releases/download/v26.10.0/fireflyframework_agentic-26.10.0-py3-none-any.whl"
+python -m pip install "fireflyframework-agentic[postgres] @ https://github.com/fireflyframework/fireflyframework-agentic/releases/download/v26.10.1/fireflyframework_agentic-26.10.1-py3-none-any.whl"
 ```
 
 Releases use **`YY.MM.Patch`**, starting at patch `0` for each new month. Python

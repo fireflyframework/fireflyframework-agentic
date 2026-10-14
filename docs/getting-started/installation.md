@@ -23,16 +23,16 @@ Local and test models may not need credentials.
 ## Install a release
 
 Use a Python 3.13+ virtual environment and install the wheel from
-[v26.10.0](https://github.com/fireflyframework/fireflyframework-agentic/releases/tag/v26.10.0):
+[v26.10.1](https://github.com/fireflyframework/fireflyframework-agentic/releases/tag/v26.10.1):
 
 ```bash
-python -m pip install "https://github.com/fireflyframework/fireflyframework-agentic/releases/download/v26.10.0/fireflyframework_agentic-26.10.0-py3-none-any.whl"
+python -m pip install "https://github.com/fireflyframework/fireflyframework-agentic/releases/download/v26.10.1/fireflyframework_agentic-26.10.1-py3-none-any.whl"
 ```
 
 Include an extra using a direct-reference requirement:
 
 ```bash
-python -m pip install "fireflyframework-agentic[postgres] @ https://github.com/fireflyframework/fireflyframework-agentic/releases/download/v26.10.0/fireflyframework_agentic-26.10.0-py3-none-any.whl"
+python -m pip install "fireflyframework-agentic[postgres] @ https://github.com/fireflyframework/fireflyframework-agentic/releases/download/v26.10.1/fireflyframework_agentic-26.10.1-py3-none-any.whl"
 ```
 
 Releases use **YY.MM.Patch**, starting with patch `0` each month. Python normalizes
@@ -40,11 +40,14 @@ Releases use **YY.MM.Patch**, starting with patch `0` each month. Python normali
 assets; it does not publish to PyPI. Pin the framework and lock application
 dependencies for reproducible deployments.
 
-The release also provides [SHA256SUMS](https://github.com/fireflyframework/fireflyframework-agentic/releases/download/v26.10.0/SHA256SUMS)
+The release also provides [SHA256SUMS](https://github.com/fireflyframework/fireflyframework-agentic/releases/download/v26.10.1/SHA256SUMS)
 for the wheel and source archive. Verify downloaded files against those hashes
 before installation. Existing PostgreSQL vector-store users should read the
 [26.10.0 namespace conflict changes](../migration.md#postgresql-vector-store-safety-in-26100).
-The fix requires no database migration or PostgreSQL version upgrade.
+The fix requires no database migration or PostgreSQL version upgrade. Review the
+[26.10.1 dependency and platform changes](../migration.md#dependency-refresh-in-26101)
+and [remaining optional-package advisories](../dependency-upgrade-26101.md#remaining-optional-package-advisories)
+before choosing extras.
 
 ## One-line installer
 

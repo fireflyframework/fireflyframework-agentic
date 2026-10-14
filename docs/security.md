@@ -31,6 +31,20 @@ including pooled connection reuse and missing or foreign scope. See the
 [upgrade notes](migration.md#postgresql-vector-store-safety-in-26100) and
 [vector-store guide](vectorstores.md#tenantworkspace-scoping).
 
+## Optional dependency advisories
+
+26.10.1 retains known upstream advisories in the optional Ragas and ChromaDB
+packages. The [dependency resolution record](dependency-upgrade-26101.md#remaining-optional-package-advisories)
+lists all six, explains the inspected adapter paths, and provides deployment
+restrictions. A dependency being optional does not make an installed copy safe.
+The `[all]` extra includes Chroma; `[evaluation]` is a separate extra.
+
+Chroma namespaces and metadata filters are not a tenant authorization boundary.
+Use application-controlled collection routing and document-ID ownership; do not
+let untrusted clients choose reserved filter fields or access the backend
+directly. Separate direct-client trust domains into separate instances. Do not
+expose an affected Chroma server's collection APIs to untrusted callers.
+
 ## Architecture
 
 This shows an explicitly configured input/output scanning path. Add

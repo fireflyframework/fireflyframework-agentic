@@ -1203,6 +1203,7 @@ class _IncrementalStreamContext:
         self._conversation_id = conversation_id
         self._prompt = prompt
         self._stream: Any = None
+        self._wrapper: _IncrementalStreamWrapper | None = None
 
     async def __aenter__(self) -> Any:
         enter_coro = self._stream_ctx.__aenter__()
@@ -1212,10 +1213,15 @@ class _IncrementalStreamContext:
             self._stream = await enter_coro
 
         # Wrap the stream to add incremental token streaming
-        return _IncrementalStreamWrapper(self._stream)
+        self._wrapper = _IncrementalStreamWrapper(self._stream)
+        return self._wrapper
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> Any:
-        result = await self._stream_ctx.__aexit__(exc_type, exc_val, exc_tb)
+        try:
+            if self._wrapper is not None:
+                await self._wrapper._close_text_streams()
+        finally:
+            result = await self._stream_ctx.__aexit__(exc_type, exc_val, exc_tb)
         elapsed_ms = (time.monotonic() - self._t0) * 1000
         # On a failed stream, fire error hooks and skip usage/after-hooks.
         if exc_type is not None:
@@ -1248,6 +1254,14 @@ class _IncrementalStreamWrapper:
         self._stream = stream
         self._buffer: list[str] = []
         self._prev_text = ""
+        self._text_streams: set[Any] = set()
+
+    async def _close_text_streams(self) -> None:
+        # Debounced text iterators own tasks that must stop before the model
+        # context exits, even when the caller retains an unfinished token iterator.
+        for stream in tuple(self._text_streams):
+            await stream.aclose()
+        self._text_streams.clear()
 
     async def stream_tokens(self, *, debounce_ms: float = 0.0) -> Any:
         """Stream individual tokens as they arrive.
@@ -1271,23 +1285,26 @@ class _IncrementalStreamWrapper:
         """
         self._prev_text = ""
 
+        text_stream = self._stream.stream_text(delta=True)
+        self._text_streams.add(text_stream)
         try:
-            async for chunk in self._stream.stream_text(delta=True):
-                # The delta=True gives us incremental text
-                if chunk:
-                    if debounce_ms > 0:
-                        # Batch rapid tokens with debouncing
-                        self._buffer.append(chunk)
-                        await asyncio.sleep(debounce_ms / 1000.0)
+            async with contextlib.aclosing(text_stream):
+                async for chunk in text_stream:
+                    # The delta=True gives us incremental text
+                    if chunk:
+                        if debounce_ms > 0:
+                            # Batch rapid tokens with debouncing
+                            self._buffer.append(chunk)
+                            await asyncio.sleep(debounce_ms / 1000.0)
 
-                        if self._buffer:
-                            # Yield batched tokens
-                            batched = "".join(self._buffer)
-                            self._buffer.clear()
-                            yield batched
-                    else:
-                        # Yield immediately without debouncing
-                        yield chunk
+                            if self._buffer:
+                                # Yield batched tokens
+                                batched = "".join(self._buffer)
+                                self._buffer.clear()
+                                yield batched
+                        else:
+                            # Yield immediately without debouncing
+                            yield chunk
         except UserError as exc:
             # pydantic-ai forbids stream_text() for a non-text (structured) run.
             # Token-by-token streaming is meaningless for structured output, so
@@ -1297,6 +1314,8 @@ class _IncrementalStreamWrapper:
                 "this agent produces structured output. Use streaming_mode='buffered' and "
                 "iterate get_output() / stream_output() instead."
             ) from exc
+        finally:
+            self._text_streams.discard(text_stream)
 
         # Flush any remaining buffered tokens
         if self._buffer:

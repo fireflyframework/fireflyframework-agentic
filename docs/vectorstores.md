@@ -5,8 +5,8 @@ Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.
 The Vector Stores module provides pluggable storage and retrieval backends for
 embedding vectors. It ships **six** backends -- in-memory, ChromaDB, Pinecone,
 Qdrant, PostgreSQL/pgvector, and sqlite-vec -- behind a unified API for upserting,
-searching, and deleting documents, plus a tenant/workspace-scoped wrapper that
-makes any backend multi-tenant.
+searching, and deleting documents, plus a tenant/workspace-scoped wrapper.
+Applications must authorize scopes and qualify each backend's isolation behavior.
 
 ---
 
@@ -30,7 +30,7 @@ graph TD
 - **BaseVectorStore** -- Abstract base providing auto-embedding, `search_text` convenience, and error wrapping.
 - **Concrete Backends** -- Backend-specific implementations that override `_upsert()`, `_search()`, `_delete()`.
 - **VectorStoreRegistry** -- Named registry for managing multiple store instances.
-- **TenantScopedVectorStore** -- Wraps any backend with mandatory `(tenant_id, workspace_id)` isolation.
+- **TenantScopedVectorStore** -- Requires `(tenant_id, workspace_id)` and maps that scope to a backend namespace.
 
 ---
 
@@ -89,6 +89,13 @@ store = ChromaVectorStore(collection_name="my_docs", client=client, embedder=my_
 ```
 
 Install: `pip install fireflyframework-agentic[vectorstores-chroma]`
+
+ChromaDB 1.5.9 retains known upstream advisories. Keep embedded use within one
+trust domain and restrict any remote server to trusted application access.
+Metadata namespaces, caller-provided filters and collection-wide document IDs do
+not provide the PostgreSQL adapter's namespace-write guarantee. Read the
+[security restrictions](dependency-upgrade-26101.md#remaining-optional-package-advisories)
+before using Chroma for shared data.
 
 ### Pinecone
 

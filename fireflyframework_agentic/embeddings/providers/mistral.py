@@ -6,9 +6,12 @@ import logging
 from typing import Any
 
 try:
-    from mistralai import Mistral  # type: ignore[attr-defined]
-except ImportError:  # pragma: no cover - optional dep
-    Mistral = None  # type: ignore[assignment,misc]
+    from mistralai.client import Mistral  # pyright: ignore[reportMissingImports]
+except ImportError:
+    try:
+        from mistralai import Mistral  # type: ignore[attr-defined,no-redef]
+    except ImportError:  # pragma: no cover - optional dep
+        Mistral = None  # type: ignore[assignment,misc]
 
 from fireflyframework_agentic.embeddings.base import BaseEmbedder
 from fireflyframework_agentic.exceptions import EmbeddingProviderError

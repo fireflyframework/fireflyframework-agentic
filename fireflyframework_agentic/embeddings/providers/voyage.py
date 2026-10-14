@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 try:
-    import voyageai  # type: ignore[import-untyped]
+    from voyageai import client_async as voyageai  # pyright: ignore[reportMissingImports]
 except ImportError:
     voyageai = None  # type: ignore[assignment]
 

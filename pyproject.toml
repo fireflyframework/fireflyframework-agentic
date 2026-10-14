@@ -1,6 +1,6 @@
 [project]
 name = "fireflyframework-agentic"
-version = "26.10.0"
+version = "26.10.1"
 description = "A GenAI metaframework built on Pydantic AI for building production-grade GenAI applications with agents, reasoning patterns, prompt engineering, observability, and more."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -27,7 +27,7 @@ keywords = ["genai", "agents", "pydantic-ai", "llm", "reasoning", "observability
 dependencies = [
     # Preserve the providers/integrations previously included by default in 1.x.
     # Keep the next major release behind an explicit compatibility review.
-    "pydantic-ai[ag-ui,bedrock,cohere,groq,huggingface,mistral,retries,spec,temporal,ui,xai]>=2.51.0,<3",
+    "pydantic-ai[ag-ui,bedrock,cohere,groq,huggingface,mistral,retries,spec,temporal,ui,xai]>=2.53.0,<3",
     "pydantic>=2.13,<3",
     "pydantic-settings>=2.14.2,<3",
     "jinja2>=3.1.0",
@@ -60,10 +60,10 @@ postgres = [
 ]
 mongodb = [
     "motor>=3.6.0",
-    "pymongo>=4.10.0",
+    "pymongo>=4.18.2",
 ]
 security = [
-    "cryptography>=48.0.1",
+    "cryptography>=50.0.0",
 ]
 # Secure self-hosted script execution (fireflyframework_agentic.execution): the
 # Monty backend is a Rust micro-interpreter with a deny-by-default capability
@@ -125,11 +125,11 @@ watch = ["watchfiles>=0.24.0"]
 # ``soffice`` (LibreOffice) is an OS-level dep only the subprocess converter
 # needs, and Gotenberg is reached over HTTP via the core ``httpx`` dep.
 binary = [
-    "pypdf>=6.13.3",
-    "Pillow>=11.0",
+    "pypdf>=6.19.0",
+    "Pillow>=12.3.0",
     "pillow-heif>=0.18",
-    "cairosvg>=2.7",
-    "py7zr>=0.22",
+    "cairosvg>=2.9.1",
+    "py7zr>=1.1.4",
     "extract-msg>=0.51",
 ]
 all = [
@@ -167,7 +167,7 @@ Issues = "https://github.com/fireflyframework/fireflyframework-agentic/issues"
 Changelog = "https://github.com/fireflyframework/fireflyframework-agentic/blob/main/CHANGELOG.md"
 
 [build-system]
-requires = ["uv_build>=0.9.5,<0.12.0"]
+requires = ["uv_build>=0.9.5,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]

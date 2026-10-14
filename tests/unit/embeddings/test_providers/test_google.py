@@ -35,7 +35,7 @@ class TestGoogleEmbedder:
         embedder = GoogleEmbedder()
         assert embedder.model == "models/text-embedding-004"
 
-    @patch("fireflyframework_agentic.embeddings.providers.google.genai")
-    def test_configure_with_api_key(self, mock_genai):
+    @patch("fireflyframework_agentic.embeddings.providers.google.genai_client")
+    def test_configure_with_api_key(self, mock_genai_client):
         GoogleEmbedder(api_key="test-key")
-        mock_genai.configure.assert_called_once_with(api_key="test-key")
+        mock_genai_client.configure.assert_called_once_with(api_key="test-key")

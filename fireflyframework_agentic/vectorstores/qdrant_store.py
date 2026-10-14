@@ -78,14 +78,17 @@ class QdrantVectorStore(BaseVectorStore):
         await self._client.close()
 
     async def _upsert(self, documents: list[VectorDocument], namespace: str) -> None:
-        points = [
-            PointStruct(  # type: ignore[misc]
-                id=doc.id,
-                vector=doc.embedding,
-                payload={"text": doc.text, "_namespace": namespace, **doc.metadata},
+        points = []
+        for doc in documents:
+            if doc.embedding is None:
+                raise ValueError("Qdrant upsert requires an embedding for every document")
+            points.append(
+                PointStruct(  # type: ignore[misc]
+                    id=doc.id,
+                    vector=doc.embedding,
+                    payload={"text": doc.text, "_namespace": namespace, **doc.metadata},
+                )
             )
-            for doc in documents
-        ]
         await self._client.upsert(
             collection_name=self._collection_name,
             points=points,

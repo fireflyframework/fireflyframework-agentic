@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from google.generativeai.types.text_types import BatchEmbeddingDict  # pyright: ignore[reportMissingImports]
 
 try:
     import google.generativeai as genai  # type: ignore[import-untyped]
+    import google.generativeai.client as genai_client  # pyright: ignore[reportMissingImports]
 except ImportError:
     genai = None  # type: ignore[assignment]
 
@@ -40,15 +44,20 @@ class GoogleEmbedder(BaseEmbedder):
                 "Install it with: pip install google-generativeai"
             )
         if api_key:
-            genai.configure(api_key=api_key)
+            genai_client.configure(api_key=api_key)
 
     async def _embed_batch(self, texts: list[str], **kwargs: Any) -> list[list[float]]:
         """Embed a single batch of texts via the Google Generative AI API."""
         try:
-            result = await asyncio.to_thread(
-                genai.embed_content,  # type: ignore[union-attr]
-                model=self._model,
-                content=texts,
+            # The SDK's overlapping overloads infer a single vector for list[str],
+            # but its runtime dispatch treats every non-string iterable as a batch.
+            result = cast(
+                "BatchEmbeddingDict",
+                await asyncio.to_thread(
+                    genai.embed_content,  # type: ignore[union-attr]
+                    model=self._model,
+                    content=texts,
+                ),
             )
             return [list(e) for e in result["embedding"]]
         except Exception as exc:

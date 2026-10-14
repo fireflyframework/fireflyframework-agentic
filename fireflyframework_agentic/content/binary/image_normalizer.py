@@ -1,5 +1,18 @@
 # Copyright 2026 Firefly Software Foundation
-# Licensed under the Apache License, Version 2.0.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Raster + vector image normalisation.
 
 Multimodal LLM providers (and most OCR/loader paths) accept PNG, JPEG, GIF
@@ -73,16 +86,14 @@ class ImageNormalizer:
     # ------------------------------------------------------------------
 
     def _heic_to_png(self, data: bytes, filename: str | None) -> NormalisedImage:
-        # pillow-heif registers HEIF/HEIC/AVIF openers on import. The
-        # side-effect registration is the library's published API, so the
-        # import is load-bearing despite looking unused.
         try:
-            import pillow_heif  # noqa: F401  # pyright: ignore[reportMissingImports]
+            from pillow_heif import register_heif_opener  # pyright: ignore[reportMissingImports]
         except ImportError as exc:  # pragma: no cover -- runtime dep guard
             raise ImageConversionError(
                 "pillow-heif is required for HEIC/HEIF/AVIF input",
                 filename=filename,
             ) from exc
+        register_heif_opener()
         return self._raster_to_png(data, fmt=None, filename=filename)
 
     def _raster_to_png(self, data: bytes, fmt: str | None, filename: str | None) -> NormalisedImage:
