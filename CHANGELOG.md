@@ -8,6 +8,15 @@ for the first release in a month and increments for subsequent releases that mon
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.10.0] - 2026-10-14
+
+### Fixed
+
+- Reject PostgreSQL vector-store upserts when a document ID belongs to another
+  namespace, including concurrent writes. A conflict rolls back the whole batch
+  without exposing the existing namespace or document. IDs remain globally
+  unique, and updates within the same namespace retain their existing behavior.
+
 ## [26.09.0] - 2026-09-26
 
 ### Changed

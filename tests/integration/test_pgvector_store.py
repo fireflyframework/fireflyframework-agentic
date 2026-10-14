@@ -1,3 +1,18 @@
+# Copyright 2026 Firefly Software Foundation
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Integration tests for vector and memory stores against a real Postgres.
 
 Uses Testcontainers with the ``pgvector/pgvector`` image, so these exercise the
@@ -11,13 +26,16 @@ unavailable.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from fireflyframework_agentic.exceptions import VectorStoreError
 from fireflyframework_agentic.vectorstores.pgvector_store import PgVectorVectorStore
+from fireflyframework_agentic.vectorstores.scoped import TenantScopedVectorStore
 from fireflyframework_agentic.vectorstores.types import SearchFilter, VectorDocument
 
 pytestmark = pytest.mark.integration
@@ -99,6 +117,111 @@ class TestPgVectorIntegration:
         results = await store.search([1.0, 0.0, 0.0, 0.0], top_k=5, namespace="ns")
         assert len(results) == 1
         assert results[0].document.metadata["v"] == "new"
+
+    async def test_upsert_rejects_foreign_namespace_without_disclosing_data(self, store: PgVectorVectorStore) -> None:
+        document = VectorDocument(id="private-id-'\n", text="private document", embedding=[1.0, 0.0, 0.0, 0.0])
+        await store.upsert([document], namespace="private-namespace")
+
+        with pytest.raises(VectorStoreError) as error:
+            await store.upsert([document.model_copy(update={"text": "replacement"})], namespace="other")
+
+        for private_value in ("private-id", document.text, "private-namespace"):
+            assert private_value not in str(error.value)
+            assert private_value not in repr(error.value)
+        owner = await store.search([1.0, 0.0, 0.0, 0.0], namespace="private-namespace")
+        assert [(result.document.id, result.document.text) for result in owner] == [(document.id, "private document")]
+        assert await store.search([1.0, 0.0, 0.0, 0.0], namespace="other") == []
+        await store.delete([document.id], namespace="other")
+        assert len(await store.search([1.0, 0.0, 0.0, 0.0], namespace="private-namespace")) == 1
+
+    @pytest.mark.parametrize("conflict_position", [0, 1, 2])
+    async def test_namespace_conflict_rolls_back_whole_batch(
+        self, store: PgVectorVectorStore, conflict_position: int
+    ) -> None:
+        await store.upsert([_doc("foreign", [1.0, 0.0, 0.0, 0.0], value="private")], namespace="owner")
+        await store.upsert([_doc("local", [1.0, 0.0, 0.0, 0.0], value="before")], namespace="caller")
+        batch = [
+            _doc("local", [1.0, 0.0, 0.0, 0.0], value="after"),
+            _doc("new", [1.0, 0.0, 0.0, 0.0]),
+        ]
+        batch.insert(conflict_position, _doc("foreign", [1.0, 0.0, 0.0, 0.0], value="replacement"))
+
+        with pytest.raises(VectorStoreError):
+            await store.upsert(batch, namespace="caller")
+
+        caller = await store.search([1.0, 0.0, 0.0, 0.0], namespace="caller")
+        assert [(result.document.id, result.document.metadata) for result in caller] == [("local", {"value": "before"})]
+        owner = await store.search([1.0, 0.0, 0.0, 0.0], namespace="owner")
+        assert [(result.document.id, result.document.metadata) for result in owner] == [
+            ("foreign", {"value": "private"})
+        ]
+
+    async def test_same_namespace_duplicate_ids_in_batch_keep_last_update(self, store: PgVectorVectorStore) -> None:
+        await store.upsert(
+            [_doc("same", [1.0, 0.0, 0.0, 0.0], value="first"), _doc("same", [0.0, 1.0, 0.0, 0.0], value="last")],
+            namespace="owner",
+        )
+        result = await store.search([0.0, 1.0, 0.0, 0.0], namespace="owner")
+        assert len(result) == 1
+        assert result[0].document.metadata == {"value": "last"}
+        assert result[0].score == pytest.approx(1.0)
+
+    @pytest.mark.parametrize("other_scope", [("other", "main"), ("owner", "other")])
+    async def test_scoped_upsert_cannot_move_document(
+        self, store: PgVectorVectorStore, other_scope: tuple[str, str]
+    ) -> None:
+        scoped = TenantScopedVectorStore(store)
+        await scoped.upsert([_doc("same", [1.0, 0.0, 0.0, 0.0])], tenant_id="owner", workspace_id="main")
+        with pytest.raises(VectorStoreError):
+            await scoped.upsert(
+                [_doc("same", [0.0, 1.0, 0.0, 0.0])], tenant_id=other_scope[0], workspace_id=other_scope[1]
+            )
+        result = await scoped.search([1.0, 0.0, 0.0, 0.0], tenant_id="owner", workspace_id="main")
+        assert len(result) == 1
+        assert result[0].document.metadata == {"tenant_id": "owner", "workspace_id": "main"}
+        assert result[0].score == pytest.approx(1.0)
+        assert await scoped.search([1.0, 0.0, 0.0, 0.0], tenant_id=other_scope[0], workspace_id=other_scope[1]) == []
+
+    @pytest.mark.parametrize("existing", [False, True])
+    async def test_concurrent_namespace_conflict_has_one_owner(
+        self, store: PgVectorVectorStore, pg_url: str, existing: bool
+    ) -> None:
+        if existing:
+            await store.upsert([_doc("same", [1.0, 0.0, 0.0, 0.0], value="original")], namespace="owner")
+        rendezvous = asyncio.Barrier(2)
+
+        class ConcurrentStore(PgVectorVectorStore):
+            async def _prepare_session(self, conn, *, namespace: str) -> None:
+                await rendezvous.wait()
+
+        writers = [
+            ConcurrentStore(url=pg_url, dimension=_DIM, table_name=store._table, create_schema=False) for _ in range(2)
+        ]
+        try:
+            for writer in writers:
+                await writer.initialise()
+            outcomes = await asyncio.wait_for(
+                asyncio.gather(
+                    writers[0].upsert([_doc("same", [1.0, 0.0, 0.0, 0.0], value="owner")], namespace="owner"),
+                    writers[1].upsert([_doc("same", [0.0, 1.0, 0.0, 0.0], value="other")], namespace="other"),
+                    return_exceptions=True,
+                ),
+                timeout=10,
+            )
+        finally:
+            for writer in writers:
+                await writer.close()
+
+        assert sum(outcome is None for outcome in outcomes) == 1
+        assert sum(isinstance(outcome, VectorStoreError) for outcome in outcomes) == 1
+        winner = "owner" if outcomes[0] is None else "other"
+        if existing:
+            assert winner == "owner"
+        loser = "other" if winner == "owner" else "owner"
+        result = await store.search([1.0, 0.0, 0.0, 0.0], namespace=winner)
+        assert len(result) == 1
+        assert result[0].document.metadata == {"value": winner}
+        assert await store.search([1.0, 0.0, 0.0, 0.0], namespace=loser) == []
 
     async def test_delete_removes(self, store: PgVectorVectorStore) -> None:
         await store.upsert([_doc("1", [1.0, 0.0, 0.0, 0.0])], namespace="ns")
