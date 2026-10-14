@@ -96,8 +96,7 @@ class TestChromaVectorStore:
         assert len(results) == 1
         # Verify the where clause included the filter
         call_kwargs = mock_collection.query.call_args
-        assert call_kwargs[1]["where"]["type"] == "blog"
-        assert call_kwargs[1]["where"]["_namespace"] == "default"
+        assert call_kwargs[1]["where"] == {"$and": [{"_namespace": "default"}, {"type": "blog"}]}
 
     @patch("fireflyframework_agentic.vectorstores.chroma_store.chromadb")
     async def test_search_empty_results(self, mock_chromadb):

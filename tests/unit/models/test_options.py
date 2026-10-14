@@ -96,6 +96,21 @@ def test_openai_none_keeps_sampling_when_the_model_supports_it() -> None:
     }
 
 
+@pytest.mark.parametrize("provider", ["openai-chat", "openai-responses", "azure-responses"])
+@pytest.mark.parametrize("field", ["temperature", "top_p"])
+def test_default_reasoning_rejects_sampling(provider: str, field: str) -> None:
+    with pytest.raises(ModelOptionsError, match=field):
+        resolve_model_options(f"{provider}:gpt-6-sol", ModelOptions(**{field: 0.2}))
+
+
+def test_measured_profile_can_disable_default_reasoning() -> None:
+    assert resolve_model_options(
+        "azure-responses:deployment",
+        ModelOptions(temperature=0.2),
+        profile={"supports_thinking": True, "thinking_enabled_by_default": False},
+    ) == {"temperature": 0.2}
+
+
 @pytest.mark.parametrize(
     ("model", "values", "field"),
     [

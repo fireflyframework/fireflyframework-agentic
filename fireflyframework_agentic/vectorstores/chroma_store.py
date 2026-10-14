@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from chromadb.api.types import Metadata, Where  # pyright: ignore[reportMissingImports]
 
 try:
     import chromadb  # type: ignore[import-untyped]
@@ -45,7 +48,7 @@ class ChromaVectorStore(BaseVectorStore):
         ids = [doc.id for doc in documents]
         embeddings = [doc.embedding for doc in documents]
         texts = [doc.text for doc in documents]
-        metadatas = [{**doc.metadata, "_namespace": namespace} for doc in documents]
+        metadatas: list[Metadata] = [{**doc.metadata, "_namespace": namespace} for doc in documents]
         self._collection.upsert(
             ids=ids,
             embeddings=embeddings,  # type: ignore[arg-type]
@@ -60,25 +63,31 @@ class ChromaVectorStore(BaseVectorStore):
         namespace: str,
         filters: list[SearchFilter] | None,
     ) -> list[SearchResult]:
-        where = {"_namespace": namespace}
+        conditions: list[Where] = [{"_namespace": namespace}]
         if filters:
             for f in filters:
                 if f.operator == "eq":
-                    where[f.field] = f.value
+                    conditions.append({f.field: f.value})
+        where: Where = {"$and": conditions} if len(conditions) > 1 else conditions[0]
         results = self._collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
-            where=where if where else None,
+            where=where,
         )
+        documents = results["documents"]
+        metadatas = results["metadatas"]
+        distances = results["distances"]
         search_results = []
         if results["ids"] and results["ids"][0]:
             for i, doc_id in enumerate(results["ids"][0]):
                 doc = VectorDocument(
                     id=doc_id,
-                    text=results["documents"][0][i] if results["documents"] else "",
-                    metadata={k: v for k, v in (results["metadatas"][0][i] or {}).items() if k != "_namespace"},
+                    text=(documents[0][i] or "") if documents else "",
+                    metadata={
+                        k: v for k, v in ((metadatas[0][i] or {}) if metadatas else {}).items() if k != "_namespace"
+                    },
                 )
-                score = 1.0 - (results["distances"][0][i] if results["distances"] else 0.0)
+                score = 1.0 - (distances[0][i] if distances else 0.0)
                 search_results.append(SearchResult(document=doc, score=score))
         return search_results
 

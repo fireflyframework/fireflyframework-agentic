@@ -278,7 +278,7 @@ def _validate_effective_options(target: _Target, settings: Mapping[str, Any]) ->
         elif settings.get("thinking") is not None:
             reasoning_active = settings["thinking"] is not False
         else:
-            reasoning_active = profile.get("openai_reasoning_enabled_by_default", False)
+            reasoning_active = profile.get("thinking_enabled_by_default", False)
         if profile.get("supports_thinking", False) and reasoning_active:
             for field in _SAMPLING_FIELDS:
                 if settings.get(field) is not None:

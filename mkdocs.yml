@@ -162,4 +162,5 @@ nav:
       - IDP Pipeline: use-case-idp.md
   - Reference:
       - Migration Guide: migration.md
+      - 26.10.1 Dependencies: dependency-upgrade-26101.md
       - Changelog: changelog.md

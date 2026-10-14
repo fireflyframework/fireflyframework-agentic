@@ -8,6 +8,51 @@ for the first release in a month and increments for subsequent releases that mon
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.
 
+## [26.10.1] - 2026-10-14
+
+### Changed
+
+- Resolve the 23 outstanding Dependabot requests as one compatible dependency
+  set. Preserve previously completed updates instead of applying stale PR diffs;
+  retain every provider extra and HEIF support. The
+  [resolution record](https://github.com/fireflyframework/fireflyframework-agentic/blob/main/docs/dependency-upgrade-26101.md)
+  accounts for each request.
+- Raise the Pydantic AI minimum to 2.53.0 and qualify 2.55.0 with FastMCP 4.1.0,
+  MCP 2.3.0, OpenAI 3.31.0 and Starlette 1.7.0. Update available compatible
+  security fixes across binary, cryptographic, HTTP and transitive dependencies.
+- Require MkDocs Material 9.7.7, allow the uv-build 0.12 series, and update the
+  requested GitHub Actions with immutable commit references. Preserve explicit
+  cache pruning and generate release checksums automatically.
+- Document cryptography's removal of macOS Intel and Windows 32-bit wheels.
+  Ragas 0.2.6 and ChromaDB 1.5.9 retain six known advisories; this release documents
+  their exposure and restrictions and does not claim to eliminate them.
+
+### Fixed
+
+- Read Pydantic AI's renamed default-thinking profile field so portable sampling
+  options remain rejected while reasoning is enabled.
+- Restore 7z extraction with py7zr's supported in-memory writer API, member/path
+  validation and expanded-size limits; use at least py7zr 1.1.4.
+- Register the HEIF decoder explicitly, restoring HEIC/HEIF conversion while
+  retaining Pillow's AVIF support.
+- Combine Chroma namespace and metadata predicates using its supported filter
+  format, preventing a metadata filter from replacing the requested namespace.
+  This does not add tenant authorization or cross-namespace upsert protection.
+- Align optional Google, Voyage and Qdrant adapters with their SDK types while
+  preserving batching, lazy optional imports and explicit embeddings.
+- Load Mistral 2's client from its supported module while retaining the Mistral
+  1.x import, restoring embeddings with the current SDK.
+- Close incremental text iterators before their native stream context exits,
+  including early breaks, consumer errors and cancellation. This prevents
+  deferred asynchronous-generator shutdown errors.
+
+### Added
+
+- Real local MCP transport and Firefly toolset compatibility checks, plus actual
+  7z, HEIF/HEIC and AVIF fixtures. Provider calls remain mocked or local.
+- Native concurrency-limiter lifecycle and fallback token-accounting tests,
+  including capacity reuse after interrupted streams.
+
 ## [26.10.0] - 2026-10-14
 
 ### Fixed

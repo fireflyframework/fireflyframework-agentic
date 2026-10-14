@@ -2,8 +2,46 @@
 
 Copyright 2026 Firefly Software Foundation. SPDX-License-Identifier: Apache-2.0.
 
-This guide covers PostgreSQL vector-store safety in 26.10.0, the Pydantic AI 2.x
-upgrade, and earlier tool and Dynamic Workflow changes.
+This guide covers the 26.10.1 dependency refresh, PostgreSQL vector-store safety
+in 26.10.0, the Pydantic AI 2.x upgrade, and earlier API changes.
+
+## Dependency refresh in 26.10.1
+
+Resolve application dependencies normally after upgrading the release wheel.
+The Pydantic AI minimum is now `>=2.53.0,<3`; the qualified lock uses 2.55.0 with
+FastMCP 4.1.0, MCP 2.3.0, OpenAI 3.31.0 and Starlette 1.7.0. Existing provider
+extras, native toolsets, model wrappers, output schemas and endpoint selectors
+remain available. Do not bypass dependency resolution or retain incompatible
+application overrides. The [resolution record](dependency-upgrade-26101.md)
+lists all 23 Dependabot requests and the remaining optional-package advisories.
+
+Applications using native Pydantic AI concurrency limiters must account for its
+2.53 changes: a limiter cannot be shared between a calling agent and nested
+model wrappers, acquisition is no longer reentrant, and custom limiters must
+support release from another task. Pydantic AI 2.55 also accounts for usage from
+rejected fallback attempts. Review cost reporting and custom wrappers when
+upgrading; applications requiring that accounting correction need Pydantic AI
+2.55 or later even though Agentic's minimum is 2.53. Firefly records aggregate
+native fallback tokens, but does not attribute their dollar cost separately to
+each attempted provider/model. Incremental streams now close unfinished native
+text iterators before leaving the stream context, preventing deferred cleanup
+errors after early termination. Firefly's sampling validation follows the new
+`thinking_enabled_by_default` profile key; custom measured profiles should use
+that key instead of `openai_reasoning_enabled_by_default`.
+
+The `[security]` extra now requires cryptography 50 or later. Upstream stopped
+publishing macOS Intel and Windows 32-bit wheels in version 49. A universal
+Agentic wheel does not establish native dependency support on those platforms;
+qualify a supported platform or an independently maintained source build.
+
+The `[binary]` extra retains HEIF support and updates Pillow, pypdf, CairoSVG and
+py7zr. The 7z adapter uses the current in-memory writer API and enforces member
+and expanded-size limits before returning extracted artifacts. No database
+migration, re-embedding or PostgreSQL upgrade is required.
+
+The Mistral embedding adapter now supports the SDK 2 client module while
+retaining the 1.x import path. The qualified lock uses Mistral 2.10.1; local HTTP
+tests exercise construction, request serialization, response parsing and errors.
 
 ## PostgreSQL vector-store safety in 26.10.0
 
@@ -24,7 +62,7 @@ their references. If the application used cross-namespace upsert to move a
 document, replace that behavior with an explicitly authorized transfer workflow.
 Retrying the same conflicting batch will not succeed.
 
-Install the [26.10.0 release](getting-started/installation.md#install-a-release),
+Install the [current release](getting-started/installation.md#install-a-release),
 then verify same-namespace updates, rejection of a foreign-namespace ID, and
 whole-batch rollback in an isolated application test database. This fix does not
 restore content overwritten by earlier versions; any suspected historical loss
@@ -40,7 +78,7 @@ requirements of this release; [PRISM remains outside the supported backend](pg-v
 
 ## Pydantic AI 2 and OpenAI API selection
 
-The framework now requires `pydantic-ai>=2.51.0,<3` and
+The framework now requires `pydantic-ai>=2.53.0,<3` and
 `genai-prices>=0.1.9,<0.2`. Update application constraints that still require
 Pydantic AI 1.x, then resolve dependencies and run your application tests. The
 framework declares provider extras explicitly to preserve its existing provider

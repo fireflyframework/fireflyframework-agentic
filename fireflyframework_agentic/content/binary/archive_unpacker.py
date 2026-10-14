@@ -1,5 +1,18 @@
 # Copyright 2026 Firefly Software Foundation
-# Licensed under the Apache License, Version 2.0.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """``ArchiveUnpacker`` -- expand ZIP / 7z / TAR / GZ / EPUB members.
 
 Returns one ``(path, bytes)`` tuple per member. The
@@ -20,6 +33,7 @@ import logging
 import tarfile
 import zipfile
 from collections.abc import Iterator
+from pathlib import PureWindowsPath
 
 from fireflyframework_agentic.content.binary.config import BinaryConfig
 from fireflyframework_agentic.content.binary.errors import ArchiveExtractionError
@@ -114,16 +128,35 @@ class ArchiveUnpacker:
     def _iter_7z(self, data: bytes, filename: str | None) -> Iterator[tuple[str, bytes]]:
         try:
             import py7zr  # pyright: ignore[reportMissingImports]
+            from py7zr.io import BytesIOFactory  # pyright: ignore[reportMissingImports]
         except ImportError as exc:  # pragma: no cover -- runtime dep guard
             raise ArchiveExtractionError(
                 "py7zr is required to extract 7z archives",
                 filename=filename,
             ) from exc
         try:
-            with py7zr.SevenZipFile(io.BytesIO(data), mode="r") as sz:
+            with py7zr.SevenZipFile(io.BytesIO(data), mode="r", max_extract_size=self._max_uncompressed) as sz:
                 if sz.needs_password():
                     raise ArchiveExtractionError("password-protected 7z archives are not supported", filename=filename)
-                contents: dict[str, io.BytesIO] = sz.readall() or {}  # pyright: ignore[reportAttributeAccessIssue]
+                total_bytes = 0
+                count = 0
+                for info in sz.list():
+                    path = PureWindowsPath(info.filename)
+                    if path.drive or path.root or ".." in path.parts:
+                        raise ArchiveExtractionError("unsafe 7z member path", filename=filename)
+                    if info.is_directory:
+                        continue
+                    if not info.is_file:
+                        raise ArchiveExtractionError("unsupported 7z member type", filename=filename)
+                    if info.uncompressed > 0:
+                        total_bytes += info.uncompressed
+                        count += 1
+                        self._enforce_limits(count, total_bytes, filename)
+                # The library enforces the aggregate byte ceiling during
+                # decompression, before writing to these in-memory buffers.
+                factory = BytesIOFactory(limit=self._max_uncompressed)
+                sz.extractall(factory=factory)
+                contents = factory.products
         except ArchiveExtractionError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -136,7 +169,7 @@ class ArchiveUnpacker:
         total_bytes = 0
         yielded = 0
         for path, buf in contents.items():
-            payload = buf.getvalue()
+            payload = buf.read()
             if not payload:
                 continue
             total_bytes += len(payload)
