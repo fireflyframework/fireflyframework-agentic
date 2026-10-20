@@ -18,7 +18,7 @@ jobs:
         with:
           enable-cache: true
           prune-cache: true
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
       - run: uv sync --extra dev --extra binary --extra vectorstores-sqlite-vec --extra vectorstores-pgvector --extra openai-embeddings --extra evaluation --extra script-execution --extra watch
