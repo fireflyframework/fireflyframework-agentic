@@ -10,12 +10,12 @@
 
 {% block extrahead %}
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Firefly Agentic — the production-grade agentic metaframework">
+  <meta property="og:title" content="Agentic moved to pyfly — historical standalone documentation">
   <meta property="og:description" content="{{ config.site_description }}">
   <meta name="twitter:card" content="summary_large_image">
 {% endblock %}
 
-{% block htmltitle %}<title>Firefly Agentic — production-grade agents on Pydantic AI</title>{% endblock %}
+{% block htmltitle %}<title>Agentic moved to pyfly — historical documentation</title>{% endblock %}
 
 {% block tabs %}
 <div class="ff-home">
@@ -24,38 +24,45 @@
   <section class="ff-hero">
     <canvas class="ff-constellation" id="ff-constellation" aria-hidden="true"></canvas>
     <div class="ff-wrap">
-      <h1 class="ff-hero__title">Agents you can run in <span class="ff-grad">production</span>.</h1>
+      <h1 class="ff-hero__title">Agentic has moved to <span class="ff-grad">pyfly</span>.</h1>
       <p class="ff-hero__lead">
-        Firefly Agentic is the production-grade metaframework built on Pydantic AI.
-        Use Firefly agents, tools, memory and typed model options — gain
-        lifecycle hooks, delegation, reasoning patterns, validation loops, RAG
-        and DAG pipelines. Keep provider choices in configuration and compose the features you need.
+        Active development continues in <code>pyfly.agentic</code>, the native,
+        opt-in Agentic module in pyfly v26.10.08 (package version 26.10.8).
+        Use <code>Agent</code>, <code>AgentTool</code>, <code>@agent</code> and
+        <code>@agent_tool</code>. The old namespace and public names have no aliases.
       </p>
 
       <div class="ff-install">
         <span class="ff-install__prompt">$</span>
-        <span class="ff-install__cmd">curl -fsSL https://raw.githubusercontent.com/fireflyframework/fireflyframework-agentic/main/install.sh | bash</span>
-        <button class="ff-install__copy" data-copy="curl -fsSL https://raw.githubusercontent.com/fireflyframework/fireflyframework-agentic/main/install.sh | bash" aria-label="Copy install command">
+        <span class="ff-install__cmd">python -m pip install &quot;pyfly[agentic] @ https://github.com/fireflyframework/fireflyframework-pyfly/releases/download/v26.10.08/pyfly-26.10.8-py3-none-any.whl&quot;</span>
+        <button class="ff-install__copy" data-copy="python -m pip install &quot;pyfly[agentic] @ https://github.com/fireflyframework/fireflyframework-pyfly/releases/download/v26.10.08/pyfly-26.10.8-py3-none-any.whl&quot;" aria-label="Copy install command">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         </button>
       </div>
 
-      <p class="ff-install-note">This installer follows <code>main</code>. For a pinned version, <a href="{{ base_url }}/getting-started/installation/#install-a-release">install the v26.10.0 release</a>.</p>
+      <p class="ff-install-note">Install the released pyfly wheel with the <code>agentic</code> extra, then enable <code>pyfly.agentic.enabled</code>. <a href="https://fireflyframework.github.io/fireflyframework-pyfly/docs/modules/agentic/migration/">Follow the migration checklist</a>. This site and the standalone releases are retained as historical material.</p>
 
       <div class="ff-cta-row">
-        <a class="ff-btn ff-btn--primary" href="{{ base_url }}/getting-started/installation/">
-          Get started
+        <a class="ff-btn ff-btn--primary" href="https://fireflyframework.github.io/fireflyframework-pyfly/docs/modules/agentic/">
+          Open native Agentic docs
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </a>
-        <a class="ff-btn ff-btn--ghost" href="{{ base_url }}/tutorial/">
+        <a class="ff-btn ff-btn--ghost" href="https://fireflyframework.github.io/fireflyframework-pyfly/docs/modules/agentic/migration/">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-          Read the tutorial
+          Migrate to pyfly
         </a>
-        <a class="ff-btn ff-btn--ghost" href="{{ config.repo_url }}" target="_blank" rel="noopener">
+        <a class="ff-btn ff-btn--ghost" href="https://github.com/fireflyframework/fireflyframework-pyfly" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-1.8c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5A11.5 11.5 0 0 0 23.5 12C23.5 5.7 18.3.5 12 .5z"/></svg>
           GitHub
         </a>
       </div>
+    </div>
+  </section>
+
+  <section class="ff-section ff-section--tint">
+    <div class="ff-wrap">
+      <h2 class="ff-section__title">Historical standalone reference</h2>
+      <p class="ff-section__sub">The guides, examples and API names below describe the former standalone distribution. Use the native pyfly documentation for current development.</p>
     </div>
   </section>
 

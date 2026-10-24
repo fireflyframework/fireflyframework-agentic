@@ -65,6 +65,10 @@
   --md-default-bg-color:        #10110f;
 }
 
+/* The migration announcement has a dark surface in both color schemes. */
+.md-banner a { color: var(--ff-accent-bright); text-decoration: underline; }
+.md-banner a:focus-visible { outline: 2px solid var(--ff-accent-bright); outline-offset: 3px; }
+
 /* Display face for all headings, in docs and on the landing. */
 .md-typeset h1,
 .md-typeset h2,

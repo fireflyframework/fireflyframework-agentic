@@ -1,3 +1,28 @@
+> [!IMPORTANT]
+> **Moved to pyfly: `pyfly.agentic`.** Active development continues in
+> [fireflyframework-pyfly](https://github.com/fireflyframework/fireflyframework-pyfly), starting with
+> [pyfly v26.10.08](https://github.com/fireflyframework/fireflyframework-pyfly/releases/tag/v26.10.08) (package version `26.10.8`).
+> Use the [native Agentic documentation](https://fireflyframework.github.io/fireflyframework-pyfly/docs/modules/agentic/) and
+> [migration guide](https://fireflyframework.github.io/fireflyframework-pyfly/docs/modules/agentic/migration/). This repository, its releases and the
+> standalone documentation below are retained as historical material.
+> Replace `fireflyframework_agentic` imports with `pyfly.agentic`,
+> `FireflyAgent` with `Agent`, `BaseTool` with `AgentTool`, and
+> `@firefly_agent` / `@firefly_tool` with `@agent` / `@agent_tool`.
+> The native module provides no aliases for the old namespace or names.
+
+```bash
+python -m pip install "pyfly[agentic] @ https://github.com/fireflyframework/fireflyframework-pyfly/releases/download/v26.10.08/pyfly-26.10.8-py3-none-any.whl"
+```
+
+Enable `pyfly.agentic.enabled: true` in your pyfly application. Rename
+`FIREFLY_AGENTIC_*` settings to `PYFLY_AGENTIC_*` and select namespaced integration
+extras such as `agentic-postgres`. Follow the migration guide for configuration,
+application-owned runtime services, plugins and persistent data.
+
+---
+
+## Historical standalone project
+
 <p align="center">
   <a href="https://fireflyframework.github.io/fireflyframework-agentic/"><img src="assets/banner.svg" alt="agentic by Firefly — Intelligence, composed." width="100%"></a>
 </p>
@@ -21,7 +46,7 @@
   <a href="https://microsoft.github.io/pyright/"><img src="https://img.shields.io/badge/type--checked-pyright-2c8a1c.svg" alt="Type checked: pyright"></a>
 </p>
 
-Current release: [26.10.1](https://github.com/fireflyframework/fireflyframework-agentic/releases/tag/v26.10.1).
+Final standalone release: [26.10.1](https://github.com/fireflyframework/fireflyframework-agentic/releases/tag/v26.10.1).
 This release refreshes dependencies and preserves PostgreSQL's whole-batch
 rejection of cross-namespace ID conflicts. Read the
 [upgrade notes](docs/migration.md#dependency-refresh-in-26101) and

@@ -1,3 +1,10 @@
+> [!IMPORTANT]
+> This is the historical standalone example catalogue. Native examples now live in
+> [pyfly's `examples/agentic`](https://github.com/fireflyframework/fireflyframework-pyfly/tree/main/examples/agentic).
+> Install [pyfly v26.10.08](https://github.com/fireflyframework/fireflyframework-pyfly/releases/tag/v26.10.08) or later and follow the
+> [migration guide](https://fireflyframework.github.io/fireflyframework-pyfly/docs/modules/agentic/migration/) before adapting an application.
+> The setup commands and old API names below describe the standalone release.
+
 # Examples
 
 Copyright 2026 Firefly Software Foundation. Licensed under the Apache License 2.0.

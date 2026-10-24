@@ -1,9 +1,8 @@
 ---
-title: Firefly Agentic
+title: Agentic moved to pyfly
 description: >-
-  The production-grade agentic metaframework, built on Pydantic AI. Build with
-  Firefly agents, tools and typed model options — gain lifecycle hooks, delegation,
-  memory, reasoning patterns, validation loops, RAG and DAG pipelines.
+  Agentic development has moved to pyfly's native pyfly.agentic module.
+  This site preserves the historical standalone documentation.
 template: home.html
 hide:
   - navigation

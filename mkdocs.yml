@@ -1,12 +1,11 @@
 # Firefly Agentic — documentation site (MkDocs + Material).
 # Local preview:  pip install -r docs/requirements.txt && mkdocs serve
 # Build (CI):     mkdocs build --strict
-site_name: Firefly Agentic
+site_name: Firefly Agentic (historical)
 site_url: https://fireflyframework.github.io/fireflyframework-agentic/
 site_description: >-
-  The production-grade agentic metaframework, built on Pydantic AI. Build with
-  Firefly agents, tools and typed model options — gain lifecycle hooks, delegation,
-  memory, reasoning patterns, validation loops, RAG and DAG pipelines.
+  Historical standalone Agentic documentation. Active development has moved to
+  pyfly's native pyfly.agentic module, starting with pyfly v26.10.08.
 site_author: Firefly Software Foundation
 copyright: Copyright &copy; 2026 Firefly Software Foundation — Apache-2.0
 
