@@ -2,8 +2,23 @@
 
 Copyright 2026 Firefly Software Foundation. SPDX-License-Identifier: Apache-2.0.
 
-This guide covers the 26.10.1 dependency refresh, PostgreSQL vector-store safety
-in 26.10.0, the Pydantic AI 2.x upgrade, and earlier API changes.
+## Move to native pyfly Agentic
+
+Active development has moved to [pyfly](https://github.com/fireflyframework/fireflyframework-pyfly) and the `pyfly.agentic`
+namespace, starting with [v26.10.08](https://github.com/fireflyframework/fireflyframework-pyfly/releases/tag/v26.10.08) (package version `26.10.8`).
+Follow the [native migration checklist](https://fireflyframework.github.io/fireflyframework-pyfly/docs/modules/agentic/migration/) and
+[installation guide](https://fireflyframework.github.io/fireflyframework-pyfly/docs/modules/agentic/getting-started/installation/).
+
+Replace the standalone distribution with `pyfly[agentic]`; rename imports to
+`pyfly.agentic`, `FireflyAgent` to `Agent`, `BaseTool` to `AgentTool`, and
+`@firefly_agent` / `@firefly_tool` to `@agent` / `@agent_tool`.
+The native module provides no aliases for the old names. Rename settings to
+`PYFLY_AGENTIC_*`, enable `pyfly.agentic.enabled`, use namespaced integration extras,
+and adopt application-owned runtime services as described in the native guide.
+
+The rest of this page preserves the historical standalone 26.10.1 dependency
+refresh, PostgreSQL vector-store safety in 26.10.0, Pydantic AI 2.x upgrade, and
+earlier API changes. These version numbers refer to the standalone distribution.
 
 ## Dependency refresh in 26.10.1
 
