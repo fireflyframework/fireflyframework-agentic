@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
       - run: pip install pre-commit
@@ -39,7 +39,7 @@ jobs:
           enable-cache: true
           prune-cache: true
           cache-dependency-glob: uv.lock
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
       - run: uv sync --extra dev
@@ -57,7 +57,7 @@ jobs:
           enable-cache: true
           prune-cache: true
           cache-dependency-glob: uv.lock
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
       - run: uv sync --extra dev --extra binary --extra vectorstores-sqlite-vec --extra openai-embeddings --extra evaluation --extra watch
@@ -74,7 +74,7 @@ jobs:
           enable-cache: true
           prune-cache: true
           cache-dependency-glob: uv.lock
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
       - run: uv sync --extra dev --extra binary --extra vectorstores-sqlite-vec --extra vectorstores-pgvector --extra openai-embeddings --extra evaluation --extra script-execution --extra watch
@@ -89,7 +89,7 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           prune-cache: true
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
       - run: python assets/tools/build_brand_assets.py --check
@@ -111,7 +111,7 @@ jobs:
           enable-cache: true
           prune-cache: true
           cache-dependency-glob: uv.lock
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
       - run: uv build --force-pep517
