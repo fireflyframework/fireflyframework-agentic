@@ -139,7 +139,7 @@ evaluation = [
     "numpy>=1.26.0",
     # Ragas >=0.3.2 requires Instructor's jiter<0.15, incompatible with
     # OpenAI >=3.19. Ragas 0.2.7-0.3.1 also patches asyncio at import time.
-    "ragas>=0.2.6,<0.2.7",
+    "ragas>=0.2.6,<0.4.4",
     # The compatible Ragas adapter imports legacy Vertex integration modules.
     "langchain-community>=0.3.31,<0.4",
     "langchain-anthropic>=0.3",
